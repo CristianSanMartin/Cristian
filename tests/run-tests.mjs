@@ -13,10 +13,10 @@ const XLSX_JS = path.join(root, "node_modules", "xlsx", "dist", "xlsx.full.min.j
 
 // ---------- Proforma sintética ----------
 const OT_H = ["ID Sol. Pago", "Estado Sol. Pago", "ID Viaje", "Origen", "Tipo Vehículo", "Valor",
-  "Patente", "Dirección", "Tipo de solicitud de pago"];
+  "Patente", "Dirección", "Tipo de solicitud de pago", "Destino"];
 const ot = [OT_H];
-const tl = (sol, estado, viaje, origen, veh, valor, dir = "Dir") =>
-  ot.push([sol, estado, viaje, origen, veh, valor, "AB1234", dir, "SERVICE"]);
+const tl = (sol, estado, viaje, origen, veh, valor, dir = "Dir", destino = "SANTIAGO") =>
+  ot.push([sol, estado, viaje, origen, veh, valor, "AB1234", dir, "SERVICE", destino]);
 
 // Caso A: 2 viajes, pagado 110.000 -> OBJETAR 50.000
 tl(24279173, "Provision_OK", "a1ca1dad", "TL - Hub XD", "C11-20", 110000, "D1");
@@ -36,6 +36,9 @@ tl(3002, "Provision_OK", "vc4", "TL - CD Fby Big Ticket", "C81-130", 175000);
 tl(3003, "Provision_OK", "vd1", "TL - Hub XD", "C11-20", 110000);
 // Caso E: TL (Valpo) 1 viaje C01-10 pagado 45.000 -> OK (debe clasificarse como TL)
 tl(3004, "Provision_OK", "ve1", "TL (Valpo)", "C01-10", 45000);
+// Caso E2: Valpo real: origen "TL - Hub XD" con destino Viña del Mar, valores como texto
+tl("3009", "Payment_OK", "vj1", "TL - Hub XD", "C01-10", "45000", "Camino Internacional 4390", "");
+tl("3009", "Payment_OK", "vj1", "TL - Hub XD", "C01-10", "45000", "10 Norte 882", "VIÑA DEL MAR");
 // Caso F: 3 viajes -> REVISAR MANUAL
 tl(3005, "Provision_OK", "vf1", "TL - Hub XD", "C11-20", 110000);
 tl(3005, "Provision_OK", "vf2", "TL - Hub XD", "C11-20", 110000);
@@ -110,6 +113,8 @@ check("Caso C", pick(byId["3001"]), ["OK", 350000, 350000, 0]);
 check("Caso C2", pick(byId["3002"]), ["OBJETAR", 350000, 175000, 175000]);
 check("Caso D", pick(byId["3003"]), ["OK", 110000, 110000, 0]);
 check("Caso E Valpo", pick(byId["3004"]), ["OK", 45000, 45000, 0]);
+check("Caso E2 Valpo por destino", pick(byId["3009"]), ["OK", 45000, 45000, 0]);
+check("Caso E2 origen informado", byId["3009"]?.origen, "TL - Hub XD → TL (Valpo)");
 check("Caso F 3 viajes", byId["3005"]?.resultado, "REVISAR MANUAL");
 check("Caso G sin tarifa", byId["3006"]?.resultado, "REVISAR");
 check("Caso H vehículos distintos", byId["3007"]?.resultado, "REVISAR MANUAL");
@@ -120,14 +125,17 @@ check("Resumen Sol Pago no cuadra (D)", byId["3003"]?.validacionResumen?.startsW
 const out = XLSX.readFile(outPath);
 const sheet = n => XLSX.utils.sheet_to_json(out.Sheets[n], { header: 1, defval: "" });
 const control = Object.fromEntries(sheet("CONTROL").map(r => [r[0], r[1]]));
-check("CONTROL bruto", control["Registros Ordenes de Transporte"], 25);
-check("CONTROL DELIVERY/SERVICE/TL", [control["Registros DELIVERY"], control["Registros SERVICE"], control["Registros TL"]], [2, 3, 19]);
+check("CONTROL bruto", control["Registros Ordenes de Transporte"], 27);
+check("CONTROL DELIVERY/SERVICE/TL", [control["Registros DELIVERY"], control["Registros SERVICE"], control["Registros TL"]], [2, 3, 21]);
 check("CONTROL sin clasificar", control["Registros sin clasificar"], 1);
 check("CONTROL diferencia", control["Diferencia vs bruto"], 0);
-const T = sheet("TL"), tv = T[0].indexOf("Valor"), tx = T[0].indexOf("x");
-check("x/y y Valor en 0 para repetidos (caso A)", T.slice(1, 5).map(r => [r[tx], r[tv]]), [[1, 110000], ["-", 0], ["-", 0], ["-", 0]]);
+const T = sheet("TL"), tv = T[0].indexOf("Valor"), tx = T[0].indexOf("x"), ty = T[0].indexOf("y"), ts = T[0].indexOf("ID Sol. Pago");
+check("x/y y Valor en 0 para repetidos (caso A)", T.filter(r => r[ts] === 24279173).map(r => [r[tx], r[ty], r[tv]]), [[1, 1, 110000], ["-", 1, 0], ["-", "-", 0], ["-", "-", 0]]);
+const rank = v => v === 1 ? 0 : 1;
+check("TL ordenado por x y luego y", T.slice(1).every((r, i, a) => i === 0 || rank(a[i - 1][tx]) * 2 + rank(a[i - 1][ty]) <= rank(r[tx]) * 2 + rank(r[ty])), true);
+check("ID Sol. Pago y Valor en texto se convierten a número", T.filter(r => r[ts] === 3009).map(r => r[tv]), [45000, 0]);
 const TR = sheet("Viajes de Transferencia");
-check("Transferencias x/y", TR.slice(1).map(r => r.slice(0, 5)), [[8001, 1, "t1", 1, 40000], [8001, "-", "t1", "-", 0], [8001, "-", "t2", 1, 0]]);
+check("Transferencias x/y", TR.slice(1).map(r => r.slice(0, 5)), [[8001, 1, "t1", 1, 40000], [8001, "-", "t2", 1, 0], [8001, "-", "t1", "-", 0]]);
 check("TL_A_OBJETAR filas", sheet("TL_A_OBJETAR").slice(1).map(r => r[0]).sort(), [24279173, 3002].sort());
 check("Hojas", out.SheetNames, ["Resumen", "CONTROL", "DELIVERY", "TD DELIVERY", "SERVICE", "TD SERVICE", "TL", "TD TL",
   "Viajes de Transferencia", "Ordenes de Transporte", "ANALISIS SERVICE", "Resumen Sol Pago", "SIN CLASIFICAR", "TL_REVISION", "TL_A_OBJETAR"]);

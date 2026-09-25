@@ -154,6 +154,9 @@ function origenNorm(v){
   if(s.includes("VALPO") || s.includes("VALPARAISO")) { if(s.startsWith("TL")) return "TL (Valpo)"; }
   return String(v??"").trim();
 }
+// Comunas que se pagan con tarifa TL (Valpo) aunque el origen sea "TL - Hub XD"
+const DESTINOS_VALPO=["VALPARAISO","VINA DEL MAR","QUILPUE","CONCON","VILLA ALEMANA","LIMACHE","QUILLOTA","CASABLANCA","PLACILLA"];
+function esDestinoValpo(v){ return DESTINOS_VALPO.includes(nt(v)); }
 function esOrigenTL(v){ return /^TL\b/.test(nt(v)); }
 function idCelda(v){ const s=nid(v); return /^\d{1,15}$/.test(s)?Number(s):s; }
 function vehNorm(v){ const m=nt(v).replace(/\s/g,"").match(/C\d{2}-\d{2,3}/); return m?m[0]:String(v??"").trim(); }
@@ -200,9 +203,19 @@ function mostrarDeteccion(){
   d.classList.remove("hidden");
 }
 
+// Columnas que la procesada de referencia guarda como número (vienen como texto en la bruta)
+const NUM_OT=["ID Proforma","Factura","ID Sol. Pago","Valor","ID Viaje"];
+const NUM_TRANSFER=["Factura","Id Sol. Pago","Id Viaje (Solicitud de transporte)","ID conexión","Valor"];
+function aNumero(v){
+  if(typeof v!=="string") return v;
+  const s=v.trim();
+  return /^-?\d{1,15}(\.\d+)?$/.test(s)?Number(s):v;
+}
+
 function addXYAndZero(rows, cfg){
   if(!rows.length) return [];
   const h=[...rows[0]];
+  const cNum=(cfg.numericas||[]).map(n=>idx(h,[n])).filter(i=>i>=0);
   const cSol=idx(h,cfg.sol), cViaje=idx(h,cfg.viaje), cValor=idx(h,cfg.valor);
   if(cSol<0||cViaje<0||cValor<0) throw new Error("No se encontraron columnas obligatorias para "+cfg.nombre);
   const outHeader=[...h]; outHeader.splice(cSol+1,0,"x");
@@ -212,6 +225,7 @@ function addXYAndZero(rows, cfg){
 
   for(const src of rows.slice(1)){
     const row=[...src];
+    for(const c of cNum) row[c]=aNumero(row[c]);
     const sol=nid(row[cSol]), viaje=nid(row[cViaje]);
     const x=seenSol.has(sol)?"-":1;
     const y=seenViaje.has(viaje)?"-":1;
@@ -221,7 +235,11 @@ function addXYAndZero(rows, cfg){
     row.splice(viajePos+1,0,y);
     out.push(row);
   }
-  return out;
+  // Igual que la procesada: ordenar por x y luego y (1 antes que "-"), manteniendo el orden original
+  const xPos=cSol+1, yPos=viajePos+1, rank=v=>v===1?0:1;
+  const body=out.slice(1).map((r,i)=>[r,i]);
+  body.sort((a,b)=>rank(a[0][xPos])-rank(b[0][xPos]) || rank(a[0][yPos])-rank(b[0][yPos]) || a[1]-b[1]);
+  return [outHeader,...body.map(p=>p[0])];
 }
 
 function procesarBruto(){
@@ -243,9 +261,9 @@ function procesarBruto(){
     else otros.push(r);
   }
 
-  const DELIVERY=addXYAndZero(delivery,{nombre:"DELIVERY",sol:["ID Sol. Pago"],viaje:["ID Viaje"],valor:["Valor"]});
-  const SERVICE=addXYAndZero(service,{nombre:"SERVICE",sol:["ID Sol. Pago"],viaje:["ID Viaje"],valor:["Valor"]});
-  const TL=addXYAndZero(tl,{nombre:"TL",sol:["ID Sol. Pago"],viaje:["ID Viaje"],valor:["Valor"]});
+  const DELIVERY=addXYAndZero(delivery,{nombre:"DELIVERY",sol:["ID Sol. Pago"],viaje:["ID Viaje"],valor:["Valor"],numericas:NUM_OT});
+  const SERVICE=addXYAndZero(service,{nombre:"SERVICE",sol:["ID Sol. Pago"],viaje:["ID Viaje"],valor:["Valor"],numericas:NUM_OT});
+  const TL=addXYAndZero(tl,{nombre:"TL",sol:["ID Sol. Pago"],viaje:["ID Viaje"],valor:["Valor"],numericas:NUM_OT});
 
   let TRANSFER=[];
   const sTr=sheetName(["Viajes de Transferencia"]);
@@ -254,7 +272,8 @@ function procesarBruto(){
       nombre:"Viajes de Transferencia",
       sol:["Id Sol. Pago","ID Sol. Pago"],
       viaje:["Id Viaje (Solicitud de transporte)","ID Viaje"],
-      valor:["Valor"]
+      valor:["Valor"],
+      numericas:NUM_TRANSFER
     });
   }
 
@@ -262,6 +281,7 @@ function procesarBruto(){
   return {rawOT, DELIVERY,SERVICE,TL,TRANSFER,OTROS:otros};
 }
 
+const ESTADOS_TD_TL=["PROVISION_OK","PAYMENT_OK"];
 function pivotSimple(rows, mode){
   if(rows.length<2) return [];
   const h=rows[0];
@@ -271,7 +291,7 @@ function pivotSimple(rows, mode){
   const vehs=[...new Set(rows.slice(1).map(r=>String(r[cVeh]||"")).filter(Boolean))].sort();
   const map=new Map();
   for(const r of rows.slice(1)){
-    if(mode==="TL" && nt(r[cEstado])!=="PROVISION_OK") continue;
+    if(mode==="TL" && !ESTADOS_TD_TL.includes(nt(r[cEstado]))) continue;
     const key = mode==="TL"
       ? [r[cOrigen],r[cSol],r[cViaje]].map(nid).join("¦")
       : [r[cOrigen],r[cViaje]].map(nid).join("¦");
@@ -280,7 +300,7 @@ function pivotSimple(rows, mode){
   }
   const out=[];
   if(mode==="TL"){
-    out.push(["Estado Sol. Pago","Provision_OK"]);
+    out.push(["Estado Sol. Pago","Provision_OK / Payment_OK"]);
     out.push(["Suma de Valor",null,null,"Tipo Vehículo"]);
     out.push(["Origen","ID Sol. Pago","ID Viaje",...vehs,"Total general"]);
     for(const o of map.values()){
@@ -338,21 +358,24 @@ function valoresResumenSolPago(){
 function analizarTL(TL){
   const h=TL[0];
   const cSol=idx(h,["ID Sol. Pago"]), cEstado=idx(h,["Estado Sol. Pago"]), cValor=idx(h,["Valor"]),
-        cViaje=idx(h,["ID Viaje"]), cOrigen=idx(h,["Origen"]), cVeh=idx(h,["Tipo Vehículo"]), cY=idx(h,["y"]);
+        cViaje=idx(h,["ID Viaje"]), cOrigen=idx(h,["Origen"]), cVeh=idx(h,["Tipo Vehículo"]), cY=idx(h,["y"]), cDest=idx(h,["Destino"]);
   const resumen=valoresResumenSolPago();
   const grupos=new Map();
   for(const r of TL.slice(1)){
     const sol=nid(r[cSol]); if(!sol) continue;
-    if(!grupos.has(sol)) grupos.set(sol,{estado:r[cEstado],origen:origenNorm(r[cOrigen]),veh:vehNorm(r[cVeh]),pagado:0,viajes:[],set:new Set(),cy:0,vehs:new Set(),origenes:new Set()});
+    if(!grupos.has(sol)) grupos.set(sol,{estado:r[cEstado],origen:origenNorm(r[cOrigen]),veh:vehNorm(r[cVeh]),pagado:0,viajes:[],set:new Set(),cy:0,vehs:new Set(),origenes:new Set(),valpo:false});
     const g=grupos.get(sol); g.pagado+=num(r[cValor]);
     g.vehs.add(vehNorm(r[cVeh])); g.origenes.add(origenNorm(r[cOrigen]));
+    if(cDest>=0 && esDestinoValpo(r[cDest])) g.valpo=true;
     const v=nid(r[cViaje]); if(v&&!g.set.has(v)){g.set.add(v);g.viajes.push(v);}
     if(cY>=0 && (r[cY]===1 || r[cY]==="1")) g.cy++;
   }
 
   const out=[];
   for(const [sol,g] of grupos){
-    const n=g.viajes.length, tarifa=TARIFAS_TL[g.origen]?.[g.veh] ?? null, segunda=SEGUNDA[g.veh] ?? null;
+    if(g.valpo && g.origen!=="TL (Valpo)") g.origen=g.origen+" → TL (Valpo)";
+    const tablaTarifa=g.valpo?"TL (Valpo)":g.origen;
+    const n=g.viajes.length, tarifa=TARIFAS_TL[tablaTarifa]?.[g.veh] ?? null, segunda=SEGUNDA[g.veh] ?? null;
     const r={idSolPago:sol,estadoSolPago:g.estado,origen:g.origen,tipoVehiculo:g.veh,cantidadViajes:n,idViaje1:g.viajes[0]||"",idViaje2:g.viajes[1]||"",tarifaPrimera:tarifa||0,tarifaSegunda:0,segundaReconocida:0,valorEsperado:0,valorPagado:g.pagado,montoObjetar:0,resultado:"",motivo:"",validacionY:g.cy===n?"OK":`REVISAR: y=${g.cy} / viajes=${n}`,valorResumen:"",validacionResumen:"SIN DATO"};
     if(resumen){
       if(resumen.has(sol)){ r.valorResumen=resumen.get(sol); r.validacionResumen=r.valorResumen===g.pagado?"OK":`REVISAR: Resumen Sol Pago ${money(r.valorResumen)} vs OT ${money(g.pagado)}`; }
