@@ -1,0 +1,27 @@
+{
+  "name": "cristian",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CristianSanMartin/Cristian.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/CristianSanMartin/Cristian/issues"
+  },
+  "homepage": "https://github.com/CristianSanMartin/Cristian#readme",
+  "devDependencies": {
+    "playwright": "^1.56.1",
+    "xlsx": "^0.18.5"
+  }
+}

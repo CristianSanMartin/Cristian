@@ -113,7 +113,7 @@
             <th>ID Sol. Pago</th><th>Estado</th><th>Origen</th><th>Vehículo</th><th>Viajes</th>
             <th>Viaje 1</th><th>Viaje 2</th><th>1ra vuelta</th><th>2da vuelta</th>
             <th>2da reconocida</th><th>Esperado</th><th>Pagado</th><th>A objetar</th>
-            <th>Resultado</th><th>Motivo</th>
+            <th>Resultado</th><th>Motivo</th><th>Resumen Sol Pago</th>
           </tr></thead>
           <tbody id="tlBody"></tbody>
         </table>
@@ -154,6 +154,8 @@ function origenNorm(v){
   if(s.includes("VALPO") || s.includes("VALPARAISO")) { if(s.startsWith("TL")) return "TL (Valpo)"; }
   return String(v??"").trim();
 }
+function esOrigenTL(v){ return /^TL\b/.test(nt(v)); }
+function idCelda(v){ const s=nid(v); return /^\d{1,15}$/.test(s)?Number(s):s; }
 function vehNorm(v){ const m=nt(v).replace(/\s/g,"").match(/C\d{2}-\d{2,3}/); return m?m[0]:String(v??"").trim(); }
 function idx(headers, names){
   const h=headers.map(nt);
@@ -231,12 +233,14 @@ function procesarBruto(){
   const cOrigen=idx(h,["Origen"]);
   if(cTipo<0||cOrigen<0) throw new Error("Faltan 'Tipo de solicitud de pago' u 'Origen'.");
 
-  const delivery=[h], service=[h], tl=[h];
+  const delivery=[h], service=[h], tl=[h], otros=[h];
   for(const r of ot.slice(1)){
-    const tipo=nt(r[cTipo]), ori=nt(r[cOrigen]);
+    if(r.every(c=>c===""||c===null)) continue;
+    const tipo=nt(r[cTipo]);
     if(tipo==="DELIVERY") delivery.push(r);
-    else if(tipo==="SERVICE" && ori.startsWith("TL -")) tl.push(r);
+    else if(tipo==="TL" || (tipo==="SERVICE" && esOrigenTL(r[cOrigen]))) tl.push(r);
     else if(tipo==="SERVICE") service.push(r);
+    else otros.push(r);
   }
 
   const DELIVERY=addXYAndZero(delivery,{nombre:"DELIVERY",sol:["ID Sol. Pago"],viaje:["ID Viaje"],valor:["Valor"]});
@@ -254,7 +258,8 @@ function procesarBruto(){
     });
   }
 
-  return {rawOT:ot, DELIVERY,SERVICE,TL,TRANSFER};
+  const rawOT=[h,...ot.slice(1).filter(r=>!r.every(c=>c===""||c===null))];
+  return {rawOT, DELIVERY,SERVICE,TL,TRANSFER,OTROS:otros};
 }
 
 function pivotSimple(rows, mode){
@@ -320,15 +325,27 @@ function analisisService(serviceProcessed, serviceRaw){
   return out;
 }
 
+function valoresResumenSolPago(){
+  const s=sheetName(["Resumen Sol Pago"]); if(!s) return null;
+  const m=matrix(wbEntrada.Sheets[s]); if(!m.length) return null;
+  const cSol=idx(m[0],["Sol Pago","ID Sol. Pago","Id Sol. Pago","Sol. Pago"]), cVal=idx(m[0],["Valor"]);
+  if(cSol<0||cVal<0) return null;
+  const map=new Map();
+  for(const r of m.slice(1)){ const sol=nid(r[cSol]); if(sol) map.set(sol,(map.get(sol)||0)+num(r[cVal])); }
+  return map;
+}
+
 function analizarTL(TL){
   const h=TL[0];
   const cSol=idx(h,["ID Sol. Pago"]), cEstado=idx(h,["Estado Sol. Pago"]), cValor=idx(h,["Valor"]),
         cViaje=idx(h,["ID Viaje"]), cOrigen=idx(h,["Origen"]), cVeh=idx(h,["Tipo Vehículo"]), cY=idx(h,["y"]);
+  const resumen=valoresResumenSolPago();
   const grupos=new Map();
   for(const r of TL.slice(1)){
     const sol=nid(r[cSol]); if(!sol) continue;
-    if(!grupos.has(sol)) grupos.set(sol,{estado:r[cEstado],origen:origenNorm(r[cOrigen]),veh:vehNorm(r[cVeh]),pagado:0,viajes:[],set:new Set(),cy:0});
+    if(!grupos.has(sol)) grupos.set(sol,{estado:r[cEstado],origen:origenNorm(r[cOrigen]),veh:vehNorm(r[cVeh]),pagado:0,viajes:[],set:new Set(),cy:0,vehs:new Set(),origenes:new Set()});
     const g=grupos.get(sol); g.pagado+=num(r[cValor]);
+    g.vehs.add(vehNorm(r[cVeh])); g.origenes.add(origenNorm(r[cOrigen]));
     const v=nid(r[cViaje]); if(v&&!g.set.has(v)){g.set.add(v);g.viajes.push(v);}
     if(cY>=0 && (r[cY]===1 || r[cY]==="1")) g.cy++;
   }
@@ -336,8 +353,14 @@ function analizarTL(TL){
   const out=[];
   for(const [sol,g] of grupos){
     const n=g.viajes.length, tarifa=TARIFAS_TL[g.origen]?.[g.veh] ?? null, segunda=SEGUNDA[g.veh] ?? null;
-    const r={idSolPago:sol,estadoSolPago:g.estado,origen:g.origen,tipoVehiculo:g.veh,cantidadViajes:n,idViaje1:g.viajes[0]||"",idViaje2:g.viajes[1]||"",tarifaPrimera:tarifa||0,tarifaSegunda:0,segundaReconocida:0,valorEsperado:0,valorPagado:g.pagado,montoObjetar:0,resultado:"",motivo:"",validacionY:g.cy===n?"OK":`REVISAR: y=${g.cy} / viajes=${n}`};
+    const r={idSolPago:sol,estadoSolPago:g.estado,origen:g.origen,tipoVehiculo:g.veh,cantidadViajes:n,idViaje1:g.viajes[0]||"",idViaje2:g.viajes[1]||"",tarifaPrimera:tarifa||0,tarifaSegunda:0,segundaReconocida:0,valorEsperado:0,valorPagado:g.pagado,montoObjetar:0,resultado:"",motivo:"",validacionY:g.cy===n?"OK":`REVISAR: y=${g.cy} / viajes=${n}`,valorResumen:"",validacionResumen:"SIN DATO"};
+    if(resumen){
+      if(resumen.has(sol)){ r.valorResumen=resumen.get(sol); r.validacionResumen=r.valorResumen===g.pagado?"OK":`REVISAR: Resumen Sol Pago ${money(r.valorResumen)} vs OT ${money(g.pagado)}`; }
+      else r.validacionResumen="NO ESTÁ EN RESUMEN SOL PAGO";
+    }
 
+    if(g.vehs.size>1){r.resultado="REVISAR MANUAL";r.motivo=`Tipos de vehículo distintos en el mismo ID Sol. Pago: ${[...g.vehs].join(", ")}.`;out.push(r);continue;}
+    if(g.origenes.size>1){r.resultado="REVISAR MANUAL";r.motivo=`Orígenes distintos en el mismo ID Sol. Pago: ${[...g.origenes].join(", ")}.`;out.push(r);continue;}
     if(n===0){r.resultado="REVISAR";r.motivo="ID Sol. Pago sin ID Viaje.";out.push(r);continue;}
     if(tarifa===null){r.resultado="REVISAR";r.motivo=`No existe tarifa configurada para ${g.origen} / ${g.veh}.`;out.push(r);continue;}
     if(n>2){r.resultado="REVISAR MANUAL";r.motivo=`Contiene ${n} viajes únicos; no existe regla para tercera vuelta.`;out.push(r);continue;}
@@ -418,6 +441,8 @@ function construirSalida(){
   const rawCount=Math.max((datosProc.rawOT?.length||1)-1,0);
   const dCount=Math.max(datosProc.DELIVERY.length-1,0), sCount=Math.max(datosProc.SERVICE.length-1,0), tCount=Math.max(datosProc.TL.length-1,0);
   const trCount=Math.max((datosProc.TRANSFER?.length||1)-1,0);
+  const oCount=Math.max((datosProc.OTROS?.length||1)-1,0);
+  const difResumen=revisionTL.filter(r=>String(r.validacionResumen).startsWith("REVISAR")).length;
   const control=[
     ["CONTROL AUTOMÁTICO DE PROFORMA",""],
     ["Fecha procesamiento",new Date().toLocaleString("es-CL")],
@@ -426,11 +451,12 @@ function construirSalida(){
     ["Registros DELIVERY",dCount],
     ["Registros SERVICE",sCount],
     ["Registros TL",tCount],
-    ["Total procesado",dCount+sCount+tCount],
-    ["Diferencia vs bruto",rawCount?rawCount-(dCount+sCount+tCount):0],
+    ["Registros sin clasificar",oCount],
+    ["Total procesado",dCount+sCount+tCount+oCount],
+    ["Diferencia vs bruto",rawCount?rawCount-(dCount+sCount+tCount+oCount):0],
     ["Registros Viajes de Transferencia",trCount],
-    ["Inconsistencias detección TL",0],
-    ["Estado",rawCount===0 || rawCount===dCount+sCount+tCount ? "OK":"REVISAR"]
+    ["TL con diferencia vs Resumen Sol Pago",difResumen],
+    ["Estado",(rawCount===0 || rawCount===dCount+sCount+tCount+oCount) && oCount===0 ? "OK":"REVISAR"]
   ];
   appendAOA("CONTROL",control);
   appendAOA("DELIVERY",datosProc.DELIVERY);
@@ -444,29 +470,31 @@ function construirSalida(){
 
   if(datosProc.rawOT?.length){
     const h=datosProc.rawOT[0], cTipo=idx(h,["Tipo de solicitud de pago"]), cOrigen=idx(h,["Origen"]);
-    const rawService=[h,...datosProc.rawOT.slice(1).filter(r=>nt(r[cTipo])==="SERVICE"&&!nt(r[cOrigen]).startsWith("TL -"))];
+    const rawService=[h,...datosProc.rawOT.slice(1).filter(r=>nt(r[cTipo])==="SERVICE"&&!esOrigenTL(r[cOrigen]))];
     appendAOA("ANALISIS SERVICE",analisisService(datosProc.SERVICE,rawService));
   }
 
   copyOriginal("Resumen Sol Pago");
+  if(oCount) appendAOA("SIN CLASIFICAR",datosProc.OTROS);
 
-  const revRows=[["ID Sol. Pago","Estado Sol. Pago","Origen","Tipo Vehículo","Cantidad Viajes","ID Viaje 1","ID Viaje 2","Tarifa 1ra Vuelta","Tarifa 2da Vuelta","2da Vuelta Reconocida","Valor Esperado","Valor Pagado","Monto a Objetar","Resultado","Motivo","Validación y"]];
-  for(const r of revisionTL) revRows.push([r.idSolPago,r.estadoSolPago,r.origen,r.tipoVehiculo,r.cantidadViajes,r.idViaje1,r.idViaje2,r.tarifaPrimera,r.tarifaSegunda,r.segundaReconocida,r.valorEsperado,r.valorPagado,r.montoObjetar,r.resultado,r.motivo,r.validacionY]);
+  const revRows=[["ID Sol. Pago","Estado Sol. Pago","Origen","Tipo Vehículo","Cantidad Viajes","ID Viaje 1","ID Viaje 2","Tarifa 1ra Vuelta","Tarifa 2da Vuelta","2da Vuelta Reconocida","Valor Esperado","Valor Pagado","Monto a Objetar","Resultado","Motivo","Validación y","Valor Resumen Sol Pago","Validación Resumen Sol Pago"]];
+  for(const r of revisionTL) revRows.push([idCelda(r.idSolPago),r.estadoSolPago,r.origen,r.tipoVehiculo,r.cantidadViajes,r.idViaje1,r.idViaje2,r.tarifaPrimera,r.tarifaSegunda,r.segundaReconocida,r.valorEsperado,r.valorPagado,r.montoObjetar,r.resultado,r.motivo,r.validacionY,r.valorResumen,r.validacionResumen]);
   appendAOA("TL_REVISION",revRows);
 
   const obj=[["ID Sol. Pago","Estado Sol. Pago","Origen","Tipo Vehículo","Cantidad Viajes","ID Viaje 1","ID Viaje 2","Valor Esperado","Valor Pagado","Monto a Objetar","Motivo"]];
-  for(const r of revisionTL.filter(x=>x.resultado==="OBJETAR")) obj.push([r.idSolPago,r.estadoSolPago,r.origen,r.tipoVehiculo,r.cantidadViajes,r.idViaje1,r.idViaje2,r.valorEsperado,r.valorPagado,r.montoObjetar,r.motivo]);
+  for(const r of revisionTL.filter(x=>x.resultado==="OBJETAR")) obj.push([idCelda(r.idSolPago),r.estadoSolPago,r.origen,r.tipoVehiculo,r.cantidadViajes,r.idViaje1,r.idViaje2,r.valorEsperado,r.valorPagado,r.montoObjetar,r.motivo]);
   appendAOA("TL_A_OBJETAR",obj);
 }
 
 function actualizarPantalla(){
-  const raw=Math.max((datosProc.rawOT?.length||1)-1,0), d=datosProc.DELIVERY.length-1, s=datosProc.SERVICE.length-1, t=datosProc.TL.length-1, tr=Math.max((datosProc.TRANSFER?.length||1)-1,0);
+  const raw=Math.max((datosProc.rawOT?.length||1)-1,0), d=datosProc.DELIVERY.length-1, s=datosProc.SERVICE.length-1, t=datosProc.TL.length-1, tr=Math.max((datosProc.TRANSFER?.length||1)-1,0), o=Math.max((datosProc.OTROS?.length||1)-1,0);
   document.getElementById("kRaw").textContent=raw;
   document.getElementById("kDelivery").textContent=d;
   document.getElementById("kService").textContent=s;
   document.getElementById("kTL").textContent=t;
   document.getElementById("kTransfer").textContent=tr;
-  document.getElementById("kDiff").textContent=raw?raw-(d+s+t):0;
+  const dif=raw?raw-(d+s+t+o):0, kd=document.getElementById("kDiff");
+  kd.textContent=dif+(o?` (${o} sin clasificar)`:""); kd.className="summary-value "+(dif===0&&o===0?"okc":"errc");
 
   const ok=revisionTL.filter(r=>r.resultado==="OK"||r.resultado==="OK - OBJECIÓN APROBADA").length;
   const obj=revisionTL.filter(r=>r.resultado==="OBJETAR").length;
@@ -483,13 +511,13 @@ function renderTL(){
   const body=document.getElementById("tlBody"); body.innerHTML="";
   const est=nt(document.getElementById("fEstado").value), q=nt(document.getElementById("fBuscar").value);
   for(const r of revisionTL){
-    if(est && !nt(r.resultado).includes(est)) continue;
+    if(est==="OBJECTION" ? nt(r.estadoSolPago)!=="OBJECTION_APPROVED" : (est && !nt(r.resultado).includes(est))) continue;
     if(q && !nt(r.idSolPago).includes(q)) continue;
     let bc="badge-warning"; if(r.resultado==="OBJETAR")bc="badge-error"; else if(r.resultado==="OK"||r.resultado==="OK - OBJECIÓN APROBADA")bc="badge-ok";
     const tr=document.createElement("tr");
     tr.innerHTML=`<td>${esc(r.idSolPago)}</td><td>${esc(r.estadoSolPago)}</td><td>${esc(r.origen)}</td><td>${esc(r.tipoVehiculo)}</td><td>${r.cantidadViajes}</td>
       <td>${esc(r.idViaje1)}</td><td>${esc(r.idViaje2)}</td><td>${money(r.tarifaPrimera)}</td><td>${money(r.tarifaSegunda)}</td><td>${money(r.segundaReconocida)}</td>
-      <td>${money(r.valorEsperado)}</td><td>${money(r.valorPagado)}</td><td><b>${money(r.montoObjetar)}</b></td><td><span class="badge ${bc}">${esc(r.resultado)}</span></td><td>${esc(r.motivo)}</td>`;
+      <td>${money(r.valorEsperado)}</td><td>${money(r.valorPagado)}</td><td><b>${money(r.montoObjetar)}</b></td><td><span class="badge ${bc}">${esc(r.resultado)}</span></td><td>${esc(r.motivo)}</td><td>${esc(r.validacionResumen)}</td>`;
     body.appendChild(tr);
   }
 }
