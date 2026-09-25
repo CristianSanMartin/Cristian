@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <title>Revisión de Proformas</title>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin:0; background:#f4f6f8; font-family:Arial,Helvetica,sans-serif; color:#1f2937; }
+    .container { width:95%; max-width:1500px; margin:28px auto; }
+    .header { background:#111827; color:#fff; padding:24px 28px; border-radius:12px; margin-bottom:18px; }
+    .header h1 { margin:0; font-size:27px; }
+    .header p { margin:7px 0 0; opacity:.8; }
+    .card { background:#fff; border-radius:12px; padding:20px; margin-bottom:18px; box-shadow:0 2px 8px rgba(0,0,0,.06); }
+    .upload-area { border:2px dashed #9ca3af; border-radius:12px; text-align:center; padding:38px 20px; cursor:pointer; }
+    .upload-area.drag { border-color:#2563eb; background:#eff6ff; }
+    input[type=file] { display:none; }
+    .button { border:0; background:#2563eb; color:#fff; padding:11px 18px; font-size:14px; border-radius:8px; cursor:pointer; margin:4px; }
+    .button.green { background:#059669; }
+    .button.secondary { background:#4b5563; }
+    .hidden { display:none!important; }
+    .status-row { display:flex; flex-wrap:wrap; gap:10px; margin-top:14px; }
+    .status { padding:8px 12px; border-radius:7px; font-size:13px; font-weight:bold; }
+    .status.ok { background:#d1fae5; color:#065f46; }
+    .status.no { background:#f3f4f6; color:#6b7280; }
+    .summary { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; }
+    .summary-box { border:1px solid #e5e7eb; border-radius:9px; padding:16px; }
+    .summary-title { color:#6b7280; font-size:12px; margin-bottom:6px; }
+    .summary-value { font-size:24px; font-weight:bold; }
+    .okc { color:#047857; } .errc { color:#b91c1c; } .warnc { color:#b45309; }
+    .table-wrap { overflow:auto; max-height:620px; border:1px solid #e5e7eb; border-radius:8px; }
+    table { border-collapse:collapse; width:100%; font-size:12px; }
+    th { background:#111827; color:#fff; padding:9px 7px; text-align:left; position:sticky; top:0; }
+    td { padding:8px 7px; border-bottom:1px solid #e5e7eb; vertical-align:top; }
+    tbody tr:hover { background:#f9fafb; }
+    .badge { display:inline-block; border-radius:6px; padding:4px 7px; font-weight:bold; white-space:nowrap; }
+    .badge-ok { background:#d1fae5; color:#065f46; }
+    .badge-error { background:#fee2e2; color:#991b1b; }
+    .badge-warning { background:#fef3c7; color:#92400e; }
+    .error-box { background:#fee2e2; border:1px solid #fecaca; color:#991b1b; padding:14px; border-radius:8px; white-space:pre-wrap; }
+    .info-box { background:#eff6ff; border:1px solid #bfdbfe; color:#1e40af; padding:12px; border-radius:8px; margin-bottom:14px; }
+    .actions { text-align:right; margin-top:14px; }
+    select,input[type=search] { border:1px solid #d1d5db; border-radius:7px; padding:8px 10px; font-size:13px; }
+    .filters { display:flex; flex-wrap:wrap; gap:9px; margin-bottom:12px; }
+    .file-name { margin-top:12px; font-weight:bold; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>Revisión Automática de Proformas</h1>
+    <p>Procesa proformas en bruto y revisa DELIVERY, SERVICE, TRANSFERENCIA y TL.</p>
+  </div>
+
+  <div class="card">
+    <div id="dropArea" class="upload-area" onclick="document.getElementById('fileInput').click()">
+      <h2>Cargar proforma Excel</h2>
+      <p>Puede ser la proforma original en bruto o una ya procesada.</p>
+      <button class="button">Seleccionar archivo</button>
+      <input id="fileInput" type="file" accept=".xlsx,.xls,.xlsm">
+      <div id="fileName" class="file-name"></div>
+    </div>
+    <div id="detected" class="status-row hidden"></div>
+    <div id="actions" class="actions hidden">
+      <button class="button green" onclick="procesar()">Procesar y revisar</button>
+    </div>
+  </div>
+
+  <div id="errorArea" class="card hidden"><div id="errorText" class="error-box"></div></div>
+
+  <div id="resultArea" class="hidden">
+    <div class="card">
+      <h2>Control de procesamiento</h2>
+      <div class="summary">
+        <div class="summary-box"><div class="summary-title">Registros OT bruto</div><div id="kRaw" class="summary-value">0</div></div>
+        <div class="summary-box"><div class="summary-title">DELIVERY</div><div id="kDelivery" class="summary-value">0</div></div>
+        <div class="summary-box"><div class="summary-title">SERVICE</div><div id="kService" class="summary-value">0</div></div>
+        <div class="summary-box"><div class="summary-title">TL</div><div id="kTL" class="summary-value">0</div></div>
+        <div class="summary-box"><div class="summary-title">Transferencias</div><div id="kTransfer" class="summary-value">0</div></div>
+        <div class="summary-box"><div class="summary-title">Diferencia vs bruto</div><div id="kDiff" class="summary-value okc">0</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Revisión TL</h2>
+      <div class="info-box">
+        Primer ID Viaje = vuelta normal. Segundo ID Viaje = 2da vuelta. C81-130 conserva $175.000.
+        OBJECTION_APPROVED se valida contra el total reconocido del ID Sol. Pago.
+      </div>
+      <div class="summary" style="margin-bottom:14px">
+        <div class="summary-box"><div class="summary-title">ID Sol. Pago TL</div><div id="tAnalizados" class="summary-value">0</div></div>
+        <div class="summary-box"><div class="summary-title">Correctos</div><div id="tOk" class="summary-value okc">0</div></div>
+        <div class="summary-box"><div class="summary-title">A objetar</div><div id="tObj" class="summary-value errc">0</div></div>
+        <div class="summary-box"><div class="summary-title">Revisión manual</div><div id="tRev" class="summary-value warnc">0</div></div>
+        <div class="summary-box"><div class="summary-title">Monto a objetar</div><div id="tMonto" class="summary-value errc">$0</div></div>
+      </div>
+
+      <div class="filters">
+        <select id="fEstado" onchange="renderTL()">
+          <option value="">Todos</option>
+          <option value="OBJETAR">OBJETAR</option>
+          <option value="OK">OK</option>
+          <option value="REVISAR">REVISAR</option>
+          <option value="OBJECTION">OBJECTION_APPROVED</option>
+        </select>
+        <input id="fBuscar" type="search" placeholder="Buscar ID Sol. Pago" oninput="renderTL()">
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>ID Sol. Pago</th><th>Estado</th><th>Origen</th><th>Vehículo</th><th>Viajes</th>
+            <th>Viaje 1</th><th>Viaje 2</th><th>1ra vuelta</th><th>2da vuelta</th>
+            <th>2da reconocida</th><th>Esperado</th><th>Pagado</th><th>A objetar</th>
+            <th>Resultado</th><th>Motivo</th>
+          </tr></thead>
+          <tbody id="tlBody"></tbody>
+        </table>
+      </div>
+      <div class="actions">
+        <button class="button secondary" onclick="soloObj()">Solo objeciones</button>
+        <button class="button green" onclick="descargar()">Descargar Excel procesado</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let archivo = null;
+let wbEntrada = null;
+let wbProcesado = null;
+let datosProc = null;
+let revisionTL = [];
+
+const UMBRAL_CARGA_ADICIONAL = 5;
+
+const TARIFAS_TL = {
+  "TL - CD Fby Big Ticket": {"C01-10":55000,"C11-20":110000,"C21-35":128000,"C36-50":136000,"C51-80":151000,"C81-130":175000},
+  "TL - Hub XD":            {"C01-10":55000,"C11-20":110000,"C21-35":128000,"C36-50":136000,"C51-80":151000,"C81-130":175000},
+  "TL (Valpo)":             {"C01-10":45000,"C11-20":100000,"C21-35":118000,"C36-50":118000,"C51-80":null,"C81-130":null}
+};
+const SEGUNDA = {"C01-10":50000,"C11-20":50000,"C21-35":65000,"C36-50":65000,"C51-80":65000,"C81-130":175000};
+
+function nt(v){ return String(v ?? "").trim().normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase().replace(/\s+/g," "); }
+function nid(v){ if(v===null||v===undefined||v==="") return ""; if(typeof v==="number" && Number.isInteger(v)) return String(v); return String(v).trim(); }
+function num(v){ if(v===null||v===undefined||v===""||v==="-") return 0; if(typeof v==="number") return v; const s=String(v).replace(/\$/g,"").replace(/\s/g,"").replace(/\./g,"").replace(",","."); const n=Number(s); return isNaN(n)?0:n; }
+function money(v){ return new Intl.NumberFormat("es-CL",{style:"currency",currency:"CLP",maximumFractionDigits:0}).format(v||0); }
+function esc(v){ return String(v??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;"); }
+function origenNorm(v){
+  const s=nt(v);
+  if(s.includes("BIG TICKET") && s.startsWith("TL")) return "TL - CD Fby Big Ticket";
+  if(s.includes("HUB XD") && s.startsWith("TL")) return "TL - Hub XD";
+  if(s.includes("VALPO") || s.includes("VALPARAISO")) { if(s.startsWith("TL")) return "TL (Valpo)"; }
+  return String(v??"").trim();
+}
+function vehNorm(v){ const m=nt(v).replace(/\s/g,"").match(/C\d{2}-\d{2,3}/); return m?m[0]:String(v??"").trim(); }
+function idx(headers, names){
+  const h=headers.map(nt);
+  for(const n of names){ const p=h.indexOf(nt(n)); if(p!==-1) return p; }
+  return -1;
+}
+function sheetName(names){
+  const wanted=names.map(nt);
+  for(const s of wbEntrada.SheetNames) if(wanted.includes(nt(s))) return s;
+  return null;
+}
+function matrix(sheet){ return XLSX.utils.sheet_to_json(sheet,{header:1,defval:"",raw:true}); }
+
+const fileInput=document.getElementById("fileInput"), dropArea=document.getElementById("dropArea");
+fileInput.addEventListener("change",e=>{ if(e.target.files?.length) cargar(e.target.files[0]); });
+dropArea.addEventListener("dragover",e=>{e.preventDefault();dropArea.classList.add("drag");});
+dropArea.addEventListener("dragleave",()=>dropArea.classList.remove("drag"));
+dropArea.addEventListener("drop",e=>{e.preventDefault();dropArea.classList.remove("drag");if(e.dataTransfer.files?.length)cargar(e.dataTransfer.files[0]);});
+
+function cargar(file){
+  ocultarError(); archivo=file; document.getElementById("fileName").textContent=file.name;
+  const r=new FileReader();
+  r.onload=e=>{
+    try{
+      wbEntrada=XLSX.read(new Uint8Array(e.target.result),{type:"array",cellDates:true});
+      mostrarDeteccion();
+      document.getElementById("actions").classList.remove("hidden");
+    }catch(err){ mostrarError("No se pudo leer el Excel.\n\n"+err.message); }
+  };
+  r.readAsArrayBuffer(file);
+}
+
+function mostrarDeteccion(){
+  const d=document.getElementById("detected"); d.innerHTML="";
+  const raw=sheetName(["Ordenes de Transporte"]);
+  const tl=sheetName(["TL"]);
+  const txt = raw ? "Proforma en bruto detectada ✓" : (tl ? "Proforma ya procesada detectada ✓" : "Estructura no reconocida");
+  const div=document.createElement("div"); div.className="status "+((raw||tl)?"ok":"no"); div.textContent=txt; d.appendChild(div);
+  ["Resumen","Ordenes de Transporte","Viajes de Transferencia","Resumen Sol Pago"].forEach(n=>{
+    const x=document.createElement("div"); const ok=!!sheetName([n]); x.className="status "+(ok?"ok":"no"); x.textContent=n+(ok?" ✓":" —"); d.appendChild(x);
+  });
+  d.classList.remove("hidden");
+}
+
+function addXYAndZero(rows, cfg){
+  if(!rows.length) return [];
+  const h=[...rows[0]];
+  const cSol=idx(h,cfg.sol), cViaje=idx(h,cfg.viaje), cValor=idx(h,cfg.valor);
+  if(cSol<0||cViaje<0||cValor<0) throw new Error("No se encontraron columnas obligatorias para "+cfg.nombre);
+  const outHeader=[...h]; outHeader.splice(cSol+1,0,"x");
+  const viajePos = cViaje + (cViaje>cSol ? 1 : 0);
+  outHeader.splice(viajePos+1,0,"y");
+  const seenSol=new Set(), seenViaje=new Set(), out=[outHeader];
+
+  for(const src of rows.slice(1)){
+    const row=[...src];
+    const sol=nid(row[cSol]), viaje=nid(row[cViaje]);
+    const x=seenSol.has(sol)?"-":1;
+    const y=seenViaje.has(viaje)?"-":1;
+    if(sol) seenSol.add(sol); if(viaje) seenViaje.add(viaje);
+    if(x==="-") row[cValor]=0;
+    row.splice(cSol+1,0,x);
+    row.splice(viajePos+1,0,y);
+    out.push(row);
+  }
+  return out;
+}
+
+function procesarBruto(){
+  const sOT=sheetName(["Ordenes de Transporte"]);
+  if(!sOT) throw new Error("No existe la hoja 'Ordenes de Transporte'.");
+  const ot=matrix(wbEntrada.Sheets[sOT]);
+  const h=ot[0];
+  const cTipo=idx(h,["Tipo de solicitud de pago"]);
+  const cOrigen=idx(h,["Origen"]);
+  if(cTipo<0||cOrigen<0) throw new Error("Faltan 'Tipo de solicitud de pago' u 'Origen'.");
+
+  const delivery=[h], service=[h], tl=[h];
+  for(const r of ot.slice(1)){
+    const tipo=nt(r[cTipo]), ori=nt(r[cOrigen]);
+    if(tipo==="DELIVERY") delivery.push(r);
+    else if(tipo==="SERVICE" && ori.startsWith("TL -")) tl.push(r);
+    else if(tipo==="SERVICE") service.push(r);
+  }
+
+  const DELIVERY=addXYAndZero(delivery,{nombre:"DELIVERY",sol:["ID Sol. Pago"],viaje:["ID Viaje"],valor:["Valor"]});
+  const SERVICE=addXYAndZero(service,{nombre:"SERVICE",sol:["ID Sol. Pago"],viaje:["ID Viaje"],valor:["Valor"]});
+  const TL=addXYAndZero(tl,{nombre:"TL",sol:["ID Sol. Pago"],viaje:["ID Viaje"],valor:["Valor"]});
+
+  let TRANSFER=[];
+  const sTr=sheetName(["Viajes de Transferencia"]);
+  if(sTr){
+    TRANSFER=addXYAndZero(matrix(wbEntrada.Sheets[sTr]),{
+      nombre:"Viajes de Transferencia",
+      sol:["Id Sol. Pago","ID Sol. Pago"],
+      viaje:["Id Viaje (Solicitud de transporte)","ID Viaje"],
+      valor:["Valor"]
+    });
+  }
+
+  return {rawOT:ot, DELIVERY,SERVICE,TL,TRANSFER};
+}
+
+function pivotSimple(rows, mode){
+  if(rows.length<2) return [];
+  const h=rows[0];
+  const cOrigen=idx(h,["Origen"]), cViaje=idx(h,["ID Viaje","Id Viaje (Solicitud de transporte)"]),
+        cSol=idx(h,["ID Sol. Pago","Id Sol. Pago"]), cVeh=idx(h,["Tipo Vehículo","Tipo Vehiculo"]), cVal=idx(h,["Valor"]),
+        cEstado=idx(h,["Estado Sol. Pago"]);
+  const vehs=[...new Set(rows.slice(1).map(r=>String(r[cVeh]||"")).filter(Boolean))].sort();
+  const map=new Map();
+  for(const r of rows.slice(1)){
+    if(mode==="TL" && nt(r[cEstado])!=="PROVISION_OK") continue;
+    const key = mode==="TL"
+      ? [r[cOrigen],r[cSol],r[cViaje]].map(nid).join("¦")
+      : [r[cOrigen],r[cViaje]].map(nid).join("¦");
+    if(!map.has(key)) map.set(key,{origen:r[cOrigen],sol:r[cSol],viaje:r[cViaje], vals:{}});
+    const o=map.get(key), vh=String(r[cVeh]||""); o.vals[vh]=(o.vals[vh]||0)+num(r[cVal]);
+  }
+  const out=[];
+  if(mode==="TL"){
+    out.push(["Estado Sol. Pago","Provision_OK"]);
+    out.push(["Suma de Valor",null,null,"Tipo Vehículo"]);
+    out.push(["Origen","ID Sol. Pago","ID Viaje",...vehs,"Total general"]);
+    for(const o of map.values()){
+      const vals=vehs.map(v=>o.vals[v]||0), total=vals.reduce((a,b)=>a+b,0);
+      out.push([o.origen,o.sol,o.viaje,...vals,total]);
+    }
+  }else{
+    out.push(["TD "+mode]);
+    out.push(["Suma de Valor",null,"Tipo Vehículo"]);
+    out.push(["Origen","ID Viaje",...vehs,"Total general"]);
+    for(const o of map.values()){
+      const vals=vehs.map(v=>o.vals[v]||0), total=vals.reduce((a,b)=>a+b,0);
+      out.push([o.origen,o.viaje,...vals,total]);
+    }
+  }
+  return out;
+}
+
+function analisisService(serviceProcessed, serviceRaw){
+  if(serviceProcessed.length<2) return [["ID Sol. Pago","ID Viaje","Origen","Patente","Tipo Vehículo","Puntos únicos","Viajes en Sol. Pago","Rol","Alerta","Valor Falabella"]];
+  const h=serviceRaw[0];
+  const cSol=idx(h,["ID Sol. Pago"]), cViaje=idx(h,["ID Viaje"]), cOri=idx(h,["Origen"]),
+        cPat=idx(h,["Patente"]), cVeh=idx(h,["Tipo Vehículo"]), cDir=idx(h,["Dirección"]), cVal=idx(h,["Valor"]);
+  const bySol=new Map(), byViaje=new Map();
+  for(const r of serviceRaw.slice(1)){
+    const sol=nid(r[cSol]), v=nid(r[cViaje]);
+    if(!bySol.has(sol)) bySol.set(sol,new Set()); bySol.get(sol).add(v);
+    if(!byViaje.has(v)) byViaje.set(v,{sol,origen:r[cOri],patente:r[cPat],veh:r[cVeh],dirs:new Set(),sum:0});
+    const o=byViaje.get(v); o.dirs.add(String(r[cDir]??"")); o.sum+=num(r[cVal]);
+  }
+  const out=[["ID Sol. Pago","ID Viaje","Origen","Patente","Tipo Vehículo","Puntos únicos","Viajes en Sol. Pago","Rol","Alerta","Valor Falabella"]];
+  for(const [v,o] of byViaje){
+    const nViajes=bySol.get(o.sol)?.size||1, puntos=o.dirs.size;
+    let rol="Ruta única", alerta="SIN ALERTA";
+    if(nViajes>1){
+      if(puntos<=UMBRAL_CARGA_ADICIONAL){ rol="Ruta adicional"; alerta="PROBABLE CARGA ADICIONAL"; }
+      else rol="Ruta original";
+    }
+    out.push([o.sol,v,o.origen,o.patente,o.veh,puntos,nViajes,rol,alerta,o.sum]);
+  }
+  out.sort((a,b)=>a===out[0]?-1:b===out[0]?1:(Number(a[0])-Number(b[0]) || String(a[7]).localeCompare(String(b[7]))));
+  return out;
+}
+
+function analizarTL(TL){
+  const h=TL[0];
+  const cSol=idx(h,["ID Sol. Pago"]), cEstado=idx(h,["Estado Sol. Pago"]), cValor=idx(h,["Valor"]),
+        cViaje=idx(h,["ID Viaje"]), cOrigen=idx(h,["Origen"]), cVeh=idx(h,["Tipo Vehículo"]), cY=idx(h,["y"]);
+  const grupos=new Map();
+  for(const r of TL.slice(1)){
+    const sol=nid(r[cSol]); if(!sol) continue;
+    if(!grupos.has(sol)) grupos.set(sol,{estado:r[cEstado],origen:origenNorm(r[cOrigen]),veh:vehNorm(r[cVeh]),pagado:0,viajes:[],set:new Set(),cy:0});
+    const g=grupos.get(sol); g.pagado+=num(r[cValor]);
+    const v=nid(r[cViaje]); if(v&&!g.set.has(v)){g.set.add(v);g.viajes.push(v);}
+    if(cY>=0 && (r[cY]===1 || r[cY]==="1")) g.cy++;
+  }
+
+  const out=[];
+  for(const [sol,g] of grupos){
+    const n=g.viajes.length, tarifa=TARIFAS_TL[g.origen]?.[g.veh] ?? null, segunda=SEGUNDA[g.veh] ?? null;
+    const r={idSolPago:sol,estadoSolPago:g.estado,origen:g.origen,tipoVehiculo:g.veh,cantidadViajes:n,idViaje1:g.viajes[0]||"",idViaje2:g.viajes[1]||"",tarifaPrimera:tarifa||0,tarifaSegunda:0,segundaReconocida:0,valorEsperado:0,valorPagado:g.pagado,montoObjetar:0,resultado:"",motivo:"",validacionY:g.cy===n?"OK":`REVISAR: y=${g.cy} / viajes=${n}`};
+
+    if(n===0){r.resultado="REVISAR";r.motivo="ID Sol. Pago sin ID Viaje.";out.push(r);continue;}
+    if(tarifa===null){r.resultado="REVISAR";r.motivo=`No existe tarifa configurada para ${g.origen} / ${g.veh}.`;out.push(r);continue;}
+    if(n>2){r.resultado="REVISAR MANUAL";r.motivo=`Contiene ${n} viajes únicos; no existe regla para tercera vuelta.`;out.push(r);continue;}
+
+    const estado=nt(g.estado);
+    if(n===1){
+      r.valorEsperado=tarifa;
+      if(estado==="OBJECTION_APPROVED"){
+        if(g.pagado>=tarifa){r.resultado="OK - OBJECIÓN APROBADA"; const aj=g.pagado-tarifa; r.motivo=aj>0?`TL normal ${money(tarifa)} + ajuste aprobado ${money(aj)}.`:"Pago aprobado equivalente a tarifa normal.";}
+        else {r.resultado="REVISAR OBJECTION_APPROVED";r.motivo="El total pagado es inferior a la tarifa TL normal.";}
+      }else{
+        const d=tarifa-g.pagado;
+        if(d>0){r.resultado="OBJETAR";r.montoObjetar=d;r.motivo="Primera vuelta pagada por debajo de tarifa.";}
+        else if(d===0){r.resultado="OK";r.motivo="TL pagado correctamente.";}
+        else {r.resultado="REVISAR EXCESO";r.motivo="El pago supera la tarifa TL normal.";}
+      }
+      out.push(r);continue;
+    }
+
+    r.tarifaSegunda=segunda||0;
+    if(segunda===null){r.resultado="REVISAR";r.motivo="No existe tarifa de segunda vuelta.";out.push(r);continue;}
+    r.valorEsperado=tarifa+segunda;
+
+    if(estado==="OBJECTION_APPROVED"){
+      const rec=g.pagado-tarifa; r.segundaReconocida=Math.max(rec,0);
+      if(rec>0){r.resultado="OK - OBJECIÓN APROBADA";r.motivo=`Primera vuelta ${money(tarifa)} + segunda vuelta aprobada ${money(rec)} = ${money(g.pagado)}.`;}
+      else {r.resultado="REVISAR OBJECTION_APPROVED";r.motivo="Existen dos viajes, pero el pago no incorpora monto adicional para la segunda vuelta.";}
+    }else{
+      const d=r.valorEsperado-g.pagado;
+      if(d>0){r.resultado="OBJETAR";r.montoObjetar=d;r.motivo=g.pagado===tarifa?`Segunda vuelta no pagada. Corresponde objetar ${money(segunda)}.`:`Pago insuficiente. Esperado ${money(r.valorEsperado)}, pagado ${money(g.pagado)}.`;}
+      else if(d===0){r.resultado="OK";r.motivo="Primera y segunda vuelta pagadas correctamente.";}
+      else {r.resultado="REVISAR EXCESO";r.motivo=`Pago superior a tarifa estándar. Esperado ${money(r.valorEsperado)}, pagado ${money(g.pagado)}.`;}
+    }
+    out.push(r);
+  }
+  return out;
+}
+
+function procesar(){
+  ocultarError();
+  try{
+    if(!wbEntrada) throw new Error("Carga primero un archivo Excel.");
+    const rawOTName=sheetName(["Ordenes de Transporte"]);
+    if(rawOTName){
+      datosProc=procesarBruto();
+    }else{
+      const d=sheetName(["DELIVERY"]), s=sheetName(["SERVICE"]), t=sheetName(["TL"]);
+      if(!d||!s||!t) throw new Error("No se reconoce la estructura del archivo.");
+      datosProc={
+        rawOT:[], DELIVERY:matrix(wbEntrada.Sheets[d]), SERVICE:matrix(wbEntrada.Sheets[s]),
+        TL:matrix(wbEntrada.Sheets[t]),
+        TRANSFER: sheetName(["Viajes de Transferencia"])?matrix(wbEntrada.Sheets[sheetName(["Viajes de Transferencia"])]):[]
+      };
+    }
+
+    revisionTL=analizarTL(datosProc.TL);
+    construirSalida();
+    actualizarPantalla();
+    renderTL();
+    document.getElementById("resultArea").classList.remove("hidden");
+    document.getElementById("resultArea").scrollIntoView({behavior:"smooth"});
+  }catch(err){ mostrarError(err.message); }
+}
+
+function construirSalida(){
+  wbProcesado=XLSX.utils.book_new();
+
+  function appendAOA(name, arr){
+    if(!arr||!arr.length) return;
+    XLSX.utils.book_append_sheet(wbProcesado,XLSX.utils.aoa_to_sheet(arr),name.substring(0,31));
+  }
+  function copyOriginal(name){
+    const s=sheetName([name]); if(s) appendAOA(name,matrix(wbEntrada.Sheets[s]));
+  }
+
+  copyOriginal("Resumen");
+
+  const rawCount=Math.max((datosProc.rawOT?.length||1)-1,0);
+  const dCount=Math.max(datosProc.DELIVERY.length-1,0), sCount=Math.max(datosProc.SERVICE.length-1,0), tCount=Math.max(datosProc.TL.length-1,0);
+  const trCount=Math.max((datosProc.TRANSFER?.length||1)-1,0);
+  const control=[
+    ["CONTROL AUTOMÁTICO DE PROFORMA",""],
+    ["Fecha procesamiento",new Date().toLocaleString("es-CL")],
+    ["Umbral carga adicional",UMBRAL_CARGA_ADICIONAL],
+    ["Registros Ordenes de Transporte",rawCount],
+    ["Registros DELIVERY",dCount],
+    ["Registros SERVICE",sCount],
+    ["Registros TL",tCount],
+    ["Total procesado",dCount+sCount+tCount],
+    ["Diferencia vs bruto",rawCount?rawCount-(dCount+sCount+tCount):0],
+    ["Registros Viajes de Transferencia",trCount],
+    ["Inconsistencias detección TL",0],
+    ["Estado",rawCount===0 || rawCount===dCount+sCount+tCount ? "OK":"REVISAR"]
+  ];
+  appendAOA("CONTROL",control);
+  appendAOA("DELIVERY",datosProc.DELIVERY);
+  appendAOA("TD DELIVERY",pivotSimple(datosProc.DELIVERY,"DELIVERY"));
+  appendAOA("SERVICE",datosProc.SERVICE);
+  appendAOA("TD SERVICE",pivotSimple(datosProc.SERVICE,"SERVICE"));
+  appendAOA("TL",datosProc.TL);
+  appendAOA("TD TL",pivotSimple(datosProc.TL,"TL"));
+  if(datosProc.TRANSFER?.length) appendAOA("Viajes de Transferencia",datosProc.TRANSFER);
+  copyOriginal("Ordenes de Transporte");
+
+  if(datosProc.rawOT?.length){
+    const h=datosProc.rawOT[0], cTipo=idx(h,["Tipo de solicitud de pago"]), cOrigen=idx(h,["Origen"]);
+    const rawService=[h,...datosProc.rawOT.slice(1).filter(r=>nt(r[cTipo])==="SERVICE"&&!nt(r[cOrigen]).startsWith("TL -"))];
+    appendAOA("ANALISIS SERVICE",analisisService(datosProc.SERVICE,rawService));
+  }
+
+  copyOriginal("Resumen Sol Pago");
+
+  const revRows=[["ID Sol. Pago","Estado Sol. Pago","Origen","Tipo Vehículo","Cantidad Viajes","ID Viaje 1","ID Viaje 2","Tarifa 1ra Vuelta","Tarifa 2da Vuelta","2da Vuelta Reconocida","Valor Esperado","Valor Pagado","Monto a Objetar","Resultado","Motivo","Validación y"]];
+  for(const r of revisionTL) revRows.push([r.idSolPago,r.estadoSolPago,r.origen,r.tipoVehiculo,r.cantidadViajes,r.idViaje1,r.idViaje2,r.tarifaPrimera,r.tarifaSegunda,r.segundaReconocida,r.valorEsperado,r.valorPagado,r.montoObjetar,r.resultado,r.motivo,r.validacionY]);
+  appendAOA("TL_REVISION",revRows);
+
+  const obj=[["ID Sol. Pago","Estado Sol. Pago","Origen","Tipo Vehículo","Cantidad Viajes","ID Viaje 1","ID Viaje 2","Valor Esperado","Valor Pagado","Monto a Objetar","Motivo"]];
+  for(const r of revisionTL.filter(x=>x.resultado==="OBJETAR")) obj.push([r.idSolPago,r.estadoSolPago,r.origen,r.tipoVehiculo,r.cantidadViajes,r.idViaje1,r.idViaje2,r.valorEsperado,r.valorPagado,r.montoObjetar,r.motivo]);
+  appendAOA("TL_A_OBJETAR",obj);
+}
+
+function actualizarPantalla(){
+  const raw=Math.max((datosProc.rawOT?.length||1)-1,0), d=datosProc.DELIVERY.length-1, s=datosProc.SERVICE.length-1, t=datosProc.TL.length-1, tr=Math.max((datosProc.TRANSFER?.length||1)-1,0);
+  document.getElementById("kRaw").textContent=raw;
+  document.getElementById("kDelivery").textContent=d;
+  document.getElementById("kService").textContent=s;
+  document.getElementById("kTL").textContent=t;
+  document.getElementById("kTransfer").textContent=tr;
+  document.getElementById("kDiff").textContent=raw?raw-(d+s+t):0;
+
+  const ok=revisionTL.filter(r=>r.resultado==="OK"||r.resultado==="OK - OBJECIÓN APROBADA").length;
+  const obj=revisionTL.filter(r=>r.resultado==="OBJETAR").length;
+  const rev=revisionTL.filter(r=>r.resultado.startsWith("REVISAR")).length;
+  const monto=revisionTL.reduce((a,r)=>a+(r.montoObjetar||0),0);
+  document.getElementById("tAnalizados").textContent=revisionTL.length;
+  document.getElementById("tOk").textContent=ok;
+  document.getElementById("tObj").textContent=obj;
+  document.getElementById("tRev").textContent=rev;
+  document.getElementById("tMonto").textContent=money(monto);
+}
+
+function renderTL(){
+  const body=document.getElementById("tlBody"); body.innerHTML="";
+  const est=nt(document.getElementById("fEstado").value), q=nt(document.getElementById("fBuscar").value);
+  for(const r of revisionTL){
+    if(est && !nt(r.resultado).includes(est)) continue;
+    if(q && !nt(r.idSolPago).includes(q)) continue;
+    let bc="badge-warning"; if(r.resultado==="OBJETAR")bc="badge-error"; else if(r.resultado==="OK"||r.resultado==="OK - OBJECIÓN APROBADA")bc="badge-ok";
+    const tr=document.createElement("tr");
+    tr.innerHTML=`<td>${esc(r.idSolPago)}</td><td>${esc(r.estadoSolPago)}</td><td>${esc(r.origen)}</td><td>${esc(r.tipoVehiculo)}</td><td>${r.cantidadViajes}</td>
+      <td>${esc(r.idViaje1)}</td><td>${esc(r.idViaje2)}</td><td>${money(r.tarifaPrimera)}</td><td>${money(r.tarifaSegunda)}</td><td>${money(r.segundaReconocida)}</td>
+      <td>${money(r.valorEsperado)}</td><td>${money(r.valorPagado)}</td><td><b>${money(r.montoObjetar)}</b></td><td><span class="badge ${bc}">${esc(r.resultado)}</span></td><td>${esc(r.motivo)}</td>`;
+    body.appendChild(tr);
+  }
+}
+
+function soloObj(){ document.getElementById("fEstado").value="OBJETAR"; renderTL(); }
+
+function descargar(){
+  if(!wbProcesado) return;
+  const base=(archivo?.name||"Proforma.xlsx").replace(/\.(xlsx|xlsm|xls)$/i,"");
+  XLSX.writeFile(wbProcesado,base+"_PROCESADA_WEB.xlsx");
+}
+
+function mostrarError(m){ document.getElementById("errorText").textContent=m; document.getElementById("errorArea").classList.remove("hidden"); }
+function ocultarError(){ document.getElementById("errorArea").classList.add("hidden"); }
+</script>
+</body>
+</html>
