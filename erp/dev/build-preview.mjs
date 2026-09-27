@@ -113,7 +113,7 @@ const preview = `
     document.body.appendChild(bar);
     document.getElementById('preview-user').addEventListener('change', function (e) {
       store.set(KEY + '_user', e.target.value);
-      location.href = location.pathname;
+      location.reload();
     });
     document.getElementById('preview-reset').addEventListener('click', function () {
       store.del(KEY);
@@ -136,3 +136,15 @@ const out = path.join(ERP, "dist", "preview.html");
 fs.mkdirSync(path.dirname(out), { recursive: true });
 fs.writeFileSync(out, html);
 console.log("Vista previa generada:", path.relative(process.cwd(), out), `(${Math.round(html.length / 1024)} KB)`);
+
+// Versión para publicar como Artifact de claude.ai (la plataforma agrega el esqueleto html/head/body).
+const artifact = html
+  .replace(/<!DOCTYPE html>\s*/i, "")
+  .replace(/<\/?html[^>]*>\s*/gi, "")
+  .replace(/<\/?head>\s*/gi, "")
+  .replace(/<\/?body>\s*/gi, "")
+  .replace(/<base [^>]*>\s*/i, "")
+  .replace(/<meta charset[^>]*>\s*/i, "")
+  .replace(/<meta name="viewport"[^>]*>\s*/i, "")
+  .replace("</style>", ":root{color-scheme:dark;}\n</style>");
+fs.writeFileSync(path.join(ERP, "dist", "preview-artifact.html"), artifact);
