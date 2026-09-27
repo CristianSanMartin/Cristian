@@ -152,6 +152,9 @@ margen, y estado comercial `recibida → vendiendo → agotada`.
   su OC y cliente.
 - Al vender, las unidades salen del **lote más antiguo** (FIFO), o del lote que se elija.
 - **Salidas que no son venta** (pérdida, uso interno, premio de torneo) con motivo.
+- **Sobres con stock controlado.** Se pueden comprar sueltos o **abrir una Booster Box**:
+  la caja sale del inventario y entran 36 sobres, cada uno con costo = costo de la caja ÷ 36,
+  manteniendo la factura de origen. Los sobres usados como premio salen como costo del torneo.
 
 ## 9. Ventas
 
@@ -167,6 +170,13 @@ fecha, cliente, canal, evento, medio de pago, referencia externa (opcional), not
 **Líneas:** producto, cantidad, precio bruto unitario (por defecto, el precio de venta),
 lote(s) de origen. Cada línea guarda su resultado económico (sección 3) al momento de vender.
 
+- **Medio de pago:** efectivo, transferencia, tarjeta (débito/crédito), otro.
+- **Pago pendiente (cuenta por cobrar):** una venta puede quedar total o parcialmente
+  impaga, con el cliente como deudor. Se registran abonos hasta saldarla. Reemplaza las
+  filas "01-dic" de la planilla: lo impago no entra a caja ni a los gráficos hasta que se cobra.
+- **Ventas por monto (sin stock):** singles y otros ingresos sin control unitario
+  se registran por categoría y monto (ej. "Singles $38.000").
+
 Anular una venta (administrador) devuelve el stock a su lote y queda auditado.
 
 ## 10. Clientes
@@ -177,13 +187,36 @@ salvo el nombre. "Cliente general" existe siempre.
 Ficha con historial de compras, total gastado y última compra: base para un futuro
 **programa de fidelización**.
 
-## 11. Usuarios y roles
+## 11. Finanzas
+
+**Caja (libro de ingresos y egresos).** Las ventas cobradas, compras pagadas, gastos,
+aportes y pagos al SII generan su movimiento de caja **automáticamente**, con su
+referencia (OC, factura). No se digita dos veces.
+
+| Concepto | Detalle |
+|---|---|
+| Cuentas por cobrar | Ventas impagas por deudor, con antigüedad y abonos |
+| Gastos (GAV) | Categorías: publicidad, insumos, transporte, premios, arriendo de stand/ferias, comisiones de medios de pago, otros |
+| Comisiones de tarjeta | Se calculan solas por venta según el % configurado para cada medio de pago y van a GAV. Cada venta muestra su **ganancia después de comisión** |
+| Patrimonio | Aportes de socios (García / San Martín), por socio. Sin retiros por ahora |
+| SII | Pago mensual F29 y cualquier otro pago al SII |
+
+**Caja de singles:** fondo separado para singles. Registra compras y ventas de singles
+y muestra saldo, rentabilidad y un **tope de compra** configurable (alerta si se compra
+más de lo que se vende o se supera el tope), para evitar sobre-stock.
+
+**Resumen mensual** equivalente a la planilla actual: Ventas, Compras, Patrimonio, GAV,
+SII y Total (flujo de caja), con gráfico de ventas vs. compras. Además, la mirada de
+**resultado real**: flujo de caja + variación del inventario valorizado a costo
+(comprar stock baja la caja pero no es pérdida).
+
+## 12. Usuarios y roles
 
 Hoy: **Administrador** (todo), **Operador** (opera), **Solo lectura**. Pendiente definir
 responsabilidades reales: quién compra, quién vende, quién maneja caja, quién administra
 inventario y quién puede modificar costos o anular operaciones.
 
-## 12. Tablas (hojas de la planilla)
+## 13. Tablas (hojas de la planilla)
 
 | Hoja | Contenido |
 |---|---|
@@ -195,16 +228,19 @@ inventario y quién puede modificar costos o anular operaciones.
 | Ventas / Ventas_Lineas | Encabezado y líneas con resultado histórico |
 | Movimientos | Salidas que no son venta y ajustes |
 | Clientes | Fichas |
+| Cobros | Abonos a ventas pendientes |
+| Caja | Movimientos de dinero (automáticos y manuales) |
+| Gastos | GAV por categoría |
+| Aportes | Aportes de socios |
+| Configuracion | Comisiones por medio de pago, tope de singles, reglas |
 | Auditoria | Historial de cambios |
 | Secuencias | Correlativos (PV, CP, OC, CLI…) |
 
-## 13. Temas abiertos (para próximas conversaciones)
+## 14. Temas abiertos (para próximas conversaciones)
 
-- **Booster Box abiertas:** ¿se abren cajas para vender sobres sueltos o usarlos como premio?
-  (Convertir 1 caja en 36 sobres conservando el costo de la factura.)
 - **Cantidades no múltiplo de 36** en Booster Box: ¿bloquear o registrar sobres sueltos?
 - **Torneos:** inscripciones como ingreso y premios como costo, para ver si cada torneo deja plata.
-- **Caja:** cuadre por evento o por día, medios de pago.
+- **Cuadre de caja** por evento o por día.
 - **Reservas de clientes en preventa:** clientes que apartan producto y abonan.
-- **Singles** (cartas sueltas) y accesorios.
+- **Inventario de singles** carta por carta (por ahora se venden por monto) y accesorios.
 - **Resumen mensual de IVA** (débito − crédito) como apoyo al F29.
