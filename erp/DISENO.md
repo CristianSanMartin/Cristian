@@ -110,8 +110,8 @@ convivían productos con asignaciones, costos y destinos distintos.
 | Precio unidad | Costo neto del proveedor (admite centavos) |
 
 - Se trabaja como un **carrito**: se van agregando productos a medida que se conocen;
-  no hay que crear un contenedor antes. La fecha de lanzamiento se mantiene para el
-  siguiente producto; el proveedor es Asmodee por defecto (editable por fila). La proforma
+  no hay que crear un contenedor antes. Proveedor (lista, Asmodee por defecto) y fecha de
+  lanzamiento se mantienen para el siguiente producto. La proforma
   no se registra: la agrupación útil es por proveedor y fecha de lanzamiento.
 - **El producto se escribe**, tal como viene en la proforma del proveedor o como aparece en
   el catálogo. Si ya existe se usa; si no, se crea solo con edición, idioma, tipo y factor
