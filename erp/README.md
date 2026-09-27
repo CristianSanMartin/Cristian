@@ -4,10 +4,16 @@ ERP de GS Prime TCG sobre **Google Sheets + Apps Script**. La base de datos es u
 planilla de Google (una hoja por tabla) y la aplicación es una app web de Apps
 Script con login de Google, roles por usuario y registro de auditoría.
 
-Módulos disponibles: **Dashboard**, **Preventas** (con abonos y recepción),
-**Inventario** (catálogo, stock valorizado, movimientos y kardex) y
-**Administración** (usuarios, auditoría, importación del ERP anterior).
-Compras y Ventas quedan como próximos módulos.
+El diseño funcional completo (flujo, reglas y decisiones) está en **[DISENO.md](DISENO.md)**.
+
+Se construye por etapas:
+
+| Etapa | Contenido | Estado |
+|---|---|---|
+| 1 | Catálogo de productos y proveedores, preventas por edición con asignación | ✅ |
+| 2 | Compras (pedidos/facturas, despacho prorrateado) e inventario por lote | Pendiente |
+| 3 | Ventas con OC, clientes y cuentas por cobrar | Pendiente |
+| 4 | Finanzas: caja, GAV, aportes, SII, caja de singles, resumen mensual | Pendiente |
 
 ## Estructura
 
@@ -17,19 +23,20 @@ erp/
 │   ├── appsscript.json       manifiesto: zona horaria, V8, app web
 │   ├── server/               backend (JavaScript de Apps Script)
 │   │   ├── 00_Config.js      esquema de tablas, roles, catálogos, AppError
-│   │   ├── Util.js           fechas, códigos correlativos, validación
+│   │   ├── Util.js           fechas, correlativos (hoja Secuencias), validación
 │   │   ├── Db.js             acceso a la planilla (filas ⇄ objetos)
 │   │   ├── Auth.js           usuario actual, permisos y auditoría
-│   │   ├── Productos.js      catálogo
-│   │   ├── Preventas.js      preventas, abonos, recepción, cancelación
-│   │   ├── Inventario.js     kardex y costo promedio ponderado
-│   │   ├── Usuarios.js       usuarios + importación del ERP anterior
+│   │   ├── Economia.js       modelo económico V4 (IVA, pago SII, ganancia) y despacho
+│   │   ├── Proveedores.js    proveedores y regla de despacho
+│   │   ├── Productos.js      catálogo (nombre + edición + idioma)
+│   │   ├── Preventas.js      preventas por edición, líneas y asignación
+│   │   ├── Usuarios.js       usuarios y roles
 │   │   └── Api.js            doGet, api(), instalar(), foto de datos
 │   └── client/               frontend (plantillas HtmlService)
 │       ├── index.html        estructura de la página
 │       ├── styles.html       estilos (identidad negro/dorado)
 │       ├── logo.html         logo embebido
-│       └── js-*.html         núcleo, dashboard, preventas, inventario, admin
+│       └── js-*.html         núcleo, dashboard, preventas, catálogo, admin
 ├── dev/                      herramientas locales (no se suben a Google)
 │   ├── gas-fake.js           simulador de SpreadsheetApp, Session, etc.
 │   ├── sources.mjs           lectura de fuentes y resolución de includes
@@ -46,14 +53,13 @@ erp/
 - **Escrituras seguras.** Toda escritura se hace con `LockService`, así dos personas
   guardando a la vez no se pisan, y devuelve los datos actualizados para refrescar
   la pantalla sin otra llamada.
-- **Nada se guarda dos veces.** El stock sale de sumar los movimientos, y el abonado
-  de sumar los pagos. El estado de pago (pendiente, parcial o pagado) se calcula,
-  así nunca contradice los montos.
-- **Costo promedio ponderado.** Cada entrada recalcula el costo promedio; las salidas
-  y ajustes descuentan al costo vigente. La recepción de una preventa ingresa el
-  stock a su costo unitario.
-- **Validación en el servidor.** Montos enteros en CLP, fechas reales, abonos que no
-  superan el saldo, recepción que no supera lo pedido, salidas que no superan el stock.
+- **Nada se guarda dos veces.** Se guardan los datos de origen (cantidades, costos
+  netos, precios) y los resultados (IVA, totales, ganancia, despacho) se calculan.
+- **Correlativos estables** (`PV-0001`, `PVI-000001`, `GS-0001`, `PRV-001`) desde la
+  hoja `Secuencias`: un número nunca se reutiliza.
+- **Validación en el servidor.** Montos en CLP (costos del proveedor con hasta 2
+  decimales), fechas reales, productos únicos por nombre + edición + idioma, y
+  líneas que ya pasaron a una compra no se pueden modificar.
 - **Auditoría.** Cada cambio queda en la hoja `Auditoria`, con quién lo hizo, cuándo
   y qué cambió.
 
@@ -62,10 +68,11 @@ erp/
 | Hoja | Contenido |
 |---|---|
 | `Usuarios` | correo, nombre, rol (`admin` / `operador` / `lectura`), activo |
-| `Productos` | SKU, nombre, categoría, juego, precio de venta, stock mínimo, activo |
-| `Preventas` | folio `PV-0001`, producto, proveedor, cantidad, costo, fechas, estado (`pedido` → `transito` → `recibida` / `cancelada`) |
-| `Pagos` | abonos a cada preventa: fecha, monto, medio |
-| `Movimientos` | kardex: entradas por preventa, entradas/salidas manuales, ajustes |
+| `Secuencias` | último número usado de cada correlativo |
+| `Proveedores` | nombre, RUT, contacto, costo de despacho y monto para despacho gratis |
+| `Productos` | SKU `GS-0001`, nombre, edición, idioma, tipo, factor (Booster Box = 36), PVP, precio de venta propio |
+| `Preventas` | `PV-0001`: proveedor, edición, fecha de solicitud |
+| `Preventas_Lineas` | `PVI-000001`: producto, lanzamiento, solicitado, asignado, estado, costo neto |
 | `Auditoria` | historial de cambios |
 
 Las columnas se leen por nombre: puedes reordenarlas o agregar columnas propias en
@@ -76,8 +83,8 @@ la planilla sin romper nada. **No cambies los nombres de los encabezados.**
 | Rol | Puede |
 |---|---|
 | Solo lectura | ver todo (menos usuarios y auditoría) |
-| Operador | crear y editar productos y preventas, registrar abonos, recibir, cancelar y registrar movimientos |
-| Administrador | todo lo anterior, más eliminar, revertir movimientos o recepciones, gestionar usuarios, ver la auditoría e importar |
+| Operador | crear y editar productos, proveedores y preventas, registrar asignaciones |
+| Administrador | todo lo anterior, más eliminar preventas y productos, gestionar usuarios y ver la auditoría |
 
 ## Probar en local (sin Google)
 
@@ -151,13 +158,13 @@ Si falta lo primero, Google le pedirá permiso. Si falta lo segundo, verá
 > tiene acceso de edición a la planilla también podría editarla a mano: comparte la
 > planilla solo con personas de confianza. Los roles se aplican en la app.
 
-### 6. Traer los datos del ERP anterior
+### 6. Actualizar a una versión nueva
 
-En **Administración → Importar datos** están los pasos: abre el ERP anterior
-(`gsprime-erp.html`) en el mismo navegador donde lo usabas, ejecuta en la consola
-`copy(localStorage.getItem('gsprime_erp_preventas_v1'))` y pega el resultado.
-Cada producto se crea en el catálogo, los abonos pasan a Pagos y las preventas
-"Recibido" ingresan su stock.
+1. Descarga la versión nueva (conserva tu `erp/.clasp.json`) y ejecuta `clasp push` dentro de `erp`.
+2. En el editor de Apps Script ejecuta **`instalar`** (o en la planilla, menú
+   **GS Prime ERP → Instalar / actualizar hojas**). Crea las hojas nuevas, agrega columnas
+   faltantes y deja las hojas vacías con el encabezado de la versión. Nunca borra datos.
+3. **Implementar → Administrar implementaciones → ✏️ → Nueva versión → Implementar.**
 
 ## Límites conocidos
 
@@ -165,5 +172,3 @@ Cada producto se crea en el catálogo, los abonos pasan a Pagos y las preventas
 - El sistema lee todas las tablas en cada carga. Eso anda bien hasta unos miles de
   filas por hoja; si el volumen crece mucho, conviene archivar años anteriores o
   migrar a una base de datos.
-- La opción "Borrar todos los datos" del ERP anterior se eliminó a propósito: ahora
-  se cancela o elimina registro por registro, y cada cambio queda auditado.

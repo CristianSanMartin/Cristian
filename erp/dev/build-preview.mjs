@@ -50,23 +50,31 @@ const preview = `
     call('guardarUsuario', { email: 'admin@gsprime.cl', nombre: 'Cristian', rol: 'admin' });
     call('guardarUsuario', { email: 'socio@gsprime.cl', nombre: 'Socio', rol: 'operador' });
     call('guardarUsuario', { email: 'contador@gsprime.cl', nombre: 'Contador', rol: 'lectura' });
-    var prod = function (nombre, categoria, precio, min) { return call('guardarProducto', { nombre: nombre, categoria: categoria, juego: 'Pokémon', precioVenta: precio, stockMinimo: min }); };
-    var bb = prod('Booster Box Prismatic Evolutions', 'Booster Box', 68000, 2);
-    var etb = prod('ETB Journey Together', 'Elite Trainer Box', 45000, 3);
-    var bundle = prod('Booster Bundle Destined Rivals', 'Booster Bundle', 29000, 4);
-    var tw = prod('Elite Trainer Box Twilight Masquerade', 'Elite Trainer Box', 47000, 2);
-    var sleeves = call('guardarProducto', { nombre: 'Sleeves Dragon Shield Matte (100)', categoria: 'Accesorio', juego: 'Otro', precioVenta: 12990, stockMinimo: 5 });
-    var pv = function (p, o) {
-      return call('guardarPreventa', Object.assign({ productoId: p.id, precioVenta: p.precioVenta }, o));
+    var asmodee = server.api('bootstrap', {}).data.proveedores[0];
+    var prod = function (nombre, idioma, tipo, pvp, extra) {
+      return call('guardarProducto', Object.assign({ nombre: nombre, edicion: '30th Celebration', idioma: idioma, tipo: tipo, pvp: pvp }, extra || {}));
     };
-    pv(bb, { proveedor: 'Distribuidora Central', cantidad: 6, costoUnit: 52000, abonoInicial: 150000, fechaPedido: dia(-18), fechaLlegada: dia(6), notas: 'Reserva confirmada por WhatsApp con el proveedor.' });
-    pv(etb, { proveedor: 'TCG Imports SPA', cantidad: 10, costoUnit: 34000, abonoInicial: 340000, fechaPedido: dia(-25), fechaLlegada: dia(-2), estado: 'transito' });
-    pv(bundle, { proveedor: 'Distribuidora Central', cantidad: 12, costoUnit: 21000, fechaPedido: dia(-5), fechaLlegada: dia(20), notas: 'Esperando confirmación de stock del proveedor.' });
-    var recibida = pv(tw, { proveedor: 'Cartas Import', cantidad: 8, costoUnit: 36000, abonoInicial: 288000, fechaPedido: dia(-40), fechaLlegada: dia(-10), estado: 'transito' });
-    call('recibirPreventa', { id: recibida.id, cantidadRecibida: 8, fecha: dia(-9) });
-    call('registrarMovimiento', { productoId: tw.id, tipo: 'salida', cantidad: 5, fecha: dia(-4), nota: 'Venta evento liga local' });
-    call('registrarMovimiento', { productoId: sleeves.id, tipo: 'entrada', cantidad: 20, costoUnit: 7500, fecha: dia(-15), nota: 'Compra directa' });
-    call('registrarMovimiento', { productoId: sleeves.id, tipo: 'salida', cantidad: 16, fecha: dia(-3), nota: 'Ventas tienda' });
+    var p = {
+      binderEng: prod('Binder Collection', 'ENG', 'Binder / Colección', 43990),
+      binderEsp: prod('Binder Collection', 'ESP', 'Binder / Colección', 43990),
+      tinEng: prod('Mini Tin', 'ENG', 'Mini Tin', 13990, { precioManual: true, precioVenta: 18000 }),
+      deckEng: prod('Battle Deck', 'ENG', 'Battle Deck', 26990),
+      deckEsp: prod('Battle Deck', 'ESP', 'Battle Deck', 26990),
+      dittoEng: prod('Ditto Premium Collection', 'ENG', 'Premium Collection', 53990),
+      dittoEsp: prod('Ditto Premium Collection', 'ESP', 'Premium Collection', 53990),
+    };
+    call('guardarProducto', { nombre: 'Booster Box', edicion: 'Destined Rivals', idioma: 'ENG', tipo: 'Booster Box', pvp: 189990 });
+    var pv = call('guardarPreventa', { proveedorId: asmodee.id, edicion: '30th Celebration', fecha: dia(-30), notas: 'Preventa de ejemplo con los números reales de la planilla.' });
+    var l = function (prod, fecha, sol, costo) {
+      return call('guardarLineaPreventa', { preventaId: pv.id, productoId: prod.id, lanzamiento: fecha, solicitado: sol, costoNeto: costo });
+    };
+    var f1 = dia(5), f2 = dia(33), f3 = dia(40);
+    var lineas = [
+      [l(p.binderEng, f1, 60, 25887), 24], [l(p.binderEsp, f1, 0, 25887), 6], [l(p.tinEng, f1, 80, 8230), 10],
+      [l(p.deckEng, f2, 12, 15876.5), 12], [l(p.deckEsp, f2, 12, 15876.5), 12],
+      [l(p.dittoEng, f3, 54, 31758.81), null], [l(p.dittoEsp, f3, 12, 31758.81), null],
+    ];
+    call('registrarAsignacion', { preventaId: pv.id, lineas: lineas.filter(function (x) { return x[1] != null; }).map(function (x) { return { id: x[0].id, asignado: x[1] }; }) });
   }
 
   function runner(ok, fail) {

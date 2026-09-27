@@ -1,160 +1,198 @@
 /**
- * Preventas: pedidos comprometidos con proveedores antes de convertirse en stock.
+ * Preventas por edición (DISENO.md, sección 6).
  *
- * Ciclo de vida: pedido -> transito -> recibida (o cancelada).
- * El estado de pago (pendiente / parcial / pagado) se deriva de los abonos
- * registrados en la hoja Pagos, así nunca contradice los montos.
+ * Una preventa (PV-0001) agrupa las líneas (PVI-000001) de una edición con un
+ * proveedor. Cada línea es un producto con su fecha de lanzamiento, lo
+ * solicitado y lo que el proveedor asignó. La asignación se registra una vez
+ * y puede corregirse mientras la línea no pase a una compra.
  */
 const Preventas = {
+  EDITABLES: ['solicitada', 'asignada', 'sin_asignacion'],
+
   guardar(p, user) {
     const id = p.id ? String(p.id) : '';
     const actual = id ? Preventas.requerir(id) : null;
-    if (actual && (actual.estado === 'recibida' || actual.estado === 'cancelada')) {
-      return Preventas._guardarNotas(actual, p, user);
-    }
-
-    const prod = Productos.requerir(p.productoId);
-    if (!prod.activo && (!actual || actual.productoId !== prod.id)) throw new AppError('El producto está archivado.');
+    const prov = Proveedores.requerir(p.proveedorId);
+    if (!prov.activo && (!actual || actual.proveedorId !== prov.id)) throw new AppError('El proveedor está archivado.');
     const datos = {
-      productoId: prod.id,
-      proveedor: Util.texto(p.proveedor, 'El proveedor', { requerido: true, max: 120 }),
-      cantidad: Util.entero(p.cantidad, 'La cantidad', { requerido: true, min: 1 }),
-      costoUnit: Util.entero(p.costoUnit, 'El costo unitario', { requerido: true }),
-      precioVenta: Util.entero(p.precioVenta, 'El precio de venta estimado'),
-      fechaPedido: Util.fecha(p.fechaPedido, 'La fecha de pedido', { defecto: Util.hoy() }),
-      fechaLlegada: Util.fecha(p.fechaLlegada, 'La fecha estimada de llegada', { requerido: true }),
-      estado: Util.opcion(p.estado || 'pedido', 'El estado', ['pedido', 'transito']),
+      proveedorId: prov.id,
+      edicion: Util.texto(p.edicion, 'La edición', { requerido: true, max: 80 }),
+      fecha: Util.fecha(p.fecha, 'La fecha de solicitud', { defecto: Util.hoy() }),
       notas: Util.texto(p.notas, 'Las notas', { max: 1000 }),
     };
-    if (datos.fechaLlegada < datos.fechaPedido) throw new AppError('La llegada estimada no puede ser anterior a la fecha de pedido.');
-    const total = datos.cantidad * datos.costoUnit;
-    const ahora = Util.ahora();
-
     if (actual) {
-      const abonado = Preventas.abonado(actual.id);
-      if (abonado > total) throw new AppError('El nuevo total (' + total + ') es menor a lo ya abonado (' + abonado + ').');
-      const nuevo = Db.update('Preventas', id, Object.assign(datos, { actualizadoEn: ahora, actualizadoPor: user.email }));
+      const nuevo = Db.update('Preventas', id, Object.assign(datos, Util.sello(user)));
       Audit.log(user, 'editar', 'Preventa', id, Audit.diff(actual, nuevo));
       return nuevo;
     }
-
-    const abonoInicial = Util.entero(p.abonoInicial, 'El abono inicial');
-    if (abonoInicial > total) throw new AppError('El abono inicial no puede superar el total de la preventa.');
-    const nuevo = Object.assign({
-      id: Util.uuid(),
-      folio: Util.siguienteCodigo('PV', Db.all('Preventas').map((x) => x.folio)),
-      cantidadRecibida: 0, fechaRecepcion: '',
-      creadoEn: ahora, creadoPor: user.email, actualizadoEn: ahora, actualizadoPor: user.email,
-    }, datos);
+    const nuevo = Object.assign({ id: Util.siguienteId('PV', 4) }, datos, Util.sello(user, true));
     Db.insert('Preventas', nuevo);
-    Audit.log(user, 'crear', 'Preventa', nuevo.id, { folio: nuevo.folio, producto: prod.nombre, cantidad: nuevo.cantidad, total: total });
-    if (abonoInicial > 0) {
-      Preventas._insertarPago(nuevo, { fecha: datos.fechaPedido, monto: abonoInicial, medio: p.medioPago || 'Transferencia', nota: 'Abono inicial' }, user);
-    }
+    Audit.log(user, 'crear', 'Preventa', nuevo.id, { proveedor: prov.nombre, edicion: nuevo.edicion });
     return nuevo;
-  },
-
-  /** En preventas cerradas solo se permite corregir las notas. */
-  _guardarNotas(actual, p, user) {
-    const notas = Util.texto(p.notas, 'Las notas', { max: 1000 });
-    const nuevo = Db.update('Preventas', actual.id, { notas: notas, actualizadoEn: Util.ahora(), actualizadoPor: user.email });
-    Audit.log(user, 'editar', 'Preventa', actual.id, Audit.diff(actual, nuevo));
-    return nuevo;
-  },
-
-  registrarPago(p, user) {
-    const pv = Preventas.requerir(p.preventaId);
-    if (pv.estado === 'cancelada') throw new AppError('La preventa está cancelada.');
-    const monto = Util.entero(p.monto, 'El monto', { requerido: true, min: 1 });
-    const saldo = pv.cantidad * pv.costoUnit - Preventas.abonado(pv.id);
-    if (monto > saldo) throw new AppError('El monto supera el saldo pendiente (' + saldo + ').');
-    return Preventas._insertarPago(pv, {
-      fecha: Util.fecha(p.fecha, 'La fecha', { defecto: Util.hoy() }),
-      monto: monto,
-      medio: Util.opcion(p.medio || 'Transferencia', 'El medio de pago', MEDIOS_PAGO),
-      nota: Util.texto(p.nota, 'La nota', { max: 300 }),
-    }, user);
-  },
-
-  _insertarPago(pv, datos, user) {
-    const pago = Object.assign({ id: Util.uuid(), preventaId: pv.id, creadoEn: Util.ahora(), creadoPor: user.email }, datos);
-    Db.insert('Pagos', pago);
-    Audit.log(user, 'pago', 'Preventa', pv.id, { folio: pv.folio, monto: pago.monto, medio: pago.medio, fecha: pago.fecha });
-    return pago;
-  },
-
-  eliminarPago(p, user) {
-    const pago = Db.get('Pagos', String(p.id || ''));
-    if (!pago) throw new AppError('El pago no existe.', 'NO_ENCONTRADO');
-    Db.remove('Pagos', pago.id);
-    Audit.log(user, 'eliminar pago', 'Preventa', pago.preventaId, pago);
-  },
-
-  /** Recepción: la mercadería entra al inventario al costo de la preventa. */
-  recibir(p, user) {
-    const pv = Preventas.requerir(p.id);
-    if (pv.estado === 'recibida') throw new AppError('La preventa ya fue recibida.');
-    if (pv.estado === 'cancelada') throw new AppError('La preventa está cancelada.');
-    const prod = Productos.requerir(pv.productoId);
-    const cantidad = Util.entero(p.cantidadRecibida, 'La cantidad recibida', { requerido: true, min: 1, max: pv.cantidad });
-    const fecha = Util.fecha(p.fecha, 'La fecha de recepción', { defecto: Util.hoy() });
-    const nota = Util.texto(p.nota, 'La nota', { max: 500 });
-
-    Inventario.entradaPorPreventa(pv, cantidad, fecha, user);
-    const notas = nota ? (pv.notas ? pv.notas + '\n' : '') + 'Recepción: ' + nota : pv.notas;
-    Db.update('Preventas', pv.id, {
-      estado: 'recibida', cantidadRecibida: cantidad, fechaRecepcion: fecha, notas: notas,
-      actualizadoEn: Util.ahora(), actualizadoPor: user.email,
-    });
-    Audit.log(user, 'recibir', 'Preventa', pv.id, { folio: pv.folio, producto: prod.nombre, cantidad: cantidad, pedida: pv.cantidad });
-  },
-
-  /** Deshace una recepción errónea: quita la entrada del inventario y vuelve la preventa a "En tránsito". */
-  anularRecepcion(p, user) {
-    const pv = Preventas.requerir(p.id);
-    if (pv.estado !== 'recibida') throw new AppError('La preventa no está recibida.');
-    const movs = Db.all('Movimientos').filter((m) => m.tipo === 'entrada_preventa' && m.refId === pv.id);
-    movs.forEach((m) => Inventario._validarReversion(m));
-    movs.forEach((m) => Db.remove('Movimientos', m.id));
-    Db.update('Preventas', pv.id, {
-      estado: 'transito', cantidadRecibida: 0, fechaRecepcion: '', actualizadoEn: Util.ahora(), actualizadoPor: user.email,
-    });
-    Audit.log(user, 'anular recepción', 'Preventa', pv.id, { folio: pv.folio, cantidad: pv.cantidadRecibida });
-  },
-
-  cancelar(p, user) {
-    const pv = Preventas.requerir(p.id);
-    if (pv.estado === 'recibida') throw new AppError('No se puede cancelar una preventa recibida; anula la recepción primero.');
-    if (pv.estado === 'cancelada') throw new AppError('La preventa ya está cancelada.');
-    const motivo = Util.texto(p.motivo, 'El motivo', { requerido: true, max: 300 });
-    Db.update('Preventas', pv.id, {
-      estado: 'cancelada', notas: (pv.notas ? pv.notas + '\n' : '') + 'Cancelada: ' + motivo,
-      actualizadoEn: Util.ahora(), actualizadoPor: user.email,
-    });
-    Audit.log(user, 'cancelar', 'Preventa', pv.id, { folio: pv.folio, motivo: motivo, abonado: Preventas.abonado(pv.id) });
   },
 
   eliminar(p, user) {
     const pv = Preventas.requerir(p.id);
-    if (pv.estado === 'recibida') throw new AppError('No se puede eliminar una preventa recibida.');
-    if (Preventas.abonado(pv.id) > 0) throw new AppError('La preventa tiene abonos registrados; cancélala en lugar de eliminarla.');
+    const lineas = Preventas.lineasDe(pv.id);
+    if (lineas.some((l) => Preventas.EDITABLES.indexOf(l.estado) === -1)) {
+      throw new AppError('La preventa tiene productos que ya pasaron a una compra; no se puede eliminar.');
+    }
+    lineas.forEach((l) => Db.remove('Preventas_Lineas', l.id));
     Db.remove('Preventas', pv.id);
-    Audit.log(user, 'eliminar', 'Preventa', pv.id, pv);
+    Audit.log(user, 'eliminar', 'Preventa', pv.id, { edicion: pv.edicion, lineas: lineas.length });
   },
 
-  abonado(preventaId) {
-    return Db.all('Pagos').filter((x) => x.preventaId === preventaId).reduce((s, x) => s + x.monto, 0);
+  guardarLinea(p, user) {
+    const id = p.id ? String(p.id) : '';
+    const actual = id ? Preventas.requerirLinea(id) : null;
+    const pv = Preventas.requerir(actual ? actual.preventaId : p.preventaId);
+    if (actual) Preventas._validarEditable(actual);
+
+    const prod = Productos.requerir(p.productoId);
+    if (!prod.activo && (!actual || actual.productoId !== prod.id)) throw new AppError('El producto está archivado.');
+    if (Preventas.lineasDe(pv.id).some((l) => l.id !== id && l.productoId === prod.id)) {
+      throw new AppError('"' + Productos.nombreCompleto(prod) + '" ya está en esta preventa.');
+    }
+    const datos = {
+      productoId: prod.id,
+      lanzamiento: Util.fecha(p.lanzamiento, 'La fecha de lanzamiento', { requerido: true }),
+      solicitado: Util.entero(p.solicitado, 'La cantidad solicitada', { requerido: true }),
+      costoNeto: Util.monto(p.costoNeto, 'El costo neto unitario', { requerido: true }),
+      notas: Util.texto(p.notas, 'Las notas', { max: 500 }),
+    };
+    if (actual) {
+      const nuevo = Db.update('Preventas_Lineas', id, Object.assign(datos, Util.sello(user)));
+      Audit.log(user, 'editar línea', 'Preventa', pv.id, Object.assign({ linea: id }, Audit.diff(actual, nuevo)));
+      return nuevo;
+    }
+    const nuevo = Object.assign({ id: Util.siguienteId('PVI', 6), preventaId: pv.id, asignado: 0, estado: 'solicitada' }, datos, Util.sello(user, true));
+    Db.insert('Preventas_Lineas', nuevo);
+    Audit.log(user, 'agregar línea', 'Preventa', pv.id, { linea: nuevo.id, producto: Productos.nombreCompleto(prod), solicitado: nuevo.solicitado });
+    return nuevo;
   },
 
-  estadoPago(total, abonado) {
-    if (total <= 0) return 'pagado';
-    if (abonado <= 0) return 'pendiente';
-    return abonado >= total ? 'pagado' : 'parcial';
+  eliminarLinea(p, user) {
+    const linea = Preventas.requerirLinea(p.id);
+    Preventas._validarEditable(linea);
+    Db.remove('Preventas_Lineas', linea.id);
+    Audit.log(user, 'eliminar línea', 'Preventa', linea.preventaId, linea);
+  },
+
+  /** Registra (o corrige) lo que asignó el proveedor, para varias líneas a la vez. */
+  registrarAsignacion(p, user) {
+    const pv = Preventas.requerir(p.preventaId);
+    const entrada = Array.isArray(p.lineas) ? p.lineas : [];
+    if (!entrada.length) throw new AppError('No hay cantidades para registrar.');
+    const propias = {};
+    Preventas.lineasDe(pv.id).forEach((l) => { propias[l.id] = l; });
+
+    // Validar todo antes de escribir: o se registra la asignación completa o nada.
+    const cambios = entrada.map((x) => {
+      const linea = propias[String(x.id || '')];
+      if (!linea) throw new AppError('Una de las líneas no pertenece a esta preventa.');
+      Preventas._validarEditable(linea);
+      const asignado = Util.entero(x.asignado, 'La cantidad asignada', { requerido: true });
+      return { linea: linea, asignado: asignado };
+    });
+    cambios.forEach((c) => {
+      Db.update('Preventas_Lineas', c.linea.id, Object.assign({
+        asignado: c.asignado,
+        estado: c.asignado > 0 ? 'asignada' : 'sin_asignacion',
+      }, Util.sello(user)));
+    });
+    Audit.log(user, 'asignación', 'Preventa', pv.id, cambios.map((c) => ({ linea: c.linea.id, solicitado: c.linea.solicitado, asignado: c.asignado })));
+  },
+
+  _validarEditable(linea) {
+    if (Preventas.EDITABLES.indexOf(linea.estado) === -1) {
+      throw new AppError('La línea ' + linea.id + ' ya pasó a una compra y no se puede modificar.');
+    }
+  },
+
+  lineasDe(preventaId) {
+    return Db.all('Preventas_Lineas').filter((l) => l.preventaId === preventaId);
   },
 
   requerir(id) {
     const pv = Db.get('Preventas', String(id || ''));
     if (!pv) throw new AppError('La preventa no existe.', 'NO_ENCONTRADO');
     return pv;
+  },
+
+  requerirLinea(id) {
+    const l = Db.get('Preventas_Lineas', String(id || ''));
+    if (!l) throw new AppError('La línea de preventa no existe.', 'NO_ENCONTRADO');
+    return l;
+  },
+
+  /**
+   * Arma las preventas con sus líneas y todos los valores calculados que muestra
+   * la pantalla (equivalentes a la planilla actual de preventas).
+   */
+  vista(productos, proveedores) {
+    const prodPorId = {};
+    productos.forEach((x) => { prodPorId[x.id] = x; });
+    const provPorId = {};
+    proveedores.forEach((x) => { provPorId[x.id] = x; });
+
+    const lineasPor = {};
+    Db.all('Preventas_Lineas').forEach((l) => {
+      const prod = prodPorId[l.productoId] || { nombre: '(producto eliminado)', edicion: '', idioma: '', tipo: '', pvp: 0 };
+      const precio = Productos.precio(prod);
+      const asignada = l.estado !== 'solicitada';
+      const cantidad = asignada ? l.asignado : l.solicitado;
+      const e = Economia.unidad(l.costoNeto, precio);
+      const linea = Object.assign(l, {
+        producto: Productos.nombreCompleto(prod),
+        productoNombre: prod.nombre,
+        idioma: prod.idioma,
+        tipo: prod.tipo,
+        imagen: prod.imagen || '',
+        pvp: prod.pvp,
+        precioVenta: precio,
+        precioManual: !!prod.precioManual,
+        costoIva: Economia.conIva(l.costoNeto),
+        diferencia: asignada ? l.solicitado - l.asignado : null,
+        netoSolicitado: l.solicitado * l.costoNeto,
+        netoAsignado: asignada ? l.asignado * l.costoNeto : null,
+        cantidadVigente: cantidad,
+        netoVigente: cantidad * l.costoNeto,
+        gananciaUnidad: e.ganancia,
+        gananciaTotal: e.ganancia * cantidad,
+        recargo: e.recargo,
+        margen: e.margen,
+      });
+      (lineasPor[l.preventaId] = lineasPor[l.preventaId] || []).push(linea);
+    });
+
+    return Db.all('Preventas').map((pv) => {
+      const lineas = (lineasPor[pv.id] || []).sort((a, b) =>
+        a.lanzamiento < b.lanzamiento ? -1 : a.lanzamiento > b.lanzamiento ? 1 : a.producto.localeCompare(b.producto));
+      const prov = provPorId[pv.proveedorId];
+      const sum = (k) => lineas.reduce((s, l) => s + (l[k] || 0), 0);
+
+      // Un pedido por fecha de lanzamiento: sirve para anticipar el despacho.
+      const porFecha = {};
+      lineas.forEach((l) => { (porFecha[l.lanzamiento] = porFecha[l.lanzamiento] || []).push(l); });
+      const lanzamientos = Object.keys(porFecha).sort().map((fecha) => {
+        const neto = porFecha[fecha].reduce((s, l) => s + l.netoVigente, 0);
+        const d = Economia.despacho(prov, neto);
+        return { fecha: fecha, productos: porFecha[fecha].length, neto: neto, despacho: d.monto, faltaParaGratis: d.faltaParaGratis };
+      });
+
+      const pendientes = lineas.filter((l) => l.estado === 'solicitada').length;
+      return Object.assign(pv, {
+        proveedor: prov ? prov.nombre : '(proveedor eliminado)',
+        estado: !lineas.length ? 'borrador' : pendientes ? 'solicitada' : 'asignada',
+        lineasPendientes: pendientes,
+        lineas: lineas,
+        lanzamientos: lanzamientos,
+        unidadesSolicitadas: sum('solicitado'),
+        unidadesAsignadas: lineas.reduce((s, l) => s + (l.estado === 'solicitada' ? 0 : l.asignado), 0),
+        netoSolicitado: sum('netoSolicitado'),
+        netoVigente: sum('netoVigente'),
+        gananciaProyectada: sum('gananciaTotal'),
+      });
+    });
   },
 };

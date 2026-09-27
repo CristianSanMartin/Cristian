@@ -1,321 +1,339 @@
 <script>
 /* =========================================================
-   Preventas: pedidos a proveedores, abonos y recepción.
+   Preventas por edición: listado, detalle con líneas por
+   fecha de lanzamiento, y registro de la asignación.
 ========================================================= */
 (function () {
   'use strict';
   const { fmt, esc } = GS;
   const data = () => GS.state.data;
   const findPv = (id) => data().preventas.find((p) => p.id === id);
-  const activa = (p) => p.estado === 'pedido' || p.estado === 'transito';
+  const iva = (n) => n * (1 + data().app.iva);
+  const EDITABLES = ['solicitada', 'asignada', 'sin_asignacion'];
+  const editable = (l) => EDITABLES.indexOf(l.estado) !== -1;
 
   /* ---------- listado ---------- */
 
+  const DEF = { q: '', proveedor: '', estado: '' };
+
   function filtradas() {
-    const f = GS.filters('preventas', { q: '', estado: 'activas', pago: '', proveedor: '' });
+    const f = GS.filters('preventas', DEF);
     const q = GS.norm(f.q.trim());
     return data().preventas
       .filter((p) => {
-        if (f.estado === 'activas' ? !activa(p) : f.estado && p.estado !== f.estado) return false;
-        if (f.pago && p.estadoPago !== f.pago) return false;
-        if (f.proveedor && p.proveedor !== f.proveedor) return false;
-        return !q || GS.norm(p.producto + ' ' + p.proveedor + ' ' + p.folio + ' ' + p.sku).includes(q);
+        if (f.proveedor && p.proveedorId !== f.proveedor) return false;
+        if (f.estado && p.estado !== f.estado) return false;
+        return !q || GS.norm(p.id + ' ' + p.edicion + ' ' + p.proveedor + ' ' + p.lineas.map((l) => l.producto).join(' ')).includes(q);
       })
-      .sort((a, b) => (activa(b) - activa(a)) || (a.fechaLlegada < b.fechaLlegada ? -1 : a.fechaLlegada > b.fechaLlegada ? 1 : 0));
-  }
-
-  function fila(p) {
-    const puedeOperar = GS.puede('operador');
-    return '<tr class="' + (p.estado === 'cancelada' ? 'row-muted' : '') + '">' +
-      '<td class="nowrap"><a class="link" data-action="verPreventa" data-id="' + esc(p.id) + '">' + esc(p.folio) + '</a></td>' +
-      '<td class="cell-strong">' + esc(p.producto) + '<div class="cell-dim">' + esc(p.sku) + '</div></td>' +
-      '<td>' + esc(p.proveedor) + '</td>' +
-      '<td class="cell-num right">' + (p.estado === 'recibida' && p.cantidadRecibida !== p.cantidad ? p.cantidadRecibida + '/' + p.cantidad : p.cantidad) + '</td>' +
-      '<td class="cell-num right">' + fmt.money(p.costoUnit) + '</td>' +
-      '<td class="cell-num right cell-strong">' + fmt.money(p.total) + '</td>' +
-      '<td class="cell-num right">' + fmt.money(p.abonado) + '</td>' +
-      '<td class="cell-num right" style="color:' + (p.saldo > 0 ? 'var(--gold)' : 'var(--success)') + '">' + fmt.money(p.saldo) + '</td>' +
-      '<td class="nowrap">' + fmt.date(p.fechaLlegada) + (activa(p) ? '<div>' + GS.relDays(p.fechaLlegada) + '</div>' : '') + '</td>' +
-      '<td>' + GS.badge(GS.PAGOS, p.estadoPago) + '</td>' +
-      '<td>' + GS.badge(GS.ESTADOS, p.estado) + '</td>' +
-      '<td><div class="row-actions">' +
-      (puedeOperar && p.estado !== 'cancelada' && p.saldo > 0 ? GS.iconBtn('verPreventa', p.id, 'money', 'Registrar abono', 'gold') : '') +
-      (puedeOperar && activa(p) ? GS.iconBtn('recibirPreventa', p.id, 'check', 'Recibir mercadería', 'success') : '') +
-      (puedeOperar ? GS.iconBtn('editarPreventa', p.id, 'edit', 'Editar') : GS.iconBtn('verPreventa', p.id, 'eye', 'Ver detalle')) +
-      '</div></td></tr>';
+      .sort((a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : 0));
   }
 
   GS.views.preventas = {
     title: 'Preventas',
     render(el, d) {
-      const f = GS.filters('preventas', { q: '', estado: 'activas', pago: '', proveedor: '' });
+      const f = GS.filters('preventas', DEF);
       el.innerHTML =
-        '<div class="page-head"><div><h1>Preventas</h1><p>Pedidos comprometidos con proveedores, antes de convertirse en stock.</p></div>' +
-        '<div class="btn-row">' +
-        '<button class="btn ghost" data-action="exportarPreventas">' + GS.icon('download') + 'Exportar</button>' +
-        (GS.puede('operador') ? '<button class="btn" data-action="nuevaPreventa">' + GS.icon('plus', 2.4) + 'Nueva preventa</button>' : '') +
-        '</div></div>' +
+        '<div class="page-head"><div><h1>Preventas</h1><p>Solicitudes por edición al proveedor y lo que finalmente asignó.</p></div>' +
+        (GS.puede('operador') ? '<button class="btn" data-action="nuevaPreventa">' + GS.icon('plus', 2.4) + 'Nueva preventa</button>' : '') + '</div>' +
         '<div class="filters-bar">' +
-        '<div class="search-box">' + GS.icon('search') + '<input type="text" data-filter="preventas.q" value="' + esc(f.q) + '" placeholder="Buscar por producto, proveedor o folio..."></div>' +
-        '<div class="select-input"><select data-filter="preventas.estado">' +
-        GS.options([{ value: 'activas', label: 'Activas (pedido y tránsito)' }, { value: '', label: 'Todos los estados' }]
-          .concat(Object.keys(GS.ESTADOS).map((k) => ({ value: k, label: GS.ESTADOS[k].label }))), f.estado) + '</select></div>' +
-        '<div class="select-input"><select data-filter="preventas.pago">' +
-        GS.options([{ value: '', label: 'Cualquier pago' }].concat(Object.keys(GS.PAGOS).map((k) => ({ value: k, label: GS.PAGOS[k].label }))), f.pago) + '</select></div>' +
-        '<div class="select-input"><select data-filter="preventas.proveedor">' +
-        GS.options([{ value: '', label: 'Todos los proveedores' }].concat(d.proveedores), f.proveedor) + '</select></div>' +
-        '<span class="count" id="pv-count"></span>' +
-        '</div>' +
+        '<div class="search-box">' + GS.icon('search') + '<input type="text" data-filter="preventas.q" value="' + esc(f.q) + '" placeholder="Buscar por edición, producto o folio..."></div>' +
+        '<div class="select-input"><select data-filter="preventas.proveedor">' + GS.options([{ value: '', label: 'Todos los proveedores' }].concat(d.proveedores.map((p) => ({ value: p.id, label: p.nombre }))), f.proveedor) + '</select></div>' +
+        '<div class="select-input"><select data-filter="preventas.estado">' + GS.options([{ value: '', label: 'Todos los estados' }].concat(Object.keys(GS.ESTADOS_PV).map((k) => ({ value: k, label: GS.ESTADOS_PV[k].label }))), f.estado) + '</select></div>' +
+        '<span class="count" id="pv-count"></span></div>' +
         '<div class="table-wrap"><table class="data-table wide"><thead><tr>' +
-        '<th>Folio</th><th class="col-prod">Producto</th><th>Proveedor</th><th class="right">Cant.</th><th class="right">Costo unit.</th><th class="right">Total</th>' +
-        '<th class="right">Abonado</th><th class="right">Saldo</th><th>Llegada est.</th><th>Pago</th><th>Estado</th><th class="right">Acciones</th>' +
-        '</tr></thead><tbody id="pv-tbody"></tbody><tfoot id="pv-tfoot"></tfoot></table></div>';
+        '<th>Folio</th><th class="col-prod">Edición</th><th>Proveedor</th><th>Solicitud</th><th>Lanzamientos</th><th class="right">Productos</th>' +
+        '<th class="right">Solicitado</th><th class="right">Asignado</th><th class="right">Total neto</th><th class="right">Total + IVA</th><th class="right">Ganancia proyectada</th><th>Estado</th>' +
+        '</tr></thead><tbody id="pv-tbody"></tbody></table></div>' +
+        '<p class="table-note">Totales según lo asignado (o lo solicitado, en líneas aún sin asignar). Ganancia real neta, sin despacho.</p>';
       this.update();
     },
     update() {
       const rows = filtradas();
       document.getElementById('pv-count').textContent = rows.length + ' de ' + data().preventas.length;
       document.getElementById('pv-tbody').innerHTML = rows.length
-        ? rows.map(fila).join('')
-        : '<tr><td colspan="12">' + GS.empty('No hay preventas para mostrar', 'Crea una nueva preventa o ajusta los filtros.', 'preventas') + '</td></tr>';
-      const sum = (k) => rows.reduce((s, p) => s + p[k], 0);
-      document.getElementById('pv-tfoot').innerHTML = rows.length > 1
-        ? '<tr><td colspan="5">Totales (' + rows.length + ')</td><td class="cell-num right">' + fmt.money(sum('total')) + '</td>' +
-          '<td class="cell-num right">' + fmt.money(sum('abonado')) + '</td><td class="cell-num right text-gold">' + fmt.money(sum('saldo')) + '</td><td colspan="4"></td></tr>'
-        : '';
+        ? rows.map((p) => '<tr>' +
+          '<td class="nowrap"><a class="link" data-nav="preventa" data-param="' + esc(p.id) + '">' + esc(p.id) + '</a></td>' +
+          '<td class="cell-strong"><a class="link" data-nav="preventa" data-param="' + esc(p.id) + '">' + esc(p.edicion) + '</a></td>' +
+          '<td>' + esc(p.proveedor) + '</td><td class="nowrap">' + fmt.date(p.fecha) + '</td>' +
+          '<td>' + (p.lanzamientos.map((x) => '<span class="pill">' + fmt.date(x.fecha).slice(0, 5) + '</span>').join(' ') || '—') + '</td>' +
+          '<td class="cell-num right">' + p.lineas.length + '</td>' +
+          '<td class="cell-num right">' + fmt.num(p.unidadesSolicitadas) + '</td>' +
+          '<td class="cell-num right">' + (p.estado === 'asignada' || p.unidadesAsignadas ? fmt.num(p.unidadesAsignadas) : '—') + '</td>' +
+          '<td class="cell-num right">' + fmt.money(p.netoVigente) + '</td>' +
+          '<td class="cell-num right cell-strong">' + fmt.money(iva(p.netoVigente)) + '</td>' +
+          '<td class="cell-num right text-success">' + fmt.money(p.gananciaProyectada) + '</td>' +
+          '<td>' + GS.badge(GS.ESTADOS_PV, p.estado) + '</td></tr>').join('')
+        : '<tr><td colspan="12">' + GS.empty('No hay preventas', 'Crea una preventa cuando el proveedor anuncie una nueva edición.', 'preventas') + '</td></tr>';
     },
   };
 
-  GS.actions.exportarPreventas = () => {
-    GS.downloadCsv('preventas-' + data().hoy + '.csv',
-      ['Folio', 'SKU', 'Producto', 'Proveedor', 'Cantidad', 'Recibida', 'Costo unit.', 'Total', 'Abonado', 'Saldo', 'Precio venta est.', 'Fecha pedido', 'Llegada est.', 'Recepción', 'Pago', 'Estado', 'Notas'],
-      filtradas().map((p) => [p.folio, p.sku, p.producto, p.proveedor, p.cantidad, p.cantidadRecibida, p.costoUnit, p.total, p.abonado, p.saldo, p.precioVenta,
-        p.fechaPedido, p.fechaLlegada, p.fechaRecepcion, GS.PAGOS[p.estadoPago].label, GS.ESTADOS[p.estado].label, p.notas]));
+  /* ---------- detalle ---------- */
+
+  function despachoAviso(x, prov) {
+    if (!prov || !prov.despachoMonto) return '';
+    if (!x.despacho) return '<span class="text-success">✓ Despacho gratis</span>';
+    return '<span class="text-gold">Despacho ' + fmt.money(x.despacho) + '</span>' +
+      (x.faltaParaGratis > 0 ? ' · faltan <strong>' + fmt.money(x.faltaParaGratis) + '</strong> para despacho gratis' : '');
+  }
+
+  function filaLinea(l, operador) {
+    const asignada = l.estado !== 'solicitada';
+    const vigente = (v) => (asignada ? v : '<span class="muted">—</span>');
+    return '<tr class="' + (l.estado === 'sin_asignacion' ? 'row-muted' : '') + '">' +
+      '<td>' + GS.thumb(l.imagen) + '</td>' +
+      '<td class="cell-strong">' + esc(l.productoNombre) + ' <span class="pill lang">' + esc(l.idioma) + '</span><div class="cell-dim">' + esc(l.id) + ' · ' + esc(l.tipo) + '</div></td>' +
+      '<td>' + GS.badge(GS.ESTADOS_LINEA, l.estado) + '</td>' +
+      '<td class="cell-num right">' + fmt.num(l.solicitado) + '</td>' +
+      '<td class="cell-num right cell-strong">' + vigente(fmt.num(l.asignado)) + '</td>' +
+      '<td class="cell-num right ' + (l.diferencia < 0 ? 'text-gold' : '') + '">' + vigente(fmt.num(l.diferencia)) + '</td>' +
+      '<td class="cell-num right">' + fmt.cost(l.costoNeto) + '</td>' +
+      '<td class="cell-num right">' + fmt.money(l.costoIva) + '</td>' +
+      '<td class="cell-num right">' + fmt.money(l.netoSolicitado) + '</td>' +
+      '<td class="cell-num right">' + fmt.money(iva(l.netoSolicitado)) + '</td>' +
+      '<td class="cell-num right cell-strong">' + vigente(fmt.money(l.netoAsignado)) + '</td>' +
+      '<td class="cell-num right cell-strong">' + vigente(fmt.money(iva(l.netoAsignado))) + '</td>' +
+      '<td class="cell-num right">' + (l.pvp ? fmt.money(l.pvp) : '—') + '</td>' +
+      '<td class="cell-num right">' + (l.precioVenta ? fmt.money(l.precioVenta) : '—') + (l.precioManual ? '<div><span class="pill soon">manual</span></div>' : '') + '</td>' +
+      '<td class="cell-num right">' + (l.precioVenta ? fmt.pct(l.recargo) : '—') + '</td>' +
+      '<td class="cell-num right ' + (l.gananciaUnidad < 0 ? 'text-danger' : 'text-success') + '">' + (l.precioVenta ? fmt.money(l.gananciaUnidad) : '—') + '</td>' +
+      '<td class="cell-num right ' + (l.gananciaTotal < 0 ? 'text-danger' : 'text-success') + '">' + (l.precioVenta ? fmt.money(l.gananciaTotal) : '—') + '</td>' +
+      '<td><div class="row-actions">' + (operador && editable(l)
+        ? GS.iconBtn('editarLinea', l.id, 'edit', 'Editar') + GS.iconBtn('eliminarLinea', l.id, 'trash', 'Quitar de la preventa', 'danger') : '') + '</div></td></tr>';
+  }
+
+  GS.views.preventa = {
+    title: 'Preventa',
+    parent: 'preventas',
+    render(el, d, id) {
+      const p = findPv(id);
+      if (!p) { GS.go('preventas'); return; }
+      this.title = p.id;
+      document.getElementById('topbar-title').textContent = 'Preventa ' + p.id;
+      const operador = GS.puede('operador');
+      const prov = d.proveedores.find((x) => x.id === p.proveedorId);
+      const puedeAsignar = operador && p.lineas.some(editable);
+      const kpi = (label, value, sub) => '<div class="kpi-card"><div class="kpi-label">' + label + '</div><div class="kpi-value">' + value + '</div><div class="kpi-sub">' + sub + '</div></div>';
+
+      el.innerHTML =
+        '<a class="link back-link" data-nav="preventas">' + GS.icon('back') + 'Preventas</a>' +
+        '<div class="page-head"><div><h1>' + esc(p.edicion) + '</h1>' +
+        '<p>' + esc(p.id) + ' · ' + esc(p.proveedor) + ' · solicitada el ' + fmt.date(p.fecha) + ' &nbsp;' + GS.badge(GS.ESTADOS_PV, p.estado) + '</p></div>' +
+        '<div class="btn-row">' +
+        '<button class="btn ghost" data-action="exportarPreventa" data-id="' + esc(p.id) + '">' + GS.icon('download') + 'Exportar</button>' +
+        (operador ? '<button class="btn ghost" data-action="editarPreventa" data-id="' + esc(p.id) + '">' + GS.icon('edit') + 'Editar datos</button>' : '') +
+        (operador ? '<button class="btn secondary" data-action="nuevaLinea" data-id="' + esc(p.id) + '">' + GS.icon('plus', 2.4) + 'Agregar producto</button>' : '') +
+        (puedeAsignar ? '<button class="btn" data-action="asignar" data-id="' + esc(p.id) + '">' + GS.icon('check') + 'Registrar asignación</button>' : '') +
+        '</div></div>' +
+        '<div class="kpi-grid">' +
+        kpi('Unidades', fmt.num(p.unidadesAsignadas) + ' <span class="muted" style="font-size:15px;">/ ' + fmt.num(p.unidadesSolicitadas) + '</span>', 'Asignadas / solicitadas' + (p.lineasPendientes ? ' · <span class="text-gold">' + p.lineasPendientes + ' sin asignar</span>' : '')) +
+        kpi('Total neto', fmt.money(p.netoVigente), 'Solicitado: ' + fmt.money(p.netoSolicitado)) +
+        kpi('Total + IVA', fmt.money(iva(p.netoVigente)), 'A pagar al proveedor (sin despacho)') +
+        kpi('Ganancia proyectada', '<span class="text-success">' + fmt.money(p.gananciaProyectada) + '</span>', 'Real neta, vendiendo todo al precio de venta') +
+        '</div>' +
+        (p.notas ? '<div class="notes-box" style="margin-bottom:16px;">' + esc(p.notas) + '</div>' : '') +
+        (p.lanzamientos.length
+          ? p.lanzamientos.map((x) => {
+            const lineas = p.lineas.filter((l) => l.lanzamiento === x.fecha);
+            const sum = (k) => lineas.reduce((s, l) => s + (l[k] || 0), 0);
+            return '<div class="panel launch-panel">' +
+              '<div class="panel-head"><h3>Lanzamiento ' + fmt.date(x.fecha) + ' ' + GS.relDays(x.fecha) + '</h3>' +
+              '<span class="launch-info">Pedido ' + fmt.money(x.neto) + ' neto · ' + despachoAviso(x, prov) + '</span></div>' +
+              '<div class="table-wrap flat"><table class="data-table xwide"><thead><tr>' +
+              '<th></th><th class="col-prod">Producto</th><th>Estado</th><th class="right">Solic.</th><th class="right">Asig.</th><th class="right">Dif.</th>' +
+              '<th class="right">Costo neto</th><th class="right">Costo + IVA</th><th class="right">Total neto solic.</th><th class="right">Total + IVA solic.</th>' +
+              '<th class="right">Total neto asig.</th><th class="right">Total + IVA asig.</th><th class="right">PVP</th><th class="right">Precio venta</th>' +
+              '<th class="right">Recargo</th><th class="right">Ganancia u.</th><th class="right">Ganancia total</th><th></th>' +
+              '</tr></thead><tbody>' + lineas.map((l) => filaLinea(l, operador)).join('') + '</tbody>' +
+              '<tfoot><tr><td></td><td colspan="2">Total ' + fmt.date(x.fecha) + '</td><td class="cell-num right">' + fmt.num(sum('solicitado')) + '</td>' +
+              '<td class="cell-num right">' + fmt.num(lineas.reduce((s, l) => s + (l.estado === 'solicitada' ? 0 : l.asignado), 0)) + '</td><td colspan="3"></td>' +
+              '<td class="cell-num right">' + fmt.money(sum('netoSolicitado')) + '</td><td class="cell-num right">' + fmt.money(iva(sum('netoSolicitado'))) + '</td>' +
+              '<td class="cell-num right">' + fmt.money(sum('netoAsignado')) + '</td><td class="cell-num right">' + fmt.money(iva(sum('netoAsignado'))) + '</td>' +
+              '<td colspan="4"></td><td class="cell-num right text-success">' + fmt.money(sum('gananciaTotal')) + '</td><td></td></tr></tfoot>' +
+              '</table></div></div>';
+          }).join('')
+          : '<div class="panel">' + GS.empty('Sin productos todavía', 'Agrega los productos que vas a solicitar, cada uno con su fecha de lanzamiento.', 'preventas') + '</div>') +
+        (GS.puede('admin') ? '<div class="danger-zone"><button class="btn danger-outline" data-action="eliminarPreventa" data-id="' + esc(p.id) + '">Eliminar preventa</button></div>' : '');
+    },
   };
 
-  /* ---------- crear / editar ---------- */
+  GS.actions.exportarPreventa = (id) => {
+    const p = findPv(id);
+    GS.downloadCsv(p.id + '-' + p.edicion.replace(/\W+/g, '-') + '.csv',
+      ['Línea', 'SKU', 'Producto', 'Idioma', 'Lanzamiento', 'Estado', 'Solicitado', 'Asignado', 'Dif', 'Costo neto', 'Costo + IVA', 'Total neto solic.', 'Total + IVA solic.',
+        'Total neto asig.', 'Total + IVA asig.', 'PVP', 'Precio venta', 'Recargo %', 'Ganancia u.', 'Ganancia total'],
+      p.lineas.map((l) => {
+        const asignada = l.estado !== 'solicitada';
+        return [l.id, l.productoId, l.producto, l.idioma, l.lanzamiento, GS.ESTADOS_LINEA[l.estado].label, l.solicitado, asignada ? l.asignado : '', asignada ? l.diferencia : '',
+          l.costoNeto, Math.round(l.costoIva), Math.round(l.netoSolicitado), Math.round(iva(l.netoSolicitado)),
+          asignada ? Math.round(l.netoAsignado) : '', asignada ? Math.round(iva(l.netoAsignado)) : '', l.pvp, l.precioVenta,
+          Math.round(l.recargo * 100), Math.round(l.gananciaUnidad), Math.round(l.gananciaTotal)];
+      }));
+  };
 
-  function productoOptions(selectedId) {
-    const prods = data().productos.filter((p) => p.activo || p.id === selectedId).sort((a, b) => a.nombre.localeCompare(b.nombre));
-    return '<option value="">Selecciona un producto…</option>' +
-      prods.map((p) => '<option value="' + esc(p.id) + '" data-precio="' + p.precioVenta + '"' + (p.id === selectedId ? ' selected' : '') + '>' +
-        esc(p.nombre) + ' · ' + esc(p.sku) + '</option>').join('');
-  }
+  /* ---------- encabezado ---------- */
 
   function preventaForm(pv) {
     const d = data();
-    const nueva = !pv;
-    const cerrada = pv && !activa(pv);
-    const dis = cerrada ? ' disabled' : '';
-    pv = pv || { productoId: '', proveedor: '', cantidad: '', costoUnit: '', precioVenta: '', fechaPedido: d.hoy, fechaLlegada: '', estado: 'pedido', notas: '' };
-    return (cerrada ? '<div class="notice">Esta preventa está ' + GS.ESTADOS[pv.estado].label.toLowerCase() + ': solo puedes editar las notas.</div>' : '') +
-      '<div class="form-grid">' +
-      '<div class="form-field full"><label>Producto *</label><div class="field-row">' +
-      '<select name="productoId"' + dis + '>' + productoOptions(pv.productoId) + '</select>' +
-      (cerrada ? '' : '<button type="button" class="btn secondary small" data-action="nuevoProductoInline">' + GS.icon('plus') + 'Nuevo</button>') +
-      '</div></div>' +
-      '<div class="form-field"><label>Proveedor *</label><input name="proveedor" list="dl-proveedores" value="' + esc(pv.proveedor) + '" placeholder="Ej: Distribuidora Central"' + dis + '>' +
-      '<datalist id="dl-proveedores">' + d.proveedores.map((x) => '<option value="' + esc(x) + '">').join('') + '</datalist></div>' +
-      '<div class="form-field"><label>Estado</label><select name="estado"' + dis + '>' +
-      (cerrada ? '<option>' + GS.ESTADOS[pv.estado].label + '</option>' : GS.options([{ value: 'pedido', label: 'Pedido' }, { value: 'transito', label: 'En tránsito' }], pv.estado)) + '</select></div>' +
-      '<div class="form-field"><label>Cantidad *</label><input name="cantidad" type="number" min="1" step="1" value="' + esc(pv.cantidad) + '" placeholder="Ej: 10"' + dis + '></div>' +
-      '<div class="form-field"><label>Costo unitario (proveedor) *</label><input name="costoUnit" type="number" min="0" step="1" value="' + esc(pv.costoUnit) + '" placeholder="Ej: 45000"' + dis + '></div>' +
-      '<div class="form-field"><label>Fecha de pedido</label><input name="fechaPedido" type="date" value="' + esc(pv.fechaPedido) + '"' + dis + '></div>' +
-      '<div class="form-field"><label>Llegada estimada *</label><input name="fechaLlegada" type="date" value="' + esc(pv.fechaLlegada) + '"' + dis + '></div>' +
-      '<div class="form-field"><label>Precio de venta est. (unitario)</label><input name="precioVenta" type="number" min="0" step="1" value="' + esc(pv.precioVenta || '') + '" placeholder="Opcional"' + dis + '></div>' +
-      (nueva
-        ? '<div class="form-field"><label>Abono inicial</label><div class="field-row"><input name="abonoInicial" type="number" min="0" step="1" placeholder="0">' +
-          '<select name="medioPago" style="max-width:130px;">' + GS.options(d.catalogos.mediosPago, 'Transferencia') + '</select></div></div>'
-        : '<div class="form-field"></div>') +
-      '<div class="form-field full"><label>Notas</label><textarea name="notas" rows="2" placeholder="Notas internas (opcional)">' + esc(pv.notas) + '</textarea></div>' +
-      '</div>' +
-      '<div class="calc-grid">' +
-      '<div class="calc-readout"><span class="lbl">Total a pagar</span><span class="val" data-calc="total">$0</span></div>' +
-      '<div class="calc-readout"><span class="lbl">Saldo pendiente</span><span class="val text-gold" data-calc="saldo">$0</span></div>' +
-      '<div class="calc-readout"><span class="lbl">Margen estimado</span><span class="val" data-calc="margen">—</span></div>' +
-      '</div>';
-  }
-
-  function wireCalc(form, abonado) {
-    const val = (n) => Number(form.elements[n] ? form.elements[n].value : 0) || 0;
-    const calc = () => {
-      const total = val('cantidad') * val('costoUnit');
-      const saldo = Math.max(total - abonado - val('abonoInicial'), 0);
-      const pv = val('precioVenta');
-      form.querySelector('[data-calc=total]').textContent = fmt.money(total);
-      form.querySelector('[data-calc=saldo]').textContent = fmt.money(saldo);
-      form.querySelector('[data-calc=margen]').textContent = pv
-        ? fmt.money((pv - val('costoUnit')) * val('cantidad')) + ' · ' + fmt.pct((pv - val('costoUnit')) / pv)
-        : '—';
-    };
-    form.addEventListener('input', calc);
-    const sel = form.elements.productoId;
-    sel.addEventListener('change', () => {
-      const opt = sel.selectedOptions[0];
-      if (opt && opt.dataset.precio && !form.elements.precioVenta.value) form.elements.precioVenta.value = opt.dataset.precio > 0 ? opt.dataset.precio : '';
-      calc();
-    });
-    calc();
-  }
-
-  GS.actions.nuevaPreventa = () => abrirForm(null);
-  GS.actions.editarPreventa = (id) => abrirForm(findPv(id));
-
-  function abrirForm(pv) {
+    const provs = d.proveedores.filter((x) => x.activo || (pv && x.id === pv.proveedorId));
+    const ediciones = Array.from(new Set(d.productos.map((x) => x.edicion).concat(d.preventas.map((x) => x.edicion)).filter(Boolean))).sort();
+    const p = pv || { proveedorId: (provs.find((x) => x.nombre === 'Asmodee') || provs[0] || {}).id, edicion: '', fecha: d.hoy, notas: '' };
     GS.formModal({
-      title: pv ? 'Editar preventa ' + pv.folio : 'Nueva preventa',
-      submitLabel: 'Guardar preventa',
-      fields: () => preventaForm(pv),
-      onMount: (form) => wireCalc(form, pv ? pv.abonado : 0),
-      onSubmit: (v) => GS.mutate('guardarPreventa', Object.assign({ id: pv ? pv.id : '' }, v),
-        (r) => (pv ? 'Preventa ' + r.folio + ' actualizada' : 'Preventa ' + r.folio + ' creada')),
-    });
-  }
-
-  GS.actions.nuevoProductoInline = (id, btn) => {
-    const select = btn.closest('form').elements.productoId;
-    GS.editarProducto(null, (prod) => {
-      select.innerHTML = productoOptions(prod.id);
-      select.dispatchEvent(new Event('change'));
-    });
-  };
-
-  /* ---------- detalle, abonos y acciones ---------- */
-
-  function item(lbl, val) {
-    return '<div class="detail-item"><div class="lbl">' + lbl + '</div><div class="val">' + val + '</div></div>';
-  }
-
-  function detalle(id) {
-    const d = data();
-    const p = findPv(id);
-    if (!p) return GS.empty('La preventa ya no existe', '');
-    const pagos = d.pagos.filter((x) => x.preventaId === p.id).sort((a, b) => (a.fecha < b.fecha ? -1 : 1));
-    const margen = p.precioVenta ? (p.precioVenta - p.costoUnit) / p.precioVenta : NaN;
-    const operador = GS.puede('operador');
-    const admin = GS.puede('admin');
-    return '<div class="modal-body">' +
-      '<div class="btn-row" style="margin-bottom:14px;">' + GS.badge(GS.ESTADOS, p.estado) + GS.badge(GS.PAGOS, p.estadoPago) +
-      '<span class="muted" style="font-size:12px;">' + esc(p.producto) + ' · ' + esc(p.sku) + '</span></div>' +
-      '<div class="detail-grid">' +
-      item('Proveedor', esc(p.proveedor)) +
-      item('Cantidad', p.cantidad + (p.estado === 'recibida' ? ' <span class="muted">(recibidas ' + p.cantidadRecibida + ')</span>' : '')) +
-      item('Costo unitario', fmt.money(p.costoUnit)) +
-      item('Total', fmt.money(p.total)) +
-      item('Abonado', fmt.money(p.abonado)) +
-      item('Saldo', '<span class="' + (p.saldo ? 'text-gold' : 'text-success') + '">' + fmt.money(p.saldo) + '</span>') +
-      item('Precio venta est.', p.precioVenta ? fmt.money(p.precioVenta) + ' <span class="muted">(' + fmt.pct(margen) + ')</span>' : '—') +
-      item('Pedido', fmt.date(p.fechaPedido)) +
-      item('Llegada est.', fmt.date(p.fechaLlegada)) +
-      item('Recepción', fmt.date(p.fechaRecepcion)) +
-      item('Creada por', esc(p.creadoPor.split('@')[0]) + '<div class="cell-dim">' + esc(p.creadoEn.slice(0, 16)) + '</div>') +
-      item('Última edición', esc(p.actualizadoPor.split('@')[0]) + '<div class="cell-dim">' + esc(p.actualizadoEn.slice(0, 16)) + '</div>') +
-      '</div>' +
-      (p.notas ? '<div class="notes-box">' + esc(p.notas) + '</div>' : '') +
-      '<div class="section-title">Abonos al proveedor</div>' +
-      (pagos.length
-        ? '<div class="table-wrap"><table class="data-table" style="min-width:560px;"><thead><tr><th>Fecha</th><th class="right">Monto</th><th>Medio</th><th>Nota</th><th>Registrado por</th><th></th></tr></thead><tbody>' +
-          pagos.map((x) => '<tr><td>' + fmt.date(x.fecha) + '</td><td class="cell-num right cell-strong">' + fmt.money(x.monto) + '</td><td>' + esc(x.medio) + '</td>' +
-            '<td>' + esc(x.nota) + '</td><td class="cell-dim">' + esc(x.creadoPor) + '</td>' +
-            '<td>' + (admin ? '<div class="row-actions">' + GS.iconBtn('eliminarPago', x.id, 'trash', 'Eliminar abono', 'danger') + '</div>' : '') + '</td></tr>').join('') +
-          '</tbody></table></div>'
-        : '<p class="muted" style="font-size:12.5px;margin:0;">Aún no hay abonos registrados.</p>') +
-      (operador && p.estado !== 'cancelada' && p.saldo > 0
-        ? '<form class="inline-form" data-pago novalidate><div class="form-grid">' +
-          '<div class="form-field"><label>Fecha</label><input type="date" name="fecha" value="' + d.hoy + '"></div>' +
-          '<div class="form-field"><label>Monto *</label><input type="number" name="monto" min="1" step="1" value="' + p.saldo + '"></div>' +
-          '<div class="form-field"><label>Medio</label><select name="medio">' + GS.options(d.catalogos.mediosPago, 'Transferencia') + '</select></div>' +
-          '<div class="form-field"><label>Nota</label><input name="nota" placeholder="Opcional"></div>' +
-          '</div><div class="form-error"></div><div class="btn-row" style="justify-content:flex-end;margin-bottom:12px;"><button type="submit" class="btn small">Registrar abono</button></div></form>'
-        : '') +
-      '<div class="danger-zone">' +
-      (admin && p.estado !== 'recibida' && p.abonado === 0 ? '<button class="btn danger-outline" data-action="eliminarPreventa" data-id="' + esc(p.id) + '">Eliminar</button>' : '') +
-      (operador && activa(p) ? '<button class="btn danger-outline" data-action="cancelarPreventa" data-id="' + esc(p.id) + '">Cancelar preventa</button>' : '') +
-      (admin && p.estado === 'recibida' ? '<button class="btn danger-outline" data-action="anularRecepcion" data-id="' + esc(p.id) + '">Anular recepción</button>' : '') +
-      (operador ? '<button class="btn secondary" data-action="editarPreventa" data-id="' + esc(p.id) + '">Editar</button>' : '') +
-      (operador && activa(p) ? '<button class="btn" data-action="recibirPreventa" data-id="' + esc(p.id) + '">' + GS.icon('check') + 'Recibir</button>' : '') +
-      '</div></div>';
-  }
-
-  GS.actions.verPreventa = (id) => {
-    const p = findPv(id);
-    if (!p) return;
-    GS.modal({
-      title: 'Preventa ' + p.folio,
-      size: 'wide',
-      live: true,
-      body: () => detalle(id),
-      onRender: (el) => {
-        const form = el.querySelector('form[data-pago]');
-        if (form) GS.bindForm(form, (v) => GS.mutate('registrarPago', Object.assign({ preventaId: id }, v), 'Abono registrado'));
+      title: pv ? 'Editar ' + pv.id : 'Nueva preventa',
+      submitLabel: pv ? 'Guardar' : 'Crear preventa',
+      fields: () =>
+        '<div class="form-grid">' +
+        '<div class="form-field"><label>Proveedor *</label><select name="proveedorId">' + GS.options(provs.map((x) => ({ value: x.id, label: x.nombre })), p.proveedorId) + '</select></div>' +
+        '<div class="form-field"><label>Fecha de solicitud</label><input type="date" name="fecha" value="' + esc(p.fecha) + '"></div>' +
+        '<div class="form-field full"><label>Edición / colección *</label><input name="edicion" list="dl-ed-pv" value="' + esc(p.edicion) + '" placeholder="Ej: 30th Celebration">' +
+        '<datalist id="dl-ed-pv">' + ediciones.map((x) => '<option value="' + esc(x) + '">').join('') + '</datalist></div>' +
+        '<div class="form-field full"><label>Notas</label><textarea name="notas" rows="2">' + esc(p.notas) + '</textarea></div>' +
+        '</div>',
+      onSubmit: async (v) => {
+        const r = await GS.mutate('guardarPreventa', Object.assign({ id: pv ? pv.id : '' }, v), pv ? 'Preventa actualizada' : 'Preventa creada');
+        if (!pv) GS.go('preventa', r.id);
       },
     });
-  };
+  }
 
-  GS.actions.eliminarPago = (id) => {
-    const pago = data().pagos.find((x) => x.id === id);
-    GS.confirm({
-      title: 'Eliminar abono',
-      message: '¿Eliminar el abono de <strong>' + fmt.money(pago.monto) + '</strong> del ' + fmt.date(pago.fecha) + '? Queda registrado en la auditoría.',
-      confirmLabel: 'Sí, eliminar',
-      danger: true,
-      onConfirm: () => GS.mutate('eliminarPago', { id: id }, 'Abono eliminado'),
-    });
-  };
-
-  GS.actions.recibirPreventa = (id) => {
-    const p = findPv(id);
-    GS.formModal({
-      title: 'Recibir ' + p.folio,
-      submitLabel: 'Confirmar recepción',
-      fields: () =>
-        '<div class="notice">Las unidades recibidas entran al inventario de <strong>' + esc(p.producto) + '</strong> a ' + fmt.money(p.costoUnit) + ' c/u.' +
-        (p.saldo > 0 ? ' Ojo: aún hay un saldo de ' + fmt.money(p.saldo) + ' por pagar al proveedor.' : '') + '</div>' +
-        '<div class="form-grid">' +
-        '<div class="form-field"><label>Cantidad recibida *</label><input type="number" name="cantidadRecibida" min="1" max="' + p.cantidad + '" step="1" value="' + p.cantidad + '">' +
-        '<span class="hint">Pedidas: ' + p.cantidad + '. Si llegó menos (allocation recortada), indica lo real.</span></div>' +
-        '<div class="form-field"><label>Fecha de recepción</label><input type="date" name="fecha" value="' + data().hoy + '"></div>' +
-        '<div class="form-field full"><label>Nota</label><input name="nota" placeholder="Opcional (ej: 1 caja dañada)"></div>' +
-        '</div>',
-      onSubmit: (v) => GS.mutate('recibirPreventa', Object.assign({ id: id }, v), 'Mercadería recibida e ingresada al inventario'),
-    });
-  };
-
-  GS.actions.cancelarPreventa = (id) => {
-    const p = findPv(id);
-    GS.confirm({
-      title: 'Cancelar ' + p.folio,
-      message: 'La preventa quedará cancelada y dejará de contar como compromiso.' +
-        (p.abonado ? ' Los abonos (' + fmt.money(p.abonado) + ') se conservan como registro para gestionar la devolución.' : ''),
-      input: { name: 'motivo', label: 'Motivo *', placeholder: 'Ej: el proveedor no recibió stock' },
-      confirmLabel: 'Cancelar preventa',
-      danger: true,
-      onConfirm: (v) => GS.mutate('cancelarPreventa', { id: id, motivo: v.motivo }, 'Preventa cancelada'),
-    });
-  };
+  GS.actions.nuevaPreventa = () => preventaForm(null);
+  GS.actions.editarPreventa = (id) => preventaForm(findPv(id));
 
   GS.actions.eliminarPreventa = (id) => {
     const p = findPv(id);
     GS.confirm({
-      title: 'Eliminar ' + p.folio,
-      message: 'Esta acción no se puede deshacer. ¿Eliminar la preventa de <strong>' + esc(p.producto) + '</strong>?',
+      title: 'Eliminar ' + p.id,
+      message: 'Se eliminará la preventa <strong>' + esc(p.edicion) + '</strong> con sus ' + p.lineas.length + ' productos. No se puede deshacer.',
       confirmLabel: 'Sí, eliminar',
       danger: true,
       onConfirm: async () => {
         await GS.mutate('eliminarPreventa', { id: id }, 'Preventa eliminada');
-        GS.closeModals();
+        GS.go('preventas');
       },
     });
   };
 
-  GS.actions.anularRecepcion = (id) => {
-    const p = findPv(id);
+  /* ---------- líneas ---------- */
+
+  function productoOptions(selectedId) {
+    const prods = data().productos.filter((p) => p.activo || p.id === selectedId).sort((a, b) => a.nombreCompleto.localeCompare(b.nombreCompleto));
+    return '<option value="">Selecciona un producto…</option>' +
+      prods.map((p) => '<option value="' + esc(p.id) + '"' + (p.id === selectedId ? ' selected' : '') + '>' + esc(p.nombreCompleto) + ' (' + esc(p.id) + ')</option>').join('');
+  }
+
+  function lineaForm(pv, linea) {
+    const ultimaFecha = pv.lineas.length ? pv.lineas[pv.lineas.length - 1].lanzamiento : '';
+    const l = linea || { productoId: '', lanzamiento: ultimaFecha, solicitado: '', costoNeto: '', notas: '' };
+    GS.formModal({
+      title: linea ? 'Editar ' + linea.id : 'Agregar producto a ' + pv.id,
+      submitLabel: linea ? 'Guardar' : 'Agregar',
+      fields: () =>
+        '<div class="form-grid">' +
+        '<div class="form-field full"><label>Producto *</label><div class="field-row">' +
+        '<select name="productoId">' + productoOptions(l.productoId) + '</select>' +
+        '<button type="button" class="btn secondary small" data-action="nuevoProductoLinea" data-id="' + esc(pv.id) + '">' + GS.icon('plus') + 'Nuevo</button>' +
+        '</div><span class="hint" data-precios></span></div>' +
+        '<div class="form-field"><label>Fecha de lanzamiento *</label><input type="date" name="lanzamiento" value="' + esc(l.lanzamiento) + '"></div>' +
+        '<div class="form-field"><label>Cantidad solicitada *</label><input type="number" name="solicitado" min="0" step="1" value="' + esc(l.solicitado) + '" placeholder="0 si lo asignaron sin pedirlo"></div>' +
+        '<div class="form-field"><label>Costo neto unitario *</label><input type="number" name="costoNeto" min="0" step="0.01" value="' + esc(l.costoNeto) + '" placeholder="Precio del proveedor sin IVA"></div>' +
+        '<div class="form-field"><label>Notas</label><input name="notas" value="' + esc(l.notas) + '" placeholder="Opcional"></div>' +
+        '</div>' +
+        '<div class="calc-grid">' +
+        '<div class="calc-readout"><span class="lbl">Costo + IVA</span><span class="val" data-calc="costoIva">—</span></div>' +
+        '<div class="calc-readout"><span class="lbl">Total neto</span><span class="val" data-calc="total">—</span></div>' +
+        '<div class="calc-readout"><span class="lbl">Ganancia real / u.</span><span class="val text-success" data-calc="ganancia">—</span></div>' +
+        '</div>',
+      onMount: (form) => {
+        const calc = () => {
+          const prod = data().productos.find((x) => x.id === form.elements.productoId.value);
+          const costo = Number(form.elements.costoNeto.value) || 0;
+          const cant = Number(form.elements.solicitado.value) || 0;
+          form.querySelector('[data-precios]').textContent = prod
+            ? 'PVP ' + (prod.pvp ? fmt.money(prod.pvp) : '—') + ' · Precio de venta ' + (prod.precio ? fmt.money(prod.precio) + (prod.precioManual ? ' (manual)' : '') : '—')
+            : '';
+          form.querySelector('[data-calc=costoIva]').textContent = costo ? fmt.money(iva(costo)) : '—';
+          form.querySelector('[data-calc=total]').textContent = costo && cant ? fmt.money(costo * cant) : '—';
+          const precio = prod ? prod.precio : 0;
+          form.querySelector('[data-calc=ganancia]').textContent = precio && costo ? fmt.money(precio / (1 + data().app.iva) - costo) : '—';
+        };
+        form.addEventListener('input', calc);
+        form.addEventListener('change', calc);
+        calc();
+      },
+      onSubmit: (v) => GS.mutate('guardarLineaPreventa', Object.assign({ id: linea ? linea.id : '', preventaId: pv.id }, v), linea ? 'Línea actualizada' : 'Producto agregado'),
+    });
+  }
+
+  GS.actions.nuevaLinea = (id) => lineaForm(findPv(id), null);
+  GS.actions.editarLinea = (lineaId) => {
+    const pv = data().preventas.find((p) => p.lineas.some((l) => l.id === lineaId));
+    lineaForm(pv, pv.lineas.find((l) => l.id === lineaId));
+  };
+
+  GS.actions.nuevoProductoLinea = (pvId, btn) => {
+    const select = btn.closest('form').elements.productoId;
+    GS.editarProducto(null, (prod) => {
+      select.innerHTML = productoOptions(prod.id);
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    }, { edicion: findPv(pvId).edicion });
+  };
+
+  GS.actions.eliminarLinea = (lineaId) => {
+    const pv = data().preventas.find((p) => p.lineas.some((l) => l.id === lineaId));
+    const l = pv.lineas.find((x) => x.id === lineaId);
     GS.confirm({
-      title: 'Anular recepción ' + p.folio,
-      message: 'Se quitarán ' + p.cantidadRecibida + ' unidades de <strong>' + esc(p.producto) + '</strong> del inventario y la preventa volverá a "En tránsito".',
-      confirmLabel: 'Anular recepción',
+      title: 'Quitar producto',
+      message: '¿Quitar <strong>' + esc(l.producto) + '</strong> de la preventa ' + esc(pv.id) + '?',
+      confirmLabel: 'Quitar',
       danger: true,
-      onConfirm: () => GS.mutate('anularRecepcion', { id: id }, 'Recepción anulada'),
+      onConfirm: () => GS.mutate('eliminarLineaPreventa', { id: lineaId }, 'Producto quitado de la preventa'),
+    });
+  };
+
+  /* ---------- asignación ---------- */
+
+  GS.actions.asignar = (id) => {
+    const pv = findPv(id);
+    const lineas = pv.lineas.filter(editable);
+    GS.formModal({
+      title: 'Asignación de ' + pv.proveedor + ' · ' + pv.edicion,
+      size: 'wide',
+      submitLabel: 'Guardar asignación',
+      fields: () =>
+        '<div class="notice">Escribe lo que asignó el proveedor. Viene precargado con lo solicitado (o lo ya asignado). Si no asignaron nada, deja 0. ' +
+        'Puedes corregirlo mientras el producto no pase a una compra.</div>' +
+        '<div class="table-wrap"><table class="data-table" style="min-width:640px;"><thead><tr>' +
+        '<th class="col-prod">Producto</th><th>Lanzamiento</th><th class="right">Solicitado</th><th class="right" style="width:120px;">Asignado</th><th class="right">Dif.</th><th class="right">Total neto</th>' +
+        '</tr></thead><tbody>' +
+        lineas.map((l) => '<tr data-linea="' + esc(l.id) + '" data-solicitado="' + l.solicitado + '" data-costo="' + l.costoNeto + '">' +
+          '<td class="cell-strong">' + esc(l.productoNombre) + ' <span class="pill lang">' + esc(l.idioma) + '</span></td>' +
+          '<td class="nowrap">' + fmt.date(l.lanzamiento) + '</td>' +
+          '<td class="cell-num right">' + fmt.num(l.solicitado) + '</td>' +
+          '<td class="right"><input class="qty-input" type="number" min="0" step="1" name="a_' + esc(l.id) + '" value="' + (l.estado === 'solicitada' ? l.solicitado : l.asignado) + '"></td>' +
+          '<td class="cell-num right" data-dif></td><td class="cell-num right" data-neto></td></tr>').join('') +
+        '</tbody><tfoot><tr><td colspan="3">Total</td><td class="cell-num right" data-tot-asig></td><td></td><td class="cell-num right" data-tot-neto></td></tr></tfoot></table></div>',
+      onMount: (form) => {
+        const calc = () => {
+          let totA = 0;
+          let totN = 0;
+          form.querySelectorAll('tr[data-linea]').forEach((tr) => {
+            const a = Number(tr.querySelector('input').value) || 0;
+            const dif = Number(tr.dataset.solicitado) - a;
+            totA += a;
+            totN += a * Number(tr.dataset.costo);
+            tr.querySelector('[data-dif]').textContent = fmt.num(dif);
+            tr.querySelector('[data-dif]').className = 'cell-num right' + (dif < 0 ? ' text-gold' : '');
+            tr.querySelector('[data-neto]').textContent = fmt.money(a * Number(tr.dataset.costo));
+          });
+          form.querySelector('[data-tot-asig]').textContent = fmt.num(totA);
+          form.querySelector('[data-tot-neto]').textContent = fmt.money(totN);
+        };
+        form.addEventListener('input', calc);
+        calc();
+      },
+      onSubmit: (v) => GS.mutate('registrarAsignacion', {
+        preventaId: id,
+        lineas: lineas.map((l) => ({ id: l.id, asignado: v['a_' + l.id] })),
+      }, 'Asignación registrada'),
     });
   };
 })();

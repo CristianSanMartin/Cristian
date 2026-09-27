@@ -12,14 +12,25 @@ const Util = {
     return Utilities.getUuid();
   },
 
-  /** Siguiente código correlativo, p. ej. ('PV', ['PV-0007']) -> 'PV-0008'. */
-  siguienteCodigo(prefijo, existentes) {
-    const re = new RegExp('^' + prefijo + '-(\\d+)$');
-    const max = existentes.reduce((m, c) => {
-      const match = re.exec(String(c || ''));
-      return match ? Math.max(m, Number(match[1])) : m;
-    }, 0);
-    return prefijo + '-' + String(max + 1).padStart(4, '0');
+  /**
+   * Siguiente correlativo estable (PV-0001, PVI-000001...). Usa la hoja
+   * Secuencias, así un número nunca se reutiliza aunque se elimine el registro.
+   * Debe llamarse dentro de una escritura (con LockService tomado).
+   */
+  siguienteId(prefijo, ancho) {
+    const fila = Db.get('Secuencias', prefijo);
+    const valor = (fila ? fila.valor : 0) + 1;
+    if (fila) Db.update('Secuencias', prefijo, { valor: valor });
+    else Db.insert('Secuencias', { clave: prefijo, valor: valor });
+    return prefijo + '-' + String(valor).padStart(ancho || 4, '0');
+  },
+
+  /** Campos de auditoría para un registro nuevo o actualizado. */
+  sello(user, nuevo) {
+    const ahora = Util.ahora();
+    const s = { actualizadoEn: ahora, actualizadoPor: user.email };
+    if (nuevo) { s.creadoEn = ahora; s.creadoPor = user.email; }
+    return s;
   },
 
   texto(valor, campo, opts) {
@@ -44,6 +55,20 @@ const Util = {
     if (n < min) throw new AppError(campo + ' debe ser mayor o igual a ' + min + '.');
     if (opts.max != null && n > opts.max) throw new AppError(campo + ' no puede ser mayor a ' + opts.max + '.');
     return n;
+  },
+
+  /** Monto con hasta 2 decimales (los costos netos del proveedor pueden traer centavos). */
+  monto(valor, campo, opts) {
+    opts = opts || {};
+    if (valor === '' || valor == null) {
+      if (opts.requerido) throw new AppError(campo + ' es obligatorio.');
+      return 0;
+    }
+    const n = Number(String(valor).replace(',', '.'));
+    if (!Number.isFinite(n)) throw new AppError(campo + ' debe ser un número.');
+    if (Math.abs(Math.round(n * 100) - n * 100) > 1e-6) throw new AppError(campo + ' admite como máximo 2 decimales.');
+    if (n < 0) throw new AppError(campo + ' debe ser mayor o igual a 0.');
+    return Math.round(n * 100) / 100;
   },
 
   fecha(valor, campo, opts) {

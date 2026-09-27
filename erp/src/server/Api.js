@@ -24,23 +24,20 @@ function rutas_() {
     bootstrap: { rol: 'lectura', fn: (p, u) => Snapshot.build(u) },
     auditoria: { rol: 'admin', fn: () => Snapshot.auditoria() },
 
+    guardarProveedor: { rol: 'operador', write: true, fn: Proveedores.guardar },
+    archivarProveedor: { rol: 'operador', write: true, fn: Proveedores.cambiarActivo },
+
     guardarProducto: { rol: 'operador', write: true, fn: Productos.guardar },
     archivarProducto: { rol: 'operador', write: true, fn: Productos.cambiarActivo },
     eliminarProducto: { rol: 'admin', write: true, fn: Productos.eliminar },
 
     guardarPreventa: { rol: 'operador', write: true, fn: Preventas.guardar },
-    registrarPago: { rol: 'operador', write: true, fn: Preventas.registrarPago },
-    eliminarPago: { rol: 'admin', write: true, fn: Preventas.eliminarPago },
-    recibirPreventa: { rol: 'operador', write: true, fn: Preventas.recibir },
-    anularRecepcion: { rol: 'admin', write: true, fn: Preventas.anularRecepcion },
-    cancelarPreventa: { rol: 'operador', write: true, fn: Preventas.cancelar },
     eliminarPreventa: { rol: 'admin', write: true, fn: Preventas.eliminar },
-
-    registrarMovimiento: { rol: 'operador', write: true, fn: Inventario.registrar },
-    eliminarMovimiento: { rol: 'admin', write: true, fn: Inventario.eliminarMovimiento },
+    guardarLineaPreventa: { rol: 'operador', write: true, fn: Preventas.guardarLinea },
+    eliminarLineaPreventa: { rol: 'operador', write: true, fn: Preventas.eliminarLinea },
+    registrarAsignacion: { rol: 'operador', write: true, fn: Preventas.registrarAsignacion },
 
     guardarUsuario: { rol: 'admin', write: true, fn: Usuarios.guardar },
-    importarLegacy: { rol: 'admin', write: true, fn: Importar.legacy },
   };
 }
 
@@ -77,9 +74,10 @@ function api(accion, datos) {
 }
 
 /**
- * Prepara la planilla: crea las hojas y registra a quien lo ejecuta como
- * primer administrador. Se ejecuta una vez desde el editor de Apps Script
- * (o desde el menú "GS Prime ERP" de la planilla). Es idempotente.
+ * Prepara la planilla: crea o actualiza las hojas, registra a quien lo ejecuta
+ * como primer administrador y carga el proveedor Asmodee. Se ejecuta desde el
+ * editor de Apps Script (o el menú "GS Prime ERP" de la planilla). Es idempotente:
+ * nunca borra datos; las hojas vacías quedan con el encabezado de esta versión.
  */
 function instalar() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -88,27 +86,41 @@ function instalar() {
   Db._ss = ss;
   Db.reset();
   Object.keys(SCHEMA).forEach((t) => Db.ensureSheet(t));
-  const hoja = ss.getSheetByName('Hoja 1') || ss.getSheetByName('Sheet1');
-  if (hoja && hoja.getLastRow() === 0 && ss.getSheets().length > 1) ss.deleteSheet(hoja);
+
+  const mensaje = [];
+  HOJAS_OBSOLETAS.concat(['Hoja 1', 'Sheet1']).forEach((nombre) => {
+    const hoja = ss.getSheetByName(nombre);
+    if (hoja && hoja.getLastRow() <= 1 && ss.getSheets().length > 1) {
+      ss.deleteSheet(hoja);
+      if (HOJAS_OBSOLETAS.indexOf(nombre) !== -1) mensaje.push('Se eliminó la hoja vacía "' + nombre + '" de la versión anterior.');
+    }
+  });
 
   // Solo se crea un administrador cuando todavía no hay usuarios: evita que
   // alguien con acceso a la app se autoasigne permisos llamando a instalar().
   const email = Auth.email();
-  const mensaje = [];
   if (Db.all('Usuarios').length === 0) {
     if (!email) throw new Error('No se pudo leer tu correo de Google para registrarte como administrador.');
     Db.insert('Usuarios', { email: email, nombre: email.split('@')[0], rol: 'admin', activo: true, creadoEn: Util.ahora(), creadoPor: 'instalar' });
-    Audit.log({ email: email }, 'instalar', 'Sistema', '', { version: APP.version });
     mensaje.push(email + ' quedó registrado como administrador.');
   }
-  mensaje.push('Hojas listas: ' + Object.keys(SCHEMA).join(', ') + '.');
+  const sistema = { email: email || 'instalar' };
+  if (Db.all('Proveedores').length === 0) {
+    Db.insert('Proveedores', Object.assign({
+      id: Util.siguienteId('PRV', 3), nombre: 'Asmodee', rut: '', contacto: '',
+      despachoUmbral: 1000000, despachoMonto: 15000, activo: true, notas: 'Despacho gratis desde $1.000.000 neto; si no, $15.000 neto.',
+    }, Util.sello(sistema, true)));
+    mensaje.push('Proveedor Asmodee creado con su regla de despacho.');
+  }
+  Audit.log(sistema, 'instalar', 'Sistema', '', { version: APP.version });
+  mensaje.push('Hojas listas (versión ' + APP.version + '): ' + Object.keys(SCHEMA).join(', ') + '.');
   return mensaje.join(' ');
 }
 
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('GS Prime ERP')
-    .addItem('Instalar / reparar hojas', 'instalarDesdeMenu')
+    .addItem('Instalar / actualizar hojas', 'instalarDesdeMenu')
     .addToUi();
 }
 
@@ -119,49 +131,37 @@ function instalarDesdeMenu() {
 /** Foto completa de los datos visibles para el usuario, con los cálculos ya hechos. */
 const Snapshot = {
   build(user) {
+    const proveedores = Db.all('Proveedores');
     const productos = Db.all('Productos');
-    const preventas = Db.all('Preventas');
-    const pagos = Db.all('Pagos');
-    const inv = Inventario.calcular(Db.all('Movimientos'));
-    const prodPorId = {};
-    productos.forEach((p) => { prodPorId[p.id] = p; });
+    const preventas = Preventas.vista(productos, proveedores);
 
-    const abonadoPor = {};
-    pagos.forEach((x) => { abonadoPor[x.preventaId] = (abonadoPor[x.preventaId] || 0) + x.monto; });
-
-    const entrante = {};
-    const pvs = preventas.map((pv) => {
-      const total = pv.cantidad * pv.costoUnit;
-      const abonado = abonadoPor[pv.id] || 0;
-      if (pv.estado === 'pedido' || pv.estado === 'transito') entrante[pv.productoId] = (entrante[pv.productoId] || 0) + pv.cantidad;
-      const prod = prodPorId[pv.productoId];
-      return Object.assign(pv, {
-        producto: prod ? prod.nombre : '(producto eliminado)',
-        sku: prod ? prod.sku : '',
-        total: total,
-        abonado: abonado,
-        saldo: Math.max(total - abonado, 0),
-        estadoPago: Preventas.estadoPago(total, abonado),
+    // Último costo neto conocido de cada producto (de su línea de preventa más reciente).
+    const ultimoCosto = {};
+    preventas.forEach((pv) => pv.lineas.forEach((l) => {
+      const prev = ultimoCosto[l.productoId];
+      if (!prev || l.lanzamiento >= prev.fecha) ultimoCosto[l.productoId] = { fecha: l.lanzamiento, costo: l.costoNeto };
+    }));
+    const prods = productos.map((p) => {
+      const costo = ultimoCosto[p.id] ? ultimoCosto[p.id].costo : 0;
+      const e = Economia.unidad(costo, Productos.precio(p));
+      return Object.assign(p, {
+        nombreCompleto: Productos.nombreCompleto(p),
+        precio: Productos.precio(p),
+        ultimoCosto: costo,
+        gananciaUnidad: costo ? e.ganancia : null,
+        margen: costo ? e.margen : null,
       });
     });
 
-    const prods = productos.map((p) => {
-      const e = inv.porProducto[p.id] || { stock: 0, costoPromedio: 0, valor: 0, ultimoMovimiento: '' };
-      return Object.assign(p, e, { entrante: entrante[p.id] || 0 });
-    });
-
-    const esAdmin = Auth.puede(user, 'admin');
     return {
-      app: { nombre: APP.nombre, version: APP.version },
+      app: { nombre: APP.nombre, version: APP.version, iva: APP.iva },
       hoy: Util.hoy(),
       user: { email: user.email, nombre: user.nombre, rol: user.rol },
-      catalogos: { categorias: CATEGORIAS, juegos: JUEGOS, mediosPago: MEDIOS_PAGO, tiposMovimiento: TIPOS_MOVIMIENTO },
+      catalogos: { idiomas: IDIOMAS, tipos: TIPOS_PRODUCTO },
+      proveedores: proveedores,
       productos: prods,
-      preventas: pvs,
-      pagos: pagos,
-      movimientos: inv.kardex,
-      proveedores: Array.from(new Set(preventas.map((x) => x.proveedor).filter(Boolean))).sort(),
-      usuarios: esAdmin ? Db.all('Usuarios') : [],
+      preventas: preventas,
+      usuarios: Auth.puede(user, 'admin') ? Db.all('Usuarios') : [],
     };
   },
 

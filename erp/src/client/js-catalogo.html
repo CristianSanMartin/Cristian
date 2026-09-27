@@ -1,0 +1,274 @@
+<script>
+/* =========================================================
+   Catálogos: productos y proveedores.
+========================================================= */
+(function () {
+  'use strict';
+  const { fmt, esc } = GS;
+  const data = () => GS.state.data;
+  const findProd = (id) => data().productos.find((p) => p.id === id);
+  const findProv = (id) => data().proveedores.find((p) => p.id === id);
+
+  /* ---------- nombre del proveedor → producto ---------- */
+
+  const TIPO_POR_TEXTO = [
+    [/BOOSTER\s+BOX/, 'Booster Box'],
+    [/ELITE\s+TRAINER|\bETB\b/, 'Elite Trainer Box'],
+    [/BOOSTER\s+BUNDLE/, 'Booster Bundle'],
+    [/BATTLE\s+DECK/, 'Battle Deck'],
+    [/MINI\s+TIN/, 'Mini Tin'],
+    [/\bTIN\b/, 'Tin'],
+    [/PREMIUM\s+COLLECTION/, 'Premium Collection'],
+    [/BINDER|COLLECTION|COLECCI[OÓ]N/, 'Binder / Colección'],
+    [/BLISTER/, 'Blister'],
+    [/SLEEVED\s+BOOSTER|BOOSTER\s+PACK|\bSOBRE\b/, 'Sobre'],
+    [/SLEEVES|DECK\s+BOX|PLAYMAT|TAPETE|PORTACARTAS/, 'Accesorio'],
+  ];
+  const IDIOMA_POR_TEXTO = [
+    [/\b(ENGLISH|INGL[EÉ]S|ENG)\b/i, 'ENG'],
+    [/\b(ESPA[NÑ]OL|SPANISH|ESP)\b/i, 'ESP'],
+    [/\b(JAPANESE|JAPON[EÉ]S|JPN|JP)\b/i, 'JPN'],
+  ];
+  const MAYUSCULAS = ['TCG', 'ETB', 'EX', 'GX', 'V', 'VMAX', 'VSTAR', 'SV'];
+
+  function titulo(s) {
+    return s.toLowerCase().split(' ').filter(Boolean).map((w) => {
+      if (MAYUSCULAS.indexOf(w.toUpperCase()) !== -1) return w.toUpperCase();
+      if (/^\d+(st|nd|rd|th)$/.test(w)) return w;
+      return w.charAt(0).toUpperCase() + w.slice(1);
+    }).join(' ');
+  }
+
+  /**
+   * "POKEMON TCG 30TH CELEBRATION - BINDER COLLECTION ENGLISH"
+   *   → { edicion: '30th Celebration', nombre: 'Binder Collection', idioma: 'ENG', tipo: 'Binder / Colección' }
+   */
+  GS.interpretarNombre = function (raw) {
+    let s = String(raw || '').replace(/\s+/g, ' ').trim();
+    let idioma = '';
+    IDIOMA_POR_TEXTO.forEach(([re, id]) => {
+      if (!idioma && re.test(s)) { idioma = id; s = s.replace(re, ' ').replace(/\s+/g, ' ').trim(); }
+    });
+    s = s.replace(/^POK[EÉ]MON\s+(TCG\s+)?/i, '').replace(/[\s-]+$/, '');
+    let edicion = '';
+    let nombre = s;
+    const corte = s.indexOf(' - ');
+    if (corte > 0) { edicion = s.slice(0, corte); nombre = s.slice(corte + 3); }
+    const upper = s.toUpperCase();
+    const tipo = (TIPO_POR_TEXTO.find(([re]) => re.test(upper)) || [null, 'Otro'])[1];
+    return { nombre: titulo(nombre), edicion: titulo(edicion), idioma: idioma, tipo: tipo };
+  };
+
+  /* ---------- productos ---------- */
+
+  const DEF_PROD = { q: '', edicion: '', idioma: '', tipo: '', estado: 'activos' };
+
+  function productosFiltrados() {
+    const f = GS.filters('productos', DEF_PROD);
+    const q = GS.norm(f.q.trim());
+    return data().productos
+      .filter((p) => {
+        if (f.estado === 'activos' ? !p.activo : f.estado === 'archivados' ? p.activo : false) return false;
+        if (f.edicion && p.edicion !== f.edicion) return false;
+        if (f.idioma && p.idioma !== f.idioma) return false;
+        if (f.tipo && p.tipo !== f.tipo) return false;
+        return !q || GS.norm(p.id + ' ' + p.nombreCompleto + ' ' + p.tipo + ' ' + p.codigoProveedor).includes(q);
+      })
+      .sort((a, b) => a.nombreCompleto.localeCompare(b.nombreCompleto));
+  }
+
+  GS.thumb = (url) => (url ? '<img class="thumb" src="' + esc(url) + '" alt="" loading="lazy">' : '<span class="thumb empty"></span>');
+
+  function filaProducto(p) {
+    const operador = GS.puede('operador');
+    return '<tr class="' + (p.activo ? '' : 'row-muted') + '">' +
+      '<td>' + GS.thumb(p.imagen) + '</td>' +
+      '<td class="nowrap cell-dim">' + esc(p.id) + '</td>' +
+      '<td class="cell-strong">' + esc(p.nombre) + '<div class="cell-dim">' + esc(p.edicion || 'Sin edición') + ' · ' + esc(p.tipo) + (p.factor > 1 ? ' · ' + p.factor + ' u. proveedor' : '') + (p.activo ? '' : ' · archivado') + '</div></td>' +
+      '<td><span class="pill lang">' + esc(p.idioma) + '</span></td>' +
+      '<td class="cell-num right">' + (p.pvp ? fmt.money(p.pvp) : '—') + '</td>' +
+      '<td class="cell-num right cell-strong">' + (p.precio ? fmt.money(p.precio) : '—') + (p.precioManual ? '<div><span class="pill soon">manual</span></div>' : '') + '</td>' +
+      '<td class="cell-num right">' + (p.ultimoCosto ? fmt.cost(p.ultimoCosto) : '—') + '</td>' +
+      '<td class="cell-num right ' + (p.gananciaUnidad < 0 ? 'text-danger' : '') + '">' + (p.gananciaUnidad == null ? '—' : fmt.money(p.gananciaUnidad)) + '</td>' +
+      '<td class="cell-num right">' + (p.margen == null ? '—' : fmt.pct(p.margen)) + '</td>' +
+      '<td><div class="row-actions">' +
+      (operador ? GS.iconBtn('editarProducto', p.id, 'edit', 'Editar') : '') +
+      (operador ? GS.iconBtn('archivarProducto', p.id, 'archive', p.activo ? 'Archivar' : 'Reactivar') : '') +
+      '</div></td></tr>';
+  }
+
+  GS.views.productos = {
+    title: 'Productos',
+    render(el, d) {
+      const f = GS.filters('productos', DEF_PROD);
+      const ediciones = Array.from(new Set(d.productos.map((p) => p.edicion).filter(Boolean))).sort();
+      el.innerHTML =
+        '<div class="page-head"><div><h1>Productos</h1><p>Catálogo: cada producto es nombre + edición + idioma.</p></div>' +
+        '<div class="btn-row">' +
+        '<button class="btn ghost" data-action="exportarProductos">' + GS.icon('download') + 'Exportar</button>' +
+        (GS.puede('operador') ? '<button class="btn" data-action="nuevoProducto">' + GS.icon('plus', 2.4) + 'Nuevo producto</button>' : '') +
+        '</div></div>' +
+        '<div class="filters-bar">' +
+        '<div class="search-box">' + GS.icon('search') + '<input type="text" data-filter="productos.q" value="' + esc(f.q) + '" placeholder="Buscar por nombre, SKU o código..."></div>' +
+        '<div class="select-input"><select data-filter="productos.edicion">' + GS.options([{ value: '', label: 'Todas las ediciones' }].concat(ediciones), f.edicion) + '</select></div>' +
+        '<div class="select-input"><select data-filter="productos.idioma">' + GS.options([{ value: '', label: 'Todos los idiomas' }].concat(d.catalogos.idiomas), f.idioma) + '</select></div>' +
+        '<div class="select-input"><select data-filter="productos.tipo">' + GS.options([{ value: '', label: 'Todos los tipos' }].concat(Object.keys(d.catalogos.tipos)), f.tipo) + '</select></div>' +
+        '<div class="select-input"><select data-filter="productos.estado">' + GS.options([{ value: 'activos', label: 'Activos' }, { value: 'archivados', label: 'Archivados' }, { value: '', label: 'Todos' }], f.estado) + '</select></div>' +
+        '<span class="count" id="prod-count"></span></div>' +
+        '<div class="table-wrap"><table class="data-table"><thead><tr>' +
+        '<th></th><th>SKU</th><th class="col-prod">Producto</th><th>Idioma</th><th class="right">PVP</th><th class="right">Precio venta</th>' +
+        '<th class="right">Último costo neto</th><th class="right">Ganancia u.</th><th class="right">Margen</th><th class="right">Acciones</th>' +
+        '</tr></thead><tbody id="prod-tbody"></tbody></table></div>' +
+        '<p class="table-note">Ganancia real por unidad = precio de venta sin IVA − último costo neto (sin despacho). El stock aparecerá con el módulo de Inventario.</p>';
+      this.update();
+    },
+    update() {
+      const rows = productosFiltrados();
+      document.getElementById('prod-count').textContent = rows.length + ' productos';
+      document.getElementById('prod-tbody').innerHTML = rows.length
+        ? rows.map(filaProducto).join('')
+        : '<tr><td colspan="10">' + GS.empty('No hay productos para mostrar', 'Crea un producto o ajusta los filtros.', 'productos') + '</td></tr>';
+    },
+  };
+
+  GS.actions.exportarProductos = () => {
+    GS.downloadCsv('productos-' + data().hoy + '.csv',
+      ['SKU', 'Nombre', 'Edición', 'Idioma', 'Tipo', 'Factor', 'Código proveedor', 'PVP', 'Precio venta', 'Precio manual', 'Último costo neto', 'Stock mínimo', 'Activo'],
+      productosFiltrados().map((p) => [p.id, p.nombre, p.edicion, p.idioma, p.tipo, p.factor, p.codigoProveedor, p.pvp, p.precio, p.precioManual ? 'Sí' : 'No', p.ultimoCosto, p.stockMinimo, p.activo ? 'Sí' : 'No']));
+  };
+
+  /** Formulario de producto. También lo usa Preventas para crear un producto sin salir de la línea. */
+  GS.editarProducto = function (prod, onSaved, sugerido) {
+    const c = data().catalogos;
+    const p = prod || Object.assign({ nombre: '', edicion: '', idioma: 'ENG', tipo: 'Booster Box', factor: '', pvp: '', precioManual: false, precioVenta: '', stockMinimo: '', imagen: '', codigoProveedor: '', notas: '' }, sugerido || {});
+    const ediciones = Array.from(new Set(data().productos.map((x) => x.edicion).filter(Boolean))).sort();
+    GS.formModal({
+      title: prod ? 'Editar producto ' + prod.id : 'Nuevo producto',
+      submitLabel: 'Guardar producto',
+      fields: () =>
+        (prod ? '' :
+          '<div class="form-field full"><label>Nombre como viene del proveedor (opcional)</label><div class="field-row">' +
+          '<input name="_raw" placeholder="Ej: POKEMON TCG 30TH CELEBRATION - BINDER COLLECTION ENGLISH">' +
+          '<button type="button" class="btn secondary small" data-completar>Completar</button></div>' +
+          '<span class="hint">Pega el nombre de la planilla o factura y se completan edición, nombre, idioma y tipo.</span></div>') +
+        '<div class="form-grid">' +
+        '<div class="form-field"><label>Edición / colección</label><input name="edicion" list="dl-ediciones" value="' + esc(p.edicion) + '" placeholder="Ej: 30th Celebration">' +
+        '<datalist id="dl-ediciones">' + ediciones.map((x) => '<option value="' + esc(x) + '">').join('') + '</datalist></div>' +
+        '<div class="form-field"><label>Nombre *</label><input name="nombre" value="' + esc(p.nombre) + '" placeholder="Ej: Binder Collection"></div>' +
+        '<div class="form-field"><label>Idioma</label><select name="idioma">' + GS.options(c.idiomas, p.idioma) + '</select></div>' +
+        '<div class="form-field"><label>Tipo</label><select name="tipo">' + GS.options(Object.keys(c.tipos), p.tipo) + '</select></div>' +
+        '<div class="form-field"><label>Unidades del proveedor por unidad</label><input name="factor" type="number" min="1" step="1" value="' + esc(p.factor || c.tipos[p.tipo] || 1) + '">' +
+        '<span class="hint">Booster Box = 36 (el proveedor factura sobres).</span></div>' +
+        '<div class="form-field"><label>Código del proveedor</label><input name="codigoProveedor" value="' + esc(p.codigoProveedor) + '" placeholder="Opcional"></div>' +
+        '<div class="form-field"><label>PVP sugerido (con IVA)</label><input name="pvp" type="number" min="0" step="1" value="' + esc(p.pvp || '') + '" placeholder="Ej: 43990"></div>' +
+        '<div class="form-field"><label class="check" style="margin-top:22px;"><input type="checkbox" name="precioManual"' + (p.precioManual ? ' checked' : '') + '> Precio de venta propio (distinto al PVP)</label></div>' +
+        '<div class="form-field" data-precio><label>Precio de venta (con IVA) *</label><input name="precioVenta" type="number" min="1" step="1" value="' + esc(p.precioManual ? p.precioVenta : '') + '" placeholder="Ej: 49990"></div>' +
+        '<div class="form-field"><label>Stock mínimo</label><input name="stockMinimo" type="number" min="0" step="1" value="' + esc(p.stockMinimo || '') + '" placeholder="0"></div>' +
+        '<div class="form-field full"><label>Imagen (enlace https://)</label><input name="imagen" value="' + esc(p.imagen) + '" placeholder="Opcional"></div>' +
+        '<div class="form-field full"><label>Notas</label><textarea name="notas" rows="2">' + esc(p.notas) + '</textarea></div>' +
+        '</div>',
+      onMount: (form) => {
+        const sync = () => {
+          const manual = form.elements.precioManual.checked;
+          form.querySelector('[data-precio]').classList.toggle('hidden', !manual);
+          form.elements.precioVenta.disabled = !manual;
+        };
+        form.elements.precioManual.addEventListener('change', sync);
+        form.elements.tipo.addEventListener('change', () => { form.elements.factor.value = c.tipos[form.elements.tipo.value] || 1; });
+        const completar = form.querySelector('[data-completar]');
+        if (completar) {
+          completar.addEventListener('click', () => {
+            const r = GS.interpretarNombre(form.elements._raw.value);
+            if (r.edicion) form.elements.edicion.value = r.edicion;
+            if (r.nombre) form.elements.nombre.value = r.nombre;
+            if (r.idioma) form.elements.idioma.value = r.idioma;
+            form.elements.tipo.value = r.tipo;
+            form.elements.factor.value = c.tipos[r.tipo] || 1;
+            form.elements.nombre.focus();
+          });
+        }
+        sync();
+      },
+      onSubmit: async (v) => {
+        delete v._raw;
+        const saved = await GS.mutate('guardarProducto', Object.assign({ id: prod ? prod.id : '' }, v),
+          (r) => (prod ? 'Producto actualizado' : 'Producto ' + r.id + ' creado'));
+        if (onSaved) onSaved(saved);
+      },
+    });
+  };
+
+  GS.actions.nuevoProducto = () => GS.editarProducto(null);
+  GS.actions.editarProducto = (id) => GS.editarProducto(findProd(id));
+
+  GS.actions.archivarProducto = (id) => {
+    const p = findProd(id);
+    if (!p.activo) return GS.mutate('archivarProducto', { id: id, activo: true }, 'Producto reactivado').catch((e) => GS.toast(e.message, true));
+    GS.confirm({
+      title: 'Archivar producto',
+      message: '<strong>' + esc(p.nombreCompleto) + '</strong> dejará de aparecer al agregar productos a preventas. Puedes reactivarlo cuando quieras.' +
+        (GS.puede('admin') ? '<br><br>Si nunca se usó en una preventa, también puedes <a class="link" data-action="eliminarProducto" data-id="' + esc(p.id) + '">eliminarlo definitivamente</a>.' : ''),
+      confirmLabel: 'Archivar',
+      onConfirm: () => GS.mutate('archivarProducto', { id: id, activo: false }, 'Producto archivado'),
+    });
+  };
+
+  GS.actions.eliminarProducto = async (id) => {
+    try {
+      await GS.mutate('eliminarProducto', { id: id }, 'Producto eliminado');
+      GS.closeModals();
+    } catch (e) {
+      GS.toast(e.message, true);
+    }
+  };
+
+  /* ---------- proveedores ---------- */
+
+  GS.reglaDespacho = (p) => (!p.despachoMonto ? 'Sin cobro de despacho'
+    : fmt.money(p.despachoMonto) + ' neto' + (p.despachoUmbral ? ' · gratis desde ' + fmt.money(p.despachoUmbral) + ' neto' : ''));
+
+  GS.views.proveedores = {
+    title: 'Proveedores',
+    render(el, d) {
+      const operador = GS.puede('operador');
+      const rows = d.proveedores.slice().sort((a, b) => (b.activo - a.activo) || a.nombre.localeCompare(b.nombre));
+      el.innerHTML =
+        '<div class="page-head"><div><h1>Proveedores</h1><p>Datos de contacto y regla de despacho de cada proveedor.</p></div>' +
+        (operador ? '<button class="btn" data-action="nuevoProveedor">' + GS.icon('plus', 2.4) + 'Nuevo proveedor</button>' : '') + '</div>' +
+        '<div class="table-wrap"><table class="data-table" style="min-width:760px;"><thead><tr>' +
+        '<th>ID</th><th>Proveedor</th><th>RUT</th><th>Contacto</th><th>Despacho</th><th class="right">Acciones</th></tr></thead><tbody>' +
+        (rows.length ? rows.map((p) => '<tr class="' + (p.activo ? '' : 'row-muted') + '">' +
+          '<td class="cell-dim">' + esc(p.id) + '</td><td class="cell-strong">' + esc(p.nombre) + (p.activo ? '' : ' <span class="pill">archivado</span>') + '</td>' +
+          '<td>' + esc(p.rut || '—') + '</td><td>' + esc(p.contacto || '—') + '</td><td>' + esc(GS.reglaDespacho(p)) + '</td>' +
+          '<td><div class="row-actions">' + (operador ? GS.iconBtn('editarProveedor', p.id, 'edit', 'Editar') + GS.iconBtn('archivarProveedor', p.id, 'archive', p.activo ? 'Archivar' : 'Reactivar') : '') + '</div></td></tr>').join('')
+          : '<tr><td colspan="6">' + GS.empty('Sin proveedores', '', 'proveedores') + '</td></tr>') +
+        '</tbody></table></div>';
+    },
+  };
+
+  function proveedorForm(prov) {
+    const p = prov || { nombre: '', rut: '', contacto: '', despachoMonto: '', despachoUmbral: '', notas: '' };
+    GS.formModal({
+      title: prov ? 'Editar proveedor' : 'Nuevo proveedor',
+      submitLabel: 'Guardar proveedor',
+      fields: () =>
+        '<div class="form-grid">' +
+        '<div class="form-field full"><label>Nombre *</label><input name="nombre" value="' + esc(p.nombre) + '"></div>' +
+        '<div class="form-field"><label>RUT</label><input name="rut" value="' + esc(p.rut) + '" placeholder="Opcional"></div>' +
+        '<div class="form-field"><label>Contacto</label><input name="contacto" value="' + esc(p.contacto) + '" placeholder="Correo, teléfono o ejecutivo"></div>' +
+        '<div class="form-field"><label>Costo de despacho (neto)</label><input name="despachoMonto" type="number" min="0" step="1" value="' + esc(p.despachoMonto || '') + '" placeholder="0 = no cobra"></div>' +
+        '<div class="form-field"><label>Despacho gratis desde (neto)</label><input name="despachoUmbral" type="number" min="0" step="1" value="' + esc(p.despachoUmbral || '') + '" placeholder="0 = siempre cobra"></div>' +
+        '<div class="form-field full"><label>Notas</label><textarea name="notas" rows="2">' + esc(p.notas) + '</textarea></div>' +
+        '</div>',
+      onSubmit: (v) => GS.mutate('guardarProveedor', Object.assign({ id: prov ? prov.id : '' }, v), 'Proveedor guardado'),
+    });
+  }
+
+  GS.actions.nuevoProveedor = () => proveedorForm(null);
+  GS.actions.editarProveedor = (id) => proveedorForm(findProv(id));
+  GS.actions.archivarProveedor = (id) => {
+    const p = findProv(id);
+    GS.mutate('archivarProveedor', { id: id, activo: !p.activo }, p.activo ? 'Proveedor archivado' : 'Proveedor reactivado').catch((e) => GS.toast(e.message, true));
+  };
+})();
+</script>

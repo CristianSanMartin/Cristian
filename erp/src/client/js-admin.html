@@ -14,7 +14,7 @@
   function tabUsuarios() {
     const users = data().usuarios.slice().sort((a, b) => (b.activo - a.activo) || a.email.localeCompare(b.email));
     return '<div class="notice">Para entrar, cada persona necesita <strong>dos cosas</strong>: estar en esta lista (activa) y tener acceso de <strong>edición</strong> a la planilla del ERP en Google Drive. ' +
-      'Roles: <strong>Solo lectura</strong> consulta; <strong>Operador</strong> crea y edita preventas, abonos, productos y movimientos; <strong>Administrador</strong> además elimina, revierte, importa y gestiona usuarios.</div>' +
+      'Roles: <strong>Solo lectura</strong> consulta; <strong>Operador</strong> crea y edita preventas, productos y proveedores; <strong>Administrador</strong> además elimina y gestiona usuarios.</div>' +
       '<div class="btn-row" style="justify-content:flex-end;margin-bottom:12px;"><button class="btn" data-action="nuevoUsuario">' + GS.icon('plus', 2.4) + 'Agregar usuario</button></div>' +
       '<div class="table-wrap"><table class="data-table" style="min-width:680px;"><thead><tr><th>Correo</th><th>Nombre</th><th>Rol</th><th>Estado</th><th>Alta</th><th class="right">Acciones</th></tr></thead><tbody>' +
       users.map((u) => '<tr class="' + (u.activo ? '' : 'row-muted') + '"><td class="cell-strong">' + esc(u.email) + (u.email === data().user.email ? ' <span class="pill">tú</span>' : '') + '</td>' +
@@ -44,20 +44,6 @@
       '</tbody></table></div>';
   }
 
-  function tabImportar() {
-    return '<div class="panel"><div class="panel-body" style="padding:18px;">' +
-      '<p style="margin-top:0;color:var(--text-dim);font-size:13.5px;line-height:1.6;">Trae las preventas guardadas en el ERP anterior (el archivo <code>gsprime-erp.html</code>). Cada producto se crea en el catálogo si no existe; ' +
-      'el abono se registra como pago y las preventas "Recibido" ingresan su stock al inventario.</p>' +
-      '<ol class="list-plain"><li>Abre el ERP anterior en el mismo computador y navegador donde lo usabas.</li>' +
-      '<li>Presiona <strong>F12</strong> (o clic derecho → Inspeccionar) y entra a la pestaña <strong>Consola</strong>.</li>' +
-      '<li>Pega esto y presiona Enter: <code>copy(localStorage.getItem(\'gsprime_erp_preventas_v1\'))</code></li>' +
-      '<li>Vuelve aquí y pega (Ctrl+V) en el cuadro de abajo.</li></ol>' +
-      '<form data-importar novalidate style="margin-top:14px;"><div class="form-field"><label>Datos del ERP anterior (JSON)</label>' +
-      '<textarea class="code" name="json" placeholder=\'[{"producto":"...","proveedor":"...", ...}]\'></textarea></div>' +
-      '<div class="form-error"></div><div class="btn-row" style="justify-content:flex-end;"><button type="submit" class="btn">Importar preventas</button></div></form>' +
-      '</div></div>';
-  }
-
   GS.views.admin = {
     title: 'Administración',
     rol: 'admin',
@@ -65,23 +51,9 @@
       const f = GS.filters('admin', { tab: 'usuarios' });
       const tab = (id, label) => '<button class="tab' + (f.tab === id ? ' active' : '') + '" data-action="tab" data-id="admin.' + id + '">' + label + '</button>';
       el.innerHTML =
-        '<div class="page-head"><div><h1>Administración</h1><p>Usuarios y permisos, registro de cambios e importación de datos.</p></div></div>' +
-        '<div class="tabs">' + tab('usuarios', 'Usuarios') + tab('auditoria', 'Auditoría') + tab('importar', 'Importar datos') + '</div>' +
-        (f.tab === 'auditoria' ? tabAuditoria() : f.tab === 'importar' ? tabImportar() : tabUsuarios());
-      const form = el.querySelector('form[data-importar]');
-      if (form) {
-        GS.bindForm(form, async (v) => {
-          if (!v.json) throw new Error('Pega primero los datos del ERP anterior.');
-          const r = await GS.mutate('importarLegacy', v);
-          auditoria = null;
-          GS.modal({
-            title: 'Importación terminada',
-            body: () => '<div class="modal-body"><p>Se importaron <strong>' + r.importadas + '</strong> preventas.</p>' +
-              (r.errores.length ? '<div class="form-error show">' + esc(r.errores.join('\n')) + '</div>' : '') + '</div>' +
-              '<div class="modal-foot"><button class="btn" data-close>Listo</button></div>',
-          });
-        });
-      }
+        '<div class="page-head"><div><h1>Administración</h1><p>Usuarios y permisos, y registro de cambios.</p></div></div>' +
+        '<div class="tabs">' + tab('usuarios', 'Usuarios') + tab('auditoria', 'Auditoría') + '</div>' +
+        (f.tab === 'auditoria' ? tabAuditoria() : tabUsuarios());
     },
   };
 
@@ -119,9 +91,13 @@
       },
     };
   }
-  proximamente('compras', 'Compras', 'Órdenes de compra confirmadas y recepción de mercadería.',
-    'Las preventas recibidas ya ingresan stock al inventario. Este módulo sumará compras directas con documento (factura/boleta), costos de importación y cuentas por pagar.');
-  proximamente('ventas', 'Ventas', 'Registro de ventas a clientes finales y márgenes por producto.',
-    'Mientras tanto, registra las ventas como "Salida" en Inventario. Este módulo agregará clientes, canales de venta, descuentos de stock automáticos y margen real por venta.');
+  proximamente('compras', 'Compras', 'Pedidos y facturas a proveedores, desde las preventas asignadas o por reposición.',
+    'Etapa 2: arma el pedido de cada fecha de lanzamiento con las líneas asignadas, calcula el despacho (gratis desde el umbral del proveedor) y lo reparte en el costo por participación en $.');
+  proximamente('inventario', 'Inventario', 'Stock por lote de factura, con vista unidad por unidad como la planilla.',
+    'Etapa 2: cada línea de compra recibida es un lote. Verás cada unidad con Proveedor, Factura, Serie, Costo, Crédito fiscal, Neto, Débito, Pago SII y Ganancia.');
+  proximamente('ventas', 'Ventas', 'Ventas con OC correlativa, clientes, canal y evento.',
+    'Etapa 3: ventas con OC automática, cliente (o Cliente general), evento, medio de pago, cuentas por cobrar y ganancia real por venta.');
+  proximamente('finanzas', 'Finanzas', 'Caja, gastos, aportes, pagos al SII y resumen mensual.',
+    'Etapa 4: libro de caja automático, GAV por categoría, aportes de socios, pagos al SII, caja de singles y el resumen mensual con resultado real.');
 })();
 </script>

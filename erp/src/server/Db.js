@@ -45,10 +45,17 @@ const Db = {
     let sh = ss.getSheetByName(table);
     if (!sh) sh = ss.insertSheet(table);
     const lastCol = sh.getLastColumn();
-    const headers = lastCol ? sh.getRange(1, 1, 1, lastCol).getValues()[0].map(String) : [];
-    Object.keys(schema.cols).forEach((col) => {
-      if (headers.indexOf(col) === -1) headers.push(col);
-    });
+    let headers;
+    if (sh.getLastRow() <= 1) {
+      // Hoja sin datos: el encabezado queda exactamente como el esquema actual.
+      headers = Object.keys(schema.cols);
+      if (lastCol > headers.length) sh.getRange(1, headers.length + 1, 1, lastCol - headers.length).clearContent();
+    } else {
+      headers = sh.getRange(1, 1, 1, lastCol).getValues()[0].map(String);
+      Object.keys(schema.cols).forEach((col) => {
+        if (headers.indexOf(col) === -1) headers.push(col);
+      });
+    }
     sh.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
     sh.setFrozenRows(1);
     // Texto plano para fechas y textos: evita que Sheets convierta "2026-01-05" o "0012" en otros tipos.
@@ -56,7 +63,7 @@ const Db = {
     headers.forEach((col, i) => {
       const type = schema.cols[col];
       if (!type || filas < 1) return;
-      sh.getRange(2, i + 1, filas, 1).setNumberFormat(type === 'n' ? '0' : type === 'b' ? 'General' : '@');
+      sh.getRange(2, i + 1, filas, 1).setNumberFormat(type === 'n' || type === 'b' ? 'General' : '@');
     });
     delete Db._cache[table];
     return sh;

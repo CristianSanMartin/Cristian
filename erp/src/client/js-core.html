@@ -60,8 +60,11 @@
   /* ---------- formato ---------- */
 
   const nf = new Intl.NumberFormat('es-CL');
+  const nf2 = new Intl.NumberFormat('es-CL', { maximumFractionDigits: 2 });
   GS.fmt = {
     money: (n) => (Number(n) < 0 ? '-$' : '$') + nf.format(Math.round(Math.abs(Number(n) || 0))),
+    /** Costos del proveedor: conservan los centavos si los hay ($15.876,5). */
+    cost: (n) => (Number(n) < 0 ? '-$' : '$') + nf2.format(Math.abs(Number(n) || 0)),
     num: (n) => nf.format(Number(n) || 0),
     date: (iso) => {
       if (!iso) return '—';
@@ -108,16 +111,17 @@
 
   /* ---------- catálogos de UI ---------- */
 
-  GS.ESTADOS = {
-    pedido: { label: 'Pedido', cls: 'st-pedido', color: '#8a8a90' },
-    transito: { label: 'En tránsito', cls: 'st-transito', color: '#c98a00' },
+  GS.ESTADOS_LINEA = {
+    solicitada: { label: 'Solicitada', cls: 'st-pedido', color: '#8a8a90' },
+    asignada: { label: 'Asignada', cls: 'st-parcial', color: '#f6b400' },
+    sin_asignacion: { label: 'Sin asignación', cls: 'st-cancelada', color: '#e0524b' },
+    en_compra: { label: 'En compra', cls: 'st-transito', color: '#c98a00' },
     recibida: { label: 'Recibida', cls: 'st-recibida', color: '#3fae6c' },
-    cancelada: { label: 'Cancelada', cls: 'st-cancelada', color: '#e0524b' },
   };
-  GS.PAGOS = {
-    pendiente: { label: 'Pendiente', cls: 'st-pendiente' },
-    parcial: { label: 'Parcial', cls: 'st-parcial' },
-    pagado: { label: 'Pagado', cls: 'st-pagado' },
+  GS.ESTADOS_PV = {
+    borrador: { label: 'Sin productos', cls: 'st-pedido' },
+    solicitada: { label: 'Esperando asignación', cls: 'st-pedido' },
+    asignada: { label: 'Asignada', cls: 'st-parcial' },
   };
   GS.badge = (map, key) => {
     const e = map[key] || { label: key, cls: '' };
@@ -146,6 +150,10 @@
     download: '<path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/>',
     search: '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>',
     box: '<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18"/>',
+    productos: '<path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/>',
+    proveedores: '<path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/>',
+    finanzas: '<path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/>',
+    back: '<path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/>',
   };
   GS.icon = (name, w) =>
     '<svg viewBox="0 0 24 24" fill="none" stroke-width="' + (w || 2) + '" stroke-linecap="round" stroke-linejoin="round">' + (ICONS[name] || '') + '</svg>';
@@ -312,9 +320,13 @@
     { group: 'Operación' },
     { id: 'dashboard', label: 'Dashboard' },
     { id: 'preventas', label: 'Preventas' },
-    { id: 'inventario', label: 'Inventario' },
     { id: 'compras', label: 'Compras', soon: true },
+    { id: 'inventario', label: 'Inventario', soon: true },
     { id: 'ventas', label: 'Ventas', soon: true },
+    { id: 'finanzas', label: 'Finanzas', soon: true },
+    { group: 'Catálogos' },
+    { id: 'productos', label: 'Productos' },
+    { id: 'proveedores', label: 'Proveedores' },
     { group: 'Sistema', rol: 'admin' },
     { id: 'admin', label: 'Administración', rol: 'admin' },
   ];
@@ -330,16 +342,20 @@
         open = true;
         return;
       }
-      html += '<li class="nav-item' + (GS.state.view === n.id ? ' active' : '') + '" data-nav="' + n.id + '">' +
+      const actual = GS.views[GS.state.view] || {};
+      const activo = GS.state.view === n.id || actual.parent === n.id;
+      html += '<li class="nav-item' + (activo ? ' active' : '') + '" data-nav="' + n.id + '">' +
         GS.icon(n.id === 'admin' ? 'admin' : n.id) + '<span>' + n.label + '</span>' + (n.soon ? '<span class="soon-tag">Pronto</span>' : '') + '</li>';
     });
     if (open) html += '</ul>';
     document.getElementById('nav').innerHTML = html;
   }
 
-  GS.go = function (view) {
+  /** Navega a una vista; `param` identifica el registro en vistas de detalle (ej. una preventa). */
+  GS.go = function (view, param) {
     if (!GS.views[view]) return;
     GS.state.view = view;
+    GS.state.param = param || null;
     document.getElementById('sidebar').classList.remove('open');
     GS.render();
     window.scrollTo(0, 0);
@@ -359,14 +375,14 @@
     if (!view || (view.rol && !GS.puede(view.rol))) { GS.state.view = 'dashboard'; view = GS.views.dashboard; }
     renderNav();
     document.getElementById('topbar-title').textContent = view.title;
-    view.render(document.getElementById('view'), data);
+    view.render(document.getElementById('view'), data, GS.state.param);
     openModals.forEach((m) => { if (m.opts.live) m.render(); });
   };
 
   /* Clicks: navegación y botones con data-action (delegados en todo el documento). */
   document.addEventListener('click', (e) => {
     const nav = e.target.closest('[data-nav]');
-    if (nav) return GS.go(nav.dataset.nav);
+    if (nav) return GS.go(nav.dataset.nav, nav.dataset.param);
     const btn = e.target.closest('[data-action]');
     if (btn && !btn.disabled && GS.actions[btn.dataset.action]) {
       e.preventDefault();

@@ -65,6 +65,14 @@ var createGasFake = function (opts) {
     for (var j = 0; j < this._nc; j++) this._s.data.formats[this._c - 1 + j] = f;
     return this;
   };
+  Range.prototype.clearContent = function () {
+    for (var i = 0; i < this._nr; i++) {
+      var row = this._s.data.values[this._r - 1 + i];
+      if (!row) continue;
+      for (var j = 0; j < this._nc; j++) row[this._c - 1 + j] = '';
+    }
+    return this;
+  };
   ['setFontWeight', 'setBackground', 'setFontColor'].forEach(function (m) {
     Range.prototype[m] = function () { return this; };
   });
