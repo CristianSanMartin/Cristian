@@ -303,3 +303,22 @@ test("nombres siempre en formato título e idioma detectado por ING/ENG/ESP", ()
   assert.deepEqual([a.edicion, a.nombre, a.idioma], ["30th Celebration", "Mini Tin", "ENG"]);
   assert.deepEqual([b.edicion, b.nombre, b.idioma, b.tipo], ["Destined Rivals", "Elite Trainer Box", "ESP", "Elite Trainer Box"]);
 });
+
+test("si la preventa tiene errores no se crea el producto escrito", () => {
+  const s = createServer();
+  const antes = s.ok("bootstrap").data.productos.length;
+  assert.match(errorDe(s.call("guardarPreventa", { proveedorId: asmodee(s).id, producto: "POKEMON TCG X - BOOSTER BOX ENG", solicitado: 1, costoNeto: 1 })), /lanzamiento es obligatoria/);
+  assert.equal(s.ok("bootstrap").data.productos.length, antes);
+});
+
+test("con la planilla desactualizada se detiene y pide ejecutar instalar", () => {
+  const s = createServer();
+  const hoja = s.fake.state.sheets.find(x => x.name === "Preventas");
+  hoja.values[0] = ["id", "proveedorId", "edicion", "fecha", "notas"];
+  hoja.values.push(["PV-0001", "PRV-001", "30th", "2026-08-20", ""]);
+  const r = s.call("bootstrap");
+  assert.equal(r.code, "NO_INSTALADO");
+  assert.match(r.error, /faltan columnas: productoId.*ejecutar instalar/);
+  s.run("instalar()");
+  assert.equal(s.call("bootstrap").ok, true);
+});

@@ -19,18 +19,19 @@ const Preventas = {
 
     const prov = Proveedores.requerir(p.proveedorId);
     if (!prov.activo && (!actual || actual.proveedorId !== prov.id)) throw new AppError('El proveedor está archivado.');
-    // El producto llega como ID (editar) o como texto escrito (agregar): el texto se resuelve o se crea.
-    const prod = p.productoId ? Productos.requerir(p.productoId) : Productos.resolverTexto(p.producto, p.pvp, user);
-    if (!prod.activo && (!actual || actual.productoId !== prod.id)) throw new AppError('El producto está archivado.');
-
+    // Se valida todo antes de tocar el catálogo: si algo falla, no queda un producto creado a medias.
+    if (!p.productoId) Util.texto(p.producto, 'El producto', { requerido: true, max: 200 });
     const datos = {
       proveedorId: prov.id,
-      productoId: prod.id,
       lanzamiento: Util.fecha(p.lanzamiento, 'La fecha de lanzamiento', { requerido: true }),
       solicitado: Util.entero(p.solicitado, 'La cantidad solicitada', { requerido: true }),
       costoNeto: Util.monto(p.costoNeto, 'El costo neto unitario', { requerido: true }),
       notas: Util.texto(p.notas, 'Las notas', { max: 500 }),
     };
+    // El producto llega como ID (editar) o como texto escrito (agregar): el texto se resuelve o se crea.
+    const prod = p.productoId ? Productos.requerir(p.productoId) : Productos.resolverTexto(p.producto, p.pvp, user);
+    if (!prod.activo && (!actual || actual.productoId !== prod.id)) throw new AppError('El producto está archivado.');
+    datos.productoId = prod.id;
     if (actual) {
       const nuevo = Db.update('Preventas', id, Object.assign(datos, Util.sello(user)));
       Audit.log(user, 'editar', 'Preventa', id, Audit.diff(actual, nuevo));

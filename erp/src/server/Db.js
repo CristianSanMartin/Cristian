@@ -76,6 +76,13 @@ const Db = {
     const tz = Db.ss().getSpreadsheetTimeZone() || APP.tz;
     const values = sh.getLastRow() ? sh.getDataRange().getValues() : [];
     const headers = values.length ? values[0].map(String) : Object.keys(schema.cols);
+    // Si la hoja no tiene alguna columna del esquema (se actualizó el código sin ejecutar instalar),
+    // se detiene: escribir así perdería datos en silencio.
+    const faltantes = values.length ? Object.keys(schema.cols).filter((c) => headers.indexOf(c) === -1) : [];
+    if (faltantes.length) {
+      throw new AppError('La hoja "' + table + '" no está actualizada (faltan columnas: ' + faltantes.join(', ') +
+        '). Un administrador debe ejecutar instalar() para actualizar la planilla.', 'NO_INSTALADO');
+    }
     const rows = [];
     for (let r = 1; r < values.length; r++) {
       const raw = values[r];

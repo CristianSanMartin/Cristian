@@ -160,9 +160,10 @@ Si falta lo primero, Google le pedirá permiso. Si falta lo segundo, verá
 ### 6. Actualizar a una versión nueva
 
 1. Descarga la versión nueva (conserva tu `erp/.clasp.json`) y ejecuta `clasp push` dentro de `erp`.
-2. En el editor de Apps Script ejecuta **`instalar`** (o en la planilla, menú
+2. **Obligatorio cuando cambia la estructura de datos:** en el editor de Apps Script ejecuta **`instalar`** (o en la planilla, menú
    **GS Prime ERP → Instalar / actualizar hojas**). Crea las hojas nuevas, agrega columnas
    faltantes y deja las hojas vacías con el encabezado de la versión. Nunca borra datos.
+   Si se te olvida, el ERP no guarda nada y muestra "ERP sin instalar" indicando qué columnas faltan.
 3. **Implementar → Administrar implementaciones → ✏️ → Nueva versión → Implementar.**
 
 ## Límites conocidos

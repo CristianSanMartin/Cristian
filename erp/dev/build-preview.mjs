@@ -4,10 +4,15 @@
 //
 // Uso: npm run erp:preview   (y abre erp/dist/preview.html en el navegador)
 import fs from "node:fs";
+import crypto from "node:crypto";
 import path from "node:path";
 import { ERP, serverSource, fakeSource, clientHtml } from "./sources.mjs";
 
 const js = (s) => JSON.stringify(s).replace(/<\/script/gi, "<\\/script");
+
+// Huella del esquema de datos: si cambia, la vista previa descarta los datos guardados del navegador.
+const config = fs.readFileSync(path.join(ERP, "src", "server", "00_Config.js"), "utf8");
+const esquemaHash = crypto.createHash("sha1").update(config.slice(config.indexOf("const SCHEMA"), config.indexOf("const HOJAS_OBSOLETAS"))).digest("hex").slice(0, 10);
 
 const preview = `
 <script>${fakeSource().replace(/<\/script/gi, "<\\/script")}</script>
@@ -28,13 +33,17 @@ const preview = `
     del: function (k) { try { localStorage.removeItem(k); } catch (e) {} }
   };
   var user = params.get('user') || store.get(KEY + '_user') || 'admin@gsprime.cl';
-  var saved = store.get(KEY);
+  // Si cambió la estructura de datos desde la última visita, la demo parte de cero.
+  var ESQUEMA = ${js(esquemaHash)};
+  var saved = store.get(KEY_ESQUEMA()) === ESQUEMA ? store.get(KEY) : null;
+  var reiniciada = !saved && !!store.get(KEY);
   var fake = createGasFake({ user: 'admin@gsprime.cl', state: saved ? JSON.parse(saved) : undefined });
   var g = fake.globals;
   var server = new Function('SpreadsheetApp', 'Session', 'LockService', 'PropertiesService', 'Utilities', 'HtmlService',
     ${js(serverSource())} + '\\nreturn { api: api, instalar: instalar };')(
     g.SpreadsheetApp, g.Session, g.LockService, g.PropertiesService, g.Utilities, g.HtmlService);
-  var persist = function () { store.set(KEY, JSON.stringify(fake.dump())); };
+  function KEY_ESQUEMA() { return KEY + '_esquema'; }
+  var persist = function () { store.set(KEY, JSON.stringify(fake.dump())); store.set(KEY_ESQUEMA(), ESQUEMA); };
 
   if (!saved) {
     server.instalar();
@@ -105,7 +114,8 @@ const preview = `
   document.addEventListener('DOMContentLoaded', function () {
     var bar = document.createElement('div');
     bar.id = 'preview-bar';
-    bar.innerHTML = '<strong>Vista previa</strong> <span title="Datos de ejemplo guardados solo en este navegador">(datos de ejemplo)</span> · Ver como ' +
+    bar.innerHTML = '<strong>Vista previa</strong> <span title="Datos de ejemplo guardados solo en este navegador">(datos de ejemplo)</span> · ' +
+      (reiniciada ? '<span style="color:#f6b400">Se reinició por una actualización</span> · ' : '') + 'Ver como ' +
       '<select id="preview-user">' + Object.keys(USERS).map(function (e) {
         return '<option value="' + e + '"' + (e === user ? ' selected' : '') + '>' + USERS[e] + '</option>';
       }).join('') + '</select> <button id="preview-reset" type="button">Reiniciar demo</button>';
