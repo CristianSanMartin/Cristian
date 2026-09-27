@@ -10,7 +10,7 @@ Se construye por etapas:
 
 | Etapa | Contenido | Estado |
 |---|---|---|
-| 1 | Catálogo de productos y proveedores, preventas por edición con asignación | ✅ |
+| 1 | Catálogo de productos y proveedores, preventas por producto con asignación | ✅ |
 | 2 | Compras (pedidos/facturas, despacho prorrateado) e inventario por lote | Pendiente |
 | 3 | Ventas con OC, clientes y cuentas por cobrar | Pendiente |
 | 4 | Finanzas: caja, GAV, aportes, SII, caja de singles, resumen mensual | Pendiente |
@@ -29,7 +29,7 @@ erp/
 │   │   ├── Economia.js       modelo económico V4 (IVA, pago SII, ganancia) y despacho
 │   │   ├── Proveedores.js    proveedores y regla de despacho
 │   │   ├── Productos.js      catálogo (nombre + edición + idioma)
-│   │   ├── Preventas.js      preventas por edición, líneas y asignación
+│   │   ├── Preventas.js      preventas (un registro por producto solicitado) y asignación
 │   │   ├── Usuarios.js       usuarios y roles
 │   │   └── Api.js            doGet, api(), instalar(), foto de datos
 │   └── client/               frontend (plantillas HtmlService)
@@ -55,7 +55,7 @@ erp/
   la pantalla sin otra llamada.
 - **Nada se guarda dos veces.** Se guardan los datos de origen (cantidades, costos
   netos, precios) y los resultados (IVA, totales, ganancia, despacho) se calculan.
-- **Correlativos estables** (`PV-0001`, `PVI-000001`, `GS-0001`, `PRV-001`) desde la
+- **Correlativos estables** (`PVI-000001`, `GS-0001`, `PRV-001`) desde la
   hoja `Secuencias`: un número nunca se reutiliza.
 - **Validación en el servidor.** Montos en CLP (costos del proveedor con hasta 2
   decimales), fechas reales, productos únicos por nombre + edición + idioma, y
@@ -71,8 +71,7 @@ erp/
 | `Secuencias` | último número usado de cada correlativo |
 | `Proveedores` | nombre, RUT, contacto, costo de despacho y monto para despacho gratis |
 | `Productos` | SKU `GS-0001`, nombre, edición, idioma, tipo, factor (Booster Box = 36), PVP, precio de venta propio |
-| `Preventas` | `PV-0001`: proveedor, edición, fecha de solicitud |
-| `Preventas_Lineas` | `PVI-000001`: producto, lanzamiento, solicitado, asignado, estado, costo neto |
+| `Preventas` | `PVI-000001`: proveedor, producto, proforma, lanzamiento, solicitado, asignado, estado, costo neto |
 | `Auditoria` | historial de cambios |
 
 Las columnas se leen por nombre: puedes reordenarlas o agregar columnas propias en
@@ -83,8 +82,8 @@ la planilla sin romper nada. **No cambies los nombres de los encabezados.**
 | Rol | Puede |
 |---|---|
 | Solo lectura | ver todo (menos usuarios y auditoría) |
-| Operador | crear y editar productos, proveedores y preventas, registrar asignaciones |
-| Administrador | todo lo anterior, más eliminar preventas y productos, gestionar usuarios y ver la auditoría |
+| Operador | crear y editar productos, proveedores y preventas, registrar asignaciones, eliminar preventas que no pasaron a compra |
+| Administrador | todo lo anterior, más eliminar productos, gestionar usuarios y ver la auditoría |
 
 ## Probar en local (sin Google)
 

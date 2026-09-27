@@ -39,7 +39,7 @@ Preventa ──► Asignación ──► Compra (factura) ──► Inventario (
    etapa; cambia su estado. Revertir = volver al estado anterior.
 4. **Validar antes de escribir**, y todo o nada dentro de una operación.
 5. **Auditoría:** cada cambio queda registrado con usuario, fecha y detalle.
-6. **IDs legibles y estables:** `PV-0001`, `CP-0001`, `OC-0001`, `CLI-0001`, etc.
+6. **IDs legibles y estables:** `PVI-000001`, `CP-0001`, `OC-0001`, `CLI-0001`, etc.
 
 ## 3. Modelo económico (regla oficial "V4")
 
@@ -93,27 +93,42 @@ Nombre, RUT (opcional), contacto y **regla de despacho**:
 
 ## 6. Preventas
 
-Una **preventa** nace del lanzamiento de una nueva edición (ej. *30th Celebration* con Asmodee).
-
-**Encabezado** `PV-0001`: proveedor, edición, fecha de solicitud, notas.
-
-**Líneas** `PVI-000001`, una por producto:
+**La unidad principal es el producto solicitado, no la proforma.** Cada producto que se
+pide al proveedor es un registro independiente `PVI-000001`, aunque varios nazcan de la
+misma proforma. Así cada producto tiene su propia historia (asignación, compra, stock,
+ventas) desde que se solicita hasta que se vende. Registrar la proforma como bloque y
+luego descomponerla complicaba la trazabilidad, porque dentro de un mismo registro
+convivían productos con asignaciones, costos y destinos distintos.
 
 | Campo | Notas |
 |---|---|
-| Producto | Del catálogo (con idioma) |
-| Fecha de lanzamiento | Cada producto puede tener la suya (02-oct, 30-oct, 06-nov…) |
+| Proveedor | Asmodee u otro |
+| Producto | Del catálogo (con edición e idioma) |
+| Proforma | Texto opcional de referencia, para filtrar y agrupar. No controla nada |
+| Fecha de lanzamiento | Cada producto tiene la suya |
 | Solicitado | Lo que se pidió |
-| Asignado | Lo que asignó el proveedor (se registra **una vez**) |
-| Costo neto unitario | Precio del proveedor |
-| PVP / Precio de venta | Tomados del catálogo, editables |
+| Asignado ("Nuevo cant.") | Lo que confirmó el proveedor |
+| Precio unidad | Costo neto del proveedor (admite centavos) |
 
-**Calculado en pantalla** (igual que la planilla actual): diferencia, costo con IVA,
-total neto y con IVA de lo solicitado y de lo asignado, ganancia real por unidad y total.
+- Se trabaja como un **carrito**: se van agregando productos a medida que se conocen;
+  no hay que crear un contenedor antes. Proveedor, proforma y fecha se mantienen para el
+  siguiente producto.
+- El **mismo producto puede pedirse más de una vez** (ej. una reposición en otra proforma):
+  cada solicitud es su propio registro y se gestiona con su propia factura.
+- **Solicitado, asignado e inventario son cantidades distintas.** Solicitado 60, asignado 6:
+  las 6 siguen a Compra; las 54 no asignadas quedan como historial.
+- La pantalla muestra las mismas columnas que la planilla (cant., nuevo cant., dif., precio
+  unidad, precio + IVA, totales solicitados y asignados, precio sugerido, precio de venta,
+  margen) más la **ganancia real neta**.
+- Las filas se agrupan por **fecha de lanzamiento y proveedor** (cada grupo es un pedido)
+  con el aviso de despacho: *"Pedido $858.910 neto · Despacho $15.000 · faltan $141.090
+  para despacho gratis"*.
+- **Asignación:** se escribe el "Nuevo cant." directo en la tabla y se guarda en bloque, o
+  se seleccionan filas para marcar "asignado = solicitado" o "sin asignación". Vaciar la
+  cantidad vuelve la fila a "solicitada".
 
-**Estados de la línea:** `solicitada → asignada → en compra → recibida`.
-Si el proveedor asigna 0, la línea queda `sin asignación`.
-Se pueden agregar líneas no solicitadas (solicitado 0, ej. el Binder ESP asignado sin pedirlo).
+**Estados:** `solicitada → asignada (o sin asignación) → en compra → recibida`.
+Una preventa en compra o recibida ya no se modifica.
 
 ## 7. Compras
 
@@ -124,7 +139,10 @@ preventas (normalmente, las de una misma fecha de lanzamiento) **y/o reposición
 despacho neto, forma de pago (contado / cuotas), costo financiero total (solo si es en cuotas).
 
 **Líneas** `CPI-000001`: producto, cantidad del proveedor, costo neto unitario,
-línea de preventa de origen (si aplica).
+preventa de origen `PVI` (si aplica).
+
+Se crea como **"pagar el carrito"**: se marcan las preventas asignadas que vienen en la
+factura (de una o varias fechas, o de proformas distintas) y se completa el encabezado.
 
 **Ciclo:** `armada → pagada → recibida`. El pedido se paga antes del despacho; el stock
 entra al inventario al **recibir**. Mientras tanto figura como "entrante".
@@ -223,7 +241,7 @@ inventario y quién puede modificar costos o anular operaciones.
 | Usuarios | Acceso y roles |
 | Proveedores | Datos y regla de despacho |
 | Productos | Catálogo |
-| Preventas / Preventas_Lineas | Encabezado y líneas |
+| Preventas | Un registro por producto solicitado (`PVI`) |
 | Compras / Compras_Lineas | Encabezado y líneas (= lotes al recibir) |
 | Ventas / Ventas_Lineas | Encabezado y líneas con resultado histórico |
 | Movimientos | Salidas que no son venta y ajustes |

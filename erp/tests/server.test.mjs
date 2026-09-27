@@ -11,30 +11,33 @@ function producto(s, datos = {}) {
   return s.ok("guardarProducto", { nombre: "Binder Collection", edicion: "30th Celebration", idioma: "ENG", tipo: "Binder / Colección", pvp: 43990, ...datos }).result;
 }
 
-/** Preventa 30th Celebration con los números reales de la planilla de GS Prime. */
+/** Productos solicitados a Asmodee para 30th Celebration, con los números reales de la planilla de GS Prime. */
 function preventa30th(s) {
-  const pv = s.ok("guardarPreventa", { proveedorId: asmodee(s).id, edicion: "30th Celebration", fecha: "2026-08-20" }).result;
+  const prov = asmodee(s).id;
   const binderEng = producto(s);
   const binderEsp = producto(s, { idioma: "ESP" });
   const miniTin = producto(s, { nombre: "Mini Tin", tipo: "Mini Tin", pvp: 13990, precioManual: true, precioVenta: 18000 });
   const deck = producto(s, { nombre: "Battle Deck", tipo: "Battle Deck", pvp: 26990 });
-  const linea = (prod, lanzamiento, solicitado, costoNeto) =>
-    s.ok("guardarLineaPreventa", { preventaId: pv.id, productoId: prod.id, lanzamiento, solicitado, costoNeto }).result;
-  const l = {
-    binderEng: linea(binderEng, "2026-10-02", 60, 25887),
-    binderEsp: linea(binderEsp, "2026-10-02", 0, 25887),
-    miniTin: linea(miniTin, "2026-10-02", 80, 8230),
-    deck: linea(deck, "2026-10-30", 12, 15876.5),
+  const pedir = (prod, lanzamiento, solicitado, costoNeto) =>
+    s.ok("guardarPreventa", { proveedorId: prov, productoId: prod.id, proforma: "Proforma 30th", lanzamiento, solicitado, costoNeto }).result;
+  return {
+    pv: {
+      binderEng: pedir(binderEng, "2026-10-02", 60, 25887),
+      binderEsp: pedir(binderEsp, "2026-10-02", 0, 25887),
+      miniTin: pedir(miniTin, "2026-10-02", 80, 8230),
+      deck: pedir(deck, "2026-10-30", 12, 15876.5),
+    },
+    prods: { binderEng, binderEsp, miniTin, deck },
   };
-  return { pv, l, prods: { binderEng, binderEsp, miniTin, deck } };
 }
 
-const vista = (s, id) => s.ok("bootstrap").data.preventas.find(p => p.id === id);
+const preventas = (s) => s.ok("bootstrap").data.preventas;
+const pv = (s, id) => preventas(s).find(p => p.id === id);
 
 test("instalar crea las hojas, el administrador y el proveedor Asmodee", () => {
   const s = createServer();
   const nombres = s.fake.state.sheets.map(x => x.name);
-  for (const t of ["Usuarios", "Secuencias", "Proveedores", "Productos", "Preventas", "Preventas_Lineas", "Auditoria"]) assert.ok(nombres.includes(t), t);
+  for (const t of ["Usuarios", "Secuencias", "Proveedores", "Productos", "Preventas", "Auditoria"]) assert.ok(nombres.includes(t), t);
   const boot = s.ok("bootstrap").data;
   assert.equal(boot.user.rol, "admin");
   const a = asmodee(s);
@@ -93,98 +96,87 @@ test("los correlativos no se reutilizan aunque se elimine el registro", () => {
   assert.equal(b.id, "GS-0002");
 });
 
-test("preventa: líneas, totales y ganancia real como en la planilla", () => {
+test("cada producto solicitado es una preventa independiente con su correlativo", () => {
   const s = createServer();
-  const { pv, l } = preventa30th(s);
-  assert.equal(pv.id, "PV-0001");
-  assert.equal(l.binderEng.id, "PVI-000001");
-
-  let v = vista(s, pv.id);
-  assert.equal(v.estado, "solicitada");
-  const be = v.lineas.find(x => x.id === l.binderEng.id);
+  const { pv: p } = preventa30th(s);
+  assert.deepEqual(Object.values(p).map(x => x.id), ["PVI-000001", "PVI-000002", "PVI-000003", "PVI-000004"]);
+  const be = pv(s, p.binderEng.id);
+  assert.deepEqual([be.estado, be.proveedor, be.proforma, be.edicion, be.idioma], ["solicitada", "Asmodee", "Proforma 30th", "30th Celebration", "ENG"]);
   assert.equal(Math.round(be.costoIva), 30806);
   assert.equal(be.netoSolicitado, 1553220);
   assert.equal(Math.round(be.netoSolicitado * 1.19), 1848332);
   assert.equal(Math.round(be.gananciaUnidad), 11079, "ganancia real neta, no la bruta de $13.184");
-  const mt = v.lineas.find(x => x.id === l.miniTin.id);
-  assert.equal(mt.precioVenta, 18000, "precio manual");
-  assert.deepEqual(v.lineas.map(x => x.lanzamiento), ["2026-10-02", "2026-10-02", "2026-10-02", "2026-10-30"]);
+  assert.equal(pv(s, p.miniTin.id).precioVenta, 18000, "precio manual");
+  assert.deepEqual(preventas(s).map(x => x.lanzamiento), ["2026-10-02", "2026-10-02", "2026-10-02", "2026-10-30"], "ordenadas por lanzamiento");
 });
 
-test("asignación: diferencia, nuevos totales, línea no solicitada y 'sin asignación'", () => {
+test("el mismo producto puede pedirse de nuevo como otra preventa", () => {
   const s = createServer();
-  const { pv, l } = preventa30th(s);
-  s.ok("registrarAsignacion", { preventaId: pv.id, lineas: [
-    { id: l.binderEng.id, asignado: 24 },
-    { id: l.binderEsp.id, asignado: 6 },
-    { id: l.miniTin.id, asignado: 10 },
+  const { prods } = preventa30th(s);
+  const otra = s.ok("guardarPreventa", { proveedorId: asmodee(s).id, productoId: prods.binderEng.id, proforma: "Reposición", lanzamiento: "2026-12-01", solicitado: 12, costoNeto: 25887 }).result;
+  assert.equal(otra.id, "PVI-000005");
+  assert.equal(preventas(s).filter(x => x.productoId === prods.binderEng.id).length, 2);
+});
+
+test("asignación: diferencia, nuevos totales, 'sin asignación' y volver a solicitada", () => {
+  const s = createServer();
+  const { pv: p } = preventa30th(s);
+  s.ok("registrarAsignacion", { lineas: [
+    { id: p.binderEng.id, asignado: 24 }, { id: p.binderEsp.id, asignado: 6 }, { id: p.miniTin.id, asignado: 10 },
   ] });
-  let v = vista(s, pv.id);
-  assert.equal(v.estado, "solicitada", "aún falta asignar el Battle Deck");
-  const be = v.lineas.find(x => x.id === l.binderEng.id);
+  const be = pv(s, p.binderEng.id);
   assert.deepEqual([be.estado, be.diferencia, be.netoAsignado, Math.round(be.netoAsignado * 1.19)], ["asignada", 36, 621288, 739333]);
-  const esp = v.lineas.find(x => x.id === l.binderEsp.id);
-  assert.deepEqual([esp.diferencia, esp.netoAsignado], [-6, 155322]);
+  const esp = pv(s, p.binderEsp.id);
+  assert.deepEqual([esp.diferencia, esp.netoAsignado, Math.round(esp.netoAsignado * 1.19)], [-6, 155322, 184833]);
+  assert.equal(pv(s, p.deck.id).estado, "solicitada");
 
-  s.ok("registrarAsignacion", { preventaId: pv.id, lineas: [{ id: l.deck.id, asignado: 0 }] });
-  v = vista(s, pv.id);
-  assert.equal(v.estado, "asignada");
-  assert.equal(v.lineas.find(x => x.id === l.deck.id).estado, "sin_asignacion");
-  assert.equal(v.unidadesAsignadas, 40);
-  // se puede corregir la asignación
-  s.ok("registrarAsignacion", { preventaId: pv.id, lineas: [{ id: l.deck.id, asignado: 12 }] });
-  assert.equal(vista(s, pv.id).lineas.find(x => x.id === l.deck.id).estado, "asignada");
+  s.ok("registrarAsignacion", { lineas: [{ id: p.deck.id, asignado: 0 }] });
+  assert.equal(pv(s, p.deck.id).estado, "sin_asignacion");
+  s.ok("registrarAsignacion", { lineas: [{ id: p.deck.id, asignado: 12 }] });
+  assert.equal(pv(s, p.deck.id).estado, "asignada");
+  s.ok("registrarAsignacion", { lineas: [{ id: p.deck.id, asignado: "" }] });
+  const deck = pv(s, p.deck.id);
+  assert.deepEqual([deck.estado, deck.diferencia], ["solicitada", null], "vaciar la cantidad deshace la asignación");
 });
 
-test("despacho por fecha de lanzamiento según la regla de Asmodee", () => {
+test("una asignación con errores no escribe nada", () => {
   const s = createServer();
-  const { pv, l } = preventa30th(s);
-  s.ok("registrarAsignacion", { preventaId: pv.id, lineas: [
-    { id: l.binderEng.id, asignado: 24 }, { id: l.binderEsp.id, asignado: 6 }, { id: l.miniTin.id, asignado: 10 }, { id: l.deck.id, asignado: 12 },
-  ] });
-  const [oct2, oct30] = vista(s, pv.id).lanzamientos;
-  assert.deepEqual([oct2.fecha, oct2.neto, oct2.despacho, oct2.faltaParaGratis], ["2026-10-02", 858910, 15000, 141090]);
-  assert.deepEqual([oct30.neto, oct30.despacho], [190518, 15000]);
-
-  const ditto = producto(s, { nombre: "Ditto Premium Collection", tipo: "Premium Collection", pvp: 53990 });
-  const ld = s.ok("guardarLineaPreventa", { preventaId: pv.id, productoId: ditto.id, lanzamiento: "2026-11-06", solicitado: 54, costoNeto: 31758.81 }).result;
-  s.ok("registrarAsignacion", { preventaId: pv.id, lineas: [{ id: ld.id, asignado: 54 }] });
-  const nov6 = vista(s, pv.id).lanzamientos[2];
-  assert.deepEqual([Math.round(nov6.neto), nov6.despacho, nov6.faltaParaGratis], [1714976, 0, 0]);
+  const { pv: p } = preventa30th(s);
+  assert.match(errorDe(s.call("registrarAsignacion", { lineas: [{ id: p.binderEng.id, asignado: 3 }, { id: "PVI-999999", asignado: 1 }] })), /PVI-999999 no existe/);
+  assert.match(errorDe(s.call("registrarAsignacion", { lineas: [{ id: p.binderEng.id, asignado: 3 }, { id: p.deck.id, asignado: -1 }] })), /asignada de PVI-000004 debe ser mayor o igual a 0/);
+  assert.equal(pv(s, p.binderEng.id).estado, "solicitada");
 });
 
-test("validaciones de líneas", () => {
+test("validaciones al solicitar", () => {
   const s = createServer();
-  const { pv, l, prods } = preventa30th(s);
-  const base = { preventaId: pv.id, productoId: prods.binderEng.id, lanzamiento: "2026-10-02", solicitado: 1, costoNeto: 1 };
-  assert.match(errorDe(s.call("guardarLineaPreventa", base)), /ya está en esta preventa/);
-  const otro = producto(s, { nombre: "Otro" });
-  assert.match(errorDe(s.call("guardarLineaPreventa", { ...base, productoId: otro.id, lanzamiento: "" })), /lanzamiento es obligatoria/);
-  assert.match(errorDe(s.call("guardarLineaPreventa", { ...base, productoId: otro.id, solicitado: -1 })), /mayor o igual a 0/);
-  assert.match(errorDe(s.call("guardarLineaPreventa", { ...base, productoId: otro.id, costoNeto: 1.555 })), /2 decimales/);
-  assert.match(errorDe(s.call("registrarAsignacion", { preventaId: pv.id, lineas: [{ id: l.binderEng.id, asignado: 3 }, { id: "PVI-999999", asignado: 1 }] })), /no pertenece/);
-  assert.equal(vista(s, pv.id).lineas.find(x => x.id === l.binderEng.id).estado, "solicitada", "una asignación inválida no escribe nada");
+  const { prods } = preventa30th(s);
+  const base = { proveedorId: asmodee(s).id, productoId: prods.binderEng.id, lanzamiento: "2026-10-02", solicitado: 1, costoNeto: 1 };
+  assert.match(errorDe(s.call("guardarPreventa", { ...base, lanzamiento: "" })), /lanzamiento es obligatoria/);
+  assert.match(errorDe(s.call("guardarPreventa", { ...base, solicitado: "" })), /cantidad solicitada es obligatoria/);
+  assert.match(errorDe(s.call("guardarPreventa", { ...base, solicitado: -1 })), /mayor o igual a 0/);
+  assert.match(errorDe(s.call("guardarPreventa", { ...base, costoNeto: 1.555 })), /2 decimales/);
+  assert.match(errorDe(s.call("guardarPreventa", { ...base, productoId: "GS-9999" })), /producto no existe/);
+  assert.match(errorDe(s.call("guardarPreventa", { ...base, proveedorId: "" })), /proveedor no existe/);
 });
 
-test("líneas que ya pasaron a compra no se editan ni se eliminan", () => {
+test("preventas que ya pasaron a compra no se editan, asignan ni eliminan", () => {
   const s = createServer();
-  const { pv, l } = preventa30th(s);
-  const hoja = s.fake.state.sheets.find(x => x.name === "Preventas_Lineas");
-  const col = hoja.values[0].indexOf("estado");
-  hoja.values[1][col] = "en_compra";
-  assert.match(errorDe(s.call("guardarLineaPreventa", { ...l.binderEng, solicitado: 99 })), /ya pasó a una compra/);
-  assert.match(errorDe(s.call("eliminarLineaPreventa", { id: l.binderEng.id })), /ya pasó a una compra/);
-  assert.match(errorDe(s.call("eliminarPreventa", { id: pv.id })), /no se puede eliminar/);
-  assert.match(errorDe(s.call("eliminarProducto", { id: l.binderEng.productoId })), /archívalo/);
+  const { pv: p } = preventa30th(s);
+  const hoja = s.fake.state.sheets.find(x => x.name === "Preventas");
+  hoja.values[1][hoja.values[0].indexOf("estado")] = "en_compra";
+  assert.match(errorDe(s.call("guardarPreventa", { ...p.binderEng, solicitado: 99 })), /ya pasó a una compra/);
+  assert.match(errorDe(s.call("registrarAsignacion", { lineas: [{ id: p.binderEng.id, asignado: 1 }] })), /ya pasó a una compra/);
+  assert.match(errorDe(s.call("eliminarPreventa", { id: p.binderEng.id })), /ya pasó a una compra/);
+  assert.match(errorDe(s.call("eliminarProducto", { id: p.binderEng.productoId })), /archívalo/);
+  s.ok("eliminarPreventa", { id: p.deck.id });
+  assert.equal(preventas(s).length, 3);
 });
 
-test("eliminar una preventa borra sus líneas", () => {
+test("despacho según la regla de Asmodee", () => {
   const s = createServer();
-  const { pv } = preventa30th(s);
-  s.ok("eliminarPreventa", { id: pv.id });
-  const boot = s.ok("bootstrap").data;
-  assert.equal(boot.preventas.length, 0);
-  assert.equal(s.sheet("Preventas_Lineas").length, 1, "solo queda el encabezado");
+  const a = asmodee(s);
+  assert.deepEqual(s.run(`JSON.stringify(Economia.despacho(${JSON.stringify(a)}, 858910))`), JSON.stringify({ monto: 15000, faltaParaGratis: 141090 }));
+  assert.deepEqual(s.run(`JSON.stringify(Economia.despacho(${JSON.stringify(a)}, 2096081))`), JSON.stringify({ monto: 0, faltaParaGratis: 0 }));
 });
 
 test("proveedores: nombre único, archivado bloquea nuevas preventas", () => {
@@ -193,23 +185,25 @@ test("proveedores: nombre único, archivado bloquea nuevas preventas", () => {
   const otro = s.ok("guardarProveedor", { nombre: "Distribuidora Central", despachoMonto: 5000 }).result;
   assert.equal(otro.id, "PRV-002");
   s.ok("archivarProveedor", { id: otro.id, activo: false });
-  assert.match(errorDe(s.call("guardarPreventa", { proveedorId: otro.id, edicion: "X" })), /archivado/);
+  const prod = producto(s);
+  assert.match(errorDe(s.call("guardarPreventa", { proveedorId: otro.id, productoId: prod.id, lanzamiento: "2026-10-02", solicitado: 1, costoNeto: 1 })), /archivado/);
 });
 
-test("roles: lectura solo consulta, operador opera, admin elimina y administra", () => {
+test("roles: lectura solo consulta, operador opera, admin administra", () => {
   const s = createServer();
   s.ok("guardarUsuario", { email: "Socio@GSPrime.cl", nombre: "Socio", rol: "operador" });
   s.ok("guardarUsuario", { email: "vista@gsprime.cl", nombre: "Vista", rol: "lectura" });
-  const { pv, l } = preventa30th(s);
+  const { pv: p } = preventa30th(s);
 
   s.as("vista@gsprime.cl");
   assert.equal(s.ok("bootstrap").data.usuarios.length, 0);
   assert.equal(s.call("guardarProducto", { nombre: "X" }).code, "SIN_PERMISO");
+  assert.equal(s.call("registrarAsignacion", { lineas: [{ id: p.binderEng.id, asignado: 1 }] }).code, "SIN_PERMISO");
 
   s.as("socio@gsprime.cl");
-  s.ok("registrarAsignacion", { preventaId: pv.id, lineas: [{ id: l.binderEng.id, asignado: 24 }] });
-  s.ok("eliminarLineaPreventa", { id: l.deck.id });
-  assert.equal(s.call("eliminarPreventa", { id: pv.id }).code, "SIN_PERMISO");
+  s.ok("registrarAsignacion", { lineas: [{ id: p.binderEng.id, asignado: 24 }] });
+  s.ok("eliminarPreventa", { id: p.deck.id });
+  assert.equal(s.call("eliminarProducto", { id: p.deck.productoId }).code, "SIN_PERMISO");
   assert.equal(s.call("auditoria").code, "SIN_PERMISO");
 
   s.as("admin@gsprime.cl");
@@ -224,22 +218,34 @@ test("debe quedar al menos un administrador activo", () => {
 
 test("auditoría registra quién hizo cada cambio", () => {
   const s = createServer();
-  const { pv, l } = preventa30th(s);
-  s.ok("registrarAsignacion", { preventaId: pv.id, lineas: [{ id: l.binderEng.id, asignado: 24 }] });
-  const log = s.ok("auditoria").data;
-  const asig = log.find(x => x.accion === "asignación");
+  const { pv: p } = preventa30th(s);
+  s.ok("registrarAsignacion", { lineas: [{ id: p.binderEng.id, asignado: 24 }] });
+  const asig = s.ok("auditoria").data.find(x => x.accion === "asignación");
   assert.equal(asig.usuario, "admin@gsprime.cl");
-  assert.deepEqual(JSON.parse(asig.detalle), [{ linea: "PVI-000001", solicitado: 60, asignado: 24 }]);
+  assert.deepEqual(JSON.parse(asig.detalle), [{ id: "PVI-000001", solicitado: 60, asignado: 24 }]);
 });
 
 test("fechas se guardan como texto y se leen bien si Sheets las convirtió", () => {
   const s = createServer();
-  const { pv } = preventa30th(s);
-  const hoja = s.fake.state.sheets.find(x => x.name === "Preventas_Lineas");
+  preventa30th(s);
+  const hoja = s.fake.state.sheets.find(x => x.name === "Preventas");
   const col = hoja.values[0].indexOf("lanzamiento");
   assert.equal(typeof hoja.values[1][col], "string");
   hoja.values[1][col] = new Date("2026-12-24T00:00:00Z");
-  assert.ok(vista(s, pv.id).lineas.some(x => x.lanzamiento === "2026-12-24"));
+  assert.ok(preventas(s).some(x => x.lanzamiento === "2026-12-24"));
+});
+
+test("instalar respalda la hoja Preventas de la v2.1 si tiene datos", () => {
+  const s = createServer();
+  const ss = s.fake.state;
+  ss.sheets = ss.sheets.filter(x => x.name !== "Preventas");
+  ss.sheets.push({ name: "Preventas", values: [["id", "proveedorId", "edicion", "fecha"], ["PV-0001", "PRV-001", "30th", "2026-08-20"]], formats: {}, maxRows: 1000 });
+  ss.sheets.push({ name: "Preventas_Lineas", values: [["id", "preventaId"]], formats: {}, maxRows: 1000 });
+  const msg = s.run("instalar()");
+  assert.match(msg, /Preventas_v2_1/);
+  assert.ok(ss.sheets.some(x => x.name === "Preventas_v2_1"));
+  assert.ok(s.sheet("Preventas")[0].includes("productoId"));
+  assert.equal(ss.sheets.some(x => x.name === "Preventas_Lineas"), false);
 });
 
 test("un texto que empieza con = se guarda como texto, no como fórmula", () => {

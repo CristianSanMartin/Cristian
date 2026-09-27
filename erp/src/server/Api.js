@@ -32,9 +32,7 @@ function rutas_() {
     eliminarProducto: { rol: 'admin', write: true, fn: Productos.eliminar },
 
     guardarPreventa: { rol: 'operador', write: true, fn: Preventas.guardar },
-    eliminarPreventa: { rol: 'admin', write: true, fn: Preventas.eliminar },
-    guardarLineaPreventa: { rol: 'operador', write: true, fn: Preventas.guardarLinea },
-    eliminarLineaPreventa: { rol: 'operador', write: true, fn: Preventas.eliminarLinea },
+    eliminarPreventa: { rol: 'operador', write: true, fn: Preventas.eliminar },
     registrarAsignacion: { rol: 'operador', write: true, fn: Preventas.registrarAsignacion },
 
     guardarUsuario: { rol: 'admin', write: true, fn: Usuarios.guardar },
@@ -85,9 +83,19 @@ function instalar() {
   PropertiesService.getScriptProperties().setProperty('SPREADSHEET_ID', ss.getId());
   Db._ss = ss;
   Db.reset();
+  const mensaje = [];
+
+  // v2.1 usaba "Preventas" como encabezado de proforma. Si tiene datos, se respalda antes de crear la nueva.
+  const antigua = ss.getSheetByName('Preventas');
+  if (antigua && antigua.getLastRow() > 1) {
+    const enc = antigua.getRange(1, 1, 1, antigua.getLastColumn()).getValues()[0].map(String);
+    if (enc.indexOf('productoId') === -1) {
+      antigua.setName('Preventas_v2_1');
+      mensaje.push('La hoja "Preventas" de la versión anterior se renombró a "Preventas_v2_1" como respaldo.');
+    }
+  }
   Object.keys(SCHEMA).forEach((t) => Db.ensureSheet(t));
 
-  const mensaje = [];
   HOJAS_OBSOLETAS.concat(['Hoja 1', 'Sheet1']).forEach((nombre) => {
     const hoja = ss.getSheetByName(nombre);
     if (hoja && hoja.getLastRow() <= 1 && ss.getSheets().length > 1) {
@@ -135,12 +143,12 @@ const Snapshot = {
     const productos = Db.all('Productos');
     const preventas = Preventas.vista(productos, proveedores);
 
-    // Último costo neto conocido de cada producto (de su línea de preventa más reciente).
+    // Último costo neto conocido de cada producto (de su preventa con lanzamiento más reciente).
     const ultimoCosto = {};
-    preventas.forEach((pv) => pv.lineas.forEach((l) => {
-      const prev = ultimoCosto[l.productoId];
-      if (!prev || l.lanzamiento >= prev.fecha) ultimoCosto[l.productoId] = { fecha: l.lanzamiento, costo: l.costoNeto };
-    }));
+    preventas.forEach((pv) => {
+      const prev = ultimoCosto[pv.productoId];
+      if (!prev || pv.lanzamiento >= prev.fecha) ultimoCosto[pv.productoId] = { fecha: pv.lanzamiento, costo: pv.costoNeto };
+    });
     const prods = productos.map((p) => {
       const costo = ultimoCosto[p.id] ? ultimoCosto[p.id].costo : 0;
       const e = Economia.unidad(costo, Productos.precio(p));

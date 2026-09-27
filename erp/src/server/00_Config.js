@@ -15,7 +15,7 @@
 
 const APP = {
   nombre: 'GS Prime ERP',
-  version: '2.1.0',
+  version: '2.2.0',
   tz: 'America/Santiago',
   iva: 0.19,
 };
@@ -49,15 +49,12 @@ const SCHEMA = {
       precioManual: 'b', stockMinimo: 'n', imagen: 's', codigoProveedor: 's', activo: 'b', notas: 's',
     }, AUDIT_COLS),
   },
+  /** Una fila = un producto solicitado a un proveedor (PVI-000001). La proforma es solo una referencia. */
   Preventas: {
     key: 'id',
-    cols: Object.assign({ id: 's', proveedorId: 's', edicion: 's', fecha: 'd', notas: 's' }, AUDIT_COLS),
-  },
-  Preventas_Lineas: {
-    key: 'id',
     cols: Object.assign({
-      id: 's', preventaId: 's', productoId: 's', lanzamiento: 'd', solicitado: 'n', asignado: 'n', estado: 's',
-      costoNeto: 'n', notas: 's',
+      id: 's', proveedorId: 's', productoId: 's', proforma: 's', lanzamiento: 'd', solicitado: 'n', asignado: 'n',
+      estado: 's', costoNeto: 'n', notas: 's',
     }, AUDIT_COLS),
   },
   Auditoria: {
@@ -67,7 +64,7 @@ const SCHEMA = {
 };
 
 /** Hojas de versiones anteriores que instalar() elimina si están vacías. */
-const HOJAS_OBSOLETAS = ['Pagos', 'Movimientos'];
+const HOJAS_OBSOLETAS = ['Pagos', 'Movimientos', 'Preventas_Lineas'];
 
 const IDIOMAS = ['ENG', 'ESP', 'JPN', 'Otro'];
 
@@ -88,7 +85,7 @@ const TIPOS_PRODUCTO = {
 };
 
 /**
- * Estado de una línea de preventa:
+ * Estado de una preventa (un producto solicitado):
  * solicitada → asignada (o sin_asignacion si el proveedor asignó 0) → en_compra → recibida.
  */
 const ESTADOS_LINEA = ['solicitada', 'asignada', 'sin_asignacion', 'en_compra', 'recibida'];

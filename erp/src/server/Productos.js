@@ -51,7 +51,7 @@ const Productos = {
 
   eliminar(p, user) {
     const prod = Productos.requerir(p.id);
-    if (Db.all('Preventas_Lineas').some((l) => l.productoId === prod.id)) {
+    if (Db.all('Preventas').some((l) => l.productoId === prod.id)) {
       throw new AppError('El producto está en una preventa; archívalo en lugar de eliminarlo.');
     }
     Db.remove('Productos', prod.id);

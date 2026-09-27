@@ -16,48 +16,61 @@
     title: 'Dashboard',
     render(el, d) {
       const iva = (n) => n * (1 + d.app.iva);
-      const lineas = [];
-      d.preventas.forEach((pv) => pv.lineas.forEach((l) => lineas.push(Object.assign({ pv: pv }, l))));
-      const abiertas = lineas.filter((l) => ['solicitada', 'asignada'].indexOf(l.estado) !== -1);
-      const porAsignar = lineas.filter((l) => l.estado === 'solicitada');
-      const asignadas = lineas.filter((l) => l.estado === 'asignada');
-      const pvsPendientes = d.preventas.filter((p) => p.lineasPendientes > 0);
-      const compromiso = asignadas.reduce((s, l) => s + l.netoAsignado, 0);
-      const ganancia = abiertas.reduce((s, l) => s + l.gananciaTotal, 0);
+      const activas = d.preventas.filter((p) => ['solicitada', 'asignada'].indexOf(p.estado) !== -1);
+      const porAsignar = activas.filter((p) => p.estado === 'solicitada');
+      const asignadas = activas.filter((p) => p.estado === 'asignada');
+      const compromiso = asignadas.reduce((s, p) => s + p.netoAsignado, 0);
+      const ganancia = activas.reduce((s, p) => s + p.gananciaTotal, 0);
 
-      // Próximos pedidos: un pedido por preventa y fecha de lanzamiento.
-      const pedidos = [];
-      d.preventas.forEach((pv) => pv.lanzamientos.forEach((x) => {
-        if (x.fecha >= d.hoy) pedidos.push(Object.assign({ pv: pv }, x));
-      }));
-      pedidos.sort((a, b) => (a.fecha < b.fecha ? -1 : 1));
+      // Próximos pedidos: uno por proveedor y fecha de lanzamiento.
+      const pedidos = {};
+      activas.filter((p) => p.lanzamiento >= d.hoy).forEach((p) => {
+        const k = p.lanzamiento + '|' + p.proveedorId;
+        const x = pedidos[k] || (pedidos[k] = { fecha: p.lanzamiento, proveedorId: p.proveedorId, proveedor: p.proveedor, productos: 0, neto: 0, ediciones: new Set() });
+        x.productos++;
+        x.neto += p.netoVigente;
+        if (p.edicion) x.ediciones.add(p.edicion);
+      });
+      const lista = Object.values(pedidos).sort((a, b) => (a.fecha < b.fecha ? -1 : 1));
+      const despacho = (x) => {
+        const prov = d.proveedores.find((p) => p.id === x.proveedorId);
+        if (!prov || !prov.despachoMonto) return '—';
+        if (prov.despachoUmbral && x.neto >= prov.despachoUmbral) return '<span class="text-success">Gratis</span>';
+        return '<span class="text-gold">' + fmt.money(prov.despachoMonto) + '</span>' + (prov.despachoUmbral ? '<div class="cell-dim">faltan ' + fmt.money(prov.despachoUmbral - x.neto) + '</div>' : '');
+      };
+
+      // Esperando asignación, agrupado por proveedor y proforma.
+      const pend = {};
+      porAsignar.forEach((p) => {
+        const k = p.proveedor + '|' + p.proforma;
+        const x = pend[k] || (pend[k] = { proveedor: p.proveedor, proforma: p.proforma, productos: 0, unidades: 0 });
+        x.productos++;
+        x.unidades += p.solicitado;
+      });
 
       el.innerHTML =
         '<div class="page-head"><div><h1>Dashboard</h1><p>Resumen de la operación de GS Prime.</p></div></div>' +
         '<div class="kpi-grid">' +
-        kpi('Preventas en curso', d.preventas.filter((p) => p.lineas.some((l) => ['solicitada', 'asignada'].indexOf(l.estado) !== -1)).length,
-          pvsPendientes.length ? '<span class="text-gold">' + pvsPendientes.length + ' esperando asignación</span>' : 'Todas asignadas') +
-        kpi('Unidades por comprar', fmt.num(asignadas.reduce((s, l) => s + l.asignado, 0)), 'Asignadas, aún sin compra') +
+        kpi('Productos en preventa', activas.length, porAsignar.length ? '<span class="text-gold">' + porAsignar.length + ' esperando asignación</span>' : 'Todos asignados') +
+        kpi('Unidades por comprar', fmt.num(asignadas.reduce((s, p) => s + p.asignado, 0)), 'Asignadas, aún sin compra') +
         kpi('Compromiso con proveedores', fmt.money(iva(compromiso)), 'Con IVA · ' + fmt.money(compromiso) + ' neto') +
-        kpi('Ganancia proyectada', '<span class="text-success">' + fmt.money(ganancia) + '</span>', 'Real neta de preventas en curso') +
+        kpi('Ganancia proyectada', '<span class="text-success">' + fmt.money(ganancia) + '</span>', 'Real neta de las preventas activas') +
         '</div>' +
         '<div class="dash-grid">' +
-        '<div class="panel"><div class="panel-head"><h3>Próximos lanzamientos</h3><span class="tag">Un pedido por fecha</span></div><div class="panel-body">' +
-        (pedidos.length
-          ? '<table class="mini-table"><thead><tr><th>Fecha</th><th>Edición</th><th class="right">Productos</th><th class="right">Neto</th><th>Despacho</th></tr></thead><tbody>' +
-            pedidos.slice(0, 8).map((x) => '<tr><td class="nowrap">' + fmt.date(x.fecha) + '<div>' + GS.relDays(x.fecha) + '</div></td>' +
-              '<td class="prod-cell"><div class="name"><a class="link" data-nav="preventa" data-param="' + esc(x.pv.id) + '">' + esc(x.pv.edicion) + '</a></div><div class="prov">' + esc(x.pv.id) + ' · ' + esc(x.pv.proveedor) + '</div></td>' +
-              '<td class="cell-num right">' + x.productos + '</td><td class="cell-num right">' + fmt.money(x.neto) + '</td>' +
-              '<td>' + (x.despacho ? '<span class="text-gold">' + fmt.money(x.despacho) + '</span>' + (x.faltaParaGratis > 0 ? '<div class="cell-dim">faltan ' + fmt.money(x.faltaParaGratis) + '</div>' : '') : '<span class="text-success">Gratis</span>') + '</td></tr>').join('') +
+        '<div class="panel"><div class="panel-head"><h3>Próximos lanzamientos</h3><span class="tag">Un pedido por proveedor y fecha</span></div><div class="panel-body">' +
+        (lista.length
+          ? '<table class="mini-table"><thead><tr><th>Fecha</th><th>Pedido</th><th class="right">Productos</th><th class="right">Neto</th><th>Despacho</th></tr></thead><tbody>' +
+            lista.slice(0, 8).map((x) => '<tr><td class="nowrap">' + fmt.date(x.fecha) + '<div>' + GS.relDays(x.fecha) + '</div></td>' +
+              '<td class="prod-cell"><div class="name">' + esc(x.proveedor) + '</div><div class="prov">' + esc(Array.from(x.ediciones).join(', ') || '—') + '</div></td>' +
+              '<td class="cell-num right">' + x.productos + '</td><td class="cell-num right">' + fmt.money(x.neto) + '</td><td>' + despacho(x) + '</td></tr>').join('') +
             '</tbody></table>'
-          : GS.empty('Sin lanzamientos próximos', 'Crea una preventa cuando el proveedor anuncie una nueva edición.', 'preventas')) +
+          : GS.empty('Sin lanzamientos próximos', 'Agrega productos en Preventas a medida que el proveedor los anuncia.', 'preventas')) +
         '</div></div>' +
         '<div class="panel"><div class="panel-head"><h3>Esperando asignación</h3></div><div class="panel-body">' +
-        (pvsPendientes.length
-          ? '<table class="mini-table"><thead><tr><th>Preventa</th><th class="right">Productos</th><th class="right">Solicitado</th></tr></thead><tbody>' +
-            pvsPendientes.map((p) => '<tr><td class="prod-cell"><div class="name"><a class="link" data-nav="preventa" data-param="' + esc(p.id) + '">' + esc(p.edicion) + '</a></div><div class="prov">' + esc(p.id) + ' · ' + esc(p.proveedor) + '</div></td>' +
-              '<td class="cell-num right">' + p.lineasPendientes + '</td>' +
-              '<td class="cell-num right">' + fmt.num(porAsignar.filter((l) => l.preventaId === p.id).reduce((s, l) => s + l.solicitado, 0)) + '</td></tr>').join('') +
+        (Object.keys(pend).length
+          ? '<table class="mini-table"><thead><tr><th>Proveedor · proforma</th><th class="right">Productos</th><th class="right">Solicitado</th></tr></thead><tbody>' +
+            Object.values(pend).map((x) => '<tr><td class="prod-cell"><div class="name">' + esc(x.proveedor) + '</div><div class="prov">' + esc(x.proforma || 'Sin proforma') + '</div></td>' +
+              '<td class="cell-num right">' + x.productos + '</td><td class="cell-num right">' + fmt.num(x.unidades) + '</td></tr>').join('') +
             '</tbody></table>'
           : GS.empty('Nada pendiente', 'Todas las preventas tienen su asignación registrada.')) +
         '</div></div>' +

@@ -1,236 +1,325 @@
 <script>
 /* =========================================================
-   Preventas por edición: listado, detalle con líneas por
-   fecha de lanzamiento, y registro de la asignación.
+   Preventas: una fila por producto solicitado (como la
+   planilla). Formulario para ir agregando productos, filtros
+   por proveedor / edición / proforma / lanzamiento, y
+   "Nuevo cant." (asignado) editable en la misma tabla.
 ========================================================= */
 (function () {
   'use strict';
   const { fmt, esc } = GS;
   const data = () => GS.state.data;
-  const findPv = (id) => data().preventas.find((p) => p.id === id);
   const iva = (n) => n * (1 + data().app.iva);
   const EDITABLES = ['solicitada', 'asignada', 'sin_asignacion'];
-  const editable = (l) => EDITABLES.indexOf(l.estado) !== -1;
+  const editable = (p) => EDITABLES.indexOf(p.estado) !== -1;
+  const findPv = (id) => data().preventas.find((p) => p.id === id);
 
-  /* ---------- listado ---------- */
+  /* Estado local de la pantalla (sobrevive a los redibujos). */
+  const borrador = { productoId: '', proveedorId: '', proforma: '', lanzamiento: '', solicitado: '', costoNeto: '' };
+  const asigPendiente = {};   // id -> valor escrito en "Nuevo cant." aún sin guardar
+  const seleccion = new Set();
 
-  const DEF = { q: '', proveedor: '', estado: '' };
+  const DEF = { q: '', proveedor: '', edicion: '', proforma: '', lanzamiento: '', estado: 'activas' };
 
   function filtradas() {
     const f = GS.filters('preventas', DEF);
     const q = GS.norm(f.q.trim());
-    return data().preventas
-      .filter((p) => {
-        if (f.proveedor && p.proveedorId !== f.proveedor) return false;
-        if (f.estado && p.estado !== f.estado) return false;
-        return !q || GS.norm(p.id + ' ' + p.edicion + ' ' + p.proveedor + ' ' + p.lineas.map((l) => l.producto).join(' ')).includes(q);
-      })
-      .sort((a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : 0));
+    return data().preventas.filter((p) => {
+      if (f.estado === 'activas' ? ['solicitada', 'asignada'].indexOf(p.estado) === -1 : f.estado && p.estado !== f.estado) return false;
+      if (f.proveedor && p.proveedorId !== f.proveedor) return false;
+      if (f.edicion && p.edicion !== f.edicion) return false;
+      if (f.proforma && p.proforma !== f.proforma) return false;
+      if (f.lanzamiento && p.lanzamiento !== f.lanzamiento) return false;
+      return !q || GS.norm(p.id + ' ' + p.producto + ' ' + p.proveedor + ' ' + p.proforma).includes(q);
+    });
   }
+
+  const unicos = (k) => Array.from(new Set(data().preventas.map((p) => p[k]).filter(Boolean))).sort();
+
+  /* ---------- formulario "agregar producto" ---------- */
+
+  function productoOptions(selectedId) {
+    const prods = data().productos.filter((p) => p.activo || p.id === selectedId).sort((a, b) => a.nombreCompleto.localeCompare(b.nombreCompleto));
+    return '<option value="">Selecciona un producto…</option>' +
+      prods.map((p) => '<option value="' + esc(p.id) + '"' + (p.id === selectedId ? ' selected' : '') + '>' + esc(p.nombreCompleto) + '</option>').join('');
+  }
+
+  function panelAgregar(d) {
+    if (!GS.puede('operador')) return '';
+    const provs = d.proveedores.filter((x) => x.activo);
+    if (!borrador.proveedorId) borrador.proveedorId = (provs.find((x) => x.nombre === 'Asmodee') || provs[0] || {}).id || '';
+    return '<div class="panel inline-panel" id="agregar-preventa"><form novalidate>' +
+      '<div class="inline-panel-head"><h3>Agregar producto a preventas</h3><span class="muted">Cada producto queda como un registro propio. Proveedor, proforma y fecha se mantienen para el siguiente.</span></div>' +
+      '<div class="add-grid">' +
+      '<div class="form-field span-2"><label for="ap-producto">Producto *</label><div class="field-row">' +
+      '<select id="ap-producto" name="productoId">' + productoOptions(borrador.productoId) + '</select>' +
+      '<button type="button" class="btn secondary small" data-action="nuevoProductoPv">' + GS.icon('plus') + 'Nuevo</button></div></div>' +
+      '<div class="form-field"><label for="ap-proveedor">Proveedor *</label><select id="ap-proveedor" name="proveedorId">' + GS.options(provs.map((x) => ({ value: x.id, label: x.nombre })), borrador.proveedorId) + '</select></div>' +
+      '<div class="form-field"><label for="ap-proforma">Proforma</label><input id="ap-proforma" name="proforma" list="dl-proformas" value="' + esc(borrador.proforma) + '" placeholder="Opcional">' +
+      '<datalist id="dl-proformas">' + unicos('proforma').map((x) => '<option value="' + esc(x) + '">').join('') + '</datalist></div>' +
+      '<div class="form-field"><label for="ap-lanzamiento">Lanzamiento *</label><input id="ap-lanzamiento" type="date" name="lanzamiento" value="' + esc(borrador.lanzamiento) + '"></div>' +
+      '<div class="form-field"><label for="ap-cant">Cant. solicitada *</label><input id="ap-cant" type="number" min="0" step="1" name="solicitado" value="' + esc(borrador.solicitado) + '"></div>' +
+      '<div class="form-field"><label for="ap-costo">Precio neto *</label><input id="ap-costo" type="number" min="0" step="0.01" name="costoNeto" value="' + esc(borrador.costoNeto) + '"></div>' +
+      '<div class="form-field add-submit"><button type="submit" class="btn">' + GS.icon('plus', 2.4) + 'Agregar</button></div>' +
+      '</div>' +
+      '<div class="add-calc" data-calc></div>' +
+      '<div class="form-error"></div>' +
+      '</form></div>';
+  }
+
+  function calcAgregar(form) {
+    const prod = data().productos.find((x) => x.id === form.elements.productoId.value);
+    const costo = Number(form.elements.costoNeto.value) || 0;
+    const cant = Number(form.elements.solicitado.value) || 0;
+    const partes = [];
+    if (prod) partes.push('Precio sugerido ' + (prod.pvp ? fmt.money(prod.pvp) : '—') + ' · Precio venta ' + (prod.precio ? fmt.money(prod.precio) : '—'));
+    if (costo) partes.push('Precio + IVA ' + fmt.money(iva(costo)));
+    if (costo && cant) partes.push('Total neto ' + fmt.money(costo * cant) + ' · Total + IVA ' + fmt.money(iva(costo * cant)));
+    if (prod && prod.precio && costo) {
+      const g = prod.precio / (1 + data().app.iva) - costo;
+      partes.push('Ganancia real ' + '<span class="' + (g < 0 ? 'text-danger' : 'text-success') + '">' + fmt.money(g) + ' / u.</span>');
+    }
+    form.querySelector('[data-calc]').innerHTML = partes.join(' &nbsp;·&nbsp; ');
+  }
+
+  function conectarAgregar(el) {
+    const form = el.querySelector('#agregar-preventa form');
+    if (!form) return;
+    form.addEventListener('input', (e) => {
+      if (e.target.name && e.target.name in borrador) borrador[e.target.name] = e.target.value;
+      calcAgregar(form);
+    });
+    form.elements.productoId.addEventListener('change', () => {
+      // Precarga el último costo conocido del producto.
+      const prod = data().productos.find((x) => x.id === form.elements.productoId.value);
+      if (prod && prod.ultimoCosto && !form.elements.costoNeto.value) {
+        form.elements.costoNeto.value = prod.ultimoCosto;
+        borrador.costoNeto = String(prod.ultimoCosto);
+      }
+      calcAgregar(form);
+    });
+    GS.bindForm(form, async (v) => {
+      const r = await GS.mutate('guardarPreventa', v, (x) => x.id + ' agregada');
+      Object.assign(borrador, { productoId: '', solicitado: '', costoNeto: '' });
+      GS.render();
+      const sel = document.getElementById('ap-producto');
+      if (sel) sel.focus();
+      return r;
+    });
+    calcAgregar(form);
+  }
+
+  GS.actions.nuevoProductoPv = () => {
+    GS.editarProducto(null, (prod) => {
+      borrador.productoId = prod.id;
+      GS.render();
+    });
+  };
+
+  /* ---------- tabla ---------- */
+
+  function celdaAsignado(p, operador) {
+    if (operador && editable(p)) {
+      const pendiente = Object.prototype.hasOwnProperty.call(asigPendiente, p.id);
+      const valor = pendiente ? asigPendiente[p.id] : p.estado === 'solicitada' ? '' : p.asignado;
+      return '<input class="qty-input' + (pendiente ? ' dirty' : '') + '" type="number" min="0" step="1" data-asig="' + esc(p.id) + '" value="' + esc(valor) + '" placeholder="—" aria-label="Nuevo cant. de ' + esc(p.producto) + '">';
+    }
+    return p.estado === 'solicitada' ? '<span class="muted">—</span>' : fmt.num(p.asignado);
+  }
+
+  function fila(p, operador) {
+    const asignada = p.estado !== 'solicitada';
+    const vig = (v) => (asignada ? v : '<span class="muted">—</span>');
+    return '<tr class="' + (p.estado === 'sin_asignacion' ? 'row-muted' : '') + (seleccion.has(p.id) ? ' row-selected' : '') + '">' +
+      '<td>' + (operador && editable(p) ? '<input type="checkbox" class="row-check" data-sel="' + esc(p.id) + '"' + (seleccion.has(p.id) ? ' checked' : '') + ' aria-label="Seleccionar ' + esc(p.id) + '">' : '') + '</td>' +
+      '<td>' + GS.thumb(p.imagen) + '</td>' +
+      '<td class="cell-strong">' + esc(p.productoNombre) + ' <span class="pill lang">' + esc(p.idioma) + '</span>' +
+      '<div class="cell-dim">' + esc(p.id) + (p.edicion ? ' · ' + esc(p.edicion) : '') + (p.proforma ? ' · ' + esc(p.proforma) : '') + '</div></td>' +
+      '<td>' + GS.badge(GS.ESTADOS_LINEA, p.estado) + '</td>' +
+      '<td class="cell-num right">' + fmt.num(p.solicitado) + '</td>' +
+      '<td class="right">' + celdaAsignado(p, operador) + '</td>' +
+      '<td class="cell-num right ' + (p.diferencia < 0 ? 'text-gold' : '') + '">' + vig(fmt.num(p.diferencia)) + '</td>' +
+      '<td class="cell-num right">' + fmt.cost(p.costoNeto) + '</td>' +
+      '<td class="cell-num right">' + fmt.money(p.costoIva) + '</td>' +
+      '<td class="cell-num right">' + fmt.money(p.netoSolicitado) + '</td>' +
+      '<td class="cell-num right">' + fmt.money(iva(p.netoSolicitado)) + '</td>' +
+      '<td class="cell-num right cell-strong">' + vig(fmt.money(p.netoAsignado)) + '</td>' +
+      '<td class="cell-num right cell-strong">' + vig(fmt.money(iva(p.netoAsignado))) + '</td>' +
+      '<td class="cell-num right">' + (p.pvp ? fmt.money(p.pvp) : '—') + '</td>' +
+      '<td class="cell-num right">' + (p.precioVenta ? fmt.money(p.precioVenta) : '—') + (p.precioManual ? '<div><span class="pill soon">propio</span></div>' : '') + '</td>' +
+      '<td class="cell-num right">' + (p.precioVenta ? fmt.pct(p.recargo) : '—') + '</td>' +
+      '<td class="cell-num right ' + (p.gananciaUnidad < 0 ? 'text-danger' : 'text-success') + '">' + (p.precioVenta ? fmt.money(p.gananciaUnidad) : '—') + '</td>' +
+      '<td class="cell-num right ' + (p.gananciaTotal < 0 ? 'text-danger' : 'text-success') + '">' + (p.precioVenta ? fmt.money(p.gananciaTotal) : '—') + '</td>' +
+      '<td><div class="row-actions">' + (operador && editable(p)
+        ? GS.iconBtn('editarPreventa', p.id, 'edit', 'Editar') + GS.iconBtn('eliminarPreventa', p.id, 'trash', 'Eliminar', 'danger') : '') + '</div></td></tr>';
+  }
+
+  /** Aviso de despacho del pedido de un proveedor en una fecha (todas sus preventas activas, no solo las filtradas). */
+  function avisoDespacho(proveedorId, fecha) {
+    const prov = data().proveedores.find((x) => x.id === proveedorId);
+    const neto = data().preventas
+      .filter((p) => p.proveedorId === proveedorId && p.lanzamiento === fecha && ['solicitada', 'asignada'].indexOf(p.estado) !== -1)
+      .reduce((s, p) => s + p.netoVigente, 0);
+    let aviso = '';
+    if (prov && prov.despachoMonto) {
+      if (prov.despachoUmbral && neto >= prov.despachoUmbral) aviso = '<span class="text-success">✓ Despacho gratis</span>';
+      else aviso = '<span class="text-gold">Despacho ' + fmt.money(prov.despachoMonto) + '</span>' +
+        (prov.despachoUmbral ? ' · faltan <strong>' + fmt.money(prov.despachoUmbral - neto) + '</strong> para despacho gratis' : '');
+    }
+    return 'Pedido ' + fmt.money(neto) + ' neto' + (aviso ? ' · ' + aviso : '');
+  }
+
+  const COLS = 19;
 
   GS.views.preventas = {
     title: 'Preventas',
     render(el, d) {
       const f = GS.filters('preventas', DEF);
+      const fechas = unicos('lanzamiento');
       el.innerHTML =
-        '<div class="page-head"><div><h1>Preventas</h1><p>Solicitudes por edición al proveedor y lo que finalmente asignó.</p></div>' +
-        (GS.puede('operador') ? '<button class="btn' + (nuevaAbierta ? ' secondary' : '') + '" data-action="nuevaPreventa" aria-expanded="' + nuevaAbierta + '" aria-controls="nueva-preventa">' +
-          GS.icon(nuevaAbierta ? 'close' : 'plus', 2.4) + (nuevaAbierta ? 'Cerrar' : 'Nueva preventa') + '</button>' : '') + '</div>' +
-        panelNuevaPreventa() +
+        '<div class="page-head"><div><h1>Preventas</h1><p>Cada producto solicitado al proveedor, lo que asignó y lo que se proyecta ganar.</p></div>' +
+        '<button class="btn ghost" data-action="exportarPreventas">' + GS.icon('download') + 'Exportar</button></div>' +
+        panelAgregar(d) +
         '<div class="filters-bar">' +
-        '<div class="search-box">' + GS.icon('search') + '<input type="text" data-filter="preventas.q" value="' + esc(f.q) + '" placeholder="Buscar por edición, producto o folio..."></div>' +
-        '<div class="select-input"><select data-filter="preventas.proveedor">' + GS.options([{ value: '', label: 'Todos los proveedores' }].concat(d.proveedores.map((p) => ({ value: p.id, label: p.nombre }))), f.proveedor) + '</select></div>' +
-        '<div class="select-input"><select data-filter="preventas.estado">' + GS.options([{ value: '', label: 'Todos los estados' }].concat(Object.keys(GS.ESTADOS_PV).map((k) => ({ value: k, label: GS.ESTADOS_PV[k].label }))), f.estado) + '</select></div>' +
-        '<span class="count" id="pv-count"></span></div>' +
-        '<div class="table-wrap"><table class="data-table wide"><thead><tr>' +
-        '<th>Folio</th><th class="col-prod">Edición</th><th>Proveedor</th><th>Solicitud</th><th>Lanzamientos</th><th class="right">Productos</th>' +
-        '<th class="right">Solicitado</th><th class="right">Asignado</th><th class="right">Total neto</th><th class="right">Total + IVA</th><th class="right">Ganancia proyectada</th><th>Estado</th>' +
+        '<div class="search-box">' + GS.icon('search') + '<input type="text" data-filter="preventas.q" value="' + esc(f.q) + '" placeholder="Buscar producto, proforma o PVI..."></div>' +
+        '<div class="select-input"><select data-filter="preventas.proveedor" aria-label="Proveedor">' + GS.options([{ value: '', label: 'Todos los proveedores' }].concat(d.proveedores.map((p) => ({ value: p.id, label: p.nombre }))), f.proveedor) + '</select></div>' +
+        '<div class="select-input"><select data-filter="preventas.edicion" aria-label="Edición">' + GS.options([{ value: '', label: 'Todas las ediciones' }].concat(unicos('edicion')), f.edicion) + '</select></div>' +
+        '<div class="select-input"><select data-filter="preventas.proforma" aria-label="Proforma">' + GS.options([{ value: '', label: 'Todas las proformas' }].concat(unicos('proforma')), f.proforma) + '</select></div>' +
+        '<div class="select-input"><select data-filter="preventas.lanzamiento" aria-label="Lanzamiento">' + GS.options([{ value: '', label: 'Todos los lanzamientos' }].concat(fechas.map((x) => ({ value: x, label: fmt.date(x) }))), f.lanzamiento) + '</select></div>' +
+        '<div class="select-input"><select data-filter="preventas.estado" aria-label="Estado">' + GS.options([{ value: 'activas', label: 'Por comprar (solicitadas y asignadas)' }, { value: '', label: 'Todos los estados' }]
+          .concat(Object.keys(GS.ESTADOS_LINEA).map((k) => ({ value: k, label: GS.ESTADOS_LINEA[k].label }))), f.estado) + '</select></div>' +
+        '</div>' +
+        '<div id="pv-resumen"></div>' +
+        '<div id="pv-acciones"></div>' +
+        '<div class="table-wrap"><table class="data-table xwide"><thead><tr>' +
+        '<th></th><th></th><th class="col-prod">Producto</th><th>Estado</th><th class="right">Cant.</th><th class="right">Nuevo cant.</th><th class="right">Dif.</th>' +
+        '<th class="right">Precio unidad</th><th class="right">Precio + IVA</th><th class="right">Total neto</th><th class="right">Total + IVA</th>' +
+        '<th class="right">Nuevo total neto</th><th class="right">Nuevo total + IVA</th><th class="right">Precio sugerido</th><th class="right">Precio venta</th>' +
+        '<th class="right">Margen s/costo</th><th class="right">Ganancia real u.</th><th class="right">Ganancia real total</th><th></th>' +
         '</tr></thead><tbody id="pv-tbody"></tbody></table></div>' +
-        '<p class="table-note">Totales según lo asignado (o lo solicitado, en líneas aún sin asignar). Ganancia real neta, sin despacho.</p>';
-      conectarNuevaPreventa(el);
+        '<p class="table-note">Ganancia real = precio de venta sin IVA − precio unidad neto (sin despacho). "Margen s/costo" es el recargo sobre el precio con IVA, como en la planilla.</p>';
+      conectarAgregar(el);
       this.update();
     },
+
     update() {
       const rows = filtradas();
-      document.getElementById('pv-count').textContent = rows.length + ' de ' + data().preventas.length;
-      document.getElementById('pv-tbody').innerHTML = rows.length
-        ? rows.map((p) => '<tr>' +
-          '<td class="nowrap"><a class="link" data-nav="preventa" data-param="' + esc(p.id) + '">' + esc(p.id) + '</a></td>' +
-          '<td class="cell-strong"><a class="link" data-nav="preventa" data-param="' + esc(p.id) + '">' + esc(p.edicion) + '</a></td>' +
-          '<td>' + esc(p.proveedor) + '</td><td class="nowrap">' + fmt.date(p.fecha) + '</td>' +
-          '<td>' + (p.lanzamientos.map((x) => '<span class="pill">' + fmt.date(x.fecha).slice(0, 5) + '</span>').join(' ') || '—') + '</td>' +
-          '<td class="cell-num right">' + p.lineas.length + '</td>' +
-          '<td class="cell-num right">' + fmt.num(p.unidadesSolicitadas) + '</td>' +
-          '<td class="cell-num right">' + (p.estado === 'asignada' || p.unidadesAsignadas ? fmt.num(p.unidadesAsignadas) : '—') + '</td>' +
-          '<td class="cell-num right">' + fmt.money(p.netoVigente) + '</td>' +
-          '<td class="cell-num right cell-strong">' + fmt.money(iva(p.netoVigente)) + '</td>' +
-          '<td class="cell-num right text-success">' + fmt.money(p.gananciaProyectada) + '</td>' +
-          '<td>' + GS.badge(GS.ESTADOS_PV, p.estado) + '</td></tr>').join('')
-        : '<tr><td colspan="12">' + GS.empty('No hay preventas', 'Crea una preventa cuando el proveedor anuncie una nueva edición.', 'preventas') + '</td></tr>';
-    },
-  };
-
-  /* ---------- detalle ---------- */
-
-  function despachoAviso(x, prov) {
-    if (!prov || !prov.despachoMonto) return '';
-    if (!x.despacho) return '<span class="text-success">✓ Despacho gratis</span>';
-    return '<span class="text-gold">Despacho ' + fmt.money(x.despacho) + '</span>' +
-      (x.faltaParaGratis > 0 ? ' · faltan <strong>' + fmt.money(x.faltaParaGratis) + '</strong> para despacho gratis' : '');
-  }
-
-  function filaLinea(l, operador) {
-    const asignada = l.estado !== 'solicitada';
-    const vigente = (v) => (asignada ? v : '<span class="muted">—</span>');
-    return '<tr class="' + (l.estado === 'sin_asignacion' ? 'row-muted' : '') + '">' +
-      '<td>' + GS.thumb(l.imagen) + '</td>' +
-      '<td class="cell-strong">' + esc(l.productoNombre) + ' <span class="pill lang">' + esc(l.idioma) + '</span><div class="cell-dim">' + esc(l.id) + ' · ' + esc(l.tipo) + '</div></td>' +
-      '<td>' + GS.badge(GS.ESTADOS_LINEA, l.estado) + '</td>' +
-      '<td class="cell-num right">' + fmt.num(l.solicitado) + '</td>' +
-      '<td class="cell-num right cell-strong">' + vigente(fmt.num(l.asignado)) + '</td>' +
-      '<td class="cell-num right ' + (l.diferencia < 0 ? 'text-gold' : '') + '">' + vigente(fmt.num(l.diferencia)) + '</td>' +
-      '<td class="cell-num right">' + fmt.cost(l.costoNeto) + '</td>' +
-      '<td class="cell-num right">' + fmt.money(l.costoIva) + '</td>' +
-      '<td class="cell-num right">' + fmt.money(l.netoSolicitado) + '</td>' +
-      '<td class="cell-num right">' + fmt.money(iva(l.netoSolicitado)) + '</td>' +
-      '<td class="cell-num right cell-strong">' + vigente(fmt.money(l.netoAsignado)) + '</td>' +
-      '<td class="cell-num right cell-strong">' + vigente(fmt.money(iva(l.netoAsignado))) + '</td>' +
-      '<td class="cell-num right">' + (l.pvp ? fmt.money(l.pvp) : '—') + '</td>' +
-      '<td class="cell-num right">' + (l.precioVenta ? fmt.money(l.precioVenta) : '—') + (l.precioManual ? '<div><span class="pill soon">manual</span></div>' : '') + '</td>' +
-      '<td class="cell-num right">' + (l.precioVenta ? fmt.pct(l.recargo) : '—') + '</td>' +
-      '<td class="cell-num right ' + (l.gananciaUnidad < 0 ? 'text-danger' : 'text-success') + '">' + (l.precioVenta ? fmt.money(l.gananciaUnidad) : '—') + '</td>' +
-      '<td class="cell-num right ' + (l.gananciaTotal < 0 ? 'text-danger' : 'text-success') + '">' + (l.precioVenta ? fmt.money(l.gananciaTotal) : '—') + '</td>' +
-      '<td><div class="row-actions">' + (operador && editable(l)
-        ? GS.iconBtn('editarLinea', l.id, 'edit', 'Editar') + GS.iconBtn('eliminarLinea', l.id, 'trash', 'Quitar de la preventa', 'danger') : '') + '</div></td></tr>';
-  }
-
-  GS.views.preventa = {
-    title: 'Preventa',
-    parent: 'preventas',
-    render(el, d, id) {
-      const p = findPv(id);
-      if (!p) { GS.go('preventas'); return; }
-      this.title = p.id;
-      document.getElementById('topbar-title').textContent = 'Preventa ' + p.id;
       const operador = GS.puede('operador');
-      const prov = d.proveedores.find((x) => x.id === p.proveedorId);
-      const puedeAsignar = operador && p.lineas.some(editable);
-      const kpi = (label, value, sub) => '<div class="kpi-card"><div class="kpi-label">' + label + '</div><div class="kpi-value">' + value + '</div><div class="kpi-sub">' + sub + '</div></div>';
+      // Agrupa por fecha de lanzamiento y proveedor: cada grupo es un pedido.
+      const grupos = [];
+      rows.forEach((p) => {
+        const clave = p.lanzamiento + '|' + p.proveedorId;
+        let g = grupos[grupos.length - 1];
+        if (!g || g.clave !== clave) grupos.push(g = { clave: clave, fecha: p.lanzamiento, proveedorId: p.proveedorId, proveedor: p.proveedor, filas: [] });
+        g.filas.push(p);
+      });
+      document.getElementById('pv-tbody').innerHTML = rows.length
+        ? grupos.map((g) => '<tr class="group-row"><td colspan="' + COLS + '">' +
+            '<strong>Lanzamiento ' + fmt.date(g.fecha) + '</strong> ' + GS.relDays(g.fecha) + ' · ' + esc(g.proveedor) +
+            ' <span class="launch-info">· ' + avisoDespacho(g.proveedorId, g.fecha) + '</span></td></tr>' +
+            g.filas.map((p) => fila(p, operador)).join('')).join('')
+        : '<tr><td colspan="' + COLS + '">' + GS.empty('No hay preventas para mostrar', operador ? 'Agrega productos con el formulario de arriba o ajusta los filtros.' : 'Ajusta los filtros.', 'preventas') + '</td></tr>';
 
-      el.innerHTML =
-        '<a class="link back-link" data-nav="preventas">' + GS.icon('back') + 'Preventas</a>' +
-        '<div class="page-head"><div><h1>' + esc(p.edicion) + '</h1>' +
-        '<p>' + esc(p.id) + ' · ' + esc(p.proveedor) + ' · solicitada el ' + fmt.date(p.fecha) + ' &nbsp;' + GS.badge(GS.ESTADOS_PV, p.estado) + '</p></div>' +
-        '<div class="btn-row">' +
-        '<button class="btn ghost" data-action="exportarPreventa" data-id="' + esc(p.id) + '">' + GS.icon('download') + 'Exportar</button>' +
-        (operador ? '<button class="btn ghost" data-action="editarPreventa" data-id="' + esc(p.id) + '">' + GS.icon('edit') + 'Editar datos</button>' : '') +
-        (operador ? '<button class="btn secondary" data-action="nuevaLinea" data-id="' + esc(p.id) + '">' + GS.icon('plus', 2.4) + 'Agregar producto</button>' : '') +
-        (puedeAsignar ? '<button class="btn" data-action="asignar" data-id="' + esc(p.id) + '">' + GS.icon('check') + 'Registrar asignación</button>' : '') +
-        '</div></div>' +
-        '<div class="kpi-grid">' +
-        kpi('Unidades', fmt.num(p.unidadesAsignadas) + ' <span class="muted" style="font-size:15px;">/ ' + fmt.num(p.unidadesSolicitadas) + '</span>', 'Asignadas / solicitadas' + (p.lineasPendientes ? ' · <span class="text-gold">' + p.lineasPendientes + ' sin asignar</span>' : '')) +
-        kpi('Total neto', fmt.money(p.netoVigente), 'Solicitado: ' + fmt.money(p.netoSolicitado)) +
-        kpi('Total + IVA', fmt.money(iva(p.netoVigente)), 'A pagar al proveedor (sin despacho)') +
-        kpi('Ganancia proyectada', '<span class="text-success">' + fmt.money(p.gananciaProyectada) + '</span>', 'Real neta, vendiendo todo al precio de venta') +
-        '</div>' +
-        (p.notas ? '<div class="notes-box" style="margin-bottom:16px;">' + esc(p.notas) + '</div>' : '') +
-        (p.lanzamientos.length
-          ? p.lanzamientos.map((x) => {
-            const lineas = p.lineas.filter((l) => l.lanzamiento === x.fecha);
-            const sum = (k) => lineas.reduce((s, l) => s + (l[k] || 0), 0);
-            return '<div class="panel launch-panel">' +
-              '<div class="panel-head"><h3>Lanzamiento ' + fmt.date(x.fecha) + ' ' + GS.relDays(x.fecha) + '</h3>' +
-              '<span class="launch-info">Pedido ' + fmt.money(x.neto) + ' neto · ' + despachoAviso(x, prov) + '</span></div>' +
-              '<div class="table-wrap flat"><table class="data-table xwide"><thead><tr>' +
-              '<th></th><th class="col-prod">Producto</th><th>Estado</th><th class="right">Solic.</th><th class="right">Asig.</th><th class="right">Dif.</th>' +
-              '<th class="right">Costo neto</th><th class="right">Costo + IVA</th><th class="right">Total neto solic.</th><th class="right">Total + IVA solic.</th>' +
-              '<th class="right">Total neto asig.</th><th class="right">Total + IVA asig.</th><th class="right">PVP</th><th class="right">Precio venta</th>' +
-              '<th class="right">Recargo</th><th class="right">Ganancia u.</th><th class="right">Ganancia total</th><th></th>' +
-              '</tr></thead><tbody>' + lineas.map((l) => filaLinea(l, operador)).join('') + '</tbody>' +
-              '<tfoot><tr><td></td><td colspan="2">Total ' + fmt.date(x.fecha) + '</td><td class="cell-num right">' + fmt.num(sum('solicitado')) + '</td>' +
-              '<td class="cell-num right">' + fmt.num(lineas.reduce((s, l) => s + (l.estado === 'solicitada' ? 0 : l.asignado), 0)) + '</td><td colspan="3"></td>' +
-              '<td class="cell-num right">' + fmt.money(sum('netoSolicitado')) + '</td><td class="cell-num right">' + fmt.money(iva(sum('netoSolicitado'))) + '</td>' +
-              '<td class="cell-num right">' + fmt.money(sum('netoAsignado')) + '</td><td class="cell-num right">' + fmt.money(iva(sum('netoAsignado'))) + '</td>' +
-              '<td colspan="4"></td><td class="cell-num right text-success">' + fmt.money(sum('gananciaTotal')) + '</td><td></td></tr></tfoot>' +
-              '</table></div></div>';
-          }).join('')
-          : '<div class="panel">' + GS.empty('Sin productos todavía', 'Agrega los productos que vas a solicitar, cada uno con su fecha de lanzamiento.', 'preventas') + '</div>') +
-        (GS.puede('admin') ? '<div class="danger-zone"><button class="btn danger-outline" data-action="eliminarPreventa" data-id="' + esc(p.id) + '">Eliminar preventa</button></div>' : '');
+      const sum = (k) => rows.reduce((s, p) => s + (p[k] || 0), 0);
+      const asig = rows.filter((p) => p.estado !== 'solicitada').reduce((s, p) => s + p.asignado, 0);
+      const kpi = (l, v, sub) => '<div class="kpi-card"><div class="kpi-label">' + l + '</div><div class="kpi-value small">' + v + '</div><div class="kpi-sub">' + sub + '</div></div>';
+      document.getElementById('pv-resumen').innerHTML = '<div class="kpi-grid">' +
+        kpi('Productos', rows.length, rows.filter((p) => p.estado === 'solicitada').length + ' esperando asignación') +
+        kpi('Unidades', fmt.num(asig) + ' <span class="muted" style="font-size:14px;">/ ' + fmt.num(sum('solicitado')) + '</span>', 'Asignadas / solicitadas') +
+        kpi('Total + IVA', fmt.money(iva(sum('netoVigente'))), fmt.money(sum('netoVigente')) + ' neto (asignado, o solicitado si falta asignar)') +
+        kpi('Ganancia proyectada', '<span class="text-success">' + fmt.money(sum('gananciaTotal')) + '</span>', 'Real neta, vendiendo todo') +
+        '</div>';
+      barraAcciones();
     },
   };
 
-  GS.actions.exportarPreventa = (id) => {
-    const p = findPv(id);
-    GS.downloadCsv(p.id + '-' + p.edicion.replace(/\W+/g, '-') + '.csv',
-      ['Línea', 'SKU', 'Producto', 'Idioma', 'Lanzamiento', 'Estado', 'Solicitado', 'Asignado', 'Dif', 'Costo neto', 'Costo + IVA', 'Total neto solic.', 'Total + IVA solic.',
-        'Total neto asig.', 'Total + IVA asig.', 'PVP', 'Precio venta', 'Recargo %', 'Ganancia u.', 'Ganancia total'],
-      p.lineas.map((l) => {
-        const asignada = l.estado !== 'solicitada';
-        return [l.id, l.productoId, l.producto, l.idioma, l.lanzamiento, GS.ESTADOS_LINEA[l.estado].label, l.solicitado, asignada ? l.asignado : '', asignada ? l.diferencia : '',
-          l.costoNeto, Math.round(l.costoIva), Math.round(l.netoSolicitado), Math.round(iva(l.netoSolicitado)),
-          asignada ? Math.round(l.netoAsignado) : '', asignada ? Math.round(iva(l.netoAsignado)) : '', l.pvp, l.precioVenta,
-          Math.round(l.recargo * 100), Math.round(l.gananciaUnidad), Math.round(l.gananciaTotal)];
-      }));
-  };
+  /* ---------- asignación en la tabla y acciones en bloque ---------- */
 
-  /* ---------- encabezado ---------- */
-
-  /** Campos del encabezado de una preventa (formulario en línea al crear, modal al editar). */
-  function preventaCampos(pv) {
-    const d = data();
-    const provs = d.proveedores.filter((x) => x.activo || (pv && x.id === pv.proveedorId));
-    const ediciones = Array.from(new Set(d.productos.map((x) => x.edicion).concat(d.preventas.map((x) => x.edicion)).filter(Boolean))).sort();
-    const p = pv || { proveedorId: (provs.find((x) => x.nombre === 'Asmodee') || provs[0] || {}).id, edicion: '', fecha: d.hoy, notas: '' };
-    return '<div class="form-grid">' +
-      '<div class="form-field"><label for="pv-proveedor">Proveedor *</label><select id="pv-proveedor" name="proveedorId">' + GS.options(provs.map((x) => ({ value: x.id, label: x.nombre })), p.proveedorId) + '</select></div>' +
-      '<div class="form-field"><label for="pv-fecha">Fecha de solicitud</label><input id="pv-fecha" type="date" name="fecha" value="' + esc(p.fecha) + '"></div>' +
-      '<div class="form-field full"><label for="pv-edicion">Edición / colección *</label><input id="pv-edicion" name="edicion" list="dl-ed-pv" value="' + esc(p.edicion) + '" placeholder="Ej: 30th Celebration">' +
-      '<datalist id="dl-ed-pv">' + ediciones.map((x) => '<option value="' + esc(x) + '">').join('') + '</datalist></div>' +
-      '<div class="form-field full"><label for="pv-notas">Notas</label><textarea id="pv-notas" name="notas" rows="2">' + esc(p.notas) + '</textarea></div>' +
-      '</div>';
-  }
-
-  /* "Nueva preventa" despliega el formulario bajo el encabezado, sin ventana emergente. */
-  let nuevaAbierta = false;
-
-  function panelNuevaPreventa() {
-    if (!nuevaAbierta) return '';
-    return '<div class="panel inline-panel" id="nueva-preventa"><form novalidate>' +
-      '<div class="inline-panel-head"><h3>Nueva preventa</h3><span class="muted">Después agregas los productos, cada uno con su fecha de lanzamiento.</span></div>' +
-      preventaCampos(null) +
-      '<div class="form-error"></div>' +
-      '<div class="btn-row inline-panel-foot"><button type="button" class="btn secondary" data-action="nuevaPreventa">Cancelar</button>' +
-      '<button type="submit" class="btn">Crear preventa</button></div>' +
-      '</form></div>';
-  }
-
-  function conectarNuevaPreventa(el) {
-    const form = el.querySelector('#nueva-preventa form');
-    if (!form) return;
-    GS.bindForm(form, async (v) => {
-      const r = await GS.mutate('guardarPreventa', Object.assign({ id: '' }, v), (r) => 'Preventa ' + r.id + ' creada');
-      nuevaAbierta = false;
-      GS.go('preventa', r.id);
-    });
-  }
-
-  GS.actions.nuevaPreventa = () => {
-    nuevaAbierta = !nuevaAbierta;
-    GS.render();
-    const panel = document.getElementById('nueva-preventa');
-    if (panel) {
-      panel.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-      document.getElementById('pv-edicion').focus();
+  function barraAcciones() {
+    const el = document.getElementById('pv-acciones');
+    if (!el) return;
+    const pendientes = Object.keys(asigPendiente).length;
+    let html = '';
+    if (pendientes) {
+      html += '<div class="action-bar">' + GS.icon('edit') + '<span><strong>' + pendientes + '</strong> ' + (pendientes === 1 ? 'cantidad asignada' : 'cantidades asignadas') + ' sin guardar</span>' +
+        '<button class="btn small" data-action="guardarAsignaciones">Guardar asignación</button>' +
+        '<button class="btn ghost small" data-action="descartarAsignaciones">Descartar</button></div>';
     }
+    if (seleccion.size) {
+      html += '<div class="action-bar">' + GS.icon('check') + '<span><strong>' + seleccion.size + '</strong> seleccionadas</span>' +
+        '<button class="btn secondary small" data-action="asignarSolicitado">Asignado = solicitado</button>' +
+        '<button class="btn secondary small" data-action="sinAsignacion">Sin asignación (0)</button>' +
+        '<button class="btn ghost small" data-action="limpiarSeleccion">Quitar selección</button></div>';
+    }
+    el.innerHTML = html;
+  }
+
+  document.addEventListener('input', (e) => {
+    const id = e.target.dataset && e.target.dataset.asig;
+    if (!id) return;
+    const p = findPv(id);
+    const original = p.estado === 'solicitada' ? '' : String(p.asignado);
+    if (e.target.value === original) delete asigPendiente[id]; else asigPendiente[id] = e.target.value;
+    e.target.classList.toggle('dirty', id in asigPendiente);
+    barraAcciones();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target.dataset && e.target.dataset.asig && Object.keys(asigPendiente).length) {
+      e.preventDefault();
+      GS.actions.guardarAsignaciones();
+    }
+  });
+  document.addEventListener('change', (e) => {
+    const id = e.target.dataset && e.target.dataset.sel;
+    if (!id) return;
+    if (e.target.checked) seleccion.add(id); else seleccion.delete(id);
+    e.target.closest('tr').classList.toggle('row-selected', e.target.checked);
+    barraAcciones();
+  });
+
+  async function enviarAsignacion(lineas, mensaje) {
+    try {
+      await GS.mutate('registrarAsignacion', { lineas: lineas }, mensaje);
+      lineas.forEach((l) => { delete asigPendiente[l.id]; seleccion.delete(l.id); });
+      GS.render();
+    } catch (e) {
+      GS.toast(e.message, true);
+    }
+  }
+
+  GS.actions.guardarAsignaciones = () => enviarAsignacion(
+    Object.keys(asigPendiente).map((id) => ({ id: id, asignado: asigPendiente[id] })), 'Asignación guardada');
+  GS.actions.descartarAsignaciones = () => {
+    Object.keys(asigPendiente).forEach((id) => delete asigPendiente[id]);
+    GS.render();
   };
+  GS.actions.asignarSolicitado = () => enviarAsignacion(
+    Array.from(seleccion).map((id) => ({ id: id, asignado: findPv(id).solicitado })), 'Asignado igual a lo solicitado');
+  GS.actions.sinAsignacion = () => enviarAsignacion(
+    Array.from(seleccion).map((id) => ({ id: id, asignado: 0 })), 'Marcadas sin asignación');
+  GS.actions.limpiarSeleccion = () => { seleccion.clear(); GS.render(); };
+
+  /* ---------- editar / eliminar ---------- */
 
   GS.actions.editarPreventa = (id) => {
-    const pv = findPv(id);
+    const p = findPv(id);
+    const d = data();
+    const provs = d.proveedores.filter((x) => x.activo || x.id === p.proveedorId);
     GS.formModal({
-      title: 'Editar ' + pv.id,
+      title: 'Editar ' + p.id,
       submitLabel: 'Guardar',
-      fields: () => preventaCampos(pv),
-      onSubmit: (v) => GS.mutate('guardarPreventa', Object.assign({ id: pv.id }, v), 'Preventa actualizada'),
+      fields: () =>
+        '<div class="form-grid">' +
+        '<div class="form-field full"><label for="ep-producto">Producto *</label><select id="ep-producto" name="productoId">' + productoOptions(p.productoId) + '</select></div>' +
+        '<div class="form-field"><label for="ep-proveedor">Proveedor *</label><select id="ep-proveedor" name="proveedorId">' + GS.options(provs.map((x) => ({ value: x.id, label: x.nombre })), p.proveedorId) + '</select></div>' +
+        '<div class="form-field"><label for="ep-proforma">Proforma</label><input id="ep-proforma" name="proforma" list="dl-proformas-e" value="' + esc(p.proforma) + '">' +
+        '<datalist id="dl-proformas-e">' + unicos('proforma').map((x) => '<option value="' + esc(x) + '">').join('') + '</datalist></div>' +
+        '<div class="form-field"><label for="ep-lanz">Lanzamiento *</label><input id="ep-lanz" type="date" name="lanzamiento" value="' + esc(p.lanzamiento) + '"></div>' +
+        '<div class="form-field"><label for="ep-cant">Cant. solicitada *</label><input id="ep-cant" type="number" min="0" step="1" name="solicitado" value="' + esc(p.solicitado) + '"></div>' +
+        '<div class="form-field"><label for="ep-costo">Precio unidad (neto) *</label><input id="ep-costo" type="number" min="0" step="0.01" name="costoNeto" value="' + esc(p.costoNeto) + '"></div>' +
+        '<div class="form-field"><label for="ep-notas">Notas</label><input id="ep-notas" name="notas" value="' + esc(p.notas) + '"></div>' +
+        '</div>',
+      onSubmit: (v) => GS.mutate('guardarPreventa', Object.assign({ id: p.id }, v), p.id + ' actualizada'),
     });
   };
 
@@ -238,139 +327,28 @@
     const p = findPv(id);
     GS.confirm({
       title: 'Eliminar ' + p.id,
-      message: 'Se eliminará la preventa <strong>' + esc(p.edicion) + '</strong> con sus ' + p.lineas.length + ' productos. No se puede deshacer.',
+      message: '¿Eliminar la preventa de <strong>' + esc(p.producto) + '</strong> (' + fmt.num(p.solicitado) + ' solicitadas)? Queda registrado en la auditoría.',
       confirmLabel: 'Sí, eliminar',
       danger: true,
       onConfirm: async () => {
-        await GS.mutate('eliminarPreventa', { id: id }, 'Preventa eliminada');
-        GS.go('preventas');
+        await GS.mutate('eliminarPreventa', { id: id }, p.id + ' eliminada');
+        seleccion.delete(id);
+        delete asigPendiente[id];
       },
     });
   };
 
-  /* ---------- líneas ---------- */
-
-  function productoOptions(selectedId) {
-    const prods = data().productos.filter((p) => p.activo || p.id === selectedId).sort((a, b) => a.nombreCompleto.localeCompare(b.nombreCompleto));
-    return '<option value="">Selecciona un producto…</option>' +
-      prods.map((p) => '<option value="' + esc(p.id) + '"' + (p.id === selectedId ? ' selected' : '') + '>' + esc(p.nombreCompleto) + ' (' + esc(p.id) + ')</option>').join('');
-  }
-
-  function lineaForm(pv, linea) {
-    const ultimaFecha = pv.lineas.length ? pv.lineas[pv.lineas.length - 1].lanzamiento : '';
-    const l = linea || { productoId: '', lanzamiento: ultimaFecha, solicitado: '', costoNeto: '', notas: '' };
-    GS.formModal({
-      title: linea ? 'Editar ' + linea.id : 'Agregar producto a ' + pv.id,
-      submitLabel: linea ? 'Guardar' : 'Agregar',
-      fields: () =>
-        '<div class="form-grid">' +
-        '<div class="form-field full"><label>Producto *</label><div class="field-row">' +
-        '<select name="productoId">' + productoOptions(l.productoId) + '</select>' +
-        '<button type="button" class="btn secondary small" data-action="nuevoProductoLinea" data-id="' + esc(pv.id) + '">' + GS.icon('plus') + 'Nuevo</button>' +
-        '</div><span class="hint" data-precios></span></div>' +
-        '<div class="form-field"><label>Fecha de lanzamiento *</label><input type="date" name="lanzamiento" value="' + esc(l.lanzamiento) + '"></div>' +
-        '<div class="form-field"><label>Cantidad solicitada *</label><input type="number" name="solicitado" min="0" step="1" value="' + esc(l.solicitado) + '" placeholder="0 si lo asignaron sin pedirlo"></div>' +
-        '<div class="form-field"><label>Costo neto unitario *</label><input type="number" name="costoNeto" min="0" step="0.01" value="' + esc(l.costoNeto) + '" placeholder="Precio del proveedor sin IVA"></div>' +
-        '<div class="form-field"><label>Notas</label><input name="notas" value="' + esc(l.notas) + '" placeholder="Opcional"></div>' +
-        '</div>' +
-        '<div class="calc-grid">' +
-        '<div class="calc-readout"><span class="lbl">Costo + IVA</span><span class="val" data-calc="costoIva">—</span></div>' +
-        '<div class="calc-readout"><span class="lbl">Total neto</span><span class="val" data-calc="total">—</span></div>' +
-        '<div class="calc-readout"><span class="lbl">Ganancia real / u.</span><span class="val text-success" data-calc="ganancia">—</span></div>' +
-        '</div>',
-      onMount: (form) => {
-        const calc = () => {
-          const prod = data().productos.find((x) => x.id === form.elements.productoId.value);
-          const costo = Number(form.elements.costoNeto.value) || 0;
-          const cant = Number(form.elements.solicitado.value) || 0;
-          form.querySelector('[data-precios]').textContent = prod
-            ? 'PVP ' + (prod.pvp ? fmt.money(prod.pvp) : '—') + ' · Precio de venta ' + (prod.precio ? fmt.money(prod.precio) + (prod.precioManual ? ' (manual)' : '') : '—')
-            : '';
-          form.querySelector('[data-calc=costoIva]').textContent = costo ? fmt.money(iva(costo)) : '—';
-          form.querySelector('[data-calc=total]').textContent = costo && cant ? fmt.money(costo * cant) : '—';
-          const precio = prod ? prod.precio : 0;
-          form.querySelector('[data-calc=ganancia]').textContent = precio && costo ? fmt.money(precio / (1 + data().app.iva) - costo) : '—';
-        };
-        form.addEventListener('input', calc);
-        form.addEventListener('change', calc);
-        calc();
-      },
-      onSubmit: (v) => GS.mutate('guardarLineaPreventa', Object.assign({ id: linea ? linea.id : '', preventaId: pv.id }, v), linea ? 'Línea actualizada' : 'Producto agregado'),
-    });
-  }
-
-  GS.actions.nuevaLinea = (id) => lineaForm(findPv(id), null);
-  GS.actions.editarLinea = (lineaId) => {
-    const pv = data().preventas.find((p) => p.lineas.some((l) => l.id === lineaId));
-    lineaForm(pv, pv.lineas.find((l) => l.id === lineaId));
-  };
-
-  GS.actions.nuevoProductoLinea = (pvId, btn) => {
-    const select = btn.closest('form').elements.productoId;
-    GS.editarProducto(null, (prod) => {
-      select.innerHTML = productoOptions(prod.id);
-      select.dispatchEvent(new Event('change', { bubbles: true }));
-    }, { edicion: findPv(pvId).edicion });
-  };
-
-  GS.actions.eliminarLinea = (lineaId) => {
-    const pv = data().preventas.find((p) => p.lineas.some((l) => l.id === lineaId));
-    const l = pv.lineas.find((x) => x.id === lineaId);
-    GS.confirm({
-      title: 'Quitar producto',
-      message: '¿Quitar <strong>' + esc(l.producto) + '</strong> de la preventa ' + esc(pv.id) + '?',
-      confirmLabel: 'Quitar',
-      danger: true,
-      onConfirm: () => GS.mutate('eliminarLineaPreventa', { id: lineaId }, 'Producto quitado de la preventa'),
-    });
-  };
-
-  /* ---------- asignación ---------- */
-
-  GS.actions.asignar = (id) => {
-    const pv = findPv(id);
-    const lineas = pv.lineas.filter(editable);
-    GS.formModal({
-      title: 'Asignación de ' + pv.proveedor + ' · ' + pv.edicion,
-      size: 'wide',
-      submitLabel: 'Guardar asignación',
-      fields: () =>
-        '<div class="notice">Escribe lo que asignó el proveedor. Viene precargado con lo solicitado (o lo ya asignado). Si no asignaron nada, deja 0. ' +
-        'Puedes corregirlo mientras el producto no pase a una compra.</div>' +
-        '<div class="table-wrap"><table class="data-table" style="min-width:640px;"><thead><tr>' +
-        '<th class="col-prod">Producto</th><th>Lanzamiento</th><th class="right">Solicitado</th><th class="right" style="width:120px;">Asignado</th><th class="right">Dif.</th><th class="right">Total neto</th>' +
-        '</tr></thead><tbody>' +
-        lineas.map((l) => '<tr data-linea="' + esc(l.id) + '" data-solicitado="' + l.solicitado + '" data-costo="' + l.costoNeto + '">' +
-          '<td class="cell-strong">' + esc(l.productoNombre) + ' <span class="pill lang">' + esc(l.idioma) + '</span></td>' +
-          '<td class="nowrap">' + fmt.date(l.lanzamiento) + '</td>' +
-          '<td class="cell-num right">' + fmt.num(l.solicitado) + '</td>' +
-          '<td class="right"><input class="qty-input" type="number" min="0" step="1" name="a_' + esc(l.id) + '" value="' + (l.estado === 'solicitada' ? l.solicitado : l.asignado) + '"></td>' +
-          '<td class="cell-num right" data-dif></td><td class="cell-num right" data-neto></td></tr>').join('') +
-        '</tbody><tfoot><tr><td colspan="3">Total</td><td class="cell-num right" data-tot-asig></td><td></td><td class="cell-num right" data-tot-neto></td></tr></tfoot></table></div>',
-      onMount: (form) => {
-        const calc = () => {
-          let totA = 0;
-          let totN = 0;
-          form.querySelectorAll('tr[data-linea]').forEach((tr) => {
-            const a = Number(tr.querySelector('input').value) || 0;
-            const dif = Number(tr.dataset.solicitado) - a;
-            totA += a;
-            totN += a * Number(tr.dataset.costo);
-            tr.querySelector('[data-dif]').textContent = fmt.num(dif);
-            tr.querySelector('[data-dif]').className = 'cell-num right' + (dif < 0 ? ' text-gold' : '');
-            tr.querySelector('[data-neto]').textContent = fmt.money(a * Number(tr.dataset.costo));
-          });
-          form.querySelector('[data-tot-asig]').textContent = fmt.num(totA);
-          form.querySelector('[data-tot-neto]').textContent = fmt.money(totN);
-        };
-        form.addEventListener('input', calc);
-        calc();
-      },
-      onSubmit: (v) => GS.mutate('registrarAsignacion', {
-        preventaId: id,
-        lineas: lineas.map((l) => ({ id: l.id, asignado: v['a_' + l.id] })),
-      }, 'Asignación registrada'),
-    });
+  GS.actions.exportarPreventas = () => {
+    GS.downloadCsv('preventas-' + data().hoy + '.csv',
+      ['PVI', 'Proveedor', 'Proforma', 'SKU', 'Producto', 'Edición', 'Idioma', 'Lanzamiento', 'Estado', 'Cant.', 'Nuevo cant.', 'Dif.', 'Precio unidad', 'Precio + IVA',
+        'Total neto', 'Total + IVA', 'Nuevo total neto', 'Nuevo total + IVA', 'Precio sugerido', 'Precio venta', 'Margen s/costo %', 'Ganancia real u.', 'Ganancia real total'],
+      filtradas().map((p) => {
+        const a = p.estado !== 'solicitada';
+        return [p.id, p.proveedor, p.proforma, p.productoId, p.productoNombre, p.edicion, p.idioma, p.lanzamiento, GS.ESTADOS_LINEA[p.estado].label, p.solicitado,
+          a ? p.asignado : '', a ? p.diferencia : '', p.costoNeto, Math.round(p.costoIva), Math.round(p.netoSolicitado), Math.round(iva(p.netoSolicitado)),
+          a ? Math.round(p.netoAsignado) : '', a ? Math.round(iva(p.netoAsignado)) : '', p.pvp, p.precioVenta, Math.round(p.recargo * 100),
+          Math.round(p.gananciaUnidad), Math.round(p.gananciaTotal)];
+      }));
   };
 })();
 </script>

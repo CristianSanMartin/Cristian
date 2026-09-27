@@ -79,6 +79,7 @@ var createGasFake = function (opts) {
 
   function Sheet(data) { this.data = data; }
   Sheet.prototype.getName = function () { return this.data.name; };
+  Sheet.prototype.setName = function (n) { this.data.name = n; return this; };
   Sheet.prototype.getLastRow = function () {
     for (var i = this.data.values.length - 1; i >= 0; i--) {
       var r = this.data.values[i];

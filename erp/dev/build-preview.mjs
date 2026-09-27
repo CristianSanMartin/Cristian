@@ -64,17 +64,16 @@ const preview = `
       dittoEsp: prod('Ditto Premium Collection', 'ESP', 'Premium Collection', 53990),
     };
     call('guardarProducto', { nombre: 'Booster Box', edicion: 'Destined Rivals', idioma: 'ENG', tipo: 'Booster Box', pvp: 189990 });
-    var pv = call('guardarPreventa', { proveedorId: asmodee.id, edicion: '30th Celebration', fecha: dia(-30), notas: 'Preventa de ejemplo con los números reales de la planilla.' });
-    var l = function (prod, fecha, sol, costo) {
-      return call('guardarLineaPreventa', { preventaId: pv.id, productoId: prod.id, lanzamiento: fecha, solicitado: sol, costoNeto: costo });
+    var pedir = function (prod, fecha, sol, costo) {
+      return call('guardarPreventa', { proveedorId: asmodee.id, productoId: prod.id, proforma: 'Proforma 30th Celebration', lanzamiento: fecha, solicitado: sol, costoNeto: costo });
     };
     var f1 = dia(5), f2 = dia(33), f3 = dia(40);
     var lineas = [
-      [l(p.binderEng, f1, 60, 25887), 24], [l(p.binderEsp, f1, 0, 25887), 6], [l(p.tinEng, f1, 80, 8230), 10],
-      [l(p.deckEng, f2, 12, 15876.5), 12], [l(p.deckEsp, f2, 12, 15876.5), 12],
-      [l(p.dittoEng, f3, 54, 31758.81), null], [l(p.dittoEsp, f3, 12, 31758.81), null],
+      [pedir(p.binderEng, f1, 60, 25887), 24], [pedir(p.binderEsp, f1, 0, 25887), 6], [pedir(p.tinEng, f1, 80, 8230), 10],
+      [pedir(p.deckEng, f2, 12, 15876.5), 12], [pedir(p.deckEsp, f2, 12, 15876.5), 12],
+      [pedir(p.dittoEng, f3, 54, 31758.81), null], [pedir(p.dittoEsp, f3, 12, 31758.81), null],
     ];
-    call('registrarAsignacion', { preventaId: pv.id, lineas: lineas.filter(function (x) { return x[1] != null; }).map(function (x) { return { id: x[0].id, asignado: x[1] }; }) });
+    call('registrarAsignacion', { lineas: lineas.filter(function (x) { return x[1] != null; }).map(function (x) { return { id: x[0].id, asignado: x[1] }; }) });
   }
 
   function runner(ok, fail) {
