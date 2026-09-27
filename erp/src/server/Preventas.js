@@ -20,7 +20,8 @@ const Preventas = {
 
     const prov = Proveedores.requerir(p.proveedorId);
     if (!prov.activo && (!actual || actual.proveedorId !== prov.id)) throw new AppError('El proveedor está archivado.');
-    const prod = Productos.requerir(p.productoId);
+    // El producto llega como ID (editar) o como texto escrito (agregar): el texto se resuelve o se crea.
+    const prod = p.productoId ? Productos.requerir(p.productoId) : Productos.resolverTexto(p.producto, p.pvp, user);
     if (!prod.activo && (!actual || actual.productoId !== prod.id)) throw new AppError('El producto está archivado.');
 
     const datos = {

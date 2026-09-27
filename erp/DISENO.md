@@ -111,8 +111,12 @@ convivían productos con asignaciones, costos y destinos distintos.
 | Precio unidad | Costo neto del proveedor (admite centavos) |
 
 - Se trabaja como un **carrito**: se van agregando productos a medida que se conocen;
-  no hay que crear un contenedor antes. Proveedor, proforma y fecha se mantienen para el
-  siguiente producto.
+  no hay que crear un contenedor antes. Proforma y fecha se mantienen para el siguiente
+  producto; el proveedor es Asmodee por defecto (editable por fila).
+- **El producto se escribe**, tal como viene en la proforma del proveedor o como aparece en
+  el catálogo. Si ya existe se usa; si no, se crea solo con edición, idioma, tipo y factor
+  interpretados del nombre. La pantalla muestra antes de agregar qué producto se usará. El
+  precio sugerido ingresado actualiza el PVP del catálogo.
 - El **mismo producto puede pedirse más de una vez** (ej. una reposición en otra proforma):
   cada solicitud es su propio registro y se gestiona con su propia factura.
 - **Solicitado, asignado e inventario son cantidades distintas.** Solicitado 60, asignado 6:

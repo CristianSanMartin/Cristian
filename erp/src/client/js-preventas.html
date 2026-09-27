@@ -15,7 +15,7 @@
   const findPv = (id) => data().preventas.find((p) => p.id === id);
 
   /* Estado local de la pantalla (sobrevive a los redibujos). */
-  const borrador = { productoId: '', proveedorId: '', proforma: '', lanzamiento: '', solicitado: '', costoNeto: '' };
+  const borrador = { producto: '', pvp: '', proveedorId: '', proforma: '', lanzamiento: '', solicitado: '', costoNeto: '' };
   const asigPendiente = {};   // id -> valor escrito en "Nuevo cant." aún sin guardar
   const seleccion = new Set();
 
@@ -51,32 +51,55 @@
     return '<div class="panel inline-panel" id="agregar-preventa"><form novalidate>' +
       '<div class="inline-panel-head"><h3>Agregar producto a preventas</h3><span class="muted">Cada producto queda como un registro propio de ' + esc((provs.find((x) => x.id === borrador.proveedorId) || {}).nombre || 'proveedor') + '. Proforma y fecha se mantienen para el siguiente.</span></div>' +
       '<div class="add-grid">' +
-      '<div class="form-field span-2"><label for="ap-producto">Producto *</label><div class="field-row">' +
-      '<select id="ap-producto" name="productoId">' + productoOptions(borrador.productoId) + '</select>' +
-      '<button type="button" class="btn secondary small" data-action="nuevoProductoPv">' + GS.icon('plus') + 'Nuevo</button></div></div>' +
+      '<div class="form-field span-2"><label for="ap-producto">Producto *</label>' +
+      '<input id="ap-producto" name="producto" autocomplete="off" value="' + esc(borrador.producto) + '" placeholder="Ej: POKEMON TCG 30TH CELEBRATION - BINDER COLLECTION ENGLISH"></div>' +
       '<input type="hidden" name="proveedorId" value="' + esc(borrador.proveedorId) + '">' +
       '<div class="form-field"><label for="ap-proforma">Proforma</label><input id="ap-proforma" name="proforma" list="dl-proformas" value="' + esc(borrador.proforma) + '" placeholder="Opcional">' +
       '<datalist id="dl-proformas">' + unicos('proforma').map((x) => '<option value="' + esc(x) + '">').join('') + '</datalist></div>' +
       '<div class="form-field"><label for="ap-lanzamiento">Lanzamiento *</label><input id="ap-lanzamiento" type="date" name="lanzamiento" value="' + esc(borrador.lanzamiento) + '"></div>' +
       '<div class="form-field"><label for="ap-cant">Cant. solicitada *</label><input id="ap-cant" type="number" min="0" step="1" name="solicitado" value="' + esc(borrador.solicitado) + '"></div>' +
       '<div class="form-field"><label for="ap-costo">Precio neto *</label><input id="ap-costo" type="number" min="0" step="0.01" name="costoNeto" value="' + esc(borrador.costoNeto) + '"></div>' +
+      '<div class="form-field"><label for="ap-pvp">Precio sugerido</label><input id="ap-pvp" type="number" min="0" step="1" name="pvp" value="' + esc(borrador.pvp) + '" placeholder="Con IVA"></div>' +
       '<div class="form-field add-submit"><button type="submit" class="btn">' + GS.icon('plus', 2.4) + 'Agregar</button></div>' +
       '</div>' +
+      '<div class="add-calc" data-producto></div>' +
       '<div class="add-calc" data-calc></div>' +
       '<div class="form-error"></div>' +
       '</form></div>';
   }
 
+  /** Producto del catálogo que corresponde al texto escrito (misma regla que el servidor), o la interpretación si es nuevo. */
+  function productoDeTexto(texto) {
+    const t = GS.norm(texto.trim());
+    if (!t) return null;
+    const prods = data().productos;
+    const directo = prods.find((p) => GS.norm(p.nombreCompleto) === t || GS.norm(p.id) === t);
+    if (directo) return { prod: directo };
+    const i = GS.interpretarNombre(texto);
+    const clave = (x) => [x.nombre, x.edicion, x.idioma || 'ENG'].map(GS.norm).join('|');
+    const prod = prods.find((p) => clave(p) === clave(i));
+    return prod ? { prod: prod } : { nuevo: Object.assign({ idioma: 'ENG' }, i, { idioma: i.idioma || 'ENG' }) };
+  }
+
   function calcAgregar(form) {
-    const prod = data().productos.find((x) => x.id === form.elements.productoId.value);
+    const r = productoDeTexto(form.elements.producto.value);
+    const info = form.querySelector('[data-producto]');
+    if (!r) info.innerHTML = '';
+    else if (r.prod) info.innerHTML = '→ <strong>' + esc(r.prod.nombreCompleto) + '</strong> · ' + esc(r.prod.tipo) + ' <span class="pill">' + esc(r.prod.id) + '</span>' +
+      (r.prod.activo ? '' : ' <span class="text-danger">archivado</span>');
+    else info.innerHTML = '→ <strong>' + esc([r.nuevo.edicion, r.nuevo.nombre].filter(Boolean).join(' – ') + ' · ' + r.nuevo.idioma) + '</strong> · ' + esc(r.nuevo.tipo) +
+      ' <span class="pill soon">producto nuevo: se crea al agregar</span>';
+
+    const prod = r && r.prod;
     const costo = Number(form.elements.costoNeto.value) || 0;
     const cant = Number(form.elements.solicitado.value) || 0;
+    const pvp = Number(form.elements.pvp.value) || (prod ? prod.pvp : 0);
+    const precio = prod && prod.precioManual ? prod.precio : pvp;
     const partes = [];
-    if (prod) partes.push('Precio sugerido ' + (prod.pvp ? fmt.money(prod.pvp) : '—') + ' · Precio venta ' + (prod.precio ? fmt.money(prod.precio) : '—'));
     if (costo) partes.push('Precio + IVA ' + fmt.money(iva(costo)));
     if (costo && cant) partes.push('Total neto ' + fmt.money(costo * cant) + ' · Total + IVA ' + fmt.money(iva(costo * cant)));
-    if (prod && prod.precio && costo) {
-      const g = prod.precio / (1 + data().app.iva) - costo;
+    if (precio && costo) {
+      const g = precio / (1 + data().app.iva) - costo;
       partes.push('Ganancia real ' + '<span class="' + (g < 0 ? 'text-danger' : 'text-success') + '">' + fmt.money(g) + ' / u.</span>');
     }
     form.querySelector('[data-calc]').innerHTML = partes.join(' &nbsp;·&nbsp; ');
@@ -89,18 +112,18 @@
       if (e.target.name && e.target.name in borrador) borrador[e.target.name] = e.target.value;
       calcAgregar(form);
     });
-    form.elements.productoId.addEventListener('change', () => {
-      // Precarga el último costo conocido del producto.
-      const prod = data().productos.find((x) => x.id === form.elements.productoId.value);
-      if (prod && prod.ultimoCosto && !form.elements.costoNeto.value) {
-        form.elements.costoNeto.value = prod.ultimoCosto;
-        borrador.costoNeto = String(prod.ultimoCosto);
+    form.elements.producto.addEventListener('change', () => {
+      // Si el producto ya existe, precarga su último costo y su precio sugerido.
+      const r = productoDeTexto(form.elements.producto.value);
+      if (r && r.prod) {
+        if (r.prod.ultimoCosto && !form.elements.costoNeto.value) form.elements.costoNeto.value = borrador.costoNeto = String(r.prod.ultimoCosto);
+        if (r.prod.pvp && !form.elements.pvp.value) form.elements.pvp.value = borrador.pvp = String(r.prod.pvp);
       }
       calcAgregar(form);
     });
     GS.bindForm(form, async (v) => {
       const r = await GS.mutate('guardarPreventa', v, (x) => x.id + ' agregada');
-      Object.assign(borrador, { productoId: '', solicitado: '', costoNeto: '' });
+      Object.assign(borrador, { producto: '', pvp: '', solicitado: '', costoNeto: '' });
       GS.render();
       const sel = document.getElementById('ap-producto');
       if (sel) sel.focus();
@@ -108,13 +131,6 @@
     });
     calcAgregar(form);
   }
-
-  GS.actions.nuevoProductoPv = () => {
-    GS.editarProducto(null, (prod) => {
-      borrador.productoId = prod.id;
-      GS.render();
-    });
-  };
 
   /* ---------- tabla ---------- */
 

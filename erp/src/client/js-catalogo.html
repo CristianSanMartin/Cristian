@@ -11,53 +11,8 @@
 
   /* ---------- nombre del proveedor → producto ---------- */
 
-  const TIPO_POR_TEXTO = [
-    [/BOOSTER\s+BOX/, 'Booster Box'],
-    [/ELITE\s+TRAINER|\bETB\b/, 'Elite Trainer Box'],
-    [/BOOSTER\s+BUNDLE/, 'Booster Bundle'],
-    [/BATTLE\s+DECK/, 'Battle Deck'],
-    [/MINI\s+TIN/, 'Mini Tin'],
-    [/\bTIN\b/, 'Tin'],
-    [/PREMIUM\s+COLLECTION/, 'Premium Collection'],
-    [/BINDER|COLLECTION|COLECCI[OÓ]N/, 'Binder / Colección'],
-    [/BLISTER/, 'Blister'],
-    [/SLEEVED\s+BOOSTER|BOOSTER\s+PACK|\bSOBRE\b/, 'Sobre'],
-    [/SLEEVES|DECK\s+BOX|PLAYMAT|TAPETE|PORTACARTAS/, 'Accesorio'],
-  ];
-  const IDIOMA_POR_TEXTO = [
-    [/\b(ENGLISH|INGL[EÉ]S|ENG)\b/i, 'ENG'],
-    [/\b(ESPA[NÑ]OL|SPANISH|ESP)\b/i, 'ESP'],
-    [/\b(JAPANESE|JAPON[EÉ]S|JPN|JP)\b/i, 'JPN'],
-  ];
-  const MAYUSCULAS = ['TCG', 'ETB', 'EX', 'GX', 'V', 'VMAX', 'VSTAR', 'SV'];
-
-  function titulo(s) {
-    return s.toLowerCase().split(' ').filter(Boolean).map((w) => {
-      if (MAYUSCULAS.indexOf(w.toUpperCase()) !== -1) return w.toUpperCase();
-      if (/^\d+(st|nd|rd|th)$/.test(w)) return w;
-      return w.charAt(0).toUpperCase() + w.slice(1);
-    }).join(' ');
-  }
-
-  /**
-   * "POKEMON TCG 30TH CELEBRATION - BINDER COLLECTION ENGLISH"
-   *   → { edicion: '30th Celebration', nombre: 'Binder Collection', idioma: 'ENG', tipo: 'Binder / Colección' }
-   */
-  GS.interpretarNombre = function (raw) {
-    let s = String(raw || '').replace(/\s+/g, ' ').trim();
-    let idioma = '';
-    IDIOMA_POR_TEXTO.forEach(([re, id]) => {
-      if (!idioma && re.test(s)) { idioma = id; s = s.replace(re, ' ').replace(/\s+/g, ' ').trim(); }
-    });
-    s = s.replace(/^POK[EÉ]MON\s+(TCG\s+)?/i, '').replace(/[\s-]+$/, '');
-    let edicion = '';
-    let nombre = s;
-    const corte = s.indexOf(' - ');
-    if (corte > 0) { edicion = s.slice(0, corte); nombre = s.slice(corte + 3); }
-    const upper = s.toUpperCase();
-    const tipo = (TIPO_POR_TEXTO.find(([re]) => re.test(upper)) || [null, 'Otro'])[1];
-    return { nombre: titulo(nombre), edicion: titulo(edicion), idioma: idioma, tipo: tipo };
-  };
+  /** Misma interpretación que el servidor (Nombres.js), entregada por index.html. */
+  GS.interpretarNombre = window.interpretarNombre;
 
   /* ---------- productos ---------- */
 

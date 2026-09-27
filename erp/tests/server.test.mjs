@@ -261,3 +261,31 @@ test("las respuestas de la API se pueden serializar (google.script.run no acepta
   JSON.stringify(raw, function (k, v) { if (Object.prototype.toString.call(this[k]) === "[object Date]") throw new Error("Date en " + k); return v; });
   assert.equal(s.call("accionInexistente").ok, false);
 });
+
+test("agregar escribiendo el nombre: usa el producto existente o lo crea desde el nombre del proveedor", () => {
+  const s = createServer();
+  const prov = asmodee(s).id;
+  const base = { proveedorId: prov, lanzamiento: "2026-10-02", solicitado: 10, costoNeto: 1000 };
+  const binder = producto(s);
+
+  // Nombre de Asmodee de un producto que ya existe → se reutiliza (sin duplicar)
+  const a = s.ok("guardarPreventa", { ...base, producto: "POKEMON TCG 30TH CELEBRATION - BINDER COLLECTION ENGLISH" }).result;
+  assert.equal(a.productoId, binder.id);
+  // Nombre tal como aparece en el catálogo
+  const b = s.ok("guardarPreventa", { ...base, producto: "30th Celebration – Binder Collection · ENG" }).result;
+  assert.equal(b.productoId, binder.id);
+
+  // Producto nuevo: se crea con edición, idioma, tipo, factor y PVP
+  const c = s.ok("guardarPreventa", { ...base, producto: "POKEMON TCG SURGING SPARKS - BOOSTER BOX ESPAÑOL", pvp: 189990 }).result;
+  const nuevo = s.ok("bootstrap").data.productos.find(x => x.id === c.productoId);
+  assert.deepEqual([nuevo.edicion, nuevo.nombre, nuevo.idioma, nuevo.tipo, nuevo.factor, nuevo.pvp],
+    ["Surging Sparks", "Booster Box", "ESP", "Booster Box", 36, 189990]);
+
+  // PVP informado actualiza el catálogo
+  s.ok("guardarPreventa", { ...base, producto: "30th Celebration – Binder Collection · ENG", pvp: 44990 });
+  assert.equal(s.ok("bootstrap").data.productos.find(x => x.id === binder.id).pvp, 44990);
+
+  assert.match(errorDe(s.call("guardarPreventa", { ...base, producto: "" })), /producto es obligatorio/);
+  s.ok("archivarProducto", { id: binder.id, activo: false });
+  assert.match(errorDe(s.call("guardarPreventa", { ...base, producto: "30th Celebration – Binder Collection · ENG" })), /está archivado/);
+});

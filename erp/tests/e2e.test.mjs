@@ -33,26 +33,22 @@ test("preventas como carrito: agregar productos uno a uno, asignar en la tabla y
     assert.equal(await form.locator('select[name="proveedorId"]').count(), 0, "el proveedor no se pide: Asmodee por defecto");
     assert.match(await form.locator(".inline-panel-head").textContent(), /registro propio de Asmodee/);
 
-    // Producto nuevo creado desde el nombre de Asmodee, sin salir de Preventas
-    await form.locator('[data-action="nuevoProductoPv"]').click();
-    const prod = modal(page);
-    await prod.locator('[name="_raw"]').fill("POKEMON TCG SURGING SPARKS - BOOSTER BOX ENGLISH");
-    await prod.locator("[data-completar]").click();
-    assert.equal(await prod.locator('[name="factor"]').inputValue(), "36");
-    await prod.locator('[name="pvp"]').fill("189990");
-    await prod.locator('button[type="submit"]').click();
-    await cerrado(page);
-    assert.match(await form.locator('[name="productoId"] option:checked').textContent(), /Surging Sparks – Booster Box · ENG/);
+    // Sin lista desplegable ni botón "Nuevo": el producto se escribe
+    assert.equal(await form.locator('select[name="productoId"], [data-action="nuevoProductoPv"]').count(), 0);
 
     // Error visible en el mismo formulario
     await form.locator('button[type="submit"]').click();
     await form.locator(".form-error.show").waitFor();
-    assert.match(await form.locator(".form-error").textContent(), /lanzamiento es obligatoria/);
+    assert.match(await form.locator(".form-error").textContent(), /producto es obligatorio/);
 
+    // Nombre nuevo tal como viene de Asmodee: se interpreta y se crea al agregar
+    await form.locator('[name="producto"]').fill("POKEMON TCG SURGING SPARKS - BOOSTER BOX ENGLISH");
+    assert.match(await form.locator("[data-producto]").textContent(), /Surging Sparks – Booster Box · ENG · Booster Box.*producto nuevo/);
     await form.locator('[name="proforma"]').fill("Proforma Surging Sparks");
     await form.locator('[name="lanzamiento"]').fill("2030-11-08");
     await form.locator('[name="solicitado"]').fill("20");
     await form.locator('[name="costoNeto"]').fill("120000");
+    await form.locator('[name="pvp"]').fill("189990");
     assert.match(await form.locator("[data-calc]").textContent(), /Total neto \$2\.400\.000.*Ganancia real \$39\.655/);
     await form.locator('button[type="submit"]').click();
     await toast(page, /PVI-000008 agregada/);
@@ -60,8 +56,12 @@ test("preventas como carrito: agregar productos uno a uno, asignar en la tabla y
     // Proveedor, proforma y fecha se mantienen para el siguiente producto
     assert.equal(await form.locator('[name="proforma"]').inputValue(), "Proforma Surging Sparks");
     assert.equal(await form.locator('[name="lanzamiento"]').inputValue(), "2030-11-08");
-    assert.equal(await form.locator('[name="productoId"]').inputValue(), "");
-    await form.locator('[name="productoId"]').selectOption({ label: "Destined Rivals – Booster Box · ENG" });
+    assert.equal(await form.locator('[name="producto"]').inputValue(), "");
+    // Producto que ya existe, escrito como aparece en el catálogo
+    await form.locator('[name="producto"]').fill("Destined Rivals – Booster Box · ENG");
+    await form.locator('[name="producto"]').dispatchEvent("change");
+    assert.match(await form.locator("[data-producto]").textContent(), /GS-0008/);
+    assert.equal(await form.locator('[name="pvp"]').inputValue(), "189990", "precarga el precio sugerido del catálogo");
     await form.locator('[name="solicitado"]').fill("5");
     await form.locator('[name="costoNeto"]').fill("118000");
     await form.locator('button[type="submit"]').click();
@@ -91,7 +91,8 @@ test("preventas como carrito: agregar productos uno a uno, asignar en la tabla y
 
     // El producto aparece en el catálogo con su último costo
     await page.click('[data-nav="productos"]');
-    assert.match(await page.locator("#prod-tbody tr", { hasText: "Surging Sparks" }).textContent(), /\$189\.990.*\$120\.000/s);
+    const creado = await page.locator("#prod-tbody tr", { hasText: "Surging Sparks" }).textContent();
+    assert.match(creado, /GS-0009.*Booster Box.*ENG.*\$189\.990.*\$120\.000/s);
 
     assert.deepEqual(errores, []);
   } finally {

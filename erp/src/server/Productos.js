@@ -58,6 +58,31 @@ const Productos = {
     Audit.log(user, 'eliminar', 'Producto', prod.id, prod);
   },
 
+  /**
+   * Producto a partir del nombre escrito (tal como viene del proveedor o como aparece
+   * en el catálogo). Si existe se usa; si no, se crea con edición, idioma, tipo y
+   * factor interpretados del nombre. Si se indica PVP, se actualiza en el catálogo.
+   */
+  resolverTexto(texto, pvp, user) {
+    const raw = Util.texto(texto, 'El producto', { requerido: true, max: 200 });
+    const todos = Db.all('Productos');
+    const norm = Util.normalizar(raw);
+    const i = interpretarNombre_(raw);
+    const datos = { nombre: i.nombre || raw, edicion: i.edicion, idioma: i.idioma || 'ENG', tipo: i.tipo };
+    let prod = todos.find((x) => Util.normalizar(Productos.nombreCompleto(x)) === norm || Util.normalizar(x.id) === norm)
+      || todos.find((x) => Productos._clave(x) === Productos._clave(datos));
+    const precio = pvp === '' || pvp == null ? null : Util.entero(pvp, 'El precio sugerido');
+    if (!prod) {
+      return Productos.guardar(Object.assign(datos, { pvp: precio || 0 }), user);
+    }
+    if (!prod.activo) throw new AppError('"' + Productos.nombreCompleto(prod) + '" está archivado. Reactívalo en Productos para usarlo.');
+    if (precio != null && precio !== prod.pvp) {
+      Audit.log(user, 'editar', 'Producto', prod.id, { pvp: [prod.pvp, precio] });
+      prod = Db.update('Productos', prod.id, Object.assign({ pvp: precio }, Util.sello(user)));
+    }
+    return prod;
+  },
+
   /** Precio de venta vigente (bruto). */
   precio(prod) {
     return prod.precioManual ? prod.precioVenta : prod.pvp;
