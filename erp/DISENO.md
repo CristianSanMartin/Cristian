@@ -104,20 +104,20 @@ convivían productos con asignaciones, costos y destinos distintos.
 |---|---|
 | Proveedor | Asmodee u otro |
 | Producto | Del catálogo (con edición e idioma) |
-| Proforma | Texto opcional de referencia, para filtrar y agrupar. No controla nada |
 | Fecha de lanzamiento | Cada producto tiene la suya |
 | Solicitado | Lo que se pidió |
 | Asignado ("Nuevo cant.") | Lo que confirmó el proveedor |
 | Precio unidad | Costo neto del proveedor (admite centavos) |
 
 - Se trabaja como un **carrito**: se van agregando productos a medida que se conocen;
-  no hay que crear un contenedor antes. Proforma y fecha se mantienen para el siguiente
-  producto; el proveedor es Asmodee por defecto (editable por fila).
+  no hay que crear un contenedor antes. La fecha de lanzamiento se mantiene para el
+  siguiente producto; el proveedor es Asmodee por defecto (editable por fila). La proforma
+  no se registra: la agrupación útil es por proveedor y fecha de lanzamiento.
 - **El producto se escribe**, tal como viene en la proforma del proveedor o como aparece en
   el catálogo. Si ya existe se usa; si no, se crea solo con edición, idioma, tipo y factor
   interpretados del nombre. La pantalla muestra antes de agregar qué producto se usará. El
   precio sugerido ingresado actualiza el PVP del catálogo.
-- El **mismo producto puede pedirse más de una vez** (ej. una reposición en otra proforma):
+- El **mismo producto puede pedirse más de una vez** (ej. una reposición posterior):
   cada solicitud es su propio registro y se gestiona con su propia factura.
 - **Solicitado, asignado e inventario son cantidades distintas.** Solicitado 60, asignado 6:
   las 6 siguen a Compra; las 54 no asignadas quedan como historial.
@@ -146,7 +146,7 @@ despacho neto, forma de pago (contado / cuotas), costo financiero total (solo si
 preventa de origen `PVI` (si aplica).
 
 Se crea como **"pagar el carrito"**: se marcan las preventas asignadas que vienen en la
-factura (de una o varias fechas, o de proformas distintas) y se completa el encabezado.
+factura (de una o varias fechas de lanzamiento) y se completa el encabezado.
 
 **Ciclo:** `armada → pagada → recibida`. El pedido se paga antes del despacho; el stock
 entra al inventario al **recibir**. Mientras tanto figura como "entrante".

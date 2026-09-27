@@ -71,7 +71,7 @@ erp/
 | `Secuencias` | último número usado de cada correlativo |
 | `Proveedores` | nombre, RUT, contacto, costo de despacho y monto para despacho gratis |
 | `Productos` | SKU `GS-0001`, nombre, edición, idioma, tipo, factor (Booster Box = 36), PVP, precio de venta propio |
-| `Preventas` | `PVI-000001`: proveedor, producto, proforma, lanzamiento, solicitado, asignado, estado, costo neto |
+| `Preventas` | `PVI-000001`: proveedor, producto, lanzamiento, solicitado, asignado, estado, costo neto |
 | `Auditoria` | historial de cambios |
 
 Las columnas se leen por nombre: puedes reordenarlas o agregar columnas propias en

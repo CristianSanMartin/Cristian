@@ -49,11 +49,11 @@ const SCHEMA = {
       precioManual: 'b', stockMinimo: 'n', imagen: 's', codigoProveedor: 's', activo: 'b', notas: 's',
     }, AUDIT_COLS),
   },
-  /** Una fila = un producto solicitado a un proveedor (PVI-000001). La proforma es solo una referencia. */
+  /** Una fila = un producto solicitado a un proveedor (PVI-000001). */
   Preventas: {
     key: 'id',
     cols: Object.assign({
-      id: 's', proveedorId: 's', productoId: 's', proforma: 's', lanzamiento: 'd', solicitado: 'n', asignado: 'n',
+      id: 's', proveedorId: 's', productoId: 's', lanzamiento: 'd', solicitado: 'n', asignado: 'n',
       estado: 's', costoNeto: 'n', notas: 's',
     }, AUDIT_COLS),
   },

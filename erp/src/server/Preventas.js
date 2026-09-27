@@ -4,9 +4,8 @@
  * La unidad es el producto solicitado, no la proforma: cada fila (PVI-000001)
  * es un producto pedido a un proveedor, con su fecha de lanzamiento, lo
  * solicitado, lo que el proveedor asignó y su propio estado. Así cada producto
- * tiene su historia completa hasta la venta. La proforma queda como referencia
- * de texto para filtrar y agrupar. El mismo producto puede pedirse más de una
- * vez: cada solicitud es un registro independiente.
+ * tiene su historia completa hasta la venta. El mismo producto puede pedirse
+ * más de una vez: cada solicitud es un registro independiente.
  *
  * Estados: solicitada → asignada (o sin_asignacion) → en_compra → recibida.
  */
@@ -27,7 +26,6 @@ const Preventas = {
     const datos = {
       proveedorId: prov.id,
       productoId: prod.id,
-      proforma: Util.texto(p.proforma, 'La proforma', { max: 80 }),
       lanzamiento: Util.fecha(p.lanzamiento, 'La fecha de lanzamiento', { requerido: true }),
       solicitado: Util.entero(p.solicitado, 'La cantidad solicitada', { requerido: true }),
       costoNeto: Util.monto(p.costoNeto, 'El costo neto unitario', { requerido: true }),
@@ -41,7 +39,7 @@ const Preventas = {
     const nuevo = Object.assign({ id: Util.siguienteId('PVI', 6), asignado: 0, estado: 'solicitada' }, datos, Util.sello(user, true));
     Db.insert('Preventas', nuevo);
     Audit.log(user, 'crear', 'Preventa', nuevo.id, {
-      producto: Productos.nombreCompleto(prod), proveedor: prov.nombre, solicitado: nuevo.solicitado, proforma: nuevo.proforma,
+      producto: Productos.nombreCompleto(prod), proveedor: prov.nombre, solicitado: nuevo.solicitado,
     });
     return nuevo;
   },

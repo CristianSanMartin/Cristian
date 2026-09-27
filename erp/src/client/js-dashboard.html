@@ -39,11 +39,11 @@
         return '<span class="text-gold">' + fmt.money(prov.despachoMonto) + '</span>' + (prov.despachoUmbral ? '<div class="cell-dim">faltan ' + fmt.money(prov.despachoUmbral - x.neto) + '</div>' : '');
       };
 
-      // Esperando asignación, agrupado por proveedor y proforma.
+      // Esperando asignación, agrupado por proveedor y edición.
       const pend = {};
       porAsignar.forEach((p) => {
-        const k = p.proveedor + '|' + p.proforma;
-        const x = pend[k] || (pend[k] = { proveedor: p.proveedor, proforma: p.proforma, productos: 0, unidades: 0 });
+        const k = p.proveedor + '|' + p.edicion;
+        const x = pend[k] || (pend[k] = { proveedor: p.proveedor, edicion: p.edicion, productos: 0, unidades: 0 });
         x.productos++;
         x.unidades += p.solicitado;
       });
@@ -68,8 +68,8 @@
         '</div></div>' +
         '<div class="panel"><div class="panel-head"><h3>Esperando asignación</h3></div><div class="panel-body">' +
         (Object.keys(pend).length
-          ? '<table class="mini-table"><thead><tr><th>Proveedor · proforma</th><th class="right">Productos</th><th class="right">Solicitado</th></tr></thead><tbody>' +
-            Object.values(pend).map((x) => '<tr><td class="prod-cell"><div class="name">' + esc(x.proveedor) + '</div><div class="prov">' + esc(x.proforma || 'Sin proforma') + '</div></td>' +
+          ? '<table class="mini-table"><thead><tr><th>Proveedor · edición</th><th class="right">Productos</th><th class="right">Solicitado</th></tr></thead><tbody>' +
+            Object.values(pend).map((x) => '<tr><td class="prod-cell"><div class="name">' + esc(x.proveedor) + '</div><div class="prov">' + esc(x.edicion || 'Sin edición') + '</div></td>' +
               '<td class="cell-num right">' + x.productos + '</td><td class="cell-num right">' + fmt.num(x.unidades) + '</td></tr>').join('') +
             '</tbody></table>'
           : GS.empty('Nada pendiente', 'Todas las preventas tienen su asignación registrada.')) +

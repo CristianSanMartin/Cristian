@@ -65,7 +65,7 @@ const preview = `
     };
     call('guardarProducto', { nombre: 'Booster Box', edicion: 'Destined Rivals', idioma: 'ENG', tipo: 'Booster Box', pvp: 189990 });
     var pedir = function (prod, fecha, sol, costo) {
-      return call('guardarPreventa', { proveedorId: asmodee.id, productoId: prod.id, proforma: 'Proforma 30th Celebration', lanzamiento: fecha, solicitado: sol, costoNeto: costo });
+      return call('guardarPreventa', { proveedorId: asmodee.id, productoId: prod.id, lanzamiento: fecha, solicitado: sol, costoNeto: costo });
     };
     var f1 = dia(5), f2 = dia(33), f3 = dia(40);
     var lineas = [

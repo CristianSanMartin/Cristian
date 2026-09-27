@@ -19,7 +19,7 @@ function preventa30th(s) {
   const miniTin = producto(s, { nombre: "Mini Tin", tipo: "Mini Tin", pvp: 13990, precioManual: true, precioVenta: 18000 });
   const deck = producto(s, { nombre: "Battle Deck", tipo: "Battle Deck", pvp: 26990 });
   const pedir = (prod, lanzamiento, solicitado, costoNeto) =>
-    s.ok("guardarPreventa", { proveedorId: prov, productoId: prod.id, proforma: "Proforma 30th", lanzamiento, solicitado, costoNeto }).result;
+    s.ok("guardarPreventa", { proveedorId: prov, productoId: prod.id, lanzamiento, solicitado, costoNeto }).result;
   return {
     pv: {
       binderEng: pedir(binderEng, "2026-10-02", 60, 25887),
@@ -101,7 +101,7 @@ test("cada producto solicitado es una preventa independiente con su correlativo"
   const { pv: p } = preventa30th(s);
   assert.deepEqual(Object.values(p).map(x => x.id), ["PVI-000001", "PVI-000002", "PVI-000003", "PVI-000004"]);
   const be = pv(s, p.binderEng.id);
-  assert.deepEqual([be.estado, be.proveedor, be.proforma, be.edicion, be.idioma], ["solicitada", "Asmodee", "Proforma 30th", "30th Celebration", "ENG"]);
+  assert.deepEqual([be.estado, be.proveedor, be.edicion, be.idioma], ["solicitada", "Asmodee", "30th Celebration", "ENG"]);
   assert.equal(Math.round(be.costoIva), 30806);
   assert.equal(be.netoSolicitado, 1553220);
   assert.equal(Math.round(be.netoSolicitado * 1.19), 1848332);
@@ -113,7 +113,7 @@ test("cada producto solicitado es una preventa independiente con su correlativo"
 test("el mismo producto puede pedirse de nuevo como otra preventa", () => {
   const s = createServer();
   const { prods } = preventa30th(s);
-  const otra = s.ok("guardarPreventa", { proveedorId: asmodee(s).id, productoId: prods.binderEng.id, proforma: "Reposición", lanzamiento: "2026-12-01", solicitado: 12, costoNeto: 25887 }).result;
+  const otra = s.ok("guardarPreventa", { proveedorId: asmodee(s).id, productoId: prods.binderEng.id, lanzamiento: "2026-12-01", solicitado: 12, costoNeto: 25887 }).result;
   assert.equal(otra.id, "PVI-000005");
   assert.equal(preventas(s).filter(x => x.productoId === prods.binderEng.id).length, 2);
 });

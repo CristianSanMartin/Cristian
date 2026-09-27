@@ -31,7 +31,7 @@ test("preventas como carrito: agregar productos uno a uno, asignar en la tabla y
     await page.click('[data-nav="preventas"]');
     const form = page.locator("#agregar-preventa");
     assert.equal(await form.locator('select[name="proveedorId"]').count(), 0, "el proveedor no se pide: Asmodee por defecto");
-    assert.match(await form.locator(".inline-panel-head").textContent(), /registro propio de Asmodee/);
+    assert.match(await form.locator(".inline-panel-head").textContent(), /registro propio de Asmodee\. La fecha de lanzamiento se mantiene/);
 
     // Sin lista desplegable ni botón "Nuevo": el producto se escribe
     assert.equal(await form.locator('select[name="productoId"], [data-action="nuevoProductoPv"]').count(), 0);
@@ -44,7 +44,6 @@ test("preventas como carrito: agregar productos uno a uno, asignar en la tabla y
     // Nombre nuevo tal como viene de Asmodee: se interpreta y se crea al agregar
     await form.locator('[name="producto"]').fill("POKEMON TCG SURGING SPARKS - BOOSTER BOX ENGLISH");
     assert.match(await form.locator("[data-producto]").textContent(), /Surging Sparks – Booster Box · ENG · Booster Box.*producto nuevo/);
-    await form.locator('[name="proforma"]').fill("Proforma Surging Sparks");
     await form.locator('[name="lanzamiento"]').fill("2030-11-08");
     await form.locator('[name="solicitado"]').fill("20");
     await form.locator('[name="costoNeto"]').fill("120000");
@@ -53,8 +52,8 @@ test("preventas como carrito: agregar productos uno a uno, asignar en la tabla y
     await form.locator('button[type="submit"]').click();
     await toast(page, /PVI-000008 agregada/);
 
-    // Proveedor, proforma y fecha se mantienen para el siguiente producto
-    assert.equal(await form.locator('[name="proforma"]').inputValue(), "Proforma Surging Sparks");
+    // La fecha se mantiene para el siguiente producto; no hay campo proforma
+    assert.equal(await form.locator('[name="proforma"]').count(), 0);
     assert.equal(await form.locator('[name="lanzamiento"]').inputValue(), "2030-11-08");
     assert.equal(await form.locator('[name="producto"]').inputValue(), "");
     // Producto que ya existe, escrito como aparece en el catálogo
@@ -67,8 +66,8 @@ test("preventas como carrito: agregar productos uno a uno, asignar en la tabla y
     await form.locator('button[type="submit"]').click();
     await toast(page, /PVI-000009 agregada/);
 
-    // Filtrar por la proforma: un grupo por fecha con su aviso de despacho
-    await page.selectOption('[data-filter="preventas.proforma"]', "Proforma Surging Sparks");
+    // Filtrar por la fecha de lanzamiento: un grupo con su aviso de despacho
+    await page.selectOption('[data-filter="preventas.lanzamiento"]', "2030-11-08");
     const grupo = page.locator("#pv-tbody tr.group-row");
     assert.equal(await grupo.count(), 1);
     assert.match(await grupo.textContent(), /Pedido \$2\.990\.000 neto.*Despacho gratis/);

@@ -2,7 +2,7 @@
 /* =========================================================
    Preventas: una fila por producto solicitado (como la
    planilla). Formulario para ir agregando productos, filtros
-   por proveedor / edición / proforma / lanzamiento, y
+   por proveedor / edición / lanzamiento, y
    "Nuevo cant." (asignado) editable en la misma tabla.
 ========================================================= */
 (function () {
@@ -15,11 +15,11 @@
   const findPv = (id) => data().preventas.find((p) => p.id === id);
 
   /* Estado local de la pantalla (sobrevive a los redibujos). */
-  const borrador = { producto: '', pvp: '', proveedorId: '', proforma: '', lanzamiento: '', solicitado: '', costoNeto: '' };
+  const borrador = { producto: '', pvp: '', proveedorId: '', lanzamiento: '', solicitado: '', costoNeto: '' };
   const asigPendiente = {};   // id -> valor escrito en "Nuevo cant." aún sin guardar
   const seleccion = new Set();
 
-  const DEF = { q: '', proveedor: '', edicion: '', proforma: '', lanzamiento: '', estado: 'activas' };
+  const DEF = { q: '', proveedor: '', edicion: '', lanzamiento: '', estado: 'activas' };
 
   function filtradas() {
     const f = GS.filters('preventas', DEF);
@@ -28,9 +28,8 @@
       if (f.estado === 'activas' ? ['solicitada', 'asignada'].indexOf(p.estado) === -1 : f.estado && p.estado !== f.estado) return false;
       if (f.proveedor && p.proveedorId !== f.proveedor) return false;
       if (f.edicion && p.edicion !== f.edicion) return false;
-      if (f.proforma && p.proforma !== f.proforma) return false;
       if (f.lanzamiento && p.lanzamiento !== f.lanzamiento) return false;
-      return !q || GS.norm(p.id + ' ' + p.producto + ' ' + p.proveedor + ' ' + p.proforma).includes(q);
+      return !q || GS.norm(p.id + ' ' + p.producto + ' ' + p.proveedor).includes(q);
     });
   }
 
@@ -49,13 +48,11 @@
     const provs = d.proveedores.filter((x) => x.activo);
     if (!borrador.proveedorId) borrador.proveedorId = (provs.find((x) => x.nombre === 'Asmodee') || provs[0] || {}).id || '';
     return '<div class="panel inline-panel" id="agregar-preventa"><form novalidate>' +
-      '<div class="inline-panel-head"><h3>Agregar producto a preventas</h3><span class="muted">Cada producto queda como un registro propio de ' + esc((provs.find((x) => x.id === borrador.proveedorId) || {}).nombre || 'proveedor') + '. Proforma y fecha se mantienen para el siguiente.</span></div>' +
+      '<div class="inline-panel-head"><h3>Agregar producto a preventas</h3><span class="muted">Cada producto queda como un registro propio de ' + esc((provs.find((x) => x.id === borrador.proveedorId) || {}).nombre || 'proveedor') + '. La fecha de lanzamiento se mantiene para el siguiente.</span></div>' +
       '<div class="add-grid">' +
       '<div class="form-field span-2"><label for="ap-producto">Producto *</label>' +
       '<input id="ap-producto" name="producto" autocomplete="off" value="' + esc(borrador.producto) + '" placeholder="Ej: POKEMON TCG 30TH CELEBRATION - BINDER COLLECTION ENGLISH"></div>' +
       '<input type="hidden" name="proveedorId" value="' + esc(borrador.proveedorId) + '">' +
-      '<div class="form-field"><label for="ap-proforma">Proforma</label><input id="ap-proforma" name="proforma" list="dl-proformas" value="' + esc(borrador.proforma) + '" placeholder="Opcional">' +
-      '<datalist id="dl-proformas">' + unicos('proforma').map((x) => '<option value="' + esc(x) + '">').join('') + '</datalist></div>' +
       '<div class="form-field"><label for="ap-lanzamiento">Lanzamiento *</label><input id="ap-lanzamiento" type="date" name="lanzamiento" value="' + esc(borrador.lanzamiento) + '"></div>' +
       '<div class="form-field"><label for="ap-cant">Cant. solicitada *</label><input id="ap-cant" type="number" min="0" step="1" name="solicitado" value="' + esc(borrador.solicitado) + '"></div>' +
       '<div class="form-field"><label for="ap-costo">Precio neto *</label><input id="ap-costo" type="number" min="0" step="0.01" name="costoNeto" value="' + esc(borrador.costoNeto) + '"></div>' +
@@ -150,7 +147,7 @@
       '<td>' + (operador && editable(p) ? '<input type="checkbox" class="row-check" data-sel="' + esc(p.id) + '"' + (seleccion.has(p.id) ? ' checked' : '') + ' aria-label="Seleccionar ' + esc(p.id) + '">' : '') + '</td>' +
       '<td>' + GS.thumb(p.imagen) + '</td>' +
       '<td class="cell-strong">' + esc(p.productoNombre) + ' <span class="pill lang">' + esc(p.idioma) + '</span>' +
-      '<div class="cell-dim">' + esc(p.id) + (p.edicion ? ' · ' + esc(p.edicion) : '') + (p.proforma ? ' · ' + esc(p.proforma) : '') + '</div></td>' +
+      '<div class="cell-dim">' + esc(p.id) + (p.edicion ? ' · ' + esc(p.edicion) : '') + '</div></td>' +
       '<td>' + GS.badge(GS.ESTADOS_LINEA, p.estado) + '</td>' +
       '<td class="cell-num right">' + fmt.num(p.solicitado) + '</td>' +
       '<td class="right">' + celdaAsignado(p, operador) + '</td>' +
@@ -197,10 +194,9 @@
         '<button class="btn ghost" data-action="exportarPreventas">' + GS.icon('download') + 'Exportar</button></div>' +
         panelAgregar(d) +
         '<div class="filters-bar">' +
-        '<div class="search-box">' + GS.icon('search') + '<input type="text" data-filter="preventas.q" value="' + esc(f.q) + '" placeholder="Buscar producto, proforma o PVI..."></div>' +
+        '<div class="search-box">' + GS.icon('search') + '<input type="text" data-filter="preventas.q" value="' + esc(f.q) + '" placeholder="Buscar producto o PVI..."></div>' +
         '<div class="select-input"><select data-filter="preventas.proveedor" aria-label="Proveedor">' + GS.options([{ value: '', label: 'Todos los proveedores' }].concat(d.proveedores.map((p) => ({ value: p.id, label: p.nombre }))), f.proveedor) + '</select></div>' +
         '<div class="select-input"><select data-filter="preventas.edicion" aria-label="Edición">' + GS.options([{ value: '', label: 'Todas las ediciones' }].concat(unicos('edicion')), f.edicion) + '</select></div>' +
-        '<div class="select-input"><select data-filter="preventas.proforma" aria-label="Proforma">' + GS.options([{ value: '', label: 'Todas las proformas' }].concat(unicos('proforma')), f.proforma) + '</select></div>' +
         '<div class="select-input"><select data-filter="preventas.lanzamiento" aria-label="Lanzamiento">' + GS.options([{ value: '', label: 'Todos los lanzamientos' }].concat(fechas.map((x) => ({ value: x, label: fmt.date(x) }))), f.lanzamiento) + '</select></div>' +
         '<div class="select-input"><select data-filter="preventas.estado" aria-label="Estado">' + GS.options([{ value: 'activas', label: 'Por comprar (solicitadas y asignadas)' }, { value: '', label: 'Todos los estados' }]
           .concat(Object.keys(GS.ESTADOS_LINEA).map((k) => ({ value: k, label: GS.ESTADOS_LINEA[k].label }))), f.estado) + '</select></div>' +
@@ -328,8 +324,6 @@
         '<div class="form-grid">' +
         '<div class="form-field full"><label for="ep-producto">Producto *</label><select id="ep-producto" name="productoId">' + productoOptions(p.productoId) + '</select></div>' +
         '<div class="form-field"><label for="ep-proveedor">Proveedor *</label><select id="ep-proveedor" name="proveedorId">' + GS.options(provs.map((x) => ({ value: x.id, label: x.nombre })), p.proveedorId) + '</select></div>' +
-        '<div class="form-field"><label for="ep-proforma">Proforma</label><input id="ep-proforma" name="proforma" list="dl-proformas-e" value="' + esc(p.proforma) + '">' +
-        '<datalist id="dl-proformas-e">' + unicos('proforma').map((x) => '<option value="' + esc(x) + '">').join('') + '</datalist></div>' +
         '<div class="form-field"><label for="ep-lanz">Lanzamiento *</label><input id="ep-lanz" type="date" name="lanzamiento" value="' + esc(p.lanzamiento) + '"></div>' +
         '<div class="form-field"><label for="ep-cant">Cant. solicitada *</label><input id="ep-cant" type="number" min="0" step="1" name="solicitado" value="' + esc(p.solicitado) + '"></div>' +
         '<div class="form-field"><label for="ep-costo">Precio unidad (neto) *</label><input id="ep-costo" type="number" min="0" step="0.01" name="costoNeto" value="' + esc(p.costoNeto) + '"></div>' +
@@ -356,11 +350,11 @@
 
   GS.actions.exportarPreventas = () => {
     GS.downloadCsv('preventas-' + data().hoy + '.csv',
-      ['PVI', 'Proveedor', 'Proforma', 'SKU', 'Producto', 'Edición', 'Idioma', 'Lanzamiento', 'Estado', 'Cant.', 'Nuevo cant.', 'Dif.', 'Precio unidad', 'Precio + IVA',
+      ['PVI', 'Proveedor', 'SKU', 'Producto', 'Edición', 'Idioma', 'Lanzamiento', 'Estado', 'Cant.', 'Nuevo cant.', 'Dif.', 'Precio unidad', 'Precio + IVA',
         'Total neto', 'Total + IVA', 'Nuevo total neto', 'Nuevo total + IVA', 'Precio sugerido', 'Precio venta', 'Margen s/costo %', 'Ganancia real u.', 'Ganancia real total'],
       filtradas().map((p) => {
         const a = p.estado !== 'solicitada';
-        return [p.id, p.proveedor, p.proforma, p.productoId, p.productoNombre, p.edicion, p.idioma, p.lanzamiento, GS.ESTADOS_LINEA[p.estado].label, p.solicitado,
+        return [p.id, p.proveedor, p.productoId, p.productoNombre, p.edicion, p.idioma, p.lanzamiento, GS.ESTADOS_LINEA[p.estado].label, p.solicitado,
           a ? p.asignado : '', a ? p.diferencia : '', p.costoNeto, Math.round(p.costoIva), Math.round(p.netoSolicitado), Math.round(iva(p.netoSolicitado)),
           a ? Math.round(p.netoAsignado) : '', a ? Math.round(iva(p.netoAsignado)) : '', p.pvp, p.precioVenta, Math.round(p.recargo * 100),
           Math.round(p.gananciaUnidad), Math.round(p.gananciaTotal)];
