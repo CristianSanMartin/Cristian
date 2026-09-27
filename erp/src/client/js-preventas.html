@@ -34,7 +34,9 @@
       const f = GS.filters('preventas', DEF);
       el.innerHTML =
         '<div class="page-head"><div><h1>Preventas</h1><p>Solicitudes por edición al proveedor y lo que finalmente asignó.</p></div>' +
-        (GS.puede('operador') ? '<button class="btn" data-action="nuevaPreventa">' + GS.icon('plus', 2.4) + 'Nueva preventa</button>' : '') + '</div>' +
+        (GS.puede('operador') ? '<button class="btn' + (nuevaAbierta ? ' secondary' : '') + '" data-action="nuevaPreventa" aria-expanded="' + nuevaAbierta + '" aria-controls="nueva-preventa">' +
+          GS.icon(nuevaAbierta ? 'close' : 'plus', 2.4) + (nuevaAbierta ? 'Cerrar' : 'Nueva preventa') + '</button>' : '') + '</div>' +
+        panelNuevaPreventa() +
         '<div class="filters-bar">' +
         '<div class="search-box">' + GS.icon('search') + '<input type="text" data-filter="preventas.q" value="' + esc(f.q) + '" placeholder="Buscar por edición, producto o folio..."></div>' +
         '<div class="select-input"><select data-filter="preventas.proveedor">' + GS.options([{ value: '', label: 'Todos los proveedores' }].concat(d.proveedores.map((p) => ({ value: p.id, label: p.nombre }))), f.proveedor) + '</select></div>' +
@@ -45,6 +47,7 @@
         '<th class="right">Solicitado</th><th class="right">Asignado</th><th class="right">Total neto</th><th class="right">Total + IVA</th><th class="right">Ganancia proyectada</th><th>Estado</th>' +
         '</tr></thead><tbody id="pv-tbody"></tbody></table></div>' +
         '<p class="table-note">Totales según lo asignado (o lo solicitado, en líneas aún sin asignar). Ganancia real neta, sin despacho.</p>';
+      conectarNuevaPreventa(el);
       this.update();
     },
     update() {
@@ -172,31 +175,64 @@
 
   /* ---------- encabezado ---------- */
 
-  function preventaForm(pv) {
+  /** Campos del encabezado de una preventa (formulario en línea al crear, modal al editar). */
+  function preventaCampos(pv) {
     const d = data();
     const provs = d.proveedores.filter((x) => x.activo || (pv && x.id === pv.proveedorId));
     const ediciones = Array.from(new Set(d.productos.map((x) => x.edicion).concat(d.preventas.map((x) => x.edicion)).filter(Boolean))).sort();
     const p = pv || { proveedorId: (provs.find((x) => x.nombre === 'Asmodee') || provs[0] || {}).id, edicion: '', fecha: d.hoy, notas: '' };
-    GS.formModal({
-      title: pv ? 'Editar ' + pv.id : 'Nueva preventa',
-      submitLabel: pv ? 'Guardar' : 'Crear preventa',
-      fields: () =>
-        '<div class="form-grid">' +
-        '<div class="form-field"><label>Proveedor *</label><select name="proveedorId">' + GS.options(provs.map((x) => ({ value: x.id, label: x.nombre })), p.proveedorId) + '</select></div>' +
-        '<div class="form-field"><label>Fecha de solicitud</label><input type="date" name="fecha" value="' + esc(p.fecha) + '"></div>' +
-        '<div class="form-field full"><label>Edición / colección *</label><input name="edicion" list="dl-ed-pv" value="' + esc(p.edicion) + '" placeholder="Ej: 30th Celebration">' +
-        '<datalist id="dl-ed-pv">' + ediciones.map((x) => '<option value="' + esc(x) + '">').join('') + '</datalist></div>' +
-        '<div class="form-field full"><label>Notas</label><textarea name="notas" rows="2">' + esc(p.notas) + '</textarea></div>' +
-        '</div>',
-      onSubmit: async (v) => {
-        const r = await GS.mutate('guardarPreventa', Object.assign({ id: pv ? pv.id : '' }, v), pv ? 'Preventa actualizada' : 'Preventa creada');
-        if (!pv) GS.go('preventa', r.id);
-      },
+    return '<div class="form-grid">' +
+      '<div class="form-field"><label for="pv-proveedor">Proveedor *</label><select id="pv-proveedor" name="proveedorId">' + GS.options(provs.map((x) => ({ value: x.id, label: x.nombre })), p.proveedorId) + '</select></div>' +
+      '<div class="form-field"><label for="pv-fecha">Fecha de solicitud</label><input id="pv-fecha" type="date" name="fecha" value="' + esc(p.fecha) + '"></div>' +
+      '<div class="form-field full"><label for="pv-edicion">Edición / colección *</label><input id="pv-edicion" name="edicion" list="dl-ed-pv" value="' + esc(p.edicion) + '" placeholder="Ej: 30th Celebration">' +
+      '<datalist id="dl-ed-pv">' + ediciones.map((x) => '<option value="' + esc(x) + '">').join('') + '</datalist></div>' +
+      '<div class="form-field full"><label for="pv-notas">Notas</label><textarea id="pv-notas" name="notas" rows="2">' + esc(p.notas) + '</textarea></div>' +
+      '</div>';
+  }
+
+  /* "Nueva preventa" despliega el formulario bajo el encabezado, sin ventana emergente. */
+  let nuevaAbierta = false;
+
+  function panelNuevaPreventa() {
+    if (!nuevaAbierta) return '';
+    return '<div class="panel inline-panel" id="nueva-preventa"><form novalidate>' +
+      '<div class="inline-panel-head"><h3>Nueva preventa</h3><span class="muted">Después agregas los productos, cada uno con su fecha de lanzamiento.</span></div>' +
+      preventaCampos(null) +
+      '<div class="form-error"></div>' +
+      '<div class="btn-row inline-panel-foot"><button type="button" class="btn secondary" data-action="nuevaPreventa">Cancelar</button>' +
+      '<button type="submit" class="btn">Crear preventa</button></div>' +
+      '</form></div>';
+  }
+
+  function conectarNuevaPreventa(el) {
+    const form = el.querySelector('#nueva-preventa form');
+    if (!form) return;
+    GS.bindForm(form, async (v) => {
+      const r = await GS.mutate('guardarPreventa', Object.assign({ id: '' }, v), (r) => 'Preventa ' + r.id + ' creada');
+      nuevaAbierta = false;
+      GS.go('preventa', r.id);
     });
   }
 
-  GS.actions.nuevaPreventa = () => preventaForm(null);
-  GS.actions.editarPreventa = (id) => preventaForm(findPv(id));
+  GS.actions.nuevaPreventa = () => {
+    nuevaAbierta = !nuevaAbierta;
+    GS.render();
+    const panel = document.getElementById('nueva-preventa');
+    if (panel) {
+      panel.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      document.getElementById('pv-edicion').focus();
+    }
+  };
+
+  GS.actions.editarPreventa = (id) => {
+    const pv = findPv(id);
+    GS.formModal({
+      title: 'Editar ' + pv.id,
+      submitLabel: 'Guardar',
+      fields: () => preventaCampos(pv),
+      onSubmit: (v) => GS.mutate('guardarPreventa', Object.assign({ id: pv.id }, v), 'Preventa actualizada'),
+    });
+  };
 
   GS.actions.eliminarPreventa = (id) => {
     const p = findPv(id);

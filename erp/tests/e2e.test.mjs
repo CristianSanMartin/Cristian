@@ -31,9 +31,14 @@ test("flujo de preventa: crear, agregar producto nuevo desde el nombre del prove
     // Nueva preventa → queda en su detalle
     await page.click('[data-nav="preventas"]');
     await page.click('[data-action="nuevaPreventa"]');
-    await modal(page).locator('[name="edicion"]').fill("Surging Sparks");
-    await modal(page).locator('button[type="submit"]').click();
-    await cerrado(page);
+    assert.equal(await page.locator("#modal-root .modal-overlay").count(), 0, "se despliega en la página, no en una ventana");
+    const nueva = page.locator("#nueva-preventa");
+    assert.equal(await nueva.locator('[name="proveedorId"] option:checked').textContent(), "Asmodee");
+    await nueva.locator('button[type="submit"]').click();
+    await nueva.locator(".form-error.show").waitFor();
+    assert.match(await nueva.locator(".form-error").textContent(), /edición es obligatoria/);
+    await nueva.locator('[name="edicion"]').fill("Surging Sparks");
+    await nueva.locator('button[type="submit"]').click();
     await page.waitForSelector("text=Sin productos todavía");
     assert.equal(await page.textContent("#topbar-title"), "Preventa PV-0002");
 

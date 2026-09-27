@@ -36,7 +36,7 @@ const Util = {
   texto(valor, campo, opts) {
     opts = opts || {};
     const s = valor == null ? '' : String(valor).trim();
-    if (opts.requerido && !s) throw new AppError(campo + ' es obligatorio.');
+    if (opts.requerido && !s) throw new AppError(campo + (/^La /.test(campo) ? ' es obligatoria.' : ' es obligatorio.'));
     const max = opts.max || 500;
     if (s.length > max) throw new AppError(campo + ' no puede superar ' + max + ' caracteres.');
     return s;
@@ -46,7 +46,7 @@ const Util = {
   entero(valor, campo, opts) {
     opts = opts || {};
     if (valor === '' || valor == null) {
-      if (opts.requerido) throw new AppError(campo + ' es obligatorio.');
+      if (opts.requerido) throw new AppError(campo + (/^La /.test(campo) ? ' es obligatoria.' : ' es obligatorio.'));
       return opts.defecto != null ? opts.defecto : 0;
     }
     const n = Number(valor);
@@ -61,7 +61,7 @@ const Util = {
   monto(valor, campo, opts) {
     opts = opts || {};
     if (valor === '' || valor == null) {
-      if (opts.requerido) throw new AppError(campo + ' es obligatorio.');
+      if (opts.requerido) throw new AppError(campo + (/^La /.test(campo) ? ' es obligatoria.' : ' es obligatorio.'));
       return 0;
     }
     const n = Number(String(valor).replace(',', '.'));
