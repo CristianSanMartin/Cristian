@@ -1,0 +1,309 @@
+<script>
+/* =========================================================
+   Inventario: catálogo de productos, stock valorizado a
+   costo promedio, movimientos manuales y kardex.
+========================================================= */
+(function () {
+  'use strict';
+  const { fmt, esc } = GS;
+  const data = () => GS.state.data;
+  const findProd = (id) => data().productos.find((p) => p.id === id);
+  const bajo = (p) => p.stockMinimo > 0 && p.stock <= p.stockMinimo;
+  const DEFAULTS = { tab: 'productos', q: '', categoria: '', juego: '', estado: 'activos', stock: '', mq: '', tipo: '', desde: '', hasta: '' };
+
+  /* ---------- productos ---------- */
+
+  function productosFiltrados() {
+    const f = GS.filters('inventario', DEFAULTS);
+    const q = GS.norm(f.q.trim());
+    return data().productos
+      .filter((p) => {
+        if (f.estado === 'activos' ? !p.activo : f.estado === 'archivados' ? p.activo : false) return false;
+        if (f.categoria && p.categoria !== f.categoria) return false;
+        if (f.juego && p.juego !== f.juego) return false;
+        if (f.stock === 'con' && p.stock <= 0) return false;
+        if (f.stock === 'bajo' && !bajo(p)) return false;
+        return !q || GS.norm(p.nombre + ' ' + p.sku + ' ' + p.categoria + ' ' + p.juego).includes(q);
+      })
+      .sort((a, b) => a.nombre.localeCompare(b.nombre));
+  }
+
+  function filaProducto(p) {
+    const margen = p.precioVenta && p.costoPromedio ? (p.precioVenta - p.costoPromedio) / p.precioVenta : NaN;
+    const operador = GS.puede('operador');
+    return '<tr class="' + (p.activo ? '' : 'row-muted') + '">' +
+      '<td class="nowrap cell-dim">' + esc(p.sku) + '</td>' +
+      '<td class="cell-strong">' + esc(p.nombre) + '<div class="cell-dim">' + esc(p.categoria) + ' · ' + esc(p.juego) + (p.activo ? '' : ' · archivado') + '</div></td>' +
+      '<td class="cell-num right"><span class="cell-strong ' + (bajo(p) ? 'text-danger' : '') + '">' + fmt.num(p.stock) + '</span>' +
+      (bajo(p) ? '<div><span class="pill late">mín. ' + p.stockMinimo + '</span></div>' : '') + '</td>' +
+      '<td class="cell-num right">' + (p.entrante ? '<span class="text-gold">+' + p.entrante + '</span>' : '<span class="muted">—</span>') + '</td>' +
+      '<td class="cell-num right">' + (p.costoPromedio ? fmt.money(p.costoPromedio) : '—') + '</td>' +
+      '<td class="cell-num right cell-strong">' + fmt.money(p.valor) + '</td>' +
+      '<td class="cell-num right">' + (p.precioVenta ? fmt.money(p.precioVenta) : '—') + '</td>' +
+      '<td class="cell-num right ' + (margen < 0 ? 'text-danger' : '') + '">' + fmt.pct(margen) + '</td>' +
+      '<td><div class="row-actions">' +
+      (operador && p.activo ? GS.iconBtn('movimientoProducto', p.id, 'move', 'Registrar movimiento', 'gold') : '') +
+      GS.iconBtn('kardexProducto', p.id, 'list', 'Ver kardex') +
+      (operador ? GS.iconBtn('editarProducto', p.id, 'edit', 'Editar') : '') +
+      (operador ? GS.iconBtn('archivarProducto', p.id, 'archive', p.activo ? 'Archivar' : 'Reactivar') : '') +
+      '</div></td></tr>';
+  }
+
+  function tablaProductos() {
+    const rows = productosFiltrados();
+    const valor = rows.reduce((s, p) => s + p.valor, 0);
+    const uds = rows.reduce((s, p) => s + p.stock, 0);
+    document.getElementById('inv-count').textContent = rows.length + ' productos';
+    document.getElementById('inv-results').innerHTML =
+      '<div class="table-wrap"><table class="data-table"><thead><tr>' +
+      '<th>SKU</th><th class="col-prod">Producto</th><th class="right">Stock</th><th class="right">Entrante</th><th class="right">Costo prom.</th>' +
+      '<th class="right">Valor stock</th><th class="right">Precio venta</th><th class="right">Margen</th><th class="right">Acciones</th>' +
+      '</tr></thead><tbody>' +
+      (rows.length
+        ? rows.map(filaProducto).join('')
+        : '<tr><td colspan="9">' + GS.empty('No hay productos para mostrar', 'Crea un producto o ajusta los filtros.', 'inventario') + '</td></tr>') +
+      '</tbody>' +
+      (rows.length > 1 ? '<tfoot><tr><td colspan="2">Totales</td><td class="cell-num right">' + fmt.num(uds) + '</td><td colspan="2"></td><td class="cell-num right">' + fmt.money(valor) + '</td><td colspan="3"></td></tr></tfoot>' : '') +
+      '</table></div>' +
+      '<p class="table-note">Stock y costo promedio ponderado calculados desde los movimientos. "Entrante" son unidades en preventas activas.</p>';
+  }
+
+  /* ---------- movimientos ---------- */
+
+  function movimientosFiltrados() {
+    const f = GS.filters('inventario', DEFAULTS);
+    const q = GS.norm(f.mq.trim());
+    const nombre = {};
+    data().productos.forEach((p) => { nombre[p.id] = p.nombre + ' ' + p.sku; });
+    return data().movimientos
+      .filter((m) => {
+        if (f.tipo && m.tipo !== f.tipo) return false;
+        if (f.desde && m.fecha < f.desde) return false;
+        if (f.hasta && m.fecha > f.hasta) return false;
+        return !q || GS.norm((nombre[m.productoId] || '') + ' ' + m.nota).includes(q);
+      })
+      .slice()
+      .reverse();
+  }
+
+  function tablaMovimientos(movs, conProducto) {
+    const tipos = data().catalogos.tiposMovimiento;
+    const admin = GS.puede('admin');
+    return '<div class="table-wrap"><table class="data-table" style="min-width:' + (conProducto ? 980 : 760) + 'px;"><thead><tr>' +
+      '<th>Fecha</th>' + (conProducto ? '<th>Producto</th>' : '') + '<th>Tipo</th><th class="right">Cantidad</th><th class="right">Costo unit.</th>' +
+      '<th class="right">Saldo</th><th class="right">Costo prom.</th><th>Detalle</th><th>Usuario</th>' + (admin ? '<th></th>' : '') +
+      '</tr></thead><tbody>' +
+      (movs.length
+        ? movs.map((m) => {
+          const p = findProd(m.productoId);
+          const pv = m.refTipo === 'Preventa' ? data().preventas.find((x) => x.id === m.refId) : null;
+          return '<tr><td class="nowrap">' + fmt.date(m.fecha) + '</td>' +
+            (conProducto ? '<td class="cell-strong">' + esc(p ? p.nombre : '—') + '</td>' : '') +
+            '<td>' + esc(tipos[m.tipo] || m.tipo) + '</td>' +
+            '<td class="cell-num right ' + (m.cantidad > 0 ? 'qty-pos' : 'qty-neg') + '">' + fmt.signed(m.cantidad) + '</td>' +
+            '<td class="cell-num right">' + fmt.money(m.costoUnit) + '</td>' +
+            '<td class="cell-num right cell-strong">' + fmt.num(m.saldo) + '</td>' +
+            '<td class="cell-num right">' + fmt.money(m.costoPromedio) + '</td>' +
+            '<td>' + (pv ? '<a class="link" data-action="verPreventa" data-id="' + esc(pv.id) + '">' + esc(pv.folio) + '</a> ' : '') + esc(pv ? '' : m.nota) + '</td>' +
+            '<td class="cell-dim">' + esc(m.creadoPor.split('@')[0]) + '</td>' +
+            (admin ? '<td>' + (m.tipo !== 'entrada_preventa' ? '<div class="row-actions">' + GS.iconBtn('eliminarMovimiento', m.id, 'trash', 'Revertir movimiento', 'danger') + '</div>' : '') + '</td>' : '') +
+            '</tr>';
+        }).join('')
+        : '<tr><td colspan="10">' + GS.empty('Sin movimientos', 'Las recepciones de preventas y los movimientos manuales aparecen aquí.', 'move') + '</td></tr>') +
+      '</tbody></table></div>';
+  }
+
+  /* ---------- vista ---------- */
+
+  GS.views.inventario = {
+    title: 'Inventario',
+    render(el, d) {
+      const f = GS.filters('inventario', DEFAULTS);
+      const activos = d.productos.filter((p) => p.activo);
+      const valor = activos.reduce((s, p) => s + p.valor, 0);
+      const valorVenta = activos.reduce((s, p) => s + Math.max(p.stock, 0) * p.precioVenta, 0);
+      const kpi = (label, value, sub) => '<div class="kpi-card"><div class="kpi-label">' + label + '</div><div class="kpi-value">' + value + '</div><div class="kpi-sub">' + sub + '</div></div>';
+      const productos = f.tab !== 'movimientos';
+      el.innerHTML =
+        '<div class="page-head"><div><h1>Inventario</h1><p>Stock valorizado por producto, entradas, salidas y ajustes.</p></div>' +
+        '<div class="btn-row">' +
+        '<button class="btn ghost" data-action="exportarInventario">' + GS.icon('download') + 'Exportar</button>' +
+        (GS.puede('operador') ? '<button class="btn" data-action="nuevoProducto">' + GS.icon('plus', 2.4) + 'Nuevo producto</button>' : '') +
+        '</div></div>' +
+        '<div class="kpi-grid">' +
+        kpi('Valor a costo', fmt.money(valor), 'Costo promedio × stock') +
+        kpi('Valor a precio de venta', fmt.money(valorVenta), 'Margen potencial ' + fmt.money(valorVenta - valor)) +
+        kpi('Unidades en stock', fmt.num(activos.reduce((s, p) => s + Math.max(p.stock, 0), 0)), activos.filter((p) => p.stock > 0).length + ' productos con stock') +
+        kpi('Unidades entrantes', fmt.num(activos.reduce((s, p) => s + p.entrante, 0)), 'En preventas activas') +
+        '</div>' +
+        '<div class="tabs">' +
+        '<button class="tab' + (productos ? ' active' : '') + '" data-action="tab" data-id="inventario.productos">Productos y stock</button>' +
+        '<button class="tab' + (!productos ? ' active' : '') + '" data-action="tab" data-id="inventario.movimientos">Movimientos</button>' +
+        '</div>' +
+        (productos
+          ? '<div class="filters-bar">' +
+            '<div class="search-box">' + GS.icon('search') + '<input type="text" data-filter="inventario.q" value="' + esc(f.q) + '" placeholder="Buscar por nombre o SKU..."></div>' +
+            '<div class="select-input"><select data-filter="inventario.categoria">' + GS.options([{ value: '', label: 'Todas las categorías' }].concat(d.catalogos.categorias), f.categoria) + '</select></div>' +
+            '<div class="select-input"><select data-filter="inventario.juego">' + GS.options([{ value: '', label: 'Todos los juegos' }].concat(d.catalogos.juegos), f.juego) + '</select></div>' +
+            '<div class="select-input"><select data-filter="inventario.stock">' + GS.options([{ value: '', label: 'Cualquier stock' }, { value: 'con', label: 'Con stock' }, { value: 'bajo', label: 'Bajo mínimo' }], f.stock) + '</select></div>' +
+            '<div class="select-input"><select data-filter="inventario.estado">' + GS.options([{ value: 'activos', label: 'Activos' }, { value: 'archivados', label: 'Archivados' }, { value: '', label: 'Activos y archivados' }], f.estado) + '</select></div>' +
+            '<span class="count" id="inv-count"></span></div>'
+          : '<div class="filters-bar">' +
+            '<div class="search-box">' + GS.icon('search') + '<input type="text" data-filter="inventario.mq" value="' + esc(f.mq) + '" placeholder="Buscar por producto o nota..."></div>' +
+            '<div class="select-input"><select data-filter="inventario.tipo">' + GS.options([{ value: '', label: 'Todos los tipos' }].concat(Object.keys(d.catalogos.tiposMovimiento).map((k) => ({ value: k, label: d.catalogos.tiposMovimiento[k] }))), f.tipo) + '</select></div>' +
+            '<label class="muted" style="font-size:12px;">Desde <input type="date" data-filter="inventario.desde" value="' + esc(f.desde) + '"></label>' +
+            '<label class="muted" style="font-size:12px;">Hasta <input type="date" data-filter="inventario.hasta" value="' + esc(f.hasta) + '"></label>' +
+            '<span class="count" id="inv-count"></span></div>') +
+        '<div id="inv-results"></div>';
+      this.update();
+    },
+    update() {
+      if (GS.filters('inventario', DEFAULTS).tab === 'movimientos') {
+        const movs = movimientosFiltrados();
+        document.getElementById('inv-count').textContent = movs.length + ' movimientos';
+        document.getElementById('inv-results').innerHTML = tablaMovimientos(movs, true);
+      } else {
+        tablaProductos();
+      }
+    },
+  };
+
+  GS.actions.exportarInventario = () => {
+    GS.downloadCsv('inventario-' + data().hoy + '.csv',
+      ['SKU', 'Producto', 'Categoría', 'Juego', 'Stock', 'Entrante', 'Stock mínimo', 'Costo promedio', 'Valor stock', 'Precio venta', 'Activo'],
+      productosFiltrados().map((p) => [p.sku, p.nombre, p.categoria, p.juego, p.stock, p.entrante, p.stockMinimo, p.costoPromedio, p.valor, p.precioVenta, p.activo ? 'Sí' : 'No']));
+  };
+
+  /* ---------- producto: crear / editar ---------- */
+
+  /** También lo usa Preventas para crear un producto sin salir del formulario. */
+  GS.editarProducto = function (prod, onSaved) {
+    const c = data().catalogos;
+    const p = prod || { nombre: '', sku: '', categoria: 'Booster Box', juego: 'Pokémon', precioVenta: '', stockMinimo: '', notas: '' };
+    GS.formModal({
+      title: prod ? 'Editar producto' : 'Nuevo producto',
+      submitLabel: 'Guardar producto',
+      fields: () =>
+        '<div class="form-grid">' +
+        '<div class="form-field full"><label>Nombre *</label><input name="nombre" value="' + esc(p.nombre) + '" placeholder="Ej: Booster Box Destined Rivals"></div>' +
+        '<div class="form-field"><label>SKU</label><input name="sku" value="' + esc(p.sku) + '" placeholder="Automático si lo dejas vacío"></div>' +
+        '<div class="form-field"><label>Categoría</label><select name="categoria">' + GS.options(c.categorias, p.categoria) + '</select></div>' +
+        '<div class="form-field"><label>Juego</label><select name="juego">' + GS.options(c.juegos, p.juego) + '</select></div>' +
+        '<div class="form-field"><label>Precio de venta</label><input name="precioVenta" type="number" min="0" step="1" value="' + esc(p.precioVenta || '') + '" placeholder="0"></div>' +
+        '<div class="form-field"><label>Stock mínimo</label><input name="stockMinimo" type="number" min="0" step="1" value="' + esc(p.stockMinimo || '') + '" placeholder="0"><span class="hint">Avisa en el dashboard cuando el stock llegue a este nivel.</span></div>' +
+        '<div class="form-field full"><label>Notas</label><textarea name="notas" rows="2">' + esc(p.notas) + '</textarea></div>' +
+        '</div>',
+      onSubmit: async (v) => {
+        const saved = await GS.mutate('guardarProducto', Object.assign({ id: prod ? prod.id : '' }, v), prod ? 'Producto actualizado' : 'Producto creado');
+        if (onSaved) onSaved(saved);
+      },
+    });
+  };
+
+  GS.actions.nuevoProducto = () => GS.editarProducto(null);
+  GS.actions.editarProducto = (id) => GS.editarProducto(findProd(id));
+
+  GS.actions.archivarProducto = (id) => {
+    const p = findProd(id);
+    if (!p.activo) return GS.mutate('archivarProducto', { id: id, activo: true }, 'Producto reactivado').catch((e) => GS.toast(e.message, true));
+    GS.confirm({
+      title: 'Archivar producto',
+      message: '<strong>' + esc(p.nombre) + '</strong> dejará de aparecer en los listados y no podrá usarse en nuevas preventas. Puedes reactivarlo cuando quieras.' +
+        (GS.puede('admin') ? '<br><br>Si el producto no tiene preventas ni movimientos, también puedes <a class="link" data-action="eliminarProducto" data-id="' + esc(p.id) + '">eliminarlo definitivamente</a>.' : ''),
+      confirmLabel: 'Archivar',
+      onConfirm: () => GS.mutate('archivarProducto', { id: id, activo: false }, 'Producto archivado'),
+    });
+  };
+
+  GS.actions.eliminarProducto = async (id) => {
+    try {
+      await GS.mutate('eliminarProducto', { id: id }, 'Producto eliminado');
+      GS.closeModals();
+    } catch (e) {
+      GS.toast(e.message, true);
+    }
+  };
+
+  /* ---------- movimientos manuales ---------- */
+
+  GS.actions.movimientoProducto = (id) => {
+    const p = findProd(id);
+    GS.formModal({
+      title: 'Movimiento · ' + p.nombre,
+      submitLabel: 'Registrar movimiento',
+      fields: () =>
+        '<div class="calc-grid" style="margin-bottom:14px;">' +
+        '<div class="calc-readout"><span class="lbl">Stock actual</span><span class="val">' + fmt.num(p.stock) + '</span></div>' +
+        '<div class="calc-readout"><span class="lbl">Costo promedio</span><span class="val">' + (p.costoPromedio ? fmt.money(p.costoPromedio) : '—') + '</span></div>' +
+        '<div class="calc-readout"><span class="lbl">Stock resultante</span><span class="val text-gold" data-calc="resultado">' + fmt.num(p.stock) + '</span></div>' +
+        '</div>' +
+        '<input type="hidden" name="productoId" value="' + esc(p.id) + '">' +
+        '<div class="form-field"><label>Tipo de movimiento</label><div class="segmented">' +
+        '<label><input type="radio" name="tipo" value="entrada" checked>Entrada</label>' +
+        '<label><input type="radio" name="tipo" value="salida">Salida</label>' +
+        '<label><input type="radio" name="tipo" value="ajuste">Ajuste por conteo</label>' +
+        '</div></div>' +
+        '<div class="form-grid">' +
+        '<div class="form-field" data-show="entrada salida"><label>Cantidad *</label><input type="number" name="cantidad" min="1" step="1"></div>' +
+        '<div class="form-field" data-show="ajuste"><label>Stock contado *</label><input type="number" name="stockContado" min="0" step="1" value="' + p.stock + '"><span class="hint">Unidades reales contadas en bodega.</span></div>' +
+        '<div class="form-field" data-show="entrada' + (p.costoPromedio ? '' : ' ajuste') + '"><label>Costo unitario' + (p.costoPromedio ? ' *' : '') + '</label><input type="number" name="costoUnit" min="0" step="1" value="' + (p.costoPromedio || '') + '"></div>' +
+        '<div class="form-field"><label>Fecha</label><input type="date" name="fecha" value="' + data().hoy + '"></div>' +
+        '<div class="form-field full"><label data-label-nota>Nota</label><input name="nota" placeholder="Ej: compra directa en tienda, venta en evento, conteo mensual"></div>' +
+        '</div>',
+      onMount: (form) => {
+        const sync = () => {
+          const tipo = form.elements.tipo.value;
+          form.querySelectorAll('[data-show]').forEach((el) => {
+            const visible = el.dataset.show.split(' ').includes(tipo);
+            el.classList.toggle('hidden', !visible);
+            el.querySelectorAll('input').forEach((i) => { i.disabled = !visible; });
+          });
+          form.querySelector('[data-label-nota]').textContent = tipo === 'entrada' ? 'Nota' : 'Motivo *';
+          const cant = Number(form.elements.cantidad.value) || 0;
+          const res = tipo === 'entrada' ? p.stock + cant : tipo === 'salida' ? p.stock - cant : Number(form.elements.stockContado.value) || 0;
+          const out = form.querySelector('[data-calc=resultado]');
+          out.textContent = fmt.num(res);
+          out.classList.toggle('text-danger', res < 0);
+        };
+        form.addEventListener('input', sync);
+        form.addEventListener('change', sync);
+        sync();
+      },
+      onSubmit: (v) => GS.mutate('registrarMovimiento', v, 'Movimiento registrado'),
+    });
+  };
+
+  GS.actions.kardexProducto = (id) => {
+    const p = findProd(id);
+    GS.modal({
+      title: 'Kardex · ' + p.nombre,
+      size: 'wide',
+      live: true,
+      noAutofocus: true,
+      body: () => {
+        const prod = findProd(id) || p;
+        const movs = data().movimientos.filter((m) => m.productoId === id).slice().reverse();
+        return '<div class="modal-body">' +
+          '<div class="detail-grid">' +
+          '<div class="detail-item"><div class="lbl">Stock</div><div class="val">' + fmt.num(prod.stock) + '</div></div>' +
+          '<div class="detail-item"><div class="lbl">Costo promedio</div><div class="val">' + fmt.money(prod.costoPromedio) + '</div></div>' +
+          '<div class="detail-item"><div class="lbl">Valor</div><div class="val">' + fmt.money(prod.valor) + '</div></div>' +
+          '<div class="detail-item"><div class="lbl">Entrante</div><div class="val">' + fmt.num(prod.entrante) + '</div></div>' +
+          '</div>' + tablaMovimientos(movs, false) + '<div style="height:16px"></div></div>';
+      },
+    });
+  };
+
+  GS.actions.eliminarMovimiento = (id) => {
+    const m = data().movimientos.find((x) => x.id === id);
+    const p = findProd(m.productoId);
+    GS.confirm({
+      title: 'Revertir movimiento',
+      message: 'Se eliminará el movimiento de <strong>' + fmt.signed(m.cantidad) + '</strong> unidades de ' + esc(p ? p.nombre : '') + ' del ' + fmt.date(m.fecha) + '. Queda registrado en la auditoría.',
+      confirmLabel: 'Revertir',
+      danger: true,
+      onConfirm: () => GS.mutate('eliminarMovimiento', { id: id }, 'Movimiento revertido'),
+    });
+  };
+})();
+</script>

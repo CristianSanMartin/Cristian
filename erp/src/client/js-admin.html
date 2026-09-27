@@ -1,0 +1,127 @@
+<script>
+/* =========================================================
+   Administración (solo admin): usuarios, auditoría e
+   importación desde el ERP anterior. Además, las vistas
+   "Pronto" de Compras y Ventas.
+========================================================= */
+(function () {
+  'use strict';
+  const { fmt, esc } = GS;
+  const data = () => GS.state.data;
+  const ROL_LABEL = { admin: 'Administrador', operador: 'Operador', lectura: 'Solo lectura' };
+  let auditoria = null;
+
+  function tabUsuarios() {
+    const users = data().usuarios.slice().sort((a, b) => (b.activo - a.activo) || a.email.localeCompare(b.email));
+    return '<div class="notice">Para entrar, cada persona necesita <strong>dos cosas</strong>: estar en esta lista (activa) y tener acceso de <strong>edición</strong> a la planilla del ERP en Google Drive. ' +
+      'Roles: <strong>Solo lectura</strong> consulta; <strong>Operador</strong> crea y edita preventas, abonos, productos y movimientos; <strong>Administrador</strong> además elimina, revierte, importa y gestiona usuarios.</div>' +
+      '<div class="btn-row" style="justify-content:flex-end;margin-bottom:12px;"><button class="btn" data-action="nuevoUsuario">' + GS.icon('plus', 2.4) + 'Agregar usuario</button></div>' +
+      '<div class="table-wrap"><table class="data-table" style="min-width:680px;"><thead><tr><th>Correo</th><th>Nombre</th><th>Rol</th><th>Estado</th><th>Alta</th><th class="right">Acciones</th></tr></thead><tbody>' +
+      users.map((u) => '<tr class="' + (u.activo ? '' : 'row-muted') + '"><td class="cell-strong">' + esc(u.email) + (u.email === data().user.email ? ' <span class="pill">tú</span>' : '') + '</td>' +
+        '<td>' + esc(u.nombre) + '</td><td><span class="badge rol-' + esc(u.rol) + '">' + esc(ROL_LABEL[u.rol] || u.rol) + '</span></td>' +
+        '<td>' + (u.activo ? '<span class="badge st-ok">Activo</span>' : '<span class="badge st-cancelada">Inactivo</span>') + '</td>' +
+        '<td class="cell-dim">' + esc(u.creadoEn.slice(0, 10)) + '</td>' +
+        '<td><div class="row-actions">' + GS.iconBtn('editarUsuario', u.email, 'edit', 'Editar') + '</div></td></tr>').join('') +
+      '</tbody></table></div>';
+  }
+
+  function tabAuditoria() {
+    if (!auditoria) {
+      GS.api('auditoria').then((r) => { auditoria = r.data; GS.render(); }).catch((e) => GS.toast(e.message, true));
+      return '<div class="empty-state"><div class="spinner"></div>Cargando registro…</div>';
+    }
+    const pretty = (s) => {
+      if (!s) return '';
+      try { return JSON.stringify(JSON.parse(s), null, 1).replace(/^\{\n|\n\}$/g, '').replace(/^ /gm, ''); } catch (e) { return s; }
+    };
+    return '<div class="btn-row" style="justify-content:space-between;margin-bottom:12px;"><span class="muted" style="font-size:12px;">Últimos 300 cambios, del más reciente al más antiguo.</span>' +
+      '<button class="btn ghost" data-action="recargarAuditoria">Actualizar</button></div>' +
+      '<div class="table-wrap"><table class="data-table"><thead><tr><th>Fecha</th><th>Usuario</th><th>Acción</th><th>Entidad</th><th>Detalle</th></tr></thead><tbody>' +
+      (auditoria.length
+        ? auditoria.map((a) => '<tr><td class="nowrap cell-dim">' + esc(a.fecha) + '</td><td>' + esc(a.usuario) + '</td><td class="cell-strong">' + esc(a.accion) + '</td>' +
+          '<td>' + esc(a.entidad) + '</td><td><pre class="json">' + esc(pretty(a.detalle)) + '</pre></td></tr>').join('')
+        : '<tr><td colspan="5">' + GS.empty('Sin registros', '') + '</td></tr>') +
+      '</tbody></table></div>';
+  }
+
+  function tabImportar() {
+    return '<div class="panel"><div class="panel-body" style="padding:18px;">' +
+      '<p style="margin-top:0;color:var(--text-dim);font-size:13.5px;line-height:1.6;">Trae las preventas guardadas en el ERP anterior (el archivo <code>gsprime-erp.html</code>). Cada producto se crea en el catálogo si no existe; ' +
+      'el abono se registra como pago y las preventas "Recibido" ingresan su stock al inventario.</p>' +
+      '<ol class="list-plain"><li>Abre el ERP anterior en el mismo computador y navegador donde lo usabas.</li>' +
+      '<li>Presiona <strong>F12</strong> (o clic derecho → Inspeccionar) y entra a la pestaña <strong>Consola</strong>.</li>' +
+      '<li>Pega esto y presiona Enter: <code>copy(localStorage.getItem(\'gsprime_erp_preventas_v1\'))</code></li>' +
+      '<li>Vuelve aquí y pega (Ctrl+V) en el cuadro de abajo.</li></ol>' +
+      '<form data-importar novalidate style="margin-top:14px;"><div class="form-field"><label>Datos del ERP anterior (JSON)</label>' +
+      '<textarea class="code" name="json" placeholder=\'[{"producto":"...","proveedor":"...", ...}]\'></textarea></div>' +
+      '<div class="form-error"></div><div class="btn-row" style="justify-content:flex-end;"><button type="submit" class="btn">Importar preventas</button></div></form>' +
+      '</div></div>';
+  }
+
+  GS.views.admin = {
+    title: 'Administración',
+    rol: 'admin',
+    render(el) {
+      const f = GS.filters('admin', { tab: 'usuarios' });
+      const tab = (id, label) => '<button class="tab' + (f.tab === id ? ' active' : '') + '" data-action="tab" data-id="admin.' + id + '">' + label + '</button>';
+      el.innerHTML =
+        '<div class="page-head"><div><h1>Administración</h1><p>Usuarios y permisos, registro de cambios e importación de datos.</p></div></div>' +
+        '<div class="tabs">' + tab('usuarios', 'Usuarios') + tab('auditoria', 'Auditoría') + tab('importar', 'Importar datos') + '</div>' +
+        (f.tab === 'auditoria' ? tabAuditoria() : f.tab === 'importar' ? tabImportar() : tabUsuarios());
+      const form = el.querySelector('form[data-importar]');
+      if (form) {
+        GS.bindForm(form, async (v) => {
+          if (!v.json) throw new Error('Pega primero los datos del ERP anterior.');
+          const r = await GS.mutate('importarLegacy', v);
+          auditoria = null;
+          GS.modal({
+            title: 'Importación terminada',
+            body: () => '<div class="modal-body"><p>Se importaron <strong>' + r.importadas + '</strong> preventas.</p>' +
+              (r.errores.length ? '<div class="form-error show">' + esc(r.errores.join('\n')) + '</div>' : '') + '</div>' +
+              '<div class="modal-foot"><button class="btn" data-close>Listo</button></div>',
+          });
+        });
+      }
+    },
+  };
+
+  GS.actions.recargarAuditoria = () => { auditoria = null; GS.render(); };
+
+  function usuarioForm(u) {
+    const nuevo = !u;
+    u = u || { email: '', nombre: '', rol: 'operador', activo: true };
+    GS.formModal({
+      title: nuevo ? 'Agregar usuario' : 'Editar usuario',
+      submitLabel: 'Guardar usuario',
+      fields: () =>
+        '<div class="form-grid">' +
+        '<div class="form-field full"><label>Correo de Google *</label><input name="email" type="email" value="' + esc(u.email) + '"' + (nuevo ? '' : ' readonly') + ' placeholder="nombre@gmail.com"></div>' +
+        '<div class="form-field"><label>Nombre *</label><input name="nombre" value="' + esc(u.nombre) + '"></div>' +
+        '<div class="form-field"><label>Rol</label><select name="rol">' + GS.options(Object.keys(ROL_LABEL), u.rol, ROL_LABEL) + '</select></div>' +
+        '<div class="form-field full"><label class="check"><input type="checkbox" name="activo"' + (u.activo ? ' checked' : '') + '> Usuario activo</label></div>' +
+        '</div>' +
+        (nuevo ? '<div class="notice">Recuerda compartir la planilla del ERP con este correo (permiso de edición).</div>' : ''),
+      onSubmit: (v) => GS.mutate('guardarUsuario', v, 'Usuario guardado').then(() => { auditoria = null; }),
+    });
+  }
+
+  GS.actions.nuevoUsuario = () => usuarioForm(null);
+  GS.actions.editarUsuario = (email) => usuarioForm(data().usuarios.find((u) => u.email === email));
+
+  /* ---------- módulos próximos ---------- */
+
+  function proximamente(id, titulo, sub, texto) {
+    GS.views[id] = {
+      title: titulo,
+      render(el) {
+        el.innerHTML = '<div class="page-head"><div><h1>' + titulo + '</h1><p>' + sub + '</p></div></div>' +
+          '<div class="placeholder-panel"><div class="ph-icon">' + GS.icon(id) + '</div><h2>Módulo en construcción</h2><p>' + texto + '</p></div>';
+      },
+    };
+  }
+  proximamente('compras', 'Compras', 'Órdenes de compra confirmadas y recepción de mercadería.',
+    'Las preventas recibidas ya ingresan stock al inventario. Este módulo sumará compras directas con documento (factura/boleta), costos de importación y cuentas por pagar.');
+  proximamente('ventas', 'Ventas', 'Registro de ventas a clientes finales y márgenes por producto.',
+    'Mientras tanto, registra las ventas como "Salida" en Inventario. Este módulo agregará clientes, canales de venta, descuentos de stock automáticos y margen real por venta.');
+})();
+</script>

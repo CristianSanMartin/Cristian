@@ -1,0 +1,97 @@
+<script>
+/* =========================================================
+   Dashboard: resumen de preventas e inventario.
+========================================================= */
+(function () {
+  'use strict';
+  const { fmt, esc } = GS;
+
+  function kpi(label, value, sub, cls) {
+    return '<div class="kpi-card ' + (cls || '') + '"><div class="kpi-label">' + label + '</div>' +
+      '<div class="kpi-value">' + value + '</div><div class="kpi-sub">' + (sub || '') + '</div></div>';
+  }
+
+  function donut(preventas) {
+    if (!preventas.length) return GS.empty('Sin datos para graficar', 'Aparecerá aquí cuando tengas preventas cargadas.');
+    const counts = {};
+    preventas.forEach((p) => { counts[p.estado] = (counts[p.estado] || 0) + 1; });
+    const keys = Object.keys(GS.ESTADOS).filter((k) => counts[k]);
+    const R = 46, C = 2 * Math.PI * R;
+    let offset = 0;
+    const arcs = keys.map((k) => {
+      const len = (counts[k] / preventas.length) * C;
+      const arc = '<circle cx="60" cy="60" r="' + R + '" fill="none" stroke="' + GS.ESTADOS[k].color + '" stroke-width="14" ' +
+        'stroke-dasharray="' + len + ' ' + (C - len) + '" stroke-dashoffset="' + -offset + '" transform="rotate(-90 60 60)"/>';
+      offset += len;
+      return arc;
+    }).join('');
+    const legend = keys.map((k) =>
+      '<div class="legend-item"><span class="legend-dot" style="background:' + GS.ESTADOS[k].color + '"></span>' +
+      '<span class="lg-name">' + GS.ESTADOS[k].label + '</span><span class="lg-val">' + counts[k] + '</span></div>').join('');
+    return '<div class="donut-wrap"><svg width="120" height="120" viewBox="0 0 120 120" style="flex-shrink:0;">' +
+      '<circle cx="60" cy="60" r="' + R + '" fill="none" stroke="#232327" stroke-width="14"/>' + arcs +
+      '<text x="60" y="56" text-anchor="middle" font-family="Oswald" font-size="22" fill="#f3f2ef" font-weight="600">' + preventas.length + '</text>' +
+      '<text x="60" y="72" text-anchor="middle" font-family="Inter" font-size="9" fill="#6f6f75" letter-spacing="1">TOTAL</text>' +
+      '</svg><div class="legend">' + legend + '</div></div>';
+  }
+
+  GS.views.dashboard = {
+    title: 'Dashboard',
+    render(el, d) {
+      const activas = d.preventas.filter((p) => p.estado === 'pedido' || p.estado === 'transito');
+      const comprometido = activas.reduce((s, p) => s + p.total, 0);
+      const saldo = activas.reduce((s, p) => s + p.saldo, 0);
+      const mes = d.hoy.slice(0, 7);
+      const llegadasMes = activas.filter((p) => p.fechaLlegada.slice(0, 7) === mes);
+      const atrasadas = activas.filter((p) => p.fechaLlegada < d.hoy);
+
+      const prods = d.productos.filter((p) => p.activo);
+      const valor = prods.reduce((s, p) => s + p.valor, 0);
+      const unidades = prods.reduce((s, p) => s + Math.max(p.stock, 0), 0);
+      const valorVenta = prods.reduce((s, p) => s + Math.max(p.stock, 0) * p.precioVenta, 0);
+      const bajos = prods.filter((p) => p.stockMinimo > 0 && p.stock <= p.stockMinimo);
+      const mesLabel = new Intl.DateTimeFormat('es-CL', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(d.hoy + 'T00:00:00Z'));
+
+      const proximas = activas.slice().sort((a, b) => (a.fechaLlegada < b.fechaLlegada ? -1 : 1)).slice(0, 7);
+
+      el.innerHTML =
+        '<div class="page-head"><div><h1>Dashboard</h1><p>Resumen general de la operación de GS Prime.</p></div></div>' +
+        '<div class="kpi-grid">' +
+        kpi('Preventas activas', activas.length, atrasadas.length ? '<span class="text-danger">' + atrasadas.length + ' con llegada atrasada</span>' : d.preventas.length + ' preventas en total') +
+        kpi('Comprometido con proveedores', fmt.money(comprometido), 'Costo total de preventas activas') +
+        kpi('Saldo por pagar', fmt.money(saldo), saldo > 0 ? '<span class="text-gold">Pendiente a proveedores</span>' : 'Al día', saldo > 0 ? 'alert' : '') +
+        kpi('Llegadas este mes', llegadasMes.length, mesLabel) +
+        '</div>' +
+        '<div class="kpi-grid">' +
+        kpi('Inventario a costo', fmt.money(valor), fmt.num(unidades) + ' unidades en stock') +
+        kpi('Inventario a precio de venta', fmt.money(valorVenta), 'Margen potencial ' + fmt.money(valorVenta - valor)) +
+        kpi('Productos activos', prods.length, prods.filter((p) => p.stock > 0).length + ' con stock') +
+        kpi('Bajo stock mínimo', bajos.length, bajos.length ? '<span class="text-danger">Revisar reposición</span>' : 'Todo en orden', bajos.length ? 'alert' : '') +
+        '</div>' +
+        '<div class="dash-grid">' +
+        '<div class="panel"><div class="panel-head"><h3>Próximas llegadas</h3><span class="tag">Por fecha estimada</span></div><div class="panel-body">' +
+        (proximas.length
+          ? '<table class="mini-table"><thead><tr><th>Producto</th><th>Llegada</th><th>Saldo</th><th>Estado</th></tr></thead><tbody>' +
+            proximas.map((p) =>
+              '<tr><td class="prod-cell"><div class="name"><a class="link" data-action="verPreventa" data-id="' + esc(p.id) + '">' + esc(p.producto) + '</a></div><div class="prov">' + esc(p.folio) + ' · ' + esc(p.proveedor) + '</div></td>' +
+              '<td class="nowrap">' + fmt.date(p.fechaLlegada) + '<div>' + GS.relDays(p.fechaLlegada) + '</div></td>' +
+              '<td class="cell-num">' + fmt.money(p.saldo) + '</td>' +
+              '<td>' + GS.badge(GS.ESTADOS, p.estado) + '</td></tr>').join('') +
+            '</tbody></table>'
+          : GS.empty('No hay preventas activas', 'Crea tu primera preventa desde el módulo Preventas.')) +
+        '</div></div>' +
+        '<div style="display:flex;flex-direction:column;gap:16px;">' +
+        '<div class="panel"><div class="panel-head"><h3>Preventas por estado</h3></div><div class="panel-body">' + donut(d.preventas) + '</div></div>' +
+        '<div class="panel"><div class="panel-head"><h3>Stock bajo mínimo</h3></div><div class="panel-body">' +
+        (bajos.length
+          ? '<table class="mini-table"><thead><tr><th>Producto</th><th>Stock</th><th>Mín.</th><th>Entrante</th></tr></thead><tbody>' +
+            bajos.map((p) => '<tr><td class="prod-cell"><div class="name">' + esc(p.nombre) + '</div><div class="prov">' + esc(p.sku) + '</div></td>' +
+              '<td class="cell-num text-danger">' + p.stock + '</td><td class="cell-num">' + p.stockMinimo + '</td><td class="cell-num">' + (p.entrante || '—') + '</td></tr>').join('') +
+            '</tbody></table>'
+          : GS.empty('Sin alertas', 'Define un stock mínimo en cada producto para recibir alertas.')) +
+        '</div></div></div>' +
+        '</div>';
+    },
+  };
+})();
+</script>
