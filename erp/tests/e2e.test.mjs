@@ -30,7 +30,8 @@ test("preventas como carrito: agregar productos uno a uno, asignar en la tabla y
     const { page, errores } = await abrir(browser);
     await page.click('[data-nav="preventas"]');
     const form = page.locator("#agregar-preventa");
-    assert.equal(await form.locator('[name="proveedorId"] option:checked').textContent(), "Asmodee");
+    assert.equal(await form.locator('select[name="proveedorId"]').count(), 0, "el proveedor no se pide: Asmodee por defecto");
+    assert.match(await form.locator(".inline-panel-head").textContent(), /registro propio de Asmodee/);
 
     // Producto nuevo creado desde el nombre de Asmodee, sin salir de Preventas
     await form.locator('[data-action="nuevoProductoPv"]').click();

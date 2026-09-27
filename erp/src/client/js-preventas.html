@@ -49,12 +49,12 @@
     const provs = d.proveedores.filter((x) => x.activo);
     if (!borrador.proveedorId) borrador.proveedorId = (provs.find((x) => x.nombre === 'Asmodee') || provs[0] || {}).id || '';
     return '<div class="panel inline-panel" id="agregar-preventa"><form novalidate>' +
-      '<div class="inline-panel-head"><h3>Agregar producto a preventas</h3><span class="muted">Cada producto queda como un registro propio. Proveedor, proforma y fecha se mantienen para el siguiente.</span></div>' +
+      '<div class="inline-panel-head"><h3>Agregar producto a preventas</h3><span class="muted">Cada producto queda como un registro propio de ' + esc((provs.find((x) => x.id === borrador.proveedorId) || {}).nombre || 'proveedor') + '. Proforma y fecha se mantienen para el siguiente.</span></div>' +
       '<div class="add-grid">' +
       '<div class="form-field span-2"><label for="ap-producto">Producto *</label><div class="field-row">' +
       '<select id="ap-producto" name="productoId">' + productoOptions(borrador.productoId) + '</select>' +
       '<button type="button" class="btn secondary small" data-action="nuevoProductoPv">' + GS.icon('plus') + 'Nuevo</button></div></div>' +
-      '<div class="form-field"><label for="ap-proveedor">Proveedor *</label><select id="ap-proveedor" name="proveedorId">' + GS.options(provs.map((x) => ({ value: x.id, label: x.nombre })), borrador.proveedorId) + '</select></div>' +
+      '<input type="hidden" name="proveedorId" value="' + esc(borrador.proveedorId) + '">' +
       '<div class="form-field"><label for="ap-proforma">Proforma</label><input id="ap-proforma" name="proforma" list="dl-proformas" value="' + esc(borrador.proforma) + '" placeholder="Opcional">' +
       '<datalist id="dl-proformas">' + unicos('proforma').map((x) => '<option value="' + esc(x) + '">').join('') + '</datalist></div>' +
       '<div class="form-field"><label for="ap-lanzamiento">Lanzamiento *</label><input id="ap-lanzamiento" type="date" name="lanzamiento" value="' + esc(borrador.lanzamiento) + '"></div>' +
