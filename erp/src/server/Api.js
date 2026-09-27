@@ -120,6 +120,7 @@ function instalar() {
     }, Util.sello(sistema, true)));
     mensaje.push('Proveedor Asmodee creado con su regla de despacho.');
   }
+  if (Imagenes.preparar()) mensaje.push('Se creó la carpeta "' + Imagenes.NOMBRE_CARPETA + '" en tu Google Drive para las imágenes de productos.');
   Audit.log(sistema, 'instalar', 'Sistema', '', { version: APP.version });
   mensaje.push('Hojas listas (versión ' + APP.version + '): ' + Object.keys(SCHEMA).join(', ') + '.');
   return mensaje.join(' ');

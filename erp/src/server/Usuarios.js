@@ -14,12 +14,19 @@ const Usuarios = {
     if (actual) {
       const nuevo = Db.update('Usuarios', email, datos);
       Audit.log(user, 'editar', 'Usuario', email, Audit.diff(actual, nuevo));
+      Usuarios._compartirImagenes(nuevo);
       return nuevo;
     }
     const nuevo = Object.assign({ email: email, creadoEn: Util.ahora(), creadoPor: user.email }, datos);
     Db.insert('Usuarios', nuevo);
     Audit.log(user, 'crear', 'Usuario', email, { rol: nuevo.rol });
+    Usuarios._compartirImagenes(nuevo);
     return nuevo;
+  },
+
+  /** Quien opera necesita poder subir imágenes a la carpeta de Drive (si existe). */
+  _compartirImagenes(u) {
+    if (PropertiesService.getScriptProperties().getProperty('CARPETA_IMAGENES')) Imagenes.compartir(u);
   },
 
   _adminsActivos() {

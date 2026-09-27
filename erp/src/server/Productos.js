@@ -25,12 +25,14 @@ const Productos = {
       codigoProveedor: Util.texto(p.codigoProveedor, 'El código del proveedor', { max: 60 }),
       notas: Util.texto(p.notas, 'Las notas', { max: 1000 }),
     };
-    if (datos.imagen && !/^https:\/\//i.test(datos.imagen)) throw new AppError('La imagen debe ser un enlace que empiece con https://');
+    if (datos.imagen && !/^(https:\/\/|drive:[\w-]+$)/i.test(datos.imagen)) throw new AppError('La imagen debe ser un enlace que empiece con https://');
+    const archivo = Imagenes.validar(p.imagenArchivo);
 
     const clave = Productos._clave(datos);
     const repetido = Db.all('Productos').find((x) => x.id !== id && Productos._clave(x) === clave);
     if (repetido) throw new AppError('Ya existe "' + Productos.nombreCompleto(repetido) + '" (' + repetido.id + ').');
 
+    if (archivo) datos.imagen = Imagenes.subir(archivo, Productos.nombreCompleto(datos));
     if (actual) {
       const nuevo = Db.update('Productos', id, Object.assign(datos, Util.sello(user)));
       Audit.log(user, 'editar', 'Producto', id, Audit.diff(actual, nuevo));
@@ -63,7 +65,7 @@ const Productos = {
    * en el catálogo). Si existe se usa; si no, se crea con edición, idioma, tipo y
    * factor interpretados del nombre. Si se indica PVP, se actualiza en el catálogo.
    */
-  resolverTexto(texto, pvp, user) {
+  resolverTexto(texto, pvp, user, imagen) {
     const raw = Util.texto(texto, 'El producto', { requerido: true, max: 200 });
     const todos = Db.all('Productos');
     const norm = Util.normalizar(raw);
@@ -73,12 +75,16 @@ const Productos = {
       || todos.find((x) => Productos._clave(x) === Productos._clave(datos));
     const precio = pvp === '' || pvp == null ? null : Util.entero(pvp, 'El precio sugerido');
     if (!prod) {
-      return Productos.guardar(Object.assign(datos, { pvp: precio || 0 }), user);
+      return Productos.guardar(Object.assign(datos, { pvp: precio || 0, imagenArchivo: imagen }), user);
     }
     if (!prod.activo) throw new AppError('"' + Productos.nombreCompleto(prod) + '" está archivado. Reactívalo en Productos para usarlo.');
-    if (precio != null && precio !== prod.pvp) {
-      Audit.log(user, 'editar', 'Producto', prod.id, { pvp: [prod.pvp, precio] });
-      prod = Db.update('Productos', prod.id, Object.assign({ pvp: precio }, Util.sello(user)));
+    const cambios = {};
+    if (precio != null && precio !== prod.pvp) cambios.pvp = precio;
+    const archivo = Imagenes.validar(imagen);
+    if (archivo) cambios.imagen = Imagenes.subir(archivo, Productos.nombreCompleto(prod));
+    if (Object.keys(cambios).length) {
+      Audit.log(user, 'editar', 'Producto', prod.id, Audit.diff(prod, Object.assign({}, prod, cambios)));
+      prod = Db.update('Productos', prod.id, Object.assign(cambios, Util.sello(user)));
     }
     return prod;
   },

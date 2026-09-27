@@ -32,7 +32,66 @@
       .sort((a, b) => a.nombreCompleto.localeCompare(b.nombreCompleto));
   }
 
-  GS.thumb = (url) => (url ? '<img class="thumb" src="' + esc(url) + '" alt="" loading="lazy">' : '<span class="thumb empty"></span>');
+  /** URL visible de una imagen: enlace https o archivo de Drive ("drive:<id>"). */
+  GS.imagenUrl = (v) => {
+    const m = /^drive:([\w-]+)$/.exec(v || '');
+    if (!m) return v || '';
+    return window.previewImagen ? window.previewImagen(m[1]) : 'https://drive.google.com/thumbnail?sz=w400&id=' + m[1];
+  };
+  GS.thumb = (url) => (url ? '<img class="thumb" src="' + esc(GS.imagenUrl(url)) + '" alt="" loading="lazy">' : '<span class="thumb empty"></span>');
+
+  /** Lee una imagen elegida en el navegador, la reduce a 800 px y la entrega como JPG en base64 para subirla. */
+  GS.leerImagen = function (file) {
+    return new Promise((resolve, reject) => {
+      if (!file) return resolve(null);
+      if (!/^image\//.test(file.type)) return reject(new Error('El archivo elegido no es una imagen.'));
+      const lector = new FileReader();
+      lector.onerror = () => reject(new Error('No se pudo leer la imagen.'));
+      lector.onload = () => {
+        const img = new Image();
+        img.onerror = () => reject(new Error('No se pudo abrir la imagen.'));
+        img.onload = () => {
+          const escala = Math.min(1, 800 / Math.max(img.width, img.height));
+          const c = document.createElement('canvas');
+          c.width = Math.round(img.width * escala);
+          c.height = Math.round(img.height * escala);
+          const ctx = c.getContext('2d');
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, c.width, c.height);
+          ctx.drawImage(img, 0, 0, c.width, c.height);
+          const dataUrl = c.toDataURL('image/jpeg', 0.85);
+          resolve({ mime: 'image/jpeg', base64: dataUrl.split(',')[1], vista: dataUrl });
+        };
+        img.src = lector.result;
+      };
+      lector.readAsDataURL(file);
+    });
+  };
+
+  /** Campo "Imagen": elegir archivo, ver la miniatura y quitarla antes de guardar. */
+  GS.campoImagen = (id, actual) =>
+    '<div class="img-picker"><span class="img-preview" data-img-preview>' + (actual ? '<img src="' + esc(GS.imagenUrl(actual)) + '" alt="">' : GS.icon('box', 1.6)) + '</span>' +
+    '<label class="btn secondary small" for="' + id + '">' + GS.icon('download') + 'Subir imagen</label>' +
+    '<input id="' + id + '" type="file" accept="image/*" data-img-input class="visually-hidden">' +
+    '<span class="hint" data-img-hint>' + (actual ? 'Imagen actual. Sube otra para reemplazarla.' : 'JPG o PNG. Se guarda en Google Drive.') + '</span></div>';
+
+  /** Conecta un campo de imagen: al elegir archivo lo procesa y lo deja en onImagen(img). */
+  GS.conectarImagen = (root, onImagen) => {
+    const input = root.querySelector('[data-img-input]');
+    if (!input) return;
+    input.addEventListener('change', async () => {
+      const hint = root.querySelector('[data-img-hint]');
+      try {
+        const img = await GS.leerImagen(input.files[0]);
+        if (!img) return;
+        root.querySelector('[data-img-preview]').innerHTML = '<img src="' + img.vista + '" alt="">';
+        hint.textContent = input.files[0].name + ' · lista para guardar';
+        onImagen({ mime: img.mime, base64: img.base64, vista: img.vista });
+      } catch (e) {
+        hint.textContent = e.message;
+      }
+    });
+  };
 
   function filaProducto(p) {
     const operador = GS.puede('operador');
@@ -97,6 +156,7 @@
     const c = data().catalogos;
     const p = prod || Object.assign({ nombre: '', edicion: '', idioma: 'ENG', tipo: 'Booster Box', factor: '', pvp: '', precioManual: false, precioVenta: '', stockMinimo: '', imagen: '', codigoProveedor: '', notas: '' }, sugerido || {});
     const ediciones = Array.from(new Set(data().productos.map((x) => x.edicion).filter(Boolean))).sort();
+    let imagenNueva = null;
     GS.formModal({
       title: prod ? 'Editar producto ' + prod.id : 'Nuevo producto',
       submitLabel: 'Guardar producto',
@@ -119,10 +179,23 @@
         '<div class="form-field"><label class="check" style="margin-top:22px;"><input type="checkbox" name="precioManual"' + (p.precioManual ? ' checked' : '') + '> Precio de venta propio (distinto al PVP)</label></div>' +
         '<div class="form-field" data-precio><label>Precio de venta (con IVA) *</label><input name="precioVenta" type="number" min="1" step="1" value="' + esc(p.precioManual ? p.precioVenta : '') + '" placeholder="Ej: 49990"></div>' +
         '<div class="form-field"><label>Stock mínimo</label><input name="stockMinimo" type="number" min="0" step="1" value="' + esc(p.stockMinimo || '') + '" placeholder="0"></div>' +
-        '<div class="form-field full"><label>Imagen (enlace https://)</label><input name="imagen" value="' + esc(p.imagen) + '" placeholder="Opcional"></div>' +
+        '<div class="form-field full"><label for="pf-imagen">Imagen</label>' + GS.campoImagen('pf-imagen', p.imagen) +
+        '<input type="hidden" name="imagen" value="' + esc(p.imagen) + '">' +
+        (p.imagen ? '<a class="link small-link" data-quitar-imagen>Quitar imagen</a>' : '') + '</div>' +
         '<div class="form-field full"><label>Notas</label><textarea name="notas" rows="2">' + esc(p.notas) + '</textarea></div>' +
         '</div>',
       onMount: (form) => {
+        GS.conectarImagen(form, (img) => { imagenNueva = img; });
+        const quitar = form.querySelector('[data-quitar-imagen]');
+        if (quitar) {
+          quitar.addEventListener('click', () => {
+            form.elements.imagen.value = '';
+            imagenNueva = null;
+            form.querySelector('[data-img-preview]').innerHTML = GS.icon('box', 1.6);
+            form.querySelector('[data-img-hint]').textContent = 'Se quitará la imagen al guardar.';
+            quitar.remove();
+          });
+        }
         const sync = () => {
           const manual = form.elements.precioManual.checked;
           form.querySelector('[data-precio]').classList.toggle('hidden', !manual);
@@ -146,6 +219,7 @@
       },
       onSubmit: async (v) => {
         delete v._raw;
+        if (imagenNueva) v.imagenArchivo = { mime: imagenNueva.mime, base64: imagenNueva.base64 };
         const saved = await GS.mutate('guardarProducto', Object.assign({ id: prod ? prod.id : '' }, v),
           (r) => (prod ? 'Producto actualizado' : 'Producto ' + r.id + ' creado'));
         if (onSaved) onSaved(saved);

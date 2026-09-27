@@ -15,7 +15,7 @@
   const findPv = (id) => data().preventas.find((p) => p.id === id);
 
   /* Estado local de la pantalla (sobrevive a los redibujos). */
-  const borrador = { producto: '', pvp: '', proveedorId: '', lanzamiento: '', solicitado: '', costoNeto: '' };
+  const borrador = { producto: '', pvp: '', imagen: null, proveedorId: '', lanzamiento: '', solicitado: '', costoNeto: '' };
   const asigPendiente = {};   // id -> valor escrito en "Nuevo cant." aún sin guardar
   const seleccion = new Set();
 
@@ -60,8 +60,14 @@
       '<div class="form-field"><label for="ap-pvp">Precio sugerido</label><input id="ap-pvp" type="number" min="0" step="1" name="pvp" value="' + esc(borrador.pvp) + '" placeholder="Con IVA"></div>' +
       '<div class="form-field add-submit"><button type="submit" class="btn">' + GS.icon('plus', 2.4) + 'Agregar</button></div>' +
       '</div>' +
-      '<div class="add-calc" data-producto></div>' +
-      '<div class="add-calc" data-calc></div>' +
+      '<div class="add-extra">' +
+      '<div class="img-picker"><span class="img-preview" data-img-preview>' +
+      (borrador.imagen ? '<img src="' + borrador.imagen.vista + '" alt="">' : GS.icon('box', 1.6)) + '</span>' +
+      '<label class="btn secondary small" for="ap-imagen">' + GS.icon('download') + 'Subir imagen</label>' +
+      '<input id="ap-imagen" type="file" accept="image/*" data-img-input class="visually-hidden">' +
+      '<span class="hint" data-img-hint>' + (borrador.imagen ? 'Imagen lista para guardar' : 'Opcional · se guarda en Google Drive') + '</span></div>' +
+      '<div class="add-extra-info"><div class="add-calc" data-producto></div><div class="add-calc" data-calc></div></div>' +
+      '</div>' +
       '<div class="form-error"></div>' +
       '</form></div>';
   }
@@ -128,9 +134,11 @@
       }
       calcAgregar(form);
     });
+    GS.conectarImagen(form, (img) => { borrador.imagen = img; });
     GS.bindForm(form, async (v) => {
+      if (borrador.imagen) v.imagen = { mime: borrador.imagen.mime, base64: borrador.imagen.base64 };
       const r = await GS.mutate('guardarPreventa', v, (x) => x.id + ' agregada');
-      Object.assign(borrador, { producto: '', pvp: '', solicitado: '', costoNeto: '' });
+      Object.assign(borrador, { producto: '', pvp: '', imagen: null, solicitado: '', costoNeto: '' });
       GS.render();
       const sel = document.getElementById('ap-producto');
       if (sel) sel.focus();

@@ -39,9 +39,14 @@ const preview = `
   var reiniciada = !saved && !!store.get(KEY);
   var fake = createGasFake({ user: 'admin@gsprime.cl', state: saved ? JSON.parse(saved) : undefined });
   var g = fake.globals;
-  var server = new Function('SpreadsheetApp', 'Session', 'LockService', 'PropertiesService', 'Utilities', 'HtmlService',
+  var server = new Function('SpreadsheetApp', 'Session', 'LockService', 'PropertiesService', 'Utilities', 'HtmlService', 'DriveApp',
     ${js(serverSource())} + '\\nreturn { api: api, instalar: instalar };')(
-    g.SpreadsheetApp, g.Session, g.LockService, g.PropertiesService, g.Utilities, g.HtmlService);
+    g.SpreadsheetApp, g.Session, g.LockService, g.PropertiesService, g.Utilities, g.HtmlService, g.DriveApp);
+  // Las imágenes "subidas a Drive" en la vista previa quedan en el navegador.
+  window.previewImagen = function (id) {
+    var f = fake.state.files[id];
+    return f ? 'data:' + f.mime + ';base64,' + f.base64 : '';
+  };
   function KEY_ESQUEMA() { return KEY + '_esquema'; }
   var persist = function () { store.set(KEY, JSON.stringify(fake.dump())); store.set(KEY_ESQUEMA(), ESQUEMA); };
 

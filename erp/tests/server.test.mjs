@@ -322,3 +322,38 @@ test("con la planilla desactualizada se detiene y pide ejecutar instalar", () =>
   s.run("instalar()");
   assert.equal(s.call("bootstrap").ok, true);
 });
+
+test("imágenes: carpeta en Drive, subida al crear desde preventa, reemplazo y quitar desde productos", () => {
+  const s = createServer();
+  const drive = s.fake.state;
+  const [carpetaId] = Object.keys(drive.folders);
+  assert.equal(drive.folders[carpetaId].name, "GS Prime ERP · Imágenes");
+  assert.equal(drive.props.CARPETA_IMAGENES, carpetaId);
+
+  // Los usuarios que operan quedan como editores de la carpeta; los de solo lectura no
+  s.ok("guardarUsuario", { email: "socio@gsprime.cl", nombre: "Socio", rol: "operador" });
+  s.ok("guardarUsuario", { email: "vista@gsprime.cl", nombre: "Vista", rol: "lectura" });
+  assert.ok(drive.folders[carpetaId].editors.includes("socio@gsprime.cl"));
+  assert.ok(!drive.folders[carpetaId].editors.includes("vista@gsprime.cl"));
+
+  const img = { mime: "image/jpeg", base64: "QUJD" };
+  const pv = s.ok("guardarPreventa", { proveedorId: asmodee(s).id, producto: "POKEMON TCG 30TH CELEBRATION - MINI TIN ENG", lanzamiento: "2026-10-02", solicitado: 1, costoNeto: 1, imagen: img }).result;
+  let prod = s.ok("bootstrap").data.productos.find(x => x.id === pv.productoId);
+  assert.match(prod.imagen, /^drive:img-1$/);
+  const archivo = drive.files["img-1"];
+  assert.deepEqual([archivo.folder, archivo.name, archivo.shared], [carpetaId, "30th Celebration – Mini Tin · ENG.jpg", true]);
+
+  // Reemplazar y quitar desde Productos
+  s.ok("guardarProducto", { ...prod, imagenArchivo: { mime: "image/png", base64: "REVG" } });
+  prod = s.ok("bootstrap").data.productos.find(x => x.id === pv.productoId);
+  assert.equal(prod.imagen, "drive:img-2");
+  s.ok("guardarProducto", { ...prod, imagen: "" });
+  assert.equal(s.ok("bootstrap").data.productos.find(x => x.id === pv.productoId).imagen, "");
+
+  assert.match(errorDe(s.call("guardarProducto", { ...prod, imagenArchivo: { mime: "application/pdf", base64: "QQ==" } })), /JPG, PNG o WEBP/);
+  assert.match(errorDe(s.call("guardarProducto", { ...prod, imagenArchivo: { mime: "image/jpeg", base64: "A".repeat(5 * 1024 * 1024) } })), /muy pesada/);
+  // Una imagen inválida en la preventa no deja el producto creado
+  const antes = s.ok("bootstrap").data.productos.length;
+  assert.match(errorDe(s.call("guardarPreventa", { proveedorId: asmodee(s).id, producto: "OTRO - BLISTER ENG", lanzamiento: "2026-10-02", solicitado: 1, costoNeto: 1, imagen: { mime: "text/plain", base64: "QQ==" } })), /JPG, PNG o WEBP/);
+  assert.equal(s.ok("bootstrap").data.productos.length, antes);
+});

@@ -130,6 +130,14 @@ los permisos. Se crean las hojas y **tu correo queda registrado como administrad
 También puedes hacerlo desde la planilla: menú **GS Prime ERP → Instalar / reparar hojas**.
 `instalar` se puede volver a ejecutar sin riesgo: solo agrega lo que falte.
 
+### Imágenes de productos
+
+`instalar` crea en tu Google Drive la carpeta **"GS Prime ERP · Imágenes"** y la comparte
+como editor con los usuarios Operador y Administrador (también se comparte sola al agregar
+usuarios nuevos). Las fotos que se suben desde Preventas o Productos se reducen a 800 px
+en el navegador, se guardan en esa carpeta y quedan visibles con el enlace. Al actualizar a
+la versión con imágenes, Google pide **autorizar el acceso a Drive** la primera vez.
+
 ### 4. Publicar la app web
 
 **Implementar → Nueva implementación → Aplicación web**:

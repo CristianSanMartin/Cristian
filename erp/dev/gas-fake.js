@@ -10,6 +10,8 @@
 var createGasFake = function (opts) {
   opts = opts || {};
   var state = opts.state || { sheets: [], props: {} };
+  state.files = state.files || {};
+  state.folders = state.folders || {};
   var currentUser = opts.user || '';
   var sheetTz = 'UTC';
 
@@ -154,6 +156,8 @@ var createGasFake = function (opts) {
           return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
         });
       },
+      base64Decode: function (b64) { return String(b64); },
+      newBlob: function (bytes, mime, name) { return { bytes: bytes, mime: mime, name: name }; },
       formatDate: function (date, tz, fmt) {
         var parts = {};
         new Intl.DateTimeFormat('en-US', {
@@ -164,6 +168,31 @@ var createGasFake = function (opts) {
       },
     },
     HtmlService: {},
+    DriveApp: {
+      Access: { ANYONE_WITH_LINK: 'ANYONE_WITH_LINK' },
+      Permission: { VIEW: 'VIEW' },
+      createFolder: function (name) {
+        var id = 'fld-' + Object.keys(state.folders).length;
+        state.folders[id] = { name: name, editors: [] };
+        return gas.DriveApp.getFolderById(id);
+      },
+      getFolderById: function (id) {
+        var f = state.folders[id];
+        if (!f) throw new Error('Carpeta no encontrada: ' + id);
+        return {
+          getId: function () { return id; },
+          addEditor: function (email) { if (f.editors.indexOf(email) === -1) f.editors.push(email); },
+          createFile: function (blob) {
+            var fid = 'img-' + (Object.keys(state.files).length + 1);
+            state.files[fid] = { folder: id, name: blob.name, mime: blob.mime, base64: blob.bytes, shared: false };
+            return {
+              getId: function () { return fid; },
+              setSharing: function () { state.files[fid].shared = true; },
+            };
+          },
+        };
+      },
+    },
     console: typeof console !== 'undefined' ? console : { log: function () {}, error: function () {} },
   };
 

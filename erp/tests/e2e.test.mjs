@@ -54,6 +54,10 @@ test("preventas como carrito: agregar productos uno a uno, asignar en la tabla y
     await form.locator('[name="solicitado"]').fill("20");
     await form.locator('[name="costoNeto"]').fill("120000");
     await form.locator('[name="pvp"]').fill("189990");
+    // Imagen elegida desde el computador (PNG 1x1)
+    await form.locator("[data-img-input]").setInputFiles({ name: "surging.png", mimeType: "image/png",
+      buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64") });
+    await form.locator("[data-img-hint]", { hasText: "lista para guardar" }).waitFor();
     assert.match(await form.locator("[data-calc]").textContent(), /Total neto \$2\.400\.000.*Ganancia real \$39\.655/);
     await form.locator('button[type="submit"]').click();
     await toast(page, /PVI-000008 agregada/);
@@ -98,6 +102,8 @@ test("preventas como carrito: agregar productos uno a uno, asignar en la tabla y
     await page.click('[data-nav="productos"]');
     const creado = await page.locator("#prod-tbody tr", { hasText: "Surging Sparks" }).textContent();
     assert.match(creado, /GS-0009.*Booster Box.*ENG.*\$189\.990.*\$120\.000/s);
+    const src = await page.locator("#prod-tbody tr", { hasText: "Surging Sparks" }).locator("img.thumb").getAttribute("src");
+    assert.match(src, /^data:image\/jpeg;base64,/, "la imagen subida se muestra en el catálogo");
 
     assert.deepEqual(errores, []);
   } finally {

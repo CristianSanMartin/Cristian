@@ -76,7 +76,7 @@ Los cálculos internos usan decimales; se muestran redondeados al peso.
 | PVP | Precio sugerido del proveedor (referencia) |
 | Precio de venta | El que define GS Prime según mercado. **Sigue al PVP** hasta que se cambie a mano |
 | Stock mínimo | Alerta de reposición |
-| Imagen | URL de la imagen del producto |
+| Imagen | Se sube desde Preventas (al crear el producto) o desde Productos. Se guarda en la carpeta de Google Drive "GS Prime ERP · Imágenes" |
 | Activo | Los archivados no aparecen en nuevas operaciones |
 
 Al escribir el nombre tal como viene de Asmodee ("POKEMON TCG 30TH CELEBRATION - MINI TIN ENGLISH"),

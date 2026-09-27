@@ -21,6 +21,7 @@ const Preventas = {
     if (!prov.activo && (!actual || actual.proveedorId !== prov.id)) throw new AppError('El proveedor está archivado.');
     // Se valida todo antes de tocar el catálogo: si algo falla, no queda un producto creado a medias.
     if (!p.productoId) Util.texto(p.producto, 'El producto', { requerido: true, max: 200 });
+    Imagenes.validar(p.imagen);
     const datos = {
       proveedorId: prov.id,
       lanzamiento: Util.fecha(p.lanzamiento, 'La fecha de lanzamiento', { requerido: true }),
@@ -29,7 +30,7 @@ const Preventas = {
       notas: Util.texto(p.notas, 'Las notas', { max: 500 }),
     };
     // El producto llega como ID (editar) o como texto escrito (agregar): el texto se resuelve o se crea.
-    const prod = p.productoId ? Productos.requerir(p.productoId) : Productos.resolverTexto(p.producto, p.pvp, user);
+    const prod = p.productoId ? Productos.requerir(p.productoId) : Productos.resolverTexto(p.producto, p.pvp, user, p.imagen);
     if (!prod.activo && (!actual || actual.productoId !== prod.id)) throw new AppError('El producto está archivado.');
     datos.productoId = prod.id;
     if (actual) {
