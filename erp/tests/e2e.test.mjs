@@ -40,9 +40,16 @@ test("preventas como carrito: agregar productos uno a uno, asignar en la tabla y
     await form.locator(".form-error.show").waitFor();
     assert.match(await form.locator(".form-error").textContent(), /producto es obligatorio/);
 
+    // Cualquier formato: se muestra en formato título y el idioma con su color (ESP verde, ENG azul)
+    await form.locator('[name="producto"]').fill("pokemon tcg destined rivals - ELITE trainer box esp");
+    assert.match(await form.locator("[data-producto]").textContent(), /Destined Rivals – Elite Trainer Box ESP/);
+    assert.equal(await form.locator("[data-lang-badge]").getAttribute("class"), "lang-badge lang-ESP");
+    await form.locator('[name="producto"]').fill("pokemon tcg 30th celebration - mini tin ING");
+    assert.equal(await form.locator("[data-lang-badge]").getAttribute("class"), "lang-badge lang-ENG");
+
     // Nombre nuevo tal como viene de Asmodee: se interpreta y se crea al agregar
     await form.locator('[name="producto"]').fill("POKEMON TCG SURGING SPARKS - BOOSTER BOX ENGLISH");
-    assert.match(await form.locator("[data-producto]").textContent(), /Surging Sparks – Booster Box · ENG · Booster Box.*producto nuevo/);
+    assert.match(await form.locator("[data-producto]").textContent(), /Surging Sparks – Booster Box ENG · Booster Box.*producto nuevo/);
     await form.locator('[name="lanzamiento"]').fill("2030-11-08");
     await form.locator('[name="solicitado"]').fill("20");
     await form.locator('[name="costoNeto"]').fill("120000");

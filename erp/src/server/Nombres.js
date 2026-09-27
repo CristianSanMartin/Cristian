@@ -3,11 +3,14 @@
  *   "POKEMON TCG 30TH CELEBRATION - BINDER COLLECTION ENGLISH"
  *   → { edicion: '30th Celebration', nombre: 'Binder Collection', idioma: 'ENG', tipo: 'Binder / Colección' }
  *
+ * Con modo 'titulo' solo devuelve el texto en formato título ("binder COLLECTION" →
+ * "Binder Collection"), que es como se guardan siempre nombres y ediciones.
+ *
  * Es autocontenida a propósito: index.html entrega su código fuente al navegador
  * (interpretarNombre_.toString()), así la pantalla muestra exactamente la misma
  * interpretación que usará el servidor al guardar.
  */
-function interpretarNombre_(raw) {
+function interpretarNombre_(raw, modo) {
   var TIPOS = [
     [/BOOSTER\s+BOX/, 'Booster Box'],
     [/ELITE\s+TRAINER|\bETB\b/, 'Elite Trainer Box'],
@@ -22,7 +25,7 @@ function interpretarNombre_(raw) {
     [/SLEEVES|DECK\s+BOX|PLAYMAT|TAPETE|PORTACARTAS/, 'Accesorio'],
   ];
   var IDIOMAS = [
-    [/\b(ENGLISH|INGL[EÉ]S|ENG)\b/i, 'ENG'],
+    [/\b(ENGLISH|INGL[EÉ]S|ENG|ING)\b/i, 'ENG'],
     [/\b(ESPA[NÑ]OL|SPANISH|ESP)\b/i, 'ESP'],
     [/\b(JAPANESE|JAPON[EÉ]S|JPN|JP)\b/i, 'JPN'],
   ];
@@ -36,6 +39,7 @@ function interpretarNombre_(raw) {
   };
 
   var s = String(raw || '').replace(/\s+/g, ' ').trim();
+  if (modo === 'titulo') return titulo(s);
   var idioma = '';
   IDIOMAS.forEach(function (x) {
     if (!idioma && x[0].test(s)) { idioma = x[1]; s = s.replace(x[0], ' ').replace(/\s+/g, ' ').trim(); }

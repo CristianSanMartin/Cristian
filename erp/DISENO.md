@@ -117,6 +117,10 @@ convivían productos con asignaciones, costos y destinos distintos.
   el catálogo. Si ya existe se usa; si no, se crea solo con edición, idioma, tipo y factor
   interpretados del nombre. La pantalla muestra antes de agregar qué producto se usará. El
   precio sugerido ingresado actualiza el PVP del catálogo.
+- Sin importar cómo se escriba, nombres y ediciones se guardan **en formato título**
+  ("binder COLLECTION" → "Binder Collection"; siglas como TCG o ETB quedan en mayúsculas).
+- **Idioma detectado del nombre:** ENG, ENGLISH o ING = inglés; ESP, ESPAÑOL o SPANISH =
+  español. Se marca con color en toda la aplicación: **azul inglés, verde español**.
 - El **mismo producto puede pedirse más de una vez** (ej. una reposición posterior):
   cada solicitud es su propio registro y se gestiona con su propia factura.
 - **Solicitado, asignado e inventario son cantidades distintas.** Solicitado 60, asignado 6:

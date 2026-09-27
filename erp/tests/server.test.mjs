@@ -289,3 +289,17 @@ test("agregar escribiendo el nombre: usa el producto existente o lo crea desde e
   s.ok("archivarProducto", { id: binder.id, activo: false });
   assert.match(errorDe(s.call("guardarPreventa", { ...base, producto: "30th Celebration – Binder Collection · ENG" })), /está archivado/);
 });
+
+test("nombres siempre en formato título e idioma detectado por ING/ENG/ESP", () => {
+  const s = createServer();
+  const p = s.ok("guardarProducto", { nombre: "BINDER collection", edicion: "30TH CELEBRATION", idioma: "ENG" }).result;
+  assert.deepEqual([p.nombre, p.edicion], ["Binder Collection", "30th Celebration"]);
+  const base = { proveedorId: asmodee(s).id, lanzamiento: "2026-10-02", solicitado: 1, costoNeto: 1 };
+  const ing = s.ok("guardarPreventa", { ...base, producto: "pokemon tcg 30th celebration - mini tin ING" }).result;
+  const esp = s.ok("guardarPreventa", { ...base, producto: "POKEMON TCG DESTINED RIVALS - ELITE TRAINER BOX ESP" }).result;
+  const prods = s.ok("bootstrap").data.productos;
+  const a = prods.find(x => x.id === ing.productoId);
+  const b = prods.find(x => x.id === esp.productoId);
+  assert.deepEqual([a.edicion, a.nombre, a.idioma], ["30th Celebration", "Mini Tin", "ENG"]);
+  assert.deepEqual([b.edicion, b.nombre, b.idioma, b.tipo], ["Destined Rivals", "Elite Trainer Box", "ESP", "Elite Trainer Box"]);
+});

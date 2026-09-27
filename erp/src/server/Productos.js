@@ -12,8 +12,8 @@ const Productos = {
     const tipo = Util.opcion(p.tipo || 'Otro', 'El tipo', Object.keys(TIPOS_PRODUCTO));
     const precioManual = p.precioManual === true;
     const datos = {
-      nombre: Util.texto(p.nombre, 'El nombre', { requerido: true, max: 150 }),
-      edicion: Util.texto(p.edicion, 'La edición', { max: 80 }),
+      nombre: interpretarNombre_(Util.texto(p.nombre, 'El nombre', { requerido: true, max: 150 }), 'titulo'),
+      edicion: interpretarNombre_(Util.texto(p.edicion, 'La edición', { max: 80 }), 'titulo'),
       idioma: Util.opcion(p.idioma || 'ENG', 'El idioma', IDIOMAS),
       tipo: tipo,
       factor: Util.entero(p.factor === '' || p.factor == null ? TIPOS_PRODUCTO[tipo] : p.factor, 'El factor de conversión', { min: 1 }),

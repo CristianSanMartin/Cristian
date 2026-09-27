@@ -51,7 +51,8 @@
       '<div class="inline-panel-head"><h3>Agregar producto a preventas</h3><span class="muted">Cada producto queda como un registro propio. Proveedor y fecha de lanzamiento se mantienen para el siguiente.</span></div>' +
       '<div class="add-grid">' +
       '<div class="form-field span-2"><label for="ap-producto">Producto *</label>' +
-      '<input id="ap-producto" name="producto" autocomplete="off" value="' + esc(borrador.producto) + '" placeholder="Ej: POKEMON TCG 30TH CELEBRATION - BINDER COLLECTION ENGLISH"></div>' +
+      '<div class="input-lang"><input id="ap-producto" name="producto" autocomplete="off" value="' + esc(borrador.producto) + '" placeholder="Ej: POKEMON TCG 30TH CELEBRATION - BINDER COLLECTION ENG">' +
+      '<span class="lang-badge" data-lang-badge hidden></span></div></div>' +
       '<div class="form-field"><label for="ap-proveedor">Proveedor *</label><select id="ap-proveedor" name="proveedorId">' + GS.options(provs.map((x) => ({ value: x.id, label: x.nombre })), borrador.proveedorId) + '</select></div>' +
       '<div class="form-field"><label for="ap-lanzamiento">Lanzamiento *</label><input id="ap-lanzamiento" type="date" name="lanzamiento" value="' + esc(borrador.lanzamiento) + '"></div>' +
       '<div class="form-field"><label for="ap-cant">Cant. solicitada *</label><input id="ap-cant" type="number" min="0" step="1" name="solicitado" value="' + esc(borrador.solicitado) + '"></div>' +
@@ -75,16 +76,25 @@
     const i = GS.interpretarNombre(texto);
     const clave = (x) => [x.nombre, x.edicion, x.idioma || 'ENG'].map(GS.norm).join('|');
     const prod = prods.find((p) => clave(p) === clave(i));
-    return prod ? { prod: prod } : { nuevo: Object.assign({ idioma: 'ENG' }, i, { idioma: i.idioma || 'ENG' }) };
+    return prod ? { prod: prod } : { nuevo: Object.assign({}, i, { idioma: i.idioma || 'ENG' }), detectado: i.idioma };
   }
 
   function calcAgregar(form) {
     const r = productoDeTexto(form.elements.producto.value);
     const info = form.querySelector('[data-producto]');
+    // Idioma detectado: distintivo de color dentro del campo (ENG azul, ESP verde).
+    const idioma = r ? (r.prod ? r.prod.idioma : r.detectado) : '';
+    const badge = form.querySelector('[data-lang-badge]');
+    badge.hidden = !idioma;
+    badge.className = 'lang-badge lang-' + (idioma || '');
+    badge.textContent = idioma || '';
+    form.elements.producto.classList.toggle('lang-ENG', idioma === 'ENG');
+    form.elements.producto.classList.toggle('lang-ESP', idioma === 'ESP');
     if (!r) info.innerHTML = '';
-    else if (r.prod) info.innerHTML = '→ <strong>' + esc(r.prod.nombreCompleto) + '</strong> · ' + esc(r.prod.tipo) + ' <span class="pill">' + esc(r.prod.id) + '</span>' +
-      (r.prod.activo ? '' : ' <span class="text-danger">archivado</span>');
-    else info.innerHTML = '→ <strong>' + esc([r.nuevo.edicion, r.nuevo.nombre].filter(Boolean).join(' – ') + ' · ' + r.nuevo.idioma) + '</strong> · ' + esc(r.nuevo.tipo) +
+    else if (r.prod) info.innerHTML = '→ <strong>' + esc([r.prod.edicion, r.prod.nombre].filter(Boolean).join(' – ')) + '</strong> ' + GS.langPill(r.prod.idioma) +
+      ' · ' + esc(r.prod.tipo) + ' <span class="pill">' + esc(r.prod.id) + '</span>' + (r.prod.activo ? '' : ' <span class="text-danger">archivado</span>');
+    else info.innerHTML = '→ <strong>' + esc([r.nuevo.edicion, r.nuevo.nombre].filter(Boolean).join(' – ')) + '</strong> ' + GS.langPill(r.nuevo.idioma) +
+      ' · ' + esc(r.nuevo.tipo) + (r.detectado ? '' : ' <span class="muted">(idioma no indicado: se usará ENG)</span>') +
       ' <span class="pill soon">producto nuevo: se crea al agregar</span>';
 
     const prod = r && r.prod;
@@ -146,7 +156,7 @@
     return '<tr class="' + (p.estado === 'sin_asignacion' ? 'row-muted' : '') + (seleccion.has(p.id) ? ' row-selected' : '') + '">' +
       '<td>' + (operador && editable(p) ? '<input type="checkbox" class="row-check" data-sel="' + esc(p.id) + '"' + (seleccion.has(p.id) ? ' checked' : '') + ' aria-label="Seleccionar ' + esc(p.id) + '">' : '') + '</td>' +
       '<td>' + GS.thumb(p.imagen) + '</td>' +
-      '<td class="cell-strong">' + esc(p.productoNombre) + ' <span class="pill lang">' + esc(p.idioma) + '</span>' +
+      '<td class="cell-strong">' + esc(p.productoNombre) + ' ' + GS.langPill(p.idioma) +
       '<div class="cell-dim">' + esc(p.id) + (p.edicion ? ' · ' + esc(p.edicion) : '') + '</div></td>' +
       '<td>' + GS.badge(GS.ESTADOS_LINEA, p.estado) + '</td>' +
       '<td class="cell-num right">' + fmt.num(p.solicitado) + '</td>' +

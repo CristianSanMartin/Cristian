@@ -123,6 +123,9 @@
     solicitada: { label: 'Esperando asignación', cls: 'st-pedido' },
     asignada: { label: 'Asignada', cls: 'st-parcial' },
   };
+  /** Distintivo de idioma: azul para inglés, verde para español. */
+  GS.langPill = (idioma) => '<span class="pill lang lang-' + GS.esc(idioma || 'Otro') + '">' + GS.esc(idioma || '—') + '</span>';
+
   GS.badge = (map, key) => {
     const e = map[key] || { label: key, cls: '' };
     return '<span class="badge ' + e.cls + '">' + GS.esc(e.label) + '</span>';

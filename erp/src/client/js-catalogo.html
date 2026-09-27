@@ -40,7 +40,7 @@
       '<td>' + GS.thumb(p.imagen) + '</td>' +
       '<td class="nowrap cell-dim">' + esc(p.id) + '</td>' +
       '<td class="cell-strong">' + esc(p.nombre) + '<div class="cell-dim">' + esc(p.edicion || 'Sin edición') + ' · ' + esc(p.tipo) + (p.factor > 1 ? ' · ' + p.factor + ' u. proveedor' : '') + (p.activo ? '' : ' · archivado') + '</div></td>' +
-      '<td><span class="pill lang">' + esc(p.idioma) + '</span></td>' +
+      '<td>' + GS.langPill(p.idioma) + '</td>' +
       '<td class="cell-num right">' + (p.pvp ? fmt.money(p.pvp) : '—') + '</td>' +
       '<td class="cell-num right cell-strong">' + (p.precio ? fmt.money(p.precio) : '—') + (p.precioManual ? '<div><span class="pill soon">manual</span></div>' : '') + '</td>' +
       '<td class="cell-num right">' + (p.ultimoCosto ? fmt.cost(p.ultimoCosto) : '—') + '</td>' +
