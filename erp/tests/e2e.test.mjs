@@ -76,27 +76,49 @@ test("preventas como carrito: agregar productos uno a uno, asignar en la tabla y
     await form.locator('button[type="submit"]').click();
     await toast(page, /PVI-000009 agregada/);
 
-    // Filtrar por la fecha de lanzamiento: un grupo con su aviso de despacho
-    await page.selectOption('[data-filter="preventas.lanzamiento"]', "2030-11-08");
-    const grupo = page.locator("#pv-tbody tr.group-row");
-    assert.equal(await grupo.count(), 1);
-    assert.match(await grupo.textContent(), /Pedido \$2\.990\.000 neto.*Despacho gratis/);
+    // Sin grupos por lanzamiento: la fecha es una columna antes de "Cant." y el estado va primero
+    assert.equal(await page.locator("#pv-tbody tr.group-row").count(), 0);
+    const titulos = (await page.locator("#pv-thead th").allTextContents()).map((t) => t.replace(/[▾▲▼⧩]/g, "").trim());
+    assert.deepEqual(titulos.slice(0, 7), ["", "Estado", "", "Producto", "Proveedor", "Lanzamiento", "Cant."]);
+    // Cada título con datos tiene su flecha de orden y filtro
+    assert.equal(await page.locator("#pv-thead .th-menu").count(), titulos.filter(Boolean).length);
+
+    // Filtrar la columna Lanzamiento como en Excel
+    const menu = (col) => page.click(`[data-action="menuColumna"][data-id="preventas|${col}"]`);
+    await menu("lanzamiento");
+    await page.locator(".col-menu [data-todos]").uncheck();
+    await page.locator(".col-menu .col-menu-lista label", { hasText: "08-11-2030" }).locator("input").check();
+    await page.click(".col-menu [data-aplicar]");
+    const fila = (texto) => page.locator("#pv-tbody tr", { hasText: texto });
+    assert.equal(await page.locator("#pv-tbody tr").count(), 2);
+    const activos = await page.locator("#pv-thead .th-menu.activo").evaluateAll((b) => b.map((x) => x.dataset.id));
+    assert.deepEqual(activos, ["preventas|estado", "preventas|lanzamiento"], "Estado viene filtrado por defecto (por comprar)");
+    // El aviso de despacho del pedido queda en la franja "Pedidos por lanzamiento"
+    const pedido = page.locator('.pedido-chip[data-pedido="2030-11-08"]');
+    assert.match(await pedido.textContent(), /Pedido \$2\.990\.000 neto.*Despacho gratis/);
+
+    // Ordenar por Cant. descendente
+    await menu("cant");
+    await page.click('.col-menu [data-orden="desc"]');
+    assert.match(await page.locator("#pv-tbody tr").first().textContent(), /PVI-000008/);
+    await menu("cant");
+    await page.click('.col-menu [data-orden="asc"]');
+    assert.match(await page.locator("#pv-tbody tr").first().textContent(), /PVI-000009/);
 
     // Nuevo cant. en la tabla: queda pendiente hasta guardar
-    const fila = (texto) => page.locator("#pv-tbody tr", { hasText: texto });
     await fila("PVI-000008").locator("[data-asig]").fill("6");
     await page.waitForSelector("text=1 cantidad asignada sin guardar");
     await page.click('[data-action="guardarAsignaciones"]');
     await toast(page, /Asignación guardada/);
     assert.match(await fila("PVI-000008").textContent(), /Asignada/);
-    assert.match(await grupo.textContent(), /Pedido \$1\.310\.000 neto/);
+    assert.match(await pedido.textContent(), /Pedido \$1\.310\.000 neto/);
 
     // En bloque: seleccionar y marcar sin asignación
     await fila("PVI-000009").locator("[data-sel]").check();
     await page.click('[data-action="sinAsignacion"]');
     await toast(page, /Marcadas sin asignación/);
-    assert.equal(await fila("PVI-000009").count(), 0, "sale de la vista 'Por comprar'");
-    assert.match(await grupo.textContent(), /Pedido \$720\.000 neto.*faltan \$280\.000 para despacho gratis/);
+    assert.equal(await fila("PVI-000009").count(), 0, "el filtro de Estado por defecto oculta las sin asignación");
+    assert.match(await pedido.textContent(), /Pedido \$720\.000 neto.*faltan \$280\.000 para despacho gratis/);
 
     // El producto aparece en el catálogo con su último costo
     await page.click('[data-nav="productos"]');

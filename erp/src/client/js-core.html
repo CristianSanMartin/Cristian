@@ -410,6 +410,125 @@
     return GS.state.filters[view];
   };
 
+  /* ---------- tablas con orden y filtro por columna (estilo Excel) ----------
+     Cada tabla declara columnas { id, label, valor(fila) para ordenar, texto(fila)
+     para filtrar, right?, sinMenu? }. El estado (orden y valores visibles por
+     columna) vive en GS.state.tablas[tabla] y sobrevive a los redibujos. */
+
+  GS.state.tablas = {};
+  const tablas = {};   // tabla -> { filas: () => [...], columnas: [...], alCambiar: fn }
+
+  GS.tabla = function (id, defaults) {
+    if (!GS.state.tablas[id]) GS.state.tablas[id] = Object.assign({ orden: null, filtros: {} }, defaults || {});
+    return GS.state.tablas[id];
+  };
+
+  GS.tablaRegistrar = function (id, def) { tablas[id] = def; };
+
+  const textoDe = (col, fila) => String(col.texto ? col.texto(fila) : col.valor(fila));
+
+  /** Aplica filtros por columna y el orden elegido. */
+  GS.tablaAplicar = function (id, filas, columnas) {
+    const st = GS.tabla(id);
+    let res = filas.filter((f) => columnas.every((c) => {
+      const permitidos = st.filtros[c.id];
+      return !permitidos || permitidos.indexOf(textoDe(c, f)) !== -1;
+    }));
+    const col = st.orden && columnas.find((c) => c.id === st.orden.col);
+    if (col) {
+      const dir = st.orden.dir === 'desc' ? -1 : 1;
+      res = res.slice().sort((a, b) => {
+        const x = col.valor(a);
+        const y = col.valor(b);
+        if (x == null || x === '') return 1;
+        if (y == null || y === '') return -1;
+        return (typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y), 'es', { numeric: true })) * dir;
+      });
+    }
+    return res;
+  };
+
+  /** Encabezados con botón de orden/filtro. */
+  GS.tablaEncabezado = function (id, columnas) {
+    const st = GS.tabla(id);
+    return columnas.map((c) => {
+      if (c.sinMenu) return '<th' + (c.right ? ' class="right"' : '') + '>' + GS.esc(c.label || '') + '</th>';
+      const activo = !!st.filtros[c.id];
+      const orden = st.orden && st.orden.col === c.id ? st.orden.dir : '';
+      return '<th class="' + (c.right ? 'right ' : '') + (c.clase || '') + '"><span class="th-wrap">' + GS.esc(c.label) +
+        '<button type="button" class="th-menu' + (activo ? ' activo' : '') + (orden ? ' ordenado' : '') + '" data-action="menuColumna" data-id="' + GS.esc(id + '|' + c.id) + '" ' +
+        'aria-label="Ordenar y filtrar ' + GS.esc(c.label) + '" title="Ordenar y filtrar">' +
+        (orden === 'asc' ? '▲' : orden === 'desc' ? '▼' : activo ? '⧩' : '▾') + '</button></span></th>';
+    }).join('');
+  };
+
+  let menuAbierto = null;
+  const cerrarMenu = () => { if (menuAbierto) { menuAbierto.remove(); menuAbierto = null; } };
+  document.addEventListener('mousedown', (e) => { if (menuAbierto && !menuAbierto.contains(e.target) && !e.target.closest('.th-menu')) cerrarMenu(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') cerrarMenu(); });
+
+  GS.actions.menuColumna = (ref, btn) => {
+    const [id, colId] = ref.split('|');
+    const def = tablas[id];
+    if (!def) return;
+    if (menuAbierto && menuAbierto.dataset.ref === ref) return cerrarMenu();
+    cerrarMenu();
+    const col = def.columnas.find((c) => c.id === colId);
+    const st = GS.tabla(id);
+    // Valores posibles: los de las filas que pasan los filtros de las OTRAS columnas (como Excel).
+    const otras = def.columnas.filter((c) => c.id !== colId);
+    const base = def.filas().filter((f) => otras.every((c) => !st.filtros[c.id] || st.filtros[c.id].indexOf(textoDe(c, f)) !== -1));
+    const valores = Array.from(new Set(base.map((f) => textoDe(col, f))))
+      .sort((a, b) => a.localeCompare(b, 'es', { numeric: true }));
+    const permitidos = st.filtros[colId];
+
+    const m = document.createElement('div');
+    m.className = 'col-menu';
+    m.dataset.ref = ref;
+    m.innerHTML =
+      '<button type="button" data-orden="asc">▲ Ordenar ascendente</button>' +
+      '<button type="button" data-orden="desc">▼ Ordenar descendente</button>' +
+      (st.orden && st.orden.col === colId ? '<button type="button" data-orden="">Quitar orden</button>' : '') +
+      '<div class="col-menu-sep"></div>' +
+      '<input type="text" class="col-menu-buscar" placeholder="Buscar…" aria-label="Buscar valores">' +
+      '<label class="col-menu-item todos"><input type="checkbox" data-todos> (Seleccionar todo)</label>' +
+      '<div class="col-menu-lista">' + valores.map((v) =>
+        '<label class="col-menu-item"><input type="checkbox" value="' + GS.esc(v) + '"' + (!permitidos || permitidos.indexOf(v) !== -1 ? ' checked' : '') + '> ' +
+        GS.esc(v === '' ? '(vacío)' : v) + '</label>').join('') + '</div>' +
+      '<div class="col-menu-pie"><button type="button" class="btn ghost small" data-limpiar>Limpiar filtro</button><button type="button" class="btn small" data-aplicar>Aplicar</button></div>';
+    document.body.appendChild(m);
+    const r = btn.getBoundingClientRect();
+    m.style.top = (window.scrollY + r.bottom + 6) + 'px';
+    m.style.left = Math.max(8, Math.min(window.scrollX + r.left - 10, window.scrollX + document.documentElement.clientWidth - m.offsetWidth - 8)) + 'px';
+    menuAbierto = m;
+
+    const checks = () => Array.from(m.querySelectorAll('.col-menu-lista input'));
+    const visibles = () => checks().filter((c) => c.closest('label').style.display !== 'none');
+    const syncTodos = () => { m.querySelector('[data-todos]').checked = visibles().every((c) => c.checked); };
+    syncTodos();
+    m.querySelector('.col-menu-buscar').addEventListener('input', (e) => {
+      const q = GS.norm(e.target.value);
+      checks().forEach((c) => { c.closest('label').style.display = GS.norm(c.value).includes(q) ? '' : 'none'; });
+      syncTodos();
+    });
+    m.querySelector('[data-todos]').addEventListener('change', (e) => visibles().forEach((c) => { c.checked = e.target.checked; }));
+    m.querySelector('.col-menu-lista').addEventListener('change', syncTodos);
+    const listo = () => { cerrarMenu(); def.alCambiar(); };
+    m.querySelectorAll('[data-orden]').forEach((b) => b.addEventListener('click', () => {
+      st.orden = b.dataset.orden ? { col: colId, dir: b.dataset.orden } : null;
+      listo();
+    }));
+    m.querySelector('[data-limpiar]').addEventListener('click', () => { delete st.filtros[colId]; listo(); });
+    m.querySelector('[data-aplicar]').addEventListener('click', () => {
+      const marcados = checks().filter((c) => c.checked).map((c) => c.value);
+      // Todo marcado = sin filtro en esta columna.
+      if (marcados.length === valores.length) delete st.filtros[colId];
+      else st.filtros[colId] = marcados;
+      listo();
+    });
+    m.querySelector('.col-menu-buscar').focus();
+  };
+
   GS.actions.tab = (id, el) => {
     const [view, tab] = id.split('.');
     GS.filters(view).tab = tab;

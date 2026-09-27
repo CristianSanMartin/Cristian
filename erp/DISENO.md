@@ -128,9 +128,11 @@ convivían productos con asignaciones, costos y destinos distintos.
 - La pantalla muestra las mismas columnas que la planilla (cant., nuevo cant., dif., precio
   unidad, precio + IVA, totales solicitados y asignados, precio sugerido, precio de venta,
   margen) más la **ganancia real neta**.
-- Las filas se agrupan por **fecha de lanzamiento y proveedor** (cada grupo es un pedido)
-  con el aviso de despacho: *"Pedido $858.910 neto · Despacho $15.000 · faltan $141.090
-  para despacho gratis"*.
+- Columnas: estado, imagen, producto, proveedor, **lanzamiento** y luego las cantidades y
+  montos. Cada título tiene una flecha para **ordenar y filtrar** como en Excel; por defecto
+  el estado muestra solo solicitadas y asignadas (lo que falta comprar).
+- Sobre la tabla, **"Pedidos por lanzamiento"**: un pedido por proveedor y fecha con el aviso
+  de despacho: *"Pedido $858.910 neto · Despacho $15.000 · faltan $141.090 para despacho gratis"*.
 - **Asignación:** se escribe el "Nuevo cant." directo en la tabla y se guarda en bloque, o
   se seleccionan filas para marcar "asignado = solicitado" o "sin asignación". Vaciar la
   cantidad vuelve la fila a "solicitada".
