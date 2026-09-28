@@ -38,19 +38,22 @@
     const fila = (l) => '<tr><td>' + GS.thumb(l.imagen) + '</td><td class="cell-strong">' + esc(l.productoNombre) + ' ' + GS.langPill(l.idioma) +
       '<div class="cell-dim">' + esc(l.preventaId) + (l.edicion ? ' · ' + esc(l.edicion) : '') + '</div></td>' +
       '<td class="cell-num right">' + fmt.num(l.cantidad) + '</td><td class="cell-num right">' + fmt.cost(l.costoNeto) + '</td>' +
-      '<td class="cell-num right">' + fmt.money(l.netoLinea) + '</td><td class="cell-num right">' + fmt.money(l.despacho) + '</td>' +
+      '<td class="cell-num right">' + fmt.money(l.netoLinea) + '</td><td class="cell-num right col-inv">' + fmt.money(l.despacho) + '</td>' +
       '<td class="cell-num right cell-strong">' + fmt.cost(l.costo) + '</td></tr>';
-    const total = (l, v, cls) => '<tr class="' + (cls || '') + '"><td colspan="6" class="right">' + l + '</td><td class="cell-num right">' + v + '</td></tr>';
-    const regla = c.despacho ? '' : c.despachoGratisDesde ? ' <span class="cell-dim">(neto ≥ ' + fmt.money(c.despachoGratisDesde) + ')</span>' : '';
+    const total = (l, v, cls) => '<tr class="' + (cls || '') + '"><td colspan="4" class="right">' + l + '</td><td class="cell-num right">' + v + '</td><td class="col-inv" colspan="2"></td></tr>';
+    // Como la factura de Asmodee: el despacho es una fila más cuando se cobra.
+    const filaDespacho = c.despacho
+      ? '<tr class="item-despacho"><td></td><td class="cell-strong">Despacho</td><td class="cell-num right">1</td><td class="cell-num right">' + fmt.money(c.despacho) + '</td>' +
+        '<td class="cell-num right">' + fmt.money(c.despacho) + '</td><td class="cell-dim right col-inv" colspan="2">prorrateado en los productos ↑</td></tr>'
+      : '';
     return '<div class="detalle-compra"><table class="data-table"><thead><tr><th></th><th>Ítem</th><th class="right">Cant.</th><th class="right">Precio unidad</th><th class="right">Total neto</th>' +
-      '<th class="right">Despacho prorrateado</th><th class="right">Costo unidad</th></tr></thead><tbody>' +
-      c.lineas.map(fila).join('') +
-      '<tr class="item-despacho"><td></td><td class="cell-strong">Despacho' + regla + '</td><td class="cell-num right">1</td><td class="cell-num right">' + (c.despacho ? fmt.money(c.despacho) : '<span class="text-success">Gratis</span>') + '</td>' +
-      '<td class="cell-num right">' + fmt.money(c.despacho) + '</td><td class="cell-dim right">repartido en los productos</td><td></td></tr>' +
+      '<th class="right col-inv">Despacho prorrateado</th><th class="right">Costo unidad en inventario</th></tr></thead><tbody>' +
+      c.lineas.map(fila).join('') + filaDespacho +
       '</tbody><tfoot>' +
-      total('Neto productos', fmt.money(c.netoProductos)) + total('Despacho', fmt.money(c.despacho)) + total('Neto factura', fmt.money(c.neto)) +
-      total('IVA 19%', fmt.money(c.iva)) + total('<strong>Total factura</strong>', '<strong>' + fmt.money(c.total) + '</strong>', 'total-row') +
-      '</tfoot></table>' + (c.notas ? '<p class="table-note">Notas: ' + esc(c.notas) + '</p>' : '') + '</div>';
+      total('Neto', fmt.money(c.neto)) + total('IVA 19%', fmt.money(c.iva)) + total('<strong>Total factura</strong>', '<strong>' + fmt.money(c.total) + '</strong>', 'total-row') +
+      '</tfoot></table>' +
+      (c.despacho ? '' : '<p class="table-note text-success">✓ Sin cobro de despacho' + (c.despachoGratisDesde ? ' (neto ≥ ' + fmt.money(c.despachoGratisDesde) + ')' : '') + '</p>') +
+      (c.notas ? '<p class="table-note">Notas: ' + esc(c.notas) + '</p>' : '') + '</div>';
   }
 
   GS.views.compras = {

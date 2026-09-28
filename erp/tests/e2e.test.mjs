@@ -169,9 +169,11 @@ test("factura de compra: las preventas seleccionadas pasan a Compras e Inventari
     await page.click('[data-action="abrirFactura"]');
     const panel = page.locator("#crear-factura");
     assert.match(await panel.locator("[data-despacho-hint]").textContent(), /Corresponde \$15\.000: faltan \$141\.090 para despacho gratis/);
-    assert.match(await panel.locator("tfoot").textContent(), /Neto productos\$858\.910.*Despacho\$15\.000.*Neto factura\$873\.910.*Total factura\$1\.039\.953/);
-    // El despacho se reparte por participación en $ (Mini Tin: $82.300 de $858.910)
-    assert.match(await panel.locator("tbody tr", { hasText: "Mini Tin" }).textContent(), /\$1\.437/);
+    assert.match(await panel.locator("tfoot").textContent(), /Neto\$873\.910.*IVA 19%\$166\.043.*Total factura\$1\.039\.953/);
+    // Como la factura de Asmodee: el despacho es una fila más
+    assert.match(await panel.locator("tbody tr.item-despacho").textContent(), /Despacho1\$15\.000\$15\.000/);
+    // Aquí, como en la factura: sin columnas de prorrateo (eso se ve en Compras e Inventario)
+    assert.doesNotMatch(await panel.locator("thead").textContent(), /prorrateado/i);
 
     await panel.locator('button[type="submit"]').click();
     await panel.locator(".form-error.show").waitFor();
@@ -184,6 +186,8 @@ test("factura de compra: las preventas seleccionadas pasan a Compras e Inventari
     assert.equal(await page.locator('.nav-item.active').getAttribute("data-nav"), "compras");
     const detalle = page.locator(".detalle-compra");
     assert.match(await detalle.textContent(), /Binder Collection.*Mini Tin.*Despacho.*\$15\.000.*Total factura\$1\.039\.953/s);
+    // El despacho se reparte por participación en $ (Mini Tin: $82.300 de $858.910 → $1.437)
+    assert.match(await detalle.locator("tbody tr", { hasText: "Mini Tin" }).textContent(), /\$1\.437/);
     assert.match(await page.locator("#cp-tbody tr.fila-compra", { hasText: "30th2" }).textContent(), /Asmodee.*40.*\$858\.910.*\$15\.000.*\$873\.910/s);
 
     // Las preventas salen de "por comprar" y el producto está en Inventario con su costo real

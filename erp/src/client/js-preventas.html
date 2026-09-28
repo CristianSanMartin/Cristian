@@ -373,7 +373,8 @@
       '<div class="form-field"><label for="cf-notas">Notas</label><input id="cf-notas" name="notas" value="' + esc(factura.notas) + '"></div>' +
       '</div>' +
       '<div class="table-wrap"><table class="data-table"><thead><tr><th>Producto</th><th class="right">Cant.</th><th class="right">Precio unidad</th><th class="right">Total neto</th>' +
-      '<th class="right">Despacho prorrateado</th><th class="right">Costo unidad c/ despacho</th></tr></thead><tbody data-cf-lineas></tbody><tfoot data-cf-totales></tfoot></table></div>' +
+      '</tr></thead><tbody data-cf-lineas></tbody><tfoot data-cf-totales></tfoot></table></div>' +
+      '<p class="table-note">El despacho se prorratea por participación en $ en el costo de cada producto al pasar al inventario.</p>' +
       '<div class="form-error"></div>' +
       '<div class="btn-row"><button type="submit" class="btn">' + GS.icon('check') + 'Registrar factura</button><button type="button" class="btn ghost" data-action="cerrarFactura">Cancelar</button></div>' +
       '</form></div>';
@@ -389,19 +390,18 @@
       else if (regla === 0) hint.innerHTML = '<span class="text-success">✓ Despacho gratis</span> (neto ≥ ' + fmt.money(prov.despachoUmbral) + ')';
       else hint.innerHTML = '<span class="text-gold">Corresponde ' + fmt.money(regla) + '</span>' + (prov.despachoUmbral ? ': faltan ' + fmt.money(prov.despachoUmbral - neto) + ' para despacho gratis' : '');
       if (escrito !== '' && despacho !== regla) hint.innerHTML += ' · <strong>ajustado a mano</strong>';
-      form.querySelector('[data-cf-lineas]').innerHTML = lineas.map((p) => {
-        const n = p.asignado * p.costoNeto;
-        const d = neto ? despacho * n / neto : 0;
-        return '<tr><td class="cell-strong">' + esc(p.productoNombre) + ' ' + GS.langPill(p.idioma) + '<div class="cell-dim">' + esc(p.id) + (p.edicion ? ' · ' + esc(p.edicion) : '') + '</div></td>' +
-          '<td class="cell-num right">' + fmt.num(p.asignado) + '</td><td class="cell-num right">' + fmt.cost(p.costoNeto) + '</td>' +
-          '<td class="cell-num right">' + fmt.money(n) + '</td><td class="cell-num right">' + fmt.money(d) + '</td>' +
-          '<td class="cell-num right cell-strong">' + fmt.cost(p.costoNeto + d / p.asignado) + '</td></tr>';
-      }).join('');
-      const total = (l, v, cls) => '<tr class="' + (cls || '') + '"><td colspan="5" class="right">' + l + '</td><td class="cell-num right">' + v + '</td></tr>';
+      // Como la factura del proveedor: los productos y, cuando corresponde, el despacho como una fila más.
+      // El prorrateo del despacho se aplica al pasar al inventario (se ve en Compras e Inventario).
+      form.querySelector('[data-cf-lineas]').innerHTML = lineas.map((p) =>
+        '<tr><td class="cell-strong">' + esc(p.productoNombre) + ' ' + GS.langPill(p.idioma) + '<div class="cell-dim">' + esc(p.id) + (p.edicion ? ' · ' + esc(p.edicion) : '') + '</div></td>' +
+        '<td class="cell-num right">' + fmt.num(p.asignado) + '</td><td class="cell-num right">' + fmt.cost(p.costoNeto) + '</td>' +
+        '<td class="cell-num right">' + fmt.money(p.asignado * p.costoNeto) + '</td></tr>').join('') + (despacho
+        ? '<tr class="item-despacho"><td class="cell-strong">Despacho</td><td class="cell-num right">1</td><td class="cell-num right">' + fmt.money(despacho) + '</td>' +
+          '<td class="cell-num right">' + fmt.money(despacho) + '</td></tr>'
+        : '');
+      const total = (l, v, cls) => '<tr class="' + (cls || '') + '"><td colspan="3" class="right">' + l + '</td><td class="cell-num right">' + v + '</td></tr>';
       form.querySelector('[data-cf-totales]').innerHTML =
-        total('Neto productos', fmt.money(neto)) +
-        total('Despacho', despacho ? fmt.money(despacho) : '<span class="text-success">Gratis</span>') +
-        total('Neto factura', fmt.money(neto + despacho)) +
+        total('Neto', fmt.money(neto + despacho)) +
         total('IVA 19%', fmt.money((neto + despacho) * data().app.iva)) +
         total('<strong>Total factura</strong>', '<strong>' + fmt.money((neto + despacho) * (1 + data().app.iva)) + '</strong>', 'total-row');
     };
