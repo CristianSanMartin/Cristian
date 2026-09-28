@@ -183,7 +183,7 @@
     { id: 'imagen', label: '', sinMenu: true, valor: () => '', celda: (p) => GS.thumb(p.imagen) },
     { id: 'producto', label: 'Producto', clase: 'col-prod', valor: (p) => p.productoNombre, texto: (p) => p.productoNombre + (p.idioma ? ' ' + p.idioma : ''),
       celda: (p) => '<span class="cell-strong">' + esc(p.productoNombre) + '</span> ' + GS.langPill(p.idioma) +
-        '<div class="cell-dim">' + esc(p.id) + (p.edicion ? ' · ' + esc(p.edicion) : '') + '</div>' },
+        (p.edicion ? '<div class="cell-dim">' + esc(p.edicion) + '</div>' : '') },
     { id: 'proveedor', label: 'Proveedor', valor: (p) => p.proveedor, celda: (p) => esc(p.proveedor) },
     { id: 'lanzamiento', label: 'Lanzamiento', valor: (p) => p.lanzamiento, texto: (p) => fmt.date(p.lanzamiento),
       celda: (p) => '<span class="nowrap">' + fmt.date(p.lanzamiento) + '</span><div class="cell-dim">' + GS.relDays(p.lanzamiento) + '</div>' },
@@ -215,7 +215,7 @@
   GS.tablaRegistrar('preventas', { filas: buscadas, columnas: columnas, alCambiar: () => GS.views.preventas.update() });
 
   function fila(p, operador) {
-    return '<tr class="' + (p.estado === 'sin_asignacion' ? 'row-muted' : '') + (seleccion.has(p.id) ? ' row-selected' : '') + '">' +
+    return '<tr data-pv="' + esc(p.id) + '" class="' + (p.estado === 'sin_asignacion' ? 'row-muted' : '') + (seleccion.has(p.id) ? ' row-selected' : '') + '">' +
       '<td>' + (operador && editable(p) ? '<input type="checkbox" class="row-check" data-sel="' + esc(p.id) + '"' + (seleccion.has(p.id) ? ' checked' : '') + ' aria-label="Seleccionar ' + esc(p.id) + '">' : '') + '</td>' +
       columnas.map((c) => '<td class="' + (c.right ? 'cell-num right ' : '') + (c.clase || '') + '">' + c.celda(p, operador) + '</td>').join('') +
       '<td><div class="row-actions">' + (operador && editable(p)
@@ -352,10 +352,10 @@
     const lineas = lineasFactura();
     const problemas = [];
     const noAsignadas = lineas.filter((p) => p.estado !== 'asignada' || !(p.asignado > 0));
-    if (noAsignadas.length) problemas.push('Solo se facturan preventas <strong>asignadas</strong> con cantidad. Quita de la selección: ' + noAsignadas.map((p) => esc(p.id)).join(', ') + '.');
+    if (noAsignadas.length) problemas.push('Solo se facturan preventas <strong>asignadas</strong> con cantidad. Quita de la selección: ' + noAsignadas.map((p) => esc(p.productoNombre + ' ' + p.idioma)).join(', ') + '.');
     if (new Set(lineas.map((p) => p.proveedorId)).size > 1) problemas.push('Todas las preventas de una factura deben ser del <strong>mismo proveedor</strong>.');
     const sinGuardar = lineas.filter((p) => p.id in asigPendiente);
-    if (sinGuardar.length) problemas.push('Primero guarda la asignación de ' + sinGuardar.map((p) => esc(p.id)).join(', ') + '.');
+    if (sinGuardar.length) problemas.push('Primero guarda la asignación de ' + sinGuardar.map((p) => esc(p.productoNombre + ' ' + p.idioma)).join(', ') + '.');
     const cab = '<div class="inline-panel-head"><h3>Factura de compra</h3><span class="muted">Las preventas seleccionadas se consolidan en la factura real del proveedor, pasan a <strong>Compras</strong> y sus productos entran al <strong>Inventario</strong>.</span></div>';
     if (problemas.length) {
       el.innerHTML = '<div class="panel inline-panel" id="crear-factura">' + cab + problemas.map((x) => '<div class="notice warn">' + x + '</div>').join('') +
@@ -393,7 +393,7 @@
       // Como la factura del proveedor: los productos y, cuando corresponde, el despacho como una fila más.
       // El prorrateo del despacho se aplica al pasar al inventario (se ve en Compras e Inventario).
       form.querySelector('[data-cf-lineas]').innerHTML = lineas.map((p) =>
-        '<tr><td class="cell-strong">' + esc(p.productoNombre) + ' ' + GS.langPill(p.idioma) + '<div class="cell-dim">' + esc(p.id) + (p.edicion ? ' · ' + esc(p.edicion) : '') + '</div></td>' +
+        '<tr><td class="cell-strong">' + esc(p.productoNombre) + ' ' + GS.langPill(p.idioma) + (p.edicion ? '<div class="cell-dim">' + esc(p.edicion) + '</div>' : '') + '</td>' +
         '<td class="cell-num right">' + fmt.num(p.asignado) + '</td><td class="cell-num right">' + fmt.cost(p.costoNeto) + '</td>' +
         '<td class="cell-num right">' + fmt.money(p.asignado * p.costoNeto) + '</td></tr>').join('') + (despacho
         ? '<tr class="item-despacho"><td class="cell-strong">Despacho</td><td class="cell-num right">1</td><td class="cell-num right">' + fmt.money(despacho) + '</td>' +

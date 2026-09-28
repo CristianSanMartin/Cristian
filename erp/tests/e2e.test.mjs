@@ -75,6 +75,8 @@ test("preventas como carrito: agregar productos uno a uno, asignar en la tabla y
     await form.locator('[name="costoNeto"]').fill("118000");
     await form.locator('button[type="submit"]').click();
     await toast(page, /PVI-000009 agregada/);
+    // La tabla no muestra el PVI: solo el nombre y, debajo, la edición
+    assert.doesNotMatch(await page.locator("#pv-tbody").textContent(), /PVI-0000/);
 
     // Sin grupos por lanzamiento: la fecha es una columna antes de "Cant." y el estado va primero
     assert.equal(await page.locator("#pv-tbody tr.group-row").count(), 0);
@@ -89,7 +91,7 @@ test("preventas como carrito: agregar productos uno a uno, asignar en la tabla y
     await page.locator(".col-menu [data-todos]").uncheck();
     await page.locator(".col-menu .col-menu-lista label", { hasText: "08-11-2030" }).locator("input").check();
     await page.click(".col-menu [data-aplicar]");
-    const fila = (texto) => page.locator("#pv-tbody tr", { hasText: texto });
+    const fila = (id) => page.locator(`#pv-tbody tr[data-pv="${id}"]`);
     assert.equal(await page.locator("#pv-tbody tr").count(), 2);
     const activos = await page.locator("#pv-thead .th-menu.activo").evaluateAll((b) => b.map((x) => x.dataset.id));
     assert.deepEqual(activos, ["preventas|estado", "preventas|lanzamiento"], "Estado viene filtrado por defecto (por comprar)");
@@ -100,10 +102,10 @@ test("preventas como carrito: agregar productos uno a uno, asignar en la tabla y
     // Ordenar por Cant. descendente
     await menu("cant");
     await page.click('.col-menu [data-orden="desc"]');
-    assert.match(await page.locator("#pv-tbody tr").first().textContent(), /PVI-000008/);
+    assert.equal(await page.locator("#pv-tbody tr").first().getAttribute("data-pv"), "PVI-000008");
     await menu("cant");
     await page.click('.col-menu [data-orden="asc"]');
-    assert.match(await page.locator("#pv-tbody tr").first().textContent(), /PVI-000009/);
+    assert.equal(await page.locator("#pv-tbody tr").first().getAttribute("data-pv"), "PVI-000009");
 
     // Nuevo cant. en la tabla: queda pendiente hasta guardar
     await fila("PVI-000008").locator("[data-asig]").fill("6");
@@ -156,12 +158,12 @@ test("factura de compra: las preventas seleccionadas pasan a Compras e Inventari
   try {
     const { page, errores } = await abrir(browser);
     await page.click('[data-nav="preventas"]');
-    const fila = (texto) => page.locator("#pv-tbody tr", { hasText: texto });
+    const fila = (id) => page.locator(`#pv-tbody tr[data-pv="${id}"]`);
 
     // Una preventa solo solicitada no se puede facturar
     await fila("PVI-000006").locator("[data-sel]").check();
     await page.click('[data-action="abrirFactura"]');
-    assert.match(await page.locator("#crear-factura").textContent(), /Solo se facturan preventas asignadas.*PVI-000006/);
+    assert.match(await page.locator("#crear-factura").textContent(), /Solo se facturan preventas asignadas.*Ditto Premium Collection ENG/);
     await fila("PVI-000006").locator("[data-sel]").uncheck();
 
     // Carrito: tres preventas asignadas del mismo lanzamiento
