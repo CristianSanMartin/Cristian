@@ -22,7 +22,7 @@
   const colsCompras = [
     { id: 'fecha', label: 'Fecha', valor: (c) => c.fecha, texto: (c) => fmt.date(c.fecha), celda: (c) => '<span class="nowrap">' + fmt.date(c.fecha) + '</span>' },
     { id: 'proveedor', label: 'Proveedor', valor: (c) => c.proveedor, celda: (c) => esc(c.proveedor) },
-    { id: 'factura', label: 'Factura', valor: (c) => c.factura, celda: (c) => '<span class="cell-strong">' + esc(c.factura) + '</span><div class="cell-dim">' + esc(c.id) + '</div>' },
+    { id: 'factura', label: 'Factura', valor: (c) => c.factura, celda: (c) => '<span class="cell-strong">' + esc(c.factura) + '</span>' },
     { id: 'productos', label: 'Productos', right: true, valor: (c) => c.lineas.length, celda: (c) => fmt.num(c.lineas.length) },
     { id: 'unidades', label: 'Unidades', right: true, valor: (c) => c.unidades, celda: (c) => fmt.num(c.unidades) },
     { id: 'neto', label: 'Neto', right: true, valor: (c) => c.neto, texto: (c) => fmt.money(c.neto), celda: (c) => fmt.money(c.neto) },
@@ -115,7 +115,7 @@
     const c = data().compras.find((x) => x.id === id);
     GS.confirm({
       title: 'Anular factura ' + c.factura,
-      message: 'Se borra la factura <strong>' + esc(c.factura) + '</strong> (' + esc(c.id) + '), sus ' + c.lineas.length + ' productos salen del inventario y sus preventas vuelven a <strong>Asignada</strong>. Úsalo solo para corregir una factura mal ingresada. Queda registrado en la auditoría.',
+      message: 'Se borra la factura <strong>' + esc(c.factura) + '</strong> de ' + esc(c.proveedor) + ', sus ' + c.lineas.length + ' productos salen del inventario y sus preventas vuelven a <strong>Asignada</strong>. Úsalo solo para corregir una factura mal ingresada. Queda registrado en la auditoría.',
       confirmLabel: 'Sí, anular',
       danger: true,
       onConfirm: () => GS.mutate('anularCompra', { id: id }, 'Factura ' + c.factura + ' anulada'),

@@ -182,10 +182,11 @@ test("factura de compra: las preventas seleccionadas pasan a Compras e Inventari
     assert.match(await panel.locator(".form-error").textContent(), /N° de factura es obligatorio/);
     await panel.locator('[name="factura"]').fill("30th2");
     await panel.locator('button[type="submit"]').click();
-    await toast(page, /CP-0002 registrada: 3 productos pasaron a Inventario/);
+    await toast(page, /Factura 30th2 registrada: 3 productos pasaron a Inventario/);
 
     // Queda en Compras con el detalle abierto: productos, despacho como ítem y totales
     assert.equal(await page.locator('.nav-item.active').getAttribute("data-nav"), "compras");
+    assert.doesNotMatch(await page.locator("#cp-tbody").textContent(), /CP-000/, "no se muestra el correlativo interno CP");
     const detalle = page.locator(".detalle-compra");
     assert.match(await detalle.textContent(), /Binder Collection.*Mini Tin.*Despacho.*\$15\.000.*Total factura\$1\.039\.953/s);
     // El despacho se reparte por participación en $ (Mini Tin: $82.300 de $858.910 → $1.437)

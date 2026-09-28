@@ -410,7 +410,7 @@
       GS.state.data = r.data;
       ids.forEach((id) => seleccion.delete(id));
       Object.assign(factura, { abierta: false, numero: '', fecha: '', despacho: null, notas: '' });
-      GS.toast(r.result.id + ' registrada: ' + ids.length + (ids.length === 1 ? ' producto pasó' : ' productos pasaron') + ' a Inventario');
+      GS.toast('Factura ' + r.result.factura + ' registrada: ' + ids.length + (ids.length === 1 ? ' producto pasó' : ' productos pasaron') + ' a Inventario');
       GS.go('compras', r.result.id);
       return r.result;
     });
