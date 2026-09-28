@@ -17,6 +17,7 @@
   /* Estado local de la pantalla (sobrevive a los redibujos). */
   const borrador = { producto: '', pvp: '', imagen: null, proveedorId: '', lanzamiento: '', solicitado: '', costoNeto: '' };
   const asigPendiente = {};   // id -> valor escrito en "Nuevo cant." aún sin guardar
+  const precioPendiente = {}; // productoId -> precio de venta escrito aún sin guardar ('' = usar el sugerido)
   const seleccion = new Set();
 
   // Búsqueda libre arriba; el resto de los filtros va en el encabezado de cada columna.
@@ -155,6 +156,20 @@
     return p.estado === 'solicitada' ? '<span class="muted">—</span>' : fmt.num(p.asignado);
   }
 
+  /* Precio de venta: vacío = se acepta el sugerido (se muestra en gris). Es del producto, así que
+     cambia en todas sus filas. */
+  function celdaPrecio(p, operador) {
+    if (operador && editable(p)) {
+      const pendiente = Object.prototype.hasOwnProperty.call(precioPendiente, p.productoId);
+      const valor = pendiente ? precioPendiente[p.productoId] : p.precioManual ? p.precioVenta : '';
+      const propio = pendiente ? valor !== '' : p.precioManual;
+      return '<input class="qty-input price-input' + (pendiente ? ' dirty' : '') + '" type="number" min="1" step="1" data-precio="' + esc(p.productoId) + '" value="' + esc(valor) + '"' +
+        ' placeholder="' + (p.pvp ? fmt.num(p.pvp) : '—') + '" aria-label="Precio de venta de ' + esc(p.producto) + '">' +
+        '<div class="cell-dim" data-precio-nota="' + esc(p.productoId) + '">' + (propio ? 'precio propio' : p.pvp ? 'el sugerido' : '') + '</div>';
+    }
+    return (p.precioVenta ? fmt.money(p.precioVenta) : '—') + (p.precioManual ? '<div><span class="pill soon">propio</span></div>' : '');
+  }
+
   const asignada = (p) => p.estado !== 'solicitada';
   const vig = (p, v) => (asignada(p) ? v : '<span class="muted">—</span>');
   const conPrecio = (p, v) => (p.precioVenta ? v : null);
@@ -186,7 +201,7 @@
       celda: (p) => '<strong>' + vig(p, fmt.money(iva(p.netoAsignado))) + '</strong>' },
     { id: 'pvp', label: 'Precio sugerido', right: true, valor: (p) => p.pvp || null, texto: (p) => (p.pvp ? fmt.money(p.pvp) : ''), celda: (p) => (p.pvp ? fmt.money(p.pvp) : '—') },
     { id: 'precio', label: 'Precio venta', right: true, valor: (p) => p.precioVenta || null, texto: (p) => (p.precioVenta ? fmt.money(p.precioVenta) : ''),
-      celda: (p) => (p.precioVenta ? fmt.money(p.precioVenta) : '—') + (p.precioManual ? '<div><span class="pill soon">propio</span></div>' : '') },
+      celda: (p, op) => celdaPrecio(p, op) },
     { id: 'margen', label: 'Margen s/costo', right: true, valor: (p) => conPrecio(p, p.recargo), texto: (p) => (p.precioVenta ? fmt.pct(p.recargo) : ''),
       celda: (p) => (p.precioVenta ? fmt.pct(p.recargo) : '—') },
     { id: 'ganU', label: 'Ganancia real u.', right: true, valor: (p) => conPrecio(p, p.gananciaUnidad), texto: (p) => (p.precioVenta ? fmt.money(p.gananciaUnidad) : ''),
@@ -250,7 +265,7 @@
         '<div id="pv-resumen"></div>' +
         '<div id="pv-acciones"></div>' +
         '<div class="table-wrap"><table class="data-table xwide"><thead><tr id="pv-thead"></tr></thead><tbody id="pv-tbody"></tbody></table></div>' +
-        '<p class="table-note">Usa la flecha de cada título para ordenar y filtrar. Ganancia real = precio de venta sin IVA − precio unidad neto (sin despacho). "Margen s/costo" es el recargo sobre el precio con IVA, como en la planilla.</p>';
+        '<p class="table-note">Usa la flecha de cada título para ordenar y filtrar. Precio venta vacío = se usa el precio sugerido. Ganancia real = precio de venta sin IVA − precio unidad neto (sin despacho). "Margen s/costo" es el recargo sobre el precio con IVA, como en la planilla.</p>';
       conectarAgregar(el);
       this.update();
     },
@@ -299,6 +314,12 @@
         '<button class="btn small" data-action="guardarAsignaciones">Guardar asignación</button>' +
         '<button class="btn ghost small" data-action="descartarAsignaciones">Descartar</button></div>';
     }
+    const precios = Object.keys(precioPendiente).length;
+    if (precios) {
+      html += '<div class="action-bar">' + GS.icon('edit') + '<span><strong>' + precios + '</strong> ' + (precios === 1 ? 'precio de venta' : 'precios de venta') + ' sin guardar</span>' +
+        '<button class="btn small" data-action="guardarPrecios">Guardar precios</button>' +
+        '<button class="btn ghost small" data-action="descartarPrecios">Descartar</button></div>';
+    }
     if (seleccion.size) {
       html += '<div class="action-bar">' + GS.icon('check') + '<span><strong>' + seleccion.size + '</strong> seleccionadas</span>' +
         '<button class="btn secondary small" data-action="asignarSolicitado">Asignado = solicitado</button>' +
@@ -317,10 +338,32 @@
     e.target.classList.toggle('dirty', id in asigPendiente);
     barraAcciones();
   });
+  document.addEventListener('input', (e) => {
+    const prodId = e.target.dataset && e.target.dataset.precio;
+    if (!prodId) return;
+    const p = data().preventas.find((x) => x.productoId === prodId);
+    const original = p.precioManual ? String(p.precioVenta) : '';
+    const v = e.target.value.trim();
+    if (v === original) delete precioPendiente[prodId]; else precioPendiente[prodId] = v;
+    const pendiente = prodId in precioPendiente;
+    // El mismo producto puede estar en varias filas: se actualizan todas.
+    document.querySelectorAll('[data-precio="' + CSS.escape(prodId) + '"]').forEach((el) => {
+      if (el !== e.target) el.value = e.target.value;
+      el.classList.toggle('dirty', pendiente);
+    });
+    document.querySelectorAll('[data-precio-nota="' + CSS.escape(prodId) + '"]').forEach((el) => {
+      el.textContent = v !== '' ? 'precio propio' : p.pvp ? 'el sugerido' : '';
+    });
+    barraAcciones();
+  });
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && e.target.dataset && e.target.dataset.asig && Object.keys(asigPendiente).length) {
+    if (e.key !== 'Enter' || !e.target.dataset) return;
+    if (e.target.dataset.asig && Object.keys(asigPendiente).length) {
       e.preventDefault();
       GS.actions.guardarAsignaciones();
+    } else if (e.target.dataset.precio && Object.keys(precioPendiente).length) {
+      e.preventDefault();
+      GS.actions.guardarPrecios();
     }
   });
   document.addEventListener('change', (e) => {
@@ -352,6 +395,21 @@
   GS.actions.sinAsignacion = () => enviarAsignacion(
     Array.from(seleccion).map((id) => ({ id: id, asignado: 0 })), 'Marcadas sin asignación');
   GS.actions.limpiarSeleccion = () => { seleccion.clear(); GS.render(); };
+
+  GS.actions.guardarPrecios = async () => {
+    const precios = Object.keys(precioPendiente).map((id) => ({ productoId: id, precioVenta: precioPendiente[id] }));
+    try {
+      await GS.mutate('fijarPreciosVenta', { precios: precios }, precios.length === 1 ? 'Precio de venta guardado' : 'Precios de venta guardados');
+      precios.forEach((x) => delete precioPendiente[x.productoId]);
+      GS.render();
+    } catch (e) {
+      GS.toast(e.message, true);
+    }
+  };
+  GS.actions.descartarPrecios = () => {
+    Object.keys(precioPendiente).forEach((id) => delete precioPendiente[id]);
+    GS.render();
+  };
 
   /* ---------- editar / eliminar ---------- */
 

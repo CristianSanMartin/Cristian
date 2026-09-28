@@ -113,6 +113,24 @@ test("preventas como carrito: agregar productos uno a uno, asignar en la tabla y
     assert.match(await fila("PVI-000008").textContent(), /Asignada/);
     assert.match(await pedido.textContent(), /Pedido \$1\.310\.000 neto/);
 
+    // Precio de venta: vacío muestra el sugerido en gris; al escribirlo queda como precio propio
+    const precio = fila("PVI-000008").locator("[data-precio]");
+    assert.equal(await precio.inputValue(), "");
+    assert.equal(await precio.getAttribute("placeholder"), "189.990");
+    assert.match(await fila("PVI-000008").textContent(), /el sugerido/);
+    await precio.fill("199990");
+    await page.waitForSelector("text=1 precio de venta sin guardar");
+    // Es del producto: otro producto no cambia
+    assert.equal(await fila("PVI-000009").locator("[data-precio]").inputValue(), "");
+    await precio.press("Enter");
+    await toast(page, /Precio de venta guardado/);
+    assert.match(await fila("PVI-000008").textContent(), /precio propio/);
+    // Borrarlo vuelve al sugerido
+    await fila("PVI-000008").locator("[data-precio]").fill("");
+    await page.click('[data-action="guardarPrecios"]');
+    await toast(page, /Precio de venta guardado/);
+    assert.match(await fila("PVI-000008").textContent(), /el sugerido/);
+
     // En bloque: seleccionar y marcar sin asignación
     await fila("PVI-000009").locator("[data-sel]").check();
     await page.click('[data-action="sinAsignacion"]');

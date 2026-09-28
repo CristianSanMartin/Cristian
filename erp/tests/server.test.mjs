@@ -110,6 +110,30 @@ test("cada producto solicitado es una preventa independiente con su correlativo"
   assert.deepEqual(preventas(s).map(x => x.lanzamiento), ["2026-10-02", "2026-10-02", "2026-10-02", "2026-10-30"], "ordenadas por lanzamiento");
 });
 
+test("precio de venta desde preventas: si no se edita se acepta el sugerido", () => {
+  const s = createServer();
+  const { pv: p, prods } = preventa30th(s);
+  assert.deepEqual([pv(s, p.binderEng.id).precioVenta, pv(s, p.binderEng.id).precioManual], [43990, false], "sin editar = sugerido");
+
+  // Precio propio: afecta a todas las preventas del producto y a la ganancia
+  s.ok("fijarPreciosVenta", { precios: [{ productoId: prods.binderEng.id, precioVenta: 49990 }] });
+  const be = pv(s, p.binderEng.id);
+  assert.deepEqual([be.precioVenta, be.precioManual, be.pvp], [49990, true, 43990]);
+  assert.equal(Math.round(be.gananciaUnidad), Math.round(49990 / 1.19 - 25887));
+
+  // Vaciarlo (o poner el mismo sugerido) vuelve a seguir el precio sugerido
+  s.ok("fijarPreciosVenta", { precios: [{ productoId: prods.binderEng.id, precioVenta: "" }, { productoId: prods.miniTin.id, precioVenta: 13990 }] });
+  assert.deepEqual([pv(s, p.binderEng.id).precioVenta, pv(s, p.binderEng.id).precioManual], [43990, false]);
+  assert.deepEqual([pv(s, p.miniTin.id).precioVenta, pv(s, p.miniTin.id).precioManual], [13990, false]);
+  s.ok("guardarProducto", { ...prods.binderEng, pvp: 45990 });
+  assert.equal(pv(s, p.binderEng.id).precioVenta, 45990, "sigue al sugerido cuando cambia");
+
+  // Todo o nada
+  assert.match(errorDe(s.call("fijarPreciosVenta", { precios: [{ productoId: prods.deck.id, precioVenta: 29990 }, { productoId: prods.miniTin.id, precioVenta: "abc" }] })), /precio de venta/);
+  assert.equal(pv(s, p.deck.id).precioManual, false);
+  assert.match(errorDe(s.call("fijarPreciosVenta", { precios: [] })), /No hay precios/);
+});
+
 test("el mismo producto puede pedirse de nuevo como otra preventa", () => {
   const s = createServer();
   const { prods } = preventa30th(s);
@@ -199,6 +223,7 @@ test("roles: lectura solo consulta, operador opera, admin administra", () => {
   assert.equal(s.ok("bootstrap").data.usuarios.length, 0);
   assert.equal(s.call("guardarProducto", { nombre: "X" }).code, "SIN_PERMISO");
   assert.equal(s.call("registrarAsignacion", { lineas: [{ id: p.binderEng.id, asignado: 1 }] }).code, "SIN_PERMISO");
+  assert.equal(s.call("fijarPreciosVenta", { precios: [{ productoId: p.binderEng.productoId, precioVenta: 1 }] }).code, "SIN_PERMISO");
 
   s.as("socio@gsprime.cl");
   s.ok("registrarAsignacion", { lineas: [{ id: p.binderEng.id, asignado: 24 }] });

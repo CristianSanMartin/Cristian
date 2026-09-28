@@ -89,6 +89,27 @@ const Productos = {
     return prod;
   },
 
+  /**
+   * Precios de venta editados desde la tabla de preventas: [{ productoId, precioVenta }].
+   * Vacío (o igual al sugerido) = se acepta el precio sugerido (PVP) y lo sigue si cambia.
+   * Todo o nada: si una fila tiene error no se guarda ninguna.
+   */
+  fijarPrecios(p, user) {
+    const entrada = Array.isArray(p.precios) ? p.precios : [];
+    if (!entrada.length) throw new AppError('No hay precios para guardar.');
+    const cambios = entrada.map((x) => {
+      const prod = Productos.requerir(x.productoId);
+      const vacio = x.precioVenta === '' || x.precioVenta == null;
+      const precio = vacio ? 0 : Util.entero(x.precioVenta, 'El precio de venta de ' + Productos.nombreCompleto(prod), { min: 1 });
+      const manual = !vacio && precio !== prod.pvp;
+      return { prod: prod, datos: { precioManual: manual, precioVenta: manual ? precio : 0 } };
+    });
+    cambios.forEach((c) => {
+      Db.update('Productos', c.prod.id, Object.assign({}, c.datos, Util.sello(user)));
+      Audit.log(user, 'editar', 'Producto', c.prod.id, Audit.diff(c.prod, Object.assign({}, c.prod, c.datos)));
+    });
+  },
+
   /** Precio de venta vigente (bruto). */
   precio(prod) {
     return prod.precioManual ? prod.precioVenta : prod.pvp;

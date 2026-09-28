@@ -34,6 +34,7 @@ function rutas_() {
     guardarPreventa: { rol: 'operador', write: true, fn: Preventas.guardar },
     eliminarPreventa: { rol: 'operador', write: true, fn: Preventas.eliminar },
     registrarAsignacion: { rol: 'operador', write: true, fn: Preventas.registrarAsignacion },
+    fijarPreciosVenta: { rol: 'operador', write: true, fn: Productos.fijarPrecios },
 
     guardarUsuario: { rol: 'admin', write: true, fn: Usuarios.guardar },
   };

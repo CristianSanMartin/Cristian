@@ -133,6 +133,8 @@ convivían productos con asignaciones, costos y destinos distintos.
   el estado muestra solo solicitadas y asignadas (lo que falta comprar).
 - Sobre la tabla, **"Pedidos por lanzamiento"**: un pedido por proveedor y fecha con el aviso
   de despacho: *"Pedido $858.910 neto · Despacho $15.000 · faltan $141.090 para despacho gratis"*.
+- **Precio de venta** editable en la misma tabla (es del producto: cambia en todas sus filas).
+  Si no se edita, se acepta el **precio sugerido** (se ve en gris); vaciarlo vuelve al sugerido.
 - **Asignación:** se escribe el "Nuevo cant." directo en la tabla y se guarda en bloque, o
   se seleccionan filas para marcar "asignado = solicitado" o "sin asignación". Vaciar la
   cantidad vuelve la fila a "solicitada".
