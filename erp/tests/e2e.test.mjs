@@ -81,7 +81,7 @@ test("preventas como carrito: agregar productos uno a uno, asignar en la tabla y
     // Sin grupos por lanzamiento: la fecha es una columna antes de "Cant." y el estado va primero
     assert.equal(await page.locator("#pv-tbody tr.group-row").count(), 0);
     const titulos = (await page.locator("#pv-thead th").allTextContents()).map((t) => t.replace(/[▾▲▼⧩]/g, "").trim());
-    assert.deepEqual(titulos.slice(0, 7), ["", "Estado", "", "Producto", "Proveedor", "Lanzamiento", "Cant."]);
+    assert.deepEqual(titulos.slice(0, 6), ["", "Estado", "", "Producto", "Lanzamiento", "Cant."]);
     // Cada título con datos tiene su flecha de orden y filtro
     assert.equal(await page.locator("#pv-thead .th-menu").count(), titulos.filter(Boolean).length);
 

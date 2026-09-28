@@ -168,7 +168,7 @@
         ' placeholder="' + (p.pvp ? fmt.num(p.pvp) : '—') + '" aria-label="Precio de venta de ' + esc(p.producto) + '">' +
         '<div class="cell-dim" data-precio-nota="' + esc(p.productoId) + '">' + (propio ? 'precio propio' : p.pvp ? 'el sugerido' : '') + '</div>';
     }
-    return (p.precioVenta ? fmt.money(p.precioVenta) : '—') + (p.precioManual ? '<div><span class="pill soon">propio</span></div>' : '');
+    return (p.precioVenta ? fmt.money(p.precioVenta) : '—') + '<div class="cell-dim">' + (p.precioManual ? 'propio · sugerido ' + fmt.money(p.pvp) : 'el sugerido') + '</div>';
   }
 
   const asignada = (p) => p.estado !== 'solicitada';
@@ -183,8 +183,7 @@
     { id: 'imagen', label: '', sinMenu: true, valor: () => '', celda: (p) => GS.thumb(p.imagen) },
     { id: 'producto', label: 'Producto', clase: 'col-prod', valor: (p) => p.productoNombre, texto: (p) => p.productoNombre + (p.idioma ? ' ' + p.idioma : ''),
       celda: (p) => '<span class="cell-strong">' + esc(p.productoNombre) + '</span> ' + GS.langPill(p.idioma) +
-        (p.edicion ? '<div class="cell-dim">' + esc(p.edicion) + '</div>' : '') },
-    { id: 'proveedor', label: 'Proveedor', valor: (p) => p.proveedor, celda: (p) => esc(p.proveedor) },
+        '<div class="cell-dim">' + esc([p.edicion, p.proveedor].filter(Boolean).join(' · ')) + '</div>' },
     { id: 'lanzamiento', label: 'Lanzamiento', valor: (p) => p.lanzamiento, texto: (p) => fmt.date(p.lanzamiento),
       celda: (p) => '<span class="nowrap">' + fmt.date(p.lanzamiento) + '</span><div class="cell-dim">' + GS.relDays(p.lanzamiento) + '</div>' },
     { id: 'cant', label: 'Cant.', right: true, valor: (p) => p.solicitado, texto: (p) => fmt.num(p.solicitado), celda: (p) => fmt.num(p.solicitado) },
@@ -192,23 +191,17 @@
       celda: (p, op) => celdaAsignado(p, op) },
     { id: 'dif', label: 'Dif.', right: true, valor: (p) => (asignada(p) ? p.diferencia : null), texto: (p) => (asignada(p) ? fmt.num(p.diferencia) : ''),
       celda: (p) => '<span class="' + (p.diferencia < 0 ? 'text-gold' : '') + '">' + vig(p, fmt.num(p.diferencia)) + '</span>' },
-    { id: 'costo', label: 'Precio unidad', right: true, valor: (p) => p.costoNeto, texto: (p) => fmt.cost(p.costoNeto), celda: (p) => fmt.cost(p.costoNeto) },
-    { id: 'costoIva', label: 'Precio + IVA', right: true, valor: (p) => p.costoIva, texto: (p) => fmt.money(p.costoIva), celda: (p) => fmt.money(p.costoIva) },
-    { id: 'totalNeto', label: 'Total neto', right: true, valor: (p) => p.netoSolicitado, texto: (p) => fmt.money(p.netoSolicitado), celda: (p) => fmt.money(p.netoSolicitado) },
-    { id: 'totalIva', label: 'Total + IVA', right: true, valor: (p) => iva(p.netoSolicitado), texto: (p) => fmt.money(iva(p.netoSolicitado)), celda: (p) => fmt.money(iva(p.netoSolicitado)) },
-    { id: 'nuevoNeto', label: 'Nuevo total neto', right: true, valor: (p) => (asignada(p) ? p.netoAsignado : null), texto: (p) => (asignada(p) ? fmt.money(p.netoAsignado) : ''),
-      celda: (p) => '<strong>' + vig(p, fmt.money(p.netoAsignado)) + '</strong>' },
-    { id: 'nuevoIva', label: 'Nuevo total + IVA', right: true, valor: (p) => (asignada(p) ? iva(p.netoAsignado) : null), texto: (p) => (asignada(p) ? fmt.money(iva(p.netoAsignado)) : ''),
-      celda: (p) => '<strong>' + vig(p, fmt.money(iva(p.netoAsignado))) + '</strong>' },
-    { id: 'pvp', label: 'Precio sugerido', right: true, valor: (p) => p.pvp || null, texto: (p) => (p.pvp ? fmt.money(p.pvp) : ''), celda: (p) => (p.pvp ? fmt.money(p.pvp) : '—') },
+    // Neto arriba y con IVA debajo, en la misma celda, para que la tabla quepa en la pantalla.
+    { id: 'costo', label: 'Precio unidad', right: true, valor: (p) => p.costoNeto, texto: (p) => fmt.cost(p.costoNeto),
+      celda: (p) => fmt.cost(p.costoNeto) + '<div class="cell-dim">' + fmt.money(p.costoIva) + ' c/IVA</div>' },
+    { id: 'totalNeto', label: 'Total', right: true, valor: (p) => p.netoSolicitado, texto: (p) => fmt.money(p.netoSolicitado),
+      celda: (p) => fmt.money(p.netoSolicitado) + '<div class="cell-dim">' + fmt.money(iva(p.netoSolicitado)) + ' c/IVA</div>' },
+    { id: 'nuevoNeto', label: 'Nuevo total', right: true, valor: (p) => (asignada(p) ? p.netoAsignado : null), texto: (p) => (asignada(p) ? fmt.money(p.netoAsignado) : ''),
+      celda: (p) => (asignada(p) ? '<strong>' + fmt.money(p.netoAsignado) + '</strong><div class="cell-dim">' + fmt.money(iva(p.netoAsignado)) + ' c/IVA</div>' : vig(p, '')) },
     { id: 'precio', label: 'Precio venta', right: true, valor: (p) => p.precioVenta || null, texto: (p) => (p.precioVenta ? fmt.money(p.precioVenta) : ''),
       celda: (p, op) => celdaPrecio(p, op) },
-    { id: 'margen', label: 'Margen s/costo', right: true, valor: (p) => conPrecio(p, p.recargo), texto: (p) => (p.precioVenta ? fmt.pct(p.recargo) : ''),
-      celda: (p) => (p.precioVenta ? fmt.pct(p.recargo) : '—') },
-    { id: 'ganU', label: 'Ganancia real u.', right: true, valor: (p) => conPrecio(p, p.gananciaUnidad), texto: (p) => (p.precioVenta ? fmt.money(p.gananciaUnidad) : ''),
-      celda: (p) => (p.precioVenta ? '<span class="' + signo(p.gananciaUnidad) + '">' + fmt.money(p.gananciaUnidad) + '</span>' : '—') },
-    { id: 'ganT', label: 'Ganancia real total', right: true, valor: (p) => conPrecio(p, p.gananciaTotal), texto: (p) => (p.precioVenta ? fmt.money(p.gananciaTotal) : ''),
-      celda: (p) => (p.precioVenta ? '<span class="' + signo(p.gananciaTotal) + '">' + fmt.money(p.gananciaTotal) + '</span>' : '—') },
+    { id: 'ganT', label: 'Ganancia real', right: true, valor: (p) => conPrecio(p, p.gananciaTotal), texto: (p) => (p.precioVenta ? fmt.money(p.gananciaTotal) : ''),
+      celda: (p) => (p.precioVenta ? '<span class="' + signo(p.gananciaTotal) + '">' + fmt.money(p.gananciaTotal) + '</span><div class="cell-dim">' + fmt.money(p.gananciaUnidad) + ' c/u · ' + fmt.pct(p.recargo) + '</div>' : '—') },
   ];
   const COLS = columnas.length + 2;   // + selección y acciones
 
@@ -266,8 +259,8 @@
         '<div id="pv-resumen"></div>' +
         '<div id="pv-acciones"></div>' +
         '<div id="pv-factura"></div>' +
-        '<div class="table-wrap"><table class="data-table xwide"><thead><tr id="pv-thead"></tr></thead><tbody id="pv-tbody"></tbody></table></div>' +
-        '<p class="table-note">Usa la flecha de cada título para ordenar y filtrar. Precio venta vacío = se usa el precio sugerido. Ganancia real = precio de venta sin IVA − precio unidad neto (sin despacho). "Margen s/costo" es el recargo sobre el precio con IVA, como en la planilla.</p>';
+        '<div class="table-wrap"><table class="data-table compacta"><thead><tr id="pv-thead"></tr></thead><tbody id="pv-tbody"></tbody></table></div>' +
+        '<p class="table-note">Usa la flecha de cada título para ordenar y filtrar. Precio venta vacío = se usa el precio sugerido (en gris). Ganancia real = precio de venta sin IVA − precio unidad neto (sin despacho); debajo, por unidad y el margen sobre el costo con IVA ("Margen s/costo" de la planilla).</p>';
       conectarAgregar(el);
       this.update();
     },
