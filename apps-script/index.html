@@ -124,6 +124,34 @@
       </div>
     </div>
   </div>
+
+  <div id="objArea" class="card hidden">
+    <h2>Objeciones</h2>
+    <div class="info-box">
+      Se acumulan todas las proformas que proceses: carga otra proforma y sus objeciones se suman a esta lista.
+      Desmarca las filas que no quieras objetar y ajusta "Corresponde" si hace falta. Solo se debe objetar sobre la versión sin factura.
+    </div>
+    <div class="summary" style="margin-bottom:14px">
+      <div class="summary-box"><div class="summary-title">Proformas</div><div id="oProformas" class="summary-value">0</div></div>
+      <div class="summary-box"><div class="summary-title">Incluidas</div><div id="oIncluidas" class="summary-value">0</div></div>
+      <div class="summary-box"><div class="summary-title">Filas Template TMS</div><div id="oTms" class="summary-value">0</div></div>
+      <div class="summary-box"><div class="summary-title">Monto a objetar</div><div id="oMonto" class="summary-value errc">$0</div></div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Incluir</th><th>Proforma</th><th>ID Sol. Pago / Viaje</th><th>Alerta</th><th>Patente</th><th>Fecha</th><th>Vehículo</th>
+          <th>Viajes</th><th>Pagado</th><th>Corresponde</th><th>A objetar</th><th>Motivo</th><th>Envío</th><th>Aviso</th>
+        </tr></thead>
+        <tbody id="objBody"></tbody>
+      </table>
+    </div>
+    <div class="actions">
+      <button class="button secondary" onclick="vaciarObjeciones()">Vaciar lista</button>
+      <button class="button green" onclick="descargarTemplateTMS()">Descargar Template TMS</button>
+      <button class="button green" onclick="descargarFormatoMail()">Descargar Formato mail</button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -140,7 +168,8 @@ const TARIFAS_TL = {
   "TL - Hub XD":            {"C01-10":55000,"C11-20":110000,"C21-35":128000,"C36-50":136000,"C51-80":151000,"C81-130":175000},
   "TL (Valpo)":             {"C01-10":45000,"C11-20":100000,"C21-35":118000,"C36-50":118000,"C51-80":null,"C81-130":null}
 };
-const SEGUNDA = {"C01-10":50000,"C11-20":50000,"C21-35":65000,"C36-50":65000,"C51-80":65000,"C81-130":175000};
+// Tabla "2da vuelta / Domingo" entregada por control de gestión
+const SEGUNDA = {"C01-10":50000,"C11-20":70000,"C21-35":70000,"C36-50":70000,"C51-80":115000,"C81-130":175000};
 
 function nt(v){ return String(v ?? "").trim().normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase().replace(/\s+/g," "); }
 function nid(v){ if(v===null||v===undefined||v==="") return ""; if(typeof v==="number" && Number.isInteger(v)) return String(v); return String(v).trim(); }
@@ -422,6 +451,176 @@ function analizarTL(TL){
   return out;
 }
 
+// ---------- Objeciones ----------
+// Dos salidas: Template TMS (una fila por ID Sol. Pago, valor total que corresponde pagar)
+// y Formato mail al ejecutivo (una fila por viaje, con la hoja Proforma de respaldo).
+let objeciones=[]; // se acumulan entre proformas
+const MOTIVO_FORMA_PAGO="Revisar Forma de Pago"; // no está en la lista del TMS: va solo en el Formato mail
+
+function fechaTxt(v){
+  if(v instanceof Date) return v.toLocaleDateString("es-CL",{day:"2-digit",month:"2-digit",year:"numeric"});
+  return String(v??"").slice(0,10);
+}
+function moda(vals){
+  const c=new Map(); let best=null, n=0;
+  for(const v of vals){ const k=(c.get(v)||0)+1; c.set(v,k); if(k>n){n=k;best=v;} }
+  return best;
+}
+function colsOT(h){
+  return {prof:idx(h,["ID Proforma"]), fac:idx(h,["Factura"]), sol:idx(h,["ID Sol. Pago"]), viaje:idx(h,["ID Viaje"]),
+    valor:idx(h,["Valor"]), origen:idx(h,["Origen"]), pat:idx(h,["Patente"]), veh:idx(h,["Tipo Vehículo","Tipo Vehiculo"]),
+    fecha:idx(h,["Fecha Creación Viaje","Fecha Creacion Viaje"])};
+}
+function avisoFactura(filas,c){
+  const f=c.fac>=0 ? filas.map(r=>nid(r[c.fac])).find(Boolean) : "";
+  return f ? `Ya tiene factura ${f}: ya no se puede objetar.` : "";
+}
+
+// TL marcados OBJETAR en la revisión: 2 viajes → Segunda Vuelta; 1 viaje pagado bajo tarifa → Tarifa distinta.
+function objecionesTL(TL){
+  if(!TL||TL.length<2) return [];
+  const h=TL[0], c=colsOT(h), out=[];
+  for(const r of revisionTL.filter(x=>x.resultado==="OBJETAR")){
+    const filas=TL.slice(1).filter(f=>nid(f[c.sol])===r.idSolPago);
+    if(!filas.length) continue;
+    const aviso=avisoFactura(filas,c), dos=r.cantidadViajes===2;
+    out.push({
+      clave:"TL|"+r.idSolPago, alerta:"TL "+(dos?"2da vuelta":"bajo tarifa"),
+      proforma:nid(filas[0][c.prof]), sol:r.idSolPago, patente:filas[0][c.pat], fecha:filas[0][c.fecha],
+      veh:r.tipoVehiculo, viajes:[r.idViaje1,r.idViaje2].filter(Boolean), pagado:r.valorPagado, corresponde:r.valorEsperado,
+      motivoTMS:dos?"Segunda Vuelta":"Tarifa distinta a valor negociado", motivoMail:dos?"Segunda vuelta":"Tarifa distinta a valor negociado",
+      soloMail:false, incluir:!aviso, aviso, header:h, filas
+    });
+  }
+  return out;
+}
+
+// Rutas de CT pagadas por parada (DELIVERY): una ruta debe pagarse de una sola forma.
+// Lo que corresponde se estima con la tarifa de servicio de la misma patente y origen en SERVICE.
+function objecionesFormaPago(DELIVERY, SERVICE){
+  if(!DELIVERY||DELIVERY.length<2) return [];
+  const h=DELIVERY[0], c=colsOT(h);
+  const tarifas=[];
+  if(SERVICE&&SERVICE.length>1){
+    const cs=colsOT(SERVICE[0]), seen=new Set();
+    for(const f of SERVICE.slice(1)){
+      const sol=nid(f[cs.sol]); if(!sol||seen.has(sol)) continue; seen.add(sol);
+      const v=num(f[cs.valor]); if(v>0) tarifas.push({pat:nt(f[cs.pat]),origen:nt(f[cs.origen]),veh:vehNorm(f[cs.veh]),v});
+    }
+  }
+  const rutas=new Map();
+  for(const f of DELIVERY.slice(1)){
+    if(!/^CT\b/.test(nt(f[c.origen]))) continue;
+    const v=nid(f[c.viaje]); if(!v) continue;
+    if(!rutas.has(v)) rutas.set(v,[]); rutas.get(v).push(f);
+  }
+  const out=[];
+  for(const [viaje,filas] of rutas){
+    const f0=filas[0], pat=nt(f0[c.pat]), origen=nt(f0[c.origen]), veh=vehNorm(f0[c.veh]);
+    const pagado=filas.reduce((a,f)=>a+num(f[c.valor]),0);
+    const mismaPat=tarifas.filter(t=>t.pat===pat&&t.origen===origen).map(t=>t.v);
+    const mismoVeh=tarifas.filter(t=>t.origen===origen&&t.veh===veh).map(t=>t.v);
+    const ref=moda(mismaPat.length?mismaPat:mismoVeh);
+    const aviso=avisoFactura(filas,c) || (ref ? "" : "Sin tarifa de servicio de referencia: completa Corresponde.");
+    const sols=new Set(filas.map(f=>nid(f[c.sol])));
+    out.push({
+      clave:"FP|"+viaje, alerta:`Pagada por parada (${sols.size} SP)`,
+      proforma:nid(f0[c.prof]), sol:"", patente:f0[c.pat], fecha:f0[c.fecha], veh,
+      viajes:[viaje], pagado, corresponde:ref||0, motivoTMS:"", motivoMail:MOTIVO_FORMA_PAGO,
+      soloMail:true, incluir:!avisoFactura(filas,c), aviso, header:h, filas
+    });
+  }
+  return out;
+}
+
+function agregarObjeciones(nuevas){
+  const claves=new Set(nuevas.map(o=>o.clave));
+  objeciones=objeciones.filter(o=>!claves.has(o.clave)).concat(nuevas);
+}
+
+function renderObjeciones(){
+  const area=document.getElementById("objArea");
+  area.classList.toggle("hidden",!objeciones.length);
+  const body=document.getElementById("objBody"); body.innerHTML="";
+  objeciones.forEach((o,i)=>{
+    const dif=o.corresponde-o.pagado, tr=document.createElement("tr");
+    tr.innerHTML=`<td><input type="checkbox" ${o.incluir?"checked":""} onchange="objeciones[${i}].incluir=this.checked;renderObjeciones()"></td>
+      <td>${esc(o.proforma)}</td><td>${esc(o.sol||o.viajes[0])}</td><td>${esc(o.alerta)}</td><td>${esc(o.patente)}</td><td>${esc(fechaTxt(o.fecha))}</td>
+      <td>${esc(o.veh)}</td><td>${o.viajes.length}</td><td>${money(o.pagado)}</td>
+      <td><input type="number" step="500" style="width:100px" value="${o.corresponde}" onchange="objeciones[${i}].corresponde=Number(this.value)||0;renderObjeciones()"></td>
+      <td><b class="${dif>0?"errc":"warnc"}">${money(dif)}</b></td><td>${esc(o.soloMail?o.motivoMail:o.motivoTMS)}</td>
+      <td>${o.soloMail?"Solo mail":"TMS + mail"}</td><td>${esc(o.aviso)}</td>`;
+    body.appendChild(tr);
+  });
+  const inc=objeciones.filter(o=>o.incluir);
+  document.getElementById("oProformas").textContent=new Set(objeciones.map(o=>o.proforma)).size;
+  document.getElementById("oIncluidas").textContent=`${inc.length} / ${objeciones.length}`;
+  document.getElementById("oTms").textContent=inc.filter(o=>!o.soloMail).length;
+  document.getElementById("oMonto").textContent=money(inc.reduce((a,o)=>a+Math.max(o.corresponde-o.pagado,0),0));
+}
+
+function vaciarObjeciones(){ objeciones=[]; renderObjeciones(); }
+function hoyArchivo(){ const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }
+
+function libroTemplateTMS(){
+  const rows=[["Id Solicitud Pago","Motivo Objeción","Valor a Objetar","Comentario Objeción"]];
+  for(const o of objeciones.filter(o=>o.incluir&&!o.soloMail)) rows.push([idCelda(o.sol),o.motivoTMS,o.corresponde,o.veh]);
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),"Hoja 1");
+  return wb;
+}
+
+function libroFormatoMail(){
+  const inc=objeciones.filter(o=>o.incluir);
+  const H=inc.length?inc[0].header:[];
+  const proforma=[H], primeraFila=new Map(); // ID Viaje → fila Excel en la hoja Proforma
+  for(const o of inc){
+    const map=H.map(n=>o.header.indexOf(n)), cv=idx(o.header,["ID Viaje"]);
+    for(const f of o.filas){
+      const v=nid(f[cv]);
+      if(!primeraFila.has(v)) primeraFila.set(v,proforma.length+1);
+      proforma.push(map.map(j=>j>=0?f[j]:""));
+    }
+  }
+  const L=n=>{ const i=idx(H,n); return i<0?null:XLSX.utils.encode_col(i); };
+  const col={prof:L(["ID Proforma"]),sol:L(["ID Sol. Pago"]),viaje:L(["ID Viaje"]),origen:L(["Origen"]),destino:L(["Destino"]),
+    fecha:L(["Fecha Creación Viaje","Fecha Creacion Viaje"]),valor:L(["Valor"])};
+  const valFila=(n,c)=>{ if(!c) return ""; return proforma[n-1][XLSX.utils.decode_col(c)]; };
+
+  const obj=[["Proforma","ID Sol. Pago","ID Viaje","Origen","Destino","Fecha Viaje","Valor Fcom","Valor objetado","Motivo Objeción"]], formulas=[];
+  for(const o of inc){
+    const dif=o.corresponde-o.pagado;
+    o.viajes.forEach((v,k)=>{
+      const n=primeraFila.get(nid(v)); if(!n) return;
+      const ultimo=k===o.viajes.length-1;
+      const fcom=proforma.slice(1).reduce((a,f)=>a+(nid(f[XLSX.utils.decode_col(col.viaje)])===nid(v)?num(f[XLSX.utils.decode_col(col.valor)]):0),0);
+      obj.push([valFila(n,col.prof),valFila(n,col.sol),valFila(n,col.viaje),valFila(n,col.origen),valFila(n,col.destino),valFila(n,col.fecha),fcom,
+        ultimo?dif:0, ultimo?o.motivoMail:"Tarifa ok"]);
+      formulas.push(n);
+    });
+  }
+  const wsObj=XLSX.utils.aoa_to_sheet(obj,{cellDates:true,dateNF:"dd-mm-yyyy"});
+  const cols=[col.prof,col.sol,col.viaje,col.origen,col.destino,col.fecha];
+  formulas.forEach((n,i)=>{
+    const r=i+2;
+    cols.forEach((c,j)=>{ const a=XLSX.utils.encode_col(j)+r; if(c&&wsObj[a]) wsObj[a].f=`Proforma!${c}${n}`; });
+    const g="G"+r; if(wsObj[g]) wsObj[g].f=`SUMIF(Proforma!$${col.viaje}:$${col.viaje},C${r},Proforma!$${col.valor}:$${col.valor})`;
+  });
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,wsObj,"Objeciones");
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(proforma,{cellDates:true,dateNF:"dd-mm-yyyy hh:mm"}),"Proforma");
+  return wb;
+}
+
+function descargarTemplateTMS(){
+  if(!objeciones.some(o=>o.incluir&&!o.soloMail)) return mostrarError("No hay objeciones incluidas que vayan al TMS.");
+  XLSX.writeFile(libroTemplateTMS(),`Template Objeciones ${hoyArchivo()}.xlsx`);
+}
+function descargarFormatoMail(){
+  if(!objeciones.some(o=>o.incluir)) return mostrarError("No hay objeciones incluidas.");
+  XLSX.writeFile(libroFormatoMail(),`Formato Objeciones ${hoyArchivo()}.xlsx`);
+}
+
 function procesar(){
   ocultarError();
   try{
@@ -440,6 +639,8 @@ function procesar(){
     }
 
     revisionTL=analizarTL(datosProc.TL);
+    agregarObjeciones([...objecionesTL(datosProc.TL), ...objecionesFormaPago(datosProc.DELIVERY, datosProc.SERVICE)]);
+    renderObjeciones();
     construirSalida();
     actualizarPantalla();
     renderTL();
