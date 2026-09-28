@@ -140,12 +140,10 @@ test("preventas como carrito: agregar productos uno a uno, asignar en la tabla y
     assert.equal(await fila("PVI-000009").count(), 0, "el filtro de Estado por defecto oculta las sin asignación");
     assert.match(await pedido.textContent(), /Pedido \$720\.000 neto.*faltan \$280\.000 para despacho gratis/);
 
-    // El producto aparece en el catálogo con su último costo
-    await page.click('[data-nav="productos"]');
-    const creado = await page.locator("#prod-tbody tr", { hasText: "Surging Sparks" }).textContent();
-    assert.match(creado, /GS-0009.*Booster Box.*ENG.*\$189\.990.*\$120\.000/s);
-    const src = await page.locator("#prod-tbody tr", { hasText: "Surging Sparks" }).locator("img.thumb").getAttribute("src");
-    assert.match(src, /^data:image\/jpeg;base64,/, "la imagen subida se muestra en el catálogo");
+    // La imagen subida se muestra en la preventa (ya no hay pestaña de catálogo)
+    assert.equal(await page.locator('[data-nav="productos"]').count(), 0);
+    const src = await fila("PVI-000008").locator("img.thumb").getAttribute("src");
+    assert.match(src, /^data:image\/jpeg;base64,/);
 
     assert.deepEqual(errores, []);
   } finally {
@@ -202,6 +200,7 @@ test("factura de compra: las preventas seleccionadas pasan a Compras e Inventari
     await page.click('[data-nav="preventas"]');
     assert.equal(await fila("PVI-000001").count(), 0);
     await page.click('[data-nav="inventario"]');
+    await page.click('[data-action="modoInventario"][data-id="lote"]');
     const tin = page.locator("#inv-tbody tr", { hasText: "Mini Tin" });
     assert.match(await tin.textContent(), /30th2.*10.*\$8\.230.*\$144.*\$8\.374/s);
     // Unidad por unidad, como la planilla: 24 + 6 + 10 + 12 + 12 del ejemplo
@@ -277,6 +276,31 @@ test("venta: carrito con descuento por producto, comisión TUU, stock y acumulad
   }
 });
 
+test("inventario: el stock disponible se toma y se lleva a una venta", { skip }, async () => {
+  const browser = await chromium.launch();
+  try {
+    const { page, errores } = await abrir(browser);
+    await page.click('[data-nav="inventario"]');
+    // Vista por defecto: una fila por producto con stock (Battle Deck ENG: 12 − 3 vendidos)
+    const deckEng = page.locator('#inv-tbody tr[data-stock]', { hasText: "Battle Deck" }).filter({ has: page.locator(".lang-ENG") });
+    assert.match(await deckEng.textContent(), /30th-DECK.*9.*\$26\.990/s);
+    // Seleccionar dos productos y venderlos
+    for (const row of await page.locator("#inv-tbody tr[data-stock]").all()) await row.locator("[data-sel-stock]").check();
+    await page.click('[data-action="venderSeleccion"]');
+    await toast(page, /2 productos agregados a la venta/);
+    assert.equal(await page.locator('.nav-item.active').getAttribute("data-nav"), "ventas");
+    assert.equal(await page.locator("#nueva-venta [data-carrito] tr").count(), 2);
+    assert.match(await page.locator("#nueva-venta [data-nv-totales]").textContent(), /Total\$53\.980/);
+    // Editar la ficha (foto, precio) desde el inventario
+    await page.click('[data-nav="inventario"]');
+    await page.locator('#inv-tbody [data-action="editarProducto"]').first().click();
+    await modal(page).waitFor();
+    assert.deepEqual(errores, []);
+  } finally {
+    await browser.close();
+  }
+});
+
 test("rol solo lectura: ve la información pero no las acciones", { skip }, async () => {
   const browser = await chromium.launch();
   try {
@@ -286,8 +310,9 @@ test("rol solo lectura: ve la información pero no las acciones", { skip }, asyn
     assert.equal(await page.locator("#agregar-preventa").count(), 0);
     assert.match(await page.textContent("#pv-tbody"), /Binder Collection/);
     assert.equal(await page.locator("[data-asig], [data-sel], [data-action='editarPreventa']").count(), 0);
-    await page.click('[data-nav="productos"]');
-    assert.equal(await page.locator('[data-action="nuevoProducto"], [data-action="editarProducto"]').count(), 0);
+    await page.click('[data-nav="inventario"]');
+    assert.match(await page.textContent("#inv-tbody"), /Battle Deck/);
+    assert.equal(await page.locator('[data-action="venderStock"], [data-action="editarProducto"], [data-sel-stock]').count(), 0);
     assert.deepEqual(errores, []);
   } finally {
     await browser.close();
@@ -298,7 +323,7 @@ test("se adapta a celular sin desbordar la página", { skip }, async () => {
   const browser = await chromium.launch();
   try {
     const { page, errores } = await abrir(browser, { viewport: { width: 390, height: 844 } });
-    for (const vista of ["dashboard", "preventas", "compras", "inventario", "ventas", "productos", "clientes", "proveedores", "admin"]) {
+    for (const vista of ["dashboard", "preventas", "compras", "inventario", "ventas", "clientes", "proveedores", "admin"]) {
       await page.click("#menu-toggle");
       await page.click(`[data-nav="${vista}"]`);
       const ancho = await page.evaluate(() => document.documentElement.scrollWidth);

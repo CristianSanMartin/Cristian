@@ -208,6 +208,14 @@
     calcVenta(form);
     form.elements.producto.focus();
   };
+  /** Agrega un producto al carrito de la nueva venta (desde Inventario). */
+  GS.agregarAVenta = (productoId, n) => {
+    const disp = (stock()[productoId] || { disponible: 0 }).disponible - enCarrito(productoId);
+    if (disp <= 0) return;
+    const mismo = carrito.find((x) => x.productoId === productoId && x.precio === '');
+    if (mismo) mismo.cantidad = String((Number(mismo.cantidad) || 0) + Math.min(n, disp));
+    else carrito.push({ productoId: productoId, cantidad: String(Math.min(n, disp)), precio: '' });
+  };
   GS.actions.quitarDelCarrito = (i) => {
     carrito.splice(Number(i), 1);
     calcVenta(document.querySelector('#nueva-venta form'));

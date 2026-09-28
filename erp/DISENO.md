@@ -182,6 +182,14 @@ margen, y estado comercial `recibida → vendiendo → agotada`.
 
 ## 8. Inventario
 
+**Implementado (v2.4):** Inventario es la pantalla de stock. Vista por defecto **"Stock disponible"**:
+una fila por producto con lo que queda (suma de sus lotes), precio de venta, costo y ganancia por
+unidad, con **"Vender"** (o marcar varios y "Vender seleccionados") que lleva los productos al
+carrito de una nueva venta, y el lápiz para editar la ficha (nombre, foto, precio). Las vistas
+"Por lote" y "Unidad por unidad" mantienen el detalle contable. **No hay pestaña de catálogo:**
+las ediciones se renuevan cada ~3 meses; la ficha de cada producto se crea sola al escribirlo en
+Preventas y solo se usa para enlazar preventa, factura, stock y venta.
+
 - **Lote** = línea de compra recibida. Guarda cantidad y costo; el stock disponible es
   cantidad − vendidas − salidas.
 - **Vista tipo Excel:** el ERP despliega cada lote unidad por unidad (Proveedor, Factura,

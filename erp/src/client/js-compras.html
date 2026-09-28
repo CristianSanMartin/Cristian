@@ -11,7 +11,8 @@
   const data = () => GS.state.data;
   const abiertas = new Set();   // facturas con el detalle desplegado
   const DEF_C = { q: '' };
-  const DEF_I = { q: '', modo: 'lote' };
+  const DEF_I = { q: '', modo: 'stock' };
+  const selStock = new Set();   // productos marcados para vender
   const signo = (n) => (n < 0 ? 'text-danger' : 'text-success');
   const kpi = (l, v, sub) => '<div class="kpi-card"><div class="kpi-label">' + l + '</div><div class="kpi-value small">' + v + '</div><div class="kpi-sub">' + sub + '</div></div>';
   const buscar = (lista, q, texto) => { const n = GS.norm(q.trim()); return lista.filter((x) => !n || GS.norm(texto(x)).includes(n)); };
@@ -167,6 +168,38 @@
       celda: (u) => '<span class="' + signo(u.lote.gananciaUnidad) + '">' + fmt.money(u.lote.gananciaUnidad) + '</span>' },
   ];
 
+  /* Stock disponible: una fila por producto (suma de sus lotes), para tomarlo y venderlo. */
+  function stockPorProducto() {
+    const porProd = {};
+    data().lotes.forEach((l) => {
+      if (l.disponible <= 0) return;
+      const r = porProd[l.productoId] = porProd[l.productoId] || { productoId: l.productoId, lote: l, disponible: 0, valorInventario: 0, gananciaProyectada: 0, lotes: 0, facturas: [] };
+      r.disponible += l.disponible;
+      r.valorInventario += l.valorInventario;
+      r.gananciaProyectada += l.gananciaProyectada;
+      r.lotes++;
+      if (r.facturas.indexOf(l.factura) === -1) r.facturas.push(l.factura);
+    });
+    return Object.keys(porProd).map((k) => {
+      const r = porProd[k];
+      r.costo = r.valorInventario / r.disponible;
+      r.gananciaUnidad = r.gananciaProyectada / r.disponible;
+      r.precioVenta = r.lote.precioVenta;
+      return r;
+    });
+  }
+  const colsStock = [
+    { id: 'producto', label: 'Producto', clase: 'col-prod', valor: (r) => r.lote.productoNombre, texto: (r) => r.lote.productoNombre + ' ' + r.lote.idioma, celda: (r) => producto(r.lote) },
+    { id: 'facturas', label: 'Factura', valor: (r) => r.facturas.join(', '), celda: (r) => esc(r.facturas.join(', ')) },
+    { id: 'disponible', label: 'Disponible', right: true, valor: (r) => r.disponible, celda: (r) => '<strong class="stock-num">' + fmt.num(r.disponible) + '</strong>' },
+    { id: 'precio', label: 'Precio venta', right: true, valor: (r) => r.precioVenta, texto: (r) => fmt.money(r.precioVenta), celda: (r) => (r.precioVenta ? fmt.money(r.precioVenta) : '—') },
+    { id: 'costo', label: 'Costo u.', right: true, valor: (r) => r.costo, texto: (r) => fmt.money(r.costo), celda: (r) => fmt.money(r.costo) + (r.lotes > 1 ? '<div class="cell-dim">promedio</div>' : '') },
+    { id: 'ganU', label: 'Ganancia u.', right: true, valor: (r) => r.gananciaUnidad, texto: (r) => fmt.money(r.gananciaUnidad),
+      celda: (r) => (r.precioVenta ? '<span class="' + signo(r.gananciaUnidad) + '">' + fmt.money(r.gananciaUnidad) + '</span>' : '—') },
+  ];
+  const buscadasStock = () => buscar(stockPorProducto(), GS.filters('inventario', DEF_I).q, (r) => r.lote.producto + ' ' + r.facturas.join(' ') + ' ' + r.lote.proveedor);
+  GS.tablaRegistrar('stock', { filas: buscadasStock, columnas: colsStock, alCambiar: () => GS.views.inventario.update() });
+
   const textoLote = (l) => l.id + ' ' + l.factura + ' ' + l.producto + ' ' + l.proveedor + ' ' + l.preventaId;
   const buscadasLotes = () => buscar(data().lotes, GS.filters('inventario', DEF_I).q, textoLote);
   const unidades = () => {
@@ -183,12 +216,13 @@
     render(el) {
       const f = GS.filters('inventario', DEF_I);
       el.innerHTML =
-        '<div class="page-head"><div><h1>Inventario</h1><p>Un lote por producto de cada factura, con su costo real (precio + despacho prorrateado) y la ganancia proyectada.</p></div>' +
+        '<div class="page-head"><div><h1>Inventario</h1><p>El stock disponible para vender. Marca los productos y presiona "Vender" para llevarlos al carrito de una venta.</p></div>' +
         '<button class="btn ghost" data-action="exportarInventario">' + GS.icon('download') + 'Exportar</button></div>' +
         '<div class="filters-bar"><div class="search-box">' + GS.icon('search') + '<input type="text" data-filter="inventario.q" value="' + esc(f.q) + '" placeholder="Buscar producto, factura o PVI..."></div>' +
-        '<div class="tabs mini">' + [['lote', 'Por lote'], ['unidad', 'Unidad por unidad']].map((t) =>
+        '<div class="tabs mini">' + [['stock', 'Stock disponible'], ['lote', 'Por lote'], ['unidad', 'Unidad por unidad']].map((t) =>
           '<button type="button" class="tab' + (f.modo === t[0] ? ' active' : '') + '" data-action="modoInventario" data-id="' + t[0] + '">' + t[1] + '</button>').join('') + '</div></div>' +
         '<div id="inv-resumen"></div>' +
+        '<div id="inv-acciones"></div>' +
         '<div class="table-wrap"><table class="data-table xwide"><thead><tr id="inv-thead"></tr></thead><tbody id="inv-tbody"></tbody><tfoot id="inv-tfoot"></tfoot></table></div>' +
         '<p class="table-note">Costo = precio unidad neto + despacho prorrateado. Crédito fiscal = costo × 19%. Ganancia = precio de venta sin IVA − costo. El precio de venta es el del producto (el propio o el sugerido).</p>';
       this.update();
@@ -196,20 +230,33 @@
     update() {
       const f = GS.filters('inventario', DEF_I);
       const porUnidad = f.modo === 'unidad';
-      const tabla = porUnidad ? 'unidades' : 'lotes';
-      const cols = porUnidad ? colsUnidad : colsLote;
-      const rows = GS.tablaAplicar(tabla, porUnidad ? unidades() : buscadasLotes(), cols);
-      document.getElementById('inv-thead').innerHTML = GS.tablaEncabezado(tabla, cols);
+      const porStock = f.modo === 'stock';
+      const tabla = porStock ? 'stock' : porUnidad ? 'unidades' : 'lotes';
+      const cols = porStock ? colsStock : porUnidad ? colsUnidad : colsLote;
+      const rows = GS.tablaAplicar(tabla, porStock ? buscadasStock() : porUnidad ? unidades() : buscadasLotes(), cols);
+      const op = GS.puede('operador');
+      // El stock cabe en pantalla; los lotes y unidades usan la tabla ancha, con todas las columnas de la planilla.
+      document.getElementById('inv-thead').closest('table').className = 'data-table ' + (porStock ? '' : 'xwide');
+      const celdas = (r) => cols.map((c) => '<td class="' + (c.right ? 'cell-num right ' : '') + (c.clase || '') + '">' + c.celda(r) + '</td>').join('');
+      document.getElementById('inv-thead').innerHTML = porStock ? (op ? '<th></th>' : '') + GS.tablaEncabezado(tabla, cols) + '<th></th>' : GS.tablaEncabezado(tabla, cols);
       document.getElementById('inv-tbody').innerHTML = rows.length
-        ? rows.map((r) => '<tr>' + cols.map((c) => '<td class="' + (c.right ? 'cell-num right ' : '') + (c.clase || '') + '">' + c.celda(r) + '</td>').join('') + '</tr>').join('')
-        : '<tr><td colspan="' + cols.length + '">' + GS.empty('El inventario está vacío', 'Los productos entran al registrar su factura de compra desde Preventas.', 'inventario') + '</td></tr>';
+        ? rows.map((r) => (porStock
+          ? '<tr data-stock="' + esc(r.productoId) + '" class="' + (selStock.has(r.productoId) ? 'row-selected' : '') + '">' +
+            (op ? '<td><input type="checkbox" class="row-check" data-sel-stock="' + esc(r.productoId) + '"' + (selStock.has(r.productoId) ? ' checked' : '') + ' aria-label="Seleccionar ' + esc(r.lote.producto) + '"></td>' : '') +
+            celdas(r) + '<td><div class="row-actions">' + (op
+              ? '<button class="btn small secondary" data-action="venderStock" data-id="' + esc(r.productoId) + '">' + GS.icon('ventas') + 'Vender</button>' +
+                GS.iconBtn('editarProducto', r.productoId, 'edit', 'Editar nombre, foto o precio')
+              : '') + '</div></td></tr>'
+          : '<tr>' + celdas(r) + '</tr>')).join('')
+        : '<tr><td colspan="' + (cols.length + 2) + '">' + GS.empty('No hay stock disponible', 'Los productos entran al registrar su factura de compra desde Preventas.', 'inventario') + '</td></tr>';
+      barraStock(porStock);
 
-      const lotes = porUnidad ? Array.from(new Set(rows.map((u) => u.lote))) : rows;
+      const lotes = porStock ? data().lotes.filter((l) => rows.some((r) => r.productoId === l.productoId)) : porUnidad ? Array.from(new Set(rows.map((u) => u.lote))) : rows;
       const disp = lotes.reduce((t, l) => t + l.disponible, 0);
       const sum = (k) => lotes.reduce((t, l) => t + l[k], 0);
       const credito = lotes.reduce((t, l) => t + l.credito * l.disponible, 0);
       document.getElementById('inv-resumen').innerHTML = '<div class="kpi-grid">' +
-        kpi('Unidades disponibles', fmt.num(disp), lotes.length + (lotes.length === 1 ? ' lote' : ' lotes')) +
+        kpi('Unidades disponibles', fmt.num(disp), (porStock ? rows.length + (rows.length === 1 ? ' producto' : ' productos') : lotes.length + (lotes.length === 1 ? ' lote' : ' lotes'))) +
         kpi('Valor a costo', fmt.money(sum('valorInventario')), fmt.money(credito) + ' de crédito fiscal') +
         kpi('Venta proyectada', fmt.money(sum('ventaProyectada')), 'Vendiendo todo al precio de venta') +
         kpi('Ganancia proyectada', '<span class="text-success">' + fmt.money(sum('gananciaProyectada')) + '</span>', 'Real neta') + '</div>';
@@ -222,6 +269,31 @@
         : '';
     },
   };
+
+  function barraStock(porStock) {
+    const el = document.getElementById('inv-acciones');
+    if (!porStock || !selStock.size) { el.innerHTML = ''; return; }
+    el.innerHTML = '<div class="action-bar">' + GS.icon('check') + '<span><strong>' + selStock.size + '</strong> ' + (selStock.size === 1 ? 'producto seleccionado' : 'productos seleccionados') + '</span>' +
+      '<button class="btn small" data-action="venderSeleccion">' + GS.icon('ventas') + 'Vender seleccionados</button>' +
+      '<button class="btn ghost small" data-action="limpiarStock">Quitar selección</button></div>';
+  }
+  document.addEventListener('change', (e) => {
+    const id = e.target.dataset && e.target.dataset.selStock;
+    if (!id) return;
+    if (e.target.checked) selStock.add(id); else selStock.delete(id);
+    e.target.closest('tr').classList.toggle('row-selected', e.target.checked);
+    barraStock(true);
+  });
+  /** Lleva los productos al carrito de Ventas (1 unidad de cada uno; la cantidad se ajusta allá). */
+  function vender(ids) {
+    ids.forEach((id) => GS.agregarAVenta(id, 1));
+    selStock.clear();
+    GS.go('ventas');
+    GS.toast(ids.length === 1 ? 'Producto agregado a la venta' : ids.length + ' productos agregados a la venta');
+  }
+  GS.actions.venderStock = (id) => vender([id]);
+  GS.actions.venderSeleccion = () => vender(Array.from(selStock));
+  GS.actions.limpiarStock = () => { selStock.clear(); GS.views.inventario.update(); };
 
   GS.actions.modoInventario = (modo) => {
     GS.filters('inventario', DEF_I).modo = modo;
