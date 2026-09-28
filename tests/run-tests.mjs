@@ -56,6 +56,11 @@ ot.push([5001, "Provision_OK", "dl1", "CD Lo Espejo", "C01-10", 30000, "XX1111",
 ot.push([6001, "Provision_OK", "sv1", "Tienda Plaza Oeste", "C11-20", 90000, "YY2222", "Calle 3", "SERVICE"]);
 ot.push([6001, "Provision_OK", "sv1", "Tienda Plaza Oeste", "C11-20", 90000, "YY2222", "Calle 4", "SERVICE"]);
 ot.push([6001, "Provision_OK", "sv2", "Tienda Plaza Oeste", "C11-20", 90000, "YY2222", "Calle 5", "SERVICE"]);
+// Ruta de CT pagada por parada (DELIVERY) y la misma patente pagada como servicio otro día
+ot.push([5101, "Provision_OK", "ct1", "CT Valparaiso", "C01-10", 1500, "KK1111", "Calle 7", "DELIVERY"]);
+ot.push([5102, "Provision_OK", "ct1", "CT Valparaiso", "C01-10", 1500, "KK1111", "Calle 8", "DELIVERY"]);
+ot.push([5103, "Provision_OK", "ct1", "CT Valparaiso", "C01-10", 1500, "KK1111", "Calle 9", "DELIVERY"]);
+ot.push([6002, "Provision_OK", "sv3", "CT Valparaiso", "C01-10", 200000, "KK1111", "Calle 10", "SERVICE"]);
 // Tipo desconocido -> SIN CLASIFICAR (no debe perderse)
 ot.push([7001, "Provision_OK", "ux1", "CD Lo Espejo", "C01-10", 10000, "ZZ3333", "Calle 6", "OTRO"]);
 
@@ -93,6 +98,14 @@ const byId = Object.fromEntries(rev.map(r => [r.idSolPago, r]));
 const [download] = await Promise.all([page.waitForEvent("download"), page.click("text=Descargar Excel procesado")]);
 const outPath = path.join(tmp, "out.xlsx");
 await download.saveAs(outPath);
+const objs = await page.evaluate("objeciones.map(o => [o.clave, o.motivoTMS || o.motivoMail, o.pagado, o.corresponde, o.soloMail])");
+const [dlTms] = await Promise.all([page.waitForEvent("download"), page.click("text=Descargar Template TMS")]);
+const tmsPath = path.join(tmp, "tms.xlsx"); await dlTms.saveAs(tmsPath);
+// Desmarcar la objeción de forma de pago no debe sacarla del TMS (no está) pero sí del mail
+const [dlMail] = await Promise.all([page.waitForEvent("download"), page.click("text=Descargar Formato mail")]);
+const mailPath = path.join(tmp, "mail.xlsx"); await dlMail.saveAs(mailPath);
+await page.evaluate("objeciones.find(o => o.clave === 'TL|3002').incluir = false; renderObjeciones()");
+const incluidas = await page.textContent("#oIncluidas");
 const errText = await page.textContent("#errorText");
 await browser.close();
 
@@ -106,8 +119,8 @@ const check = (name, got, want) => {
 const pick = r => r && [r.resultado, r.valorEsperado, r.valorPagado, r.montoObjetar];
 
 check("Sin errores JS", errors.concat(errText ? [errText] : []), []);
-check("Caso A", pick(byId["24279173"]), ["OBJETAR", 160000, 110000, 50000]);
-check("Caso B", pick(byId["24245413"]), ["OK - OBJECIÓN APROBADA", 160000, 180000, 0]);
+check("Caso A", pick(byId["24279173"]), ["OBJETAR", 180000, 110000, 70000]);
+check("Caso B", pick(byId["24245413"]), ["OK - OBJECIÓN APROBADA", 180000, 180000, 0]);
 check("Caso B 2da reconocida", byId["24245413"]?.segundaReconocida, 70000);
 check("Caso C", pick(byId["3001"]), ["OK", 350000, 350000, 0]);
 check("Caso C2", pick(byId["3002"]), ["OBJETAR", 350000, 175000, 175000]);
@@ -125,8 +138,8 @@ check("Resumen Sol Pago no cuadra (D)", byId["3003"]?.validacionResumen?.startsW
 const out = XLSX.readFile(outPath);
 const sheet = n => XLSX.utils.sheet_to_json(out.Sheets[n], { header: 1, defval: "" });
 const control = Object.fromEntries(sheet("CONTROL").map(r => [r[0], r[1]]));
-check("CONTROL bruto", control["Registros Ordenes de Transporte"], 27);
-check("CONTROL DELIVERY/SERVICE/TL", [control["Registros DELIVERY"], control["Registros SERVICE"], control["Registros TL"]], [2, 3, 21]);
+check("CONTROL bruto", control["Registros Ordenes de Transporte"], 31);
+check("CONTROL DELIVERY/SERVICE/TL", [control["Registros DELIVERY"], control["Registros SERVICE"], control["Registros TL"]], [5, 4, 21]);
 check("CONTROL sin clasificar", control["Registros sin clasificar"], 1);
 check("CONTROL diferencia", control["Diferencia vs bruto"], 0);
 const T = sheet("TL"), tv = T[0].indexOf("Valor"), tx = T[0].indexOf("x"), ty = T[0].indexOf("y"), ts = T[0].indexOf("ID Sol. Pago");
@@ -139,6 +152,25 @@ check("Transferencias x/y", TR.slice(1).map(r => r.slice(0, 5)), [[8001, 1, "t1"
 check("TL_A_OBJETAR filas", sheet("TL_A_OBJETAR").slice(1).map(r => r[0]).sort(), [24279173, 3002].sort());
 check("Hojas", out.SheetNames, ["Resumen", "CONTROL", "DELIVERY", "TD DELIVERY", "SERVICE", "TD SERVICE", "TL", "TD TL",
   "Viajes de Transferencia", "Ordenes de Transporte", "ANALISIS SERVICE", "Resumen Sol Pago", "SIN CLASIFICAR", "TL_REVISION", "TL_A_OBJETAR"]);
+
+check("Objeciones detectadas", objs, [
+  ["TL|24279173", "Segunda Vuelta", 110000, 180000, false],
+  ["TL|3002", "Segunda Vuelta", 175000, 350000, false],
+  ["FP|ct1", "Revisar Forma de Pago", 4500, 200000, true]]);
+check("Desmarcar objeción", incluidas, "2 / 3");
+const tms = XLSX.utils.sheet_to_json(XLSX.readFile(tmsPath).Sheets["Hoja 1"], { header: 1 });
+check("Template TMS", tms, [["Id Solicitud Pago", "Motivo Objeción", "Valor a Objetar", "Comentario Objeción"],
+  [24279173, "Segunda Vuelta", 180000, "C11-20"], [3002, "Segunda Vuelta", 350000, "C81-130"]]);
+const mailWb = XLSX.readFile(mailPath);
+check("Formato mail hojas", mailWb.SheetNames, ["Objeciones", "Proforma"]);
+const mo = XLSX.utils.sheet_to_json(mailWb.Sheets["Objeciones"], { header: 1, defval: "" });
+check("Formato mail filas", mo.slice(1).map(r => [r[1], r[2], r[6], r[7], r[8]]), [
+  [24279173, "a1ca1dad", 110000, 0, "Tarifa ok"], [24279173, "6778130b", 0, 70000, "Segunda vuelta"],
+  [3002, "vc3", 175000, 0, "Tarifa ok"], [3002, "vc4", 0, 175000, "Segunda vuelta"],
+  [5101, "ct1", 4500, 195500, "Revisar Forma de Pago"]]);
+check("Formato mail fórmulas", [mailWb.Sheets["Objeciones"]["B2"]?.f, mailWb.Sheets["Objeciones"]["G3"]?.f],
+  ["Proforma!A2", "SUMIF(Proforma!$D:$D,C3,Proforma!$H:$H)"]);
+check("Proforma de respaldo filas", XLSX.utils.sheet_to_json(mailWb.Sheets["Proforma"], { header: 1 }).length - 1, 4 + 2 + 3);
 
 console.log(fails ? `\n${fails} prueba(s) fallaron` : "\nTodas las pruebas pasaron");
 process.exit(fails ? 1 : 0);
