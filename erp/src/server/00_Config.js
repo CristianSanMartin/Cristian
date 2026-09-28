@@ -15,7 +15,7 @@
 
 const APP = {
   nombre: 'GS Prime ERP',
-  version: '2.3.0',
+  version: '2.4.0',
   tz: 'America/Santiago',
   iva: 0.19,
 };
@@ -71,6 +71,34 @@ const SCHEMA = {
       id: 's', compraId: 's', preventaId: 's', productoId: 's', cantidad: 'n', costoNeto: 'n', despacho: 'n',
     }, AUDIT_COLS),
   },
+  Clientes: {
+    key: 'id',
+    cols: Object.assign({
+      id: 's', nombre: 's', idPokemon: 's', telefono: 's', instagram: 's', notas: 's', activo: 'b',
+    }, AUDIT_COLS),
+  },
+  /** Venta (OC-0001). abono = lo pagado al registrarla; lo demás se cobra con Cobros. comision = del medio de pago, al vender. */
+  Ventas: {
+    key: 'id',
+    cols: Object.assign({
+      id: 's', fecha: 'd', clienteId: 's', canal: 's', evento: 's', medioPago: 's', boleta: 's',
+      abono: 'n', comision: 'n', anulada: 'b', notas: 's',
+    }, AUDIT_COLS),
+  },
+  /** Línea de venta: unidades que salen de UN lote (CPI). costo = costo unitario del lote al vender. */
+  Ventas_Lineas: {
+    key: 'id',
+    cols: Object.assign({
+      id: 's', ventaId: 's', loteId: 's', productoId: 's', cantidad: 'n', precioLista: 'n', precio: 'n', costo: 'n',
+    }, AUDIT_COLS),
+  },
+  /** Abonos a ventas que quedaron pendientes de pago (cuentas por cobrar). */
+  Cobros: {
+    key: 'id',
+    cols: Object.assign({
+      id: 's', ventaId: 's', fecha: 'd', monto: 'n', medioPago: 's', notas: 's',
+    }, AUDIT_COLS),
+  },
   Auditoria: {
     key: null,
     cols: { fecha: 't', usuario: 's', accion: 's', entidad: 's', entidadId: 's', detalle: 's' },
@@ -81,6 +109,18 @@ const SCHEMA = {
 const HOJAS_OBSOLETAS = ['Pagos', 'Movimientos', 'Preventas_Lineas'];
 
 const IDIOMAS = ['ENG', 'ESP', 'JPN', 'Otro'];
+
+/** Ventas: canal (Tienda por defecto) y medios de pago. */
+const CANALES = ['Tienda', 'Evento', 'Instagram', 'WhatsApp', 'Otro'];
+const MEDIOS_PAGO = { efectivo: 'Efectivo', transferencia: 'Transferencia', debito: 'Débito', credito: 'Crédito', otro: 'Otro' };
+/**
+ * Comisión de la máquina POS (TUU, comisión mixta con abono a 2 días): % sobre la venta + monto fijo por venta.
+ * Es un gasto (GAV) y se descuenta de la ganancia de la venta.
+ */
+const COMISIONES_PAGO = {
+  debito: { pct: 0.0077, fijo: 65 },
+  credito: { pct: 0.0077, fijo: 65 },
+};
 
 /** Tipos de producto y su factor de conversión por defecto (unidades del proveedor por unidad comercial). */
 const TIPOS_PRODUCTO = {

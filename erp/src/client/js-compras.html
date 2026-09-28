@@ -132,6 +132,7 @@
     { id: 'proveedor', label: 'Proveedor', valor: (l) => l.proveedor, celda: (l) => esc(l.proveedor) },
     { id: 'fecha', label: 'Fecha', valor: (l) => l.fecha, texto: (l) => fmt.date(l.fecha), celda: (l) => '<span class="nowrap">' + fmt.date(l.fecha) + '</span>' },
     { id: 'cantidad', label: 'Comprado', right: true, valor: (l) => l.cantidad, celda: (l) => fmt.num(l.cantidad) },
+    { id: 'vendidas', label: 'Vendidas', right: true, valor: (l) => l.vendidas, celda: (l) => (l.vendidas ? fmt.num(l.vendidas) : '—') },
     { id: 'disponible', label: 'Disponible', right: true, valor: (l) => l.disponible, celda: (l) => '<strong>' + fmt.num(l.disponible) + '</strong>' },
     { id: 'costoNeto', label: 'Precio unidad', right: true, valor: (l) => l.costoNeto, texto: (l) => fmt.cost(l.costoNeto), celda: (l) => fmt.cost(l.costoNeto) },
     { id: 'despacho', label: 'Despacho u.', right: true, valor: (l) => l.despachoUnidad, texto: (l) => fmt.money(l.despachoUnidad), celda: (l) => fmt.money(l.despachoUnidad) },
@@ -152,7 +153,9 @@
     { id: 'factura', label: 'Factura', valor: (u) => u.lote.factura, celda: (u) => esc(u.lote.factura) },
     { id: 'serie', label: 'Serie', right: true, valor: (u) => u.serie, celda: (u) => u.serie + '<span class="cell-dim"> / ' + u.lote.cantidad + '</span>' },
     { id: 'producto', label: 'Producto', clase: 'col-prod', valor: (u) => u.lote.productoNombre, texto: (u) => u.lote.productoNombre + ' ' + u.lote.idioma, celda: (u) => producto(u.lote) },
-    { id: 'estado', label: 'Estado', valor: (u) => (u.vendida ? 'Vendida' : 'Disponible'), celda: (u) => (u.vendida ? '<span class="badge st-cancelada">Vendida</span>' : '<span class="badge st-ok">Disponible</span>') },
+    { id: 'estado', label: 'Estado', valor: (u) => (u.venta ? 'Vendida' : 'Disponible'), celda: (u) => (u.venta ? '<span class="badge st-parcial">Vendida</span>' : '<span class="badge st-ok">Disponible</span>') },
+    { id: 'oc', label: 'OC', valor: (u) => (u.venta ? u.venta.oc : ''), celda: (u) => (u.venta ? '<span class="cell-strong">' + esc(u.venta.oc) + '</span>' : '—') },
+    { id: 'cliente', label: 'Cliente', valor: (u) => (u.venta ? u.venta.cliente : ''), celda: (u) => (u.venta ? esc(u.venta.cliente) : '—') },
     { id: 'valorUnitario', label: 'Valor unitario', right: true, valor: (u) => u.lote.valorUnitario, texto: (u) => fmt.money(u.lote.valorUnitario), celda: (u) => fmt.money(u.lote.valorUnitario) },
     { id: 'costo', label: 'Costo', right: true, valor: (u) => u.lote.costo, texto: (u) => fmt.money(u.lote.costo), celda: (u) => fmt.money(u.lote.costo) },
     { id: 'credito', label: 'Crédito fiscal', right: true, valor: (u) => u.lote.credito, texto: (u) => fmt.money(u.lote.credito), celda: (u) => fmt.money(u.lote.credito) },
@@ -168,7 +171,8 @@
   const buscadasLotes = () => buscar(data().lotes, GS.filters('inventario', DEF_I).q, textoLote);
   const unidades = () => {
     const res = [];
-    buscadasLotes().forEach((l) => { for (let i = 1; i <= l.cantidad; i++) res.push({ lote: l, serie: i, vendida: i > l.disponible }); });
+    // Las primeras series son las vendidas (en orden de venta), con su OC y cliente.
+    buscadasLotes().forEach((l) => { for (let i = 1; i <= l.cantidad; i++) res.push({ lote: l, serie: i, venta: l.unidadesVendidas[i - 1] || null }); });
     return res;
   };
   GS.tablaRegistrar('lotes', { filas: buscadasLotes, columnas: colsLote, alCambiar: () => GS.views.inventario.update() });
@@ -228,12 +232,13 @@
     const filas = [];
     data().lotes.forEach((l) => {
       for (let i = 1; i <= l.cantidad; i++) {
-        filas.push([l.proveedor, l.factura, l.id, i, l.productoId, l.producto, i > l.disponible ? 'Vendida' : 'Disponible', Math.round(l.valorUnitario), Math.round(l.costo),
+        const u = l.unidadesVendidas[i - 1];
+        filas.push([l.proveedor, l.factura, l.id, i, l.productoId, l.producto, u ? 'Vendida' : 'Disponible', u ? u.oc : '', u ? u.cliente : '', Math.round(l.valorUnitario), Math.round(l.costo),
           Math.round(l.credito), l.precioVenta, Math.round(l.ventaNeta), Math.round(l.debito), Math.round(l.pagoSii), Math.round(l.gananciaUnidad)]);
       }
     });
     GS.downloadCsv('inventario-' + data().hoy + '.csv',
-      ['Proveedor', 'Factura', 'Lote', 'Serie', 'SKU', 'Producto', 'Estado', 'Valor unitario', 'Costo', 'Crédito fiscal', '$ Venta', 'Neto', 'Débito fiscal', 'Pago SII', 'Ganancia'], filas);
+      ['Proveedor', 'Factura', 'Lote', 'Serie', 'SKU', 'Producto', 'Estado', 'OC', 'Cliente', 'Valor unitario', 'Costo', 'Crédito fiscal', '$ Venta', 'Neto', 'Débito fiscal', 'Pago SII', 'Ganancia'], filas);
   };
 })();
 </script>

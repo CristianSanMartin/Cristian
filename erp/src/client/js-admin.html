@@ -2,7 +2,7 @@
 /* =========================================================
    Administración (solo admin): usuarios, auditoría e
    importación desde el ERP anterior. Además, las vistas
-   "Pronto" de Ventas y Finanzas.
+   "Pronto" de Finanzas.
 ========================================================= */
 (function () {
   'use strict';
@@ -91,8 +91,6 @@
       },
     };
   }
-  proximamente('ventas', 'Ventas', 'Ventas con OC correlativa, clientes, canal y evento.',
-    'Etapa 3: ventas con OC automática, cliente (o Cliente general), evento, medio de pago, cuentas por cobrar y ganancia real por venta.');
   proximamente('finanzas', 'Finanzas', 'Caja, gastos, aportes, pagos al SII y resumen mensual.',
     'Etapa 4: libro de caja automático, GAV por categoría, aportes de socios, pagos al SII, caja de singles y el resumen mensual con resultado real.');
 })();

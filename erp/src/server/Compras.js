@@ -59,6 +59,10 @@ const Compras = {
   anular(p, user) {
     const compra = Compras.requerir(p.id);
     const lineas = Db.all('Compras_Lineas').filter((l) => l.compraId === compra.id);
+    const vendidas = Ventas.vendidasPorLote();
+    if (lineas.some((l) => vendidas[l.id])) {
+      throw new AppError('La factura ' + compra.factura + ' tiene productos vendidos: anula primero esas ventas.');
+    }
     lineas.forEach((l) => {
       const pv = Db.get('Preventas', l.preventaId);
       if (pv) Db.update('Preventas', pv.id, Object.assign({ estado: 'asignada' }, Util.sello(user)));
@@ -78,7 +82,8 @@ const Compras = {
    * Compras con sus líneas y totales, y el inventario (un lote por línea) con el
    * resultado económico V4 por unidad: costo = neto + despacho prorrateado.
    */
-  vista(productos, proveedores) {
+  vista(productos, proveedores, porLote) {
+    porLote = porLote || {};
     const prodPorId = {};
     productos.forEach((x) => { prodPorId[x.id] = x; });
     const provPorId = {};
@@ -96,7 +101,8 @@ const Compras = {
       const precio = Productos.precio(prod);
       const costo = l.cantidad ? l.costoNeto + l.despacho / l.cantidad : l.costoNeto;
       const e = Economia.unidad(costo, precio);
-      const disponible = l.cantidad;
+      const vendido = porLote[l.id] || { vendidas: 0, ventas: 0, ganancia: 0, unidades: [] };
+      const disponible = l.cantidad - vendido.vendidas;
       const lote = Object.assign(l, {
         factura: c ? c.factura : '',
         fecha: c ? c.fecha : '',
@@ -118,10 +124,11 @@ const Compras = {
         debito: e.debito,
         pagoSii: e.pagoSii,
         gananciaUnidad: e.ganancia,
-        // Se completan con las ventas (etapa 3): unidades vendidas, venta bruta y ganancia realizada del lote.
-        vendidas: 0,
-        ventasAcumuladas: 0,
-        gananciaAcumulada: 0,
+        // Lo vendido de este lote: unidades, venta bruta y ganancia realizada (al precio real de cada venta).
+        vendidas: vendido.vendidas,
+        ventasAcumuladas: vendido.ventas,
+        gananciaAcumulada: vendido.ganancia,
+        unidadesVendidas: vendido.unidades,
         disponible: disponible,
         valorInventario: disponible * costo,
         gananciaProyectada: disponible * e.ganancia,

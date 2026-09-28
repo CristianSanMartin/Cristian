@@ -217,6 +217,16 @@ lote(s) de origen. Cada línea guarda su resultado económico (sección 3) al mo
 
 Anular una venta (administrador) devuelve el stock a su lote y queda auditado.
 
+**Implementado (v2.4):** formulario "Nueva venta" tipo carrito en Ventas (canal **Tienda** por
+defecto, medio de pago, N° de boleta, cliente escrito o "Cliente general"). El precio se completa
+con el precio de venta y se puede rebajar **por producto** (el precio es el mismo en todos los
+canales). Las unidades salen del lote más antiguo (FIFO), repartiéndose en varios lotes si hace
+falta. **Comisión TUU** (débito y crédito, abono a 2 días): 0,77% + $65 por venta, sobre lo
+pagado con la máquina; se descuenta de la ganancia real. Venta pagada completa o con abono
+(el resto queda **por cobrar** y se salda con abonos). Cada factura de compra acumula lo vendido
+de sus lotes; el inventario unidad por unidad muestra la OC y el cliente de cada unidad vendida.
+Pendiente: ventas por monto (singles), abrir Booster Box en sobres, comisión a GAV (Finanzas).
+
 ## 10. Clientes
 
 `CLI-0001`: nombre, **ID Pokémon (Player ID)**, teléfono, Instagram, notas. Todo opcional

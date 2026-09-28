@@ -752,6 +752,22 @@ tr.detalle-row > td{padding:0 0 0 12px;background:var(--black);}
 .detalle-compra{padding:10px 12px 14px;border-left:2px solid var(--gold);position:sticky;left:0;overflow-x:auto;box-sizing:border-box;}
 .detalle-compra .data-table{min-width:0;}
 tr.item-despacho td{background:rgba(255,255,255,.02);}
+/* ---------- ventas ---------- */
+.venta-agregar{display:grid;grid-template-columns:minmax(0,1fr) 110px auto;gap:12px;align-items:end;}
+.venta-agregar .form-field{margin:0;}
+.carrito{margin:12px 0 16px;}
+.carrito .data-table{min-width:720px;}
+.venta-grid{grid-template-columns:repeat(4,minmax(0,1fr));}
+.venta-totales{display:flex;flex-wrap:wrap;gap:8px 22px;justify-content:flex-end;margin:6px 0 10px;font-size:13px;color:var(--text-dim);}
+.venta-totales > div{display:flex;gap:8px;align-items:baseline;}
+.venta-totales strong{color:var(--white);}
+.venta-totales .grande strong{font-size:20px;color:var(--gold);}
+.abono-form{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px;font-size:13px;}
+.abono-form input,.abono-form select{background:var(--panel-2);border:1px solid var(--panel-border);border-radius:6px;color:var(--white);padding:6px 8px;font:inherit;}
+.abono-form input[type=number]{width:120px;}
+.center{text-align:center;}
+.form-field[hidden]{display:none !important;}
+@media (max-width:820px){.venta-grid{grid-template-columns:1fr 1fr;}.venta-agregar{grid-template-columns:1fr 80px;}.venta-agregar .add-submit{grid-column:1 / -1;}}
 .data-table .col-inv{border-left:1px dashed var(--panel-border);}
 .data-table td.col-res,.data-table th.col-res{border-left:1px dashed var(--panel-border);}
 .barra-venta{height:4px;background:var(--panel-border);border-radius:2px;margin-top:5px;min-width:60px;overflow:hidden;}

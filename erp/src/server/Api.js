@@ -39,6 +39,11 @@ function rutas_() {
     crearCompra: { rol: 'operador', write: true, fn: Compras.crear },
     anularCompra: { rol: 'admin', write: true, fn: Compras.anular },
 
+    crearVenta: { rol: 'operador', write: true, fn: Ventas.crear },
+    registrarCobro: { rol: 'operador', write: true, fn: Ventas.registrarCobro },
+    anularVenta: { rol: 'admin', write: true, fn: Ventas.anular },
+    guardarCliente: { rol: 'operador', write: true, fn: Clientes.guardar },
+
     guardarUsuario: { rol: 'admin', write: true, fn: Usuarios.guardar },
   };
 }
@@ -147,7 +152,9 @@ const Snapshot = {
     const proveedores = Db.all('Proveedores');
     const productos = Db.all('Productos');
     const preventas = Preventas.vista(productos, proveedores);
-    const compras = Compras.vista(productos, proveedores);
+    const clientes = Db.all('Clientes');
+    const ventas = Ventas.vista(productos, clientes);
+    const compras = Compras.vista(productos, proveedores, ventas.porLote);
     // Factura en la que quedó cada preventa recibida.
     const facturaDe = {};
     compras.lotes.forEach((l) => { facturaDe[l.preventaId] = { compraId: l.compraId, factura: l.factura }; });
@@ -171,16 +178,29 @@ const Snapshot = {
       });
     });
 
+    // Ficha de cada cliente: compras, total gastado, deuda y última compra (ventas no anuladas).
+    const clis = clientes.map((c) => {
+      const suyas = ventas.ventas.filter((v) => v.clienteId === c.id && !v.anulada);
+      return Object.assign(c, {
+        compras: suyas.length,
+        totalGastado: suyas.reduce((t, v) => t + v.total, 0),
+        deuda: suyas.reduce((t, v) => t + v.saldo, 0),
+        ultimaCompra: suyas.reduce((m, v) => (v.fecha > m ? v.fecha : m), ''),
+      });
+    });
+
     return {
       app: { nombre: APP.nombre, version: APP.version, iva: APP.iva },
       hoy: Util.hoy(),
       user: { email: user.email, nombre: user.nombre, rol: user.rol },
-      catalogos: { idiomas: IDIOMAS, tipos: TIPOS_PRODUCTO },
+      catalogos: { idiomas: IDIOMAS, tipos: TIPOS_PRODUCTO, canales: CANALES, mediosPago: MEDIOS_PAGO, comisiones: COMISIONES_PAGO },
       proveedores: proveedores,
       productos: prods,
       preventas: preventas,
       compras: compras.compras,
       lotes: compras.lotes,
+      ventas: ventas.ventas,
+      clientes: clis,
       usuarios: Auth.puede(user, 'admin') ? Db.all('Usuarios') : [],
     };
   },

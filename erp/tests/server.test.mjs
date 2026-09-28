@@ -443,3 +443,82 @@ test("anular una factura devuelve las preventas a asignadas (solo administrador)
   assert.deepEqual([data.compras.length, data.lotes.length], [0, 0]);
   assert.deepEqual([pv(s, p.miniTin.id).estado, pv(s, p.miniTin.id).asignado], ["asignada", 10]);
 });
+
+/** Factura 30th2 con Binder ENG 24, Binder ESP 6 y Mini Tin 10 (despacho $15.000 prorrateado). */
+function conInventario(s) {
+  const r = preventa30th(s);
+  const { pv: p } = r;
+  s.ok("registrarAsignacion", { lineas: [{ id: p.binderEng.id, asignado: 24 }, { id: p.binderEsp.id, asignado: 6 }, { id: p.miniTin.id, asignado: 10 }] });
+  s.ok("crearCompra", { preventas: [p.binderEng.id, p.binderEsp.id, p.miniTin.id], factura: "30th2", fecha: "2026-10-02" });
+  return r;
+}
+const lote = (s, prodId) => s.ok("bootstrap").data.lotes.filter(l => l.productoId === prodId);
+
+test("venta: sale del inventario, calcula ganancia real y comisión TUU, y acumula en su factura", () => {
+  const s = createServer();
+  const { prods } = conInventario(s);
+
+  // Validaciones
+  assert.match(errorDe(s.call("crearVenta", { fecha: "2026-10-05", lineas: [] })), /al menos un producto/);
+  assert.match(errorDe(s.call("crearVenta", { fecha: "2026-10-05", lineas: [{ productoId: prods.miniTin.id, cantidad: 11 }] })), /Stock insuficiente de .*Mini Tin.*quedan 10/);
+  assert.match(errorDe(s.call("crearVenta", { fecha: "2026-10-05", lineas: [{ productoId: prods.deck.id, cantidad: 1 }] })), /no hay unidades/);
+  assert.equal(s.ok("bootstrap").data.clientes.length, 0, "un error no deja clientes creados");
+
+  // Cliente general, Tienda por defecto, precio de venta del producto, débito con comisión 0,77% + $65
+  const v = s.ok("crearVenta", { fecha: "2026-10-05", medioPago: "debito", boleta: "1234",
+    lineas: [{ productoId: prods.miniTin.id, cantidad: 2 }, { productoId: prods.binderEng.id, cantidad: 1, precio: 39990 }] }).result;
+  assert.equal(v.id, "OC-0001");
+  const data = s.ok("bootstrap").data;
+  const venta = data.ventas.find(x => x.id === v.id);
+  assert.deepEqual([venta.cliente, venta.canal, venta.boleta, venta.total, venta.estadoPago], ["Cliente general", "Tienda", "1234", 2 * 18000 + 39990, "pagada"]);
+  assert.equal(venta.comision, Math.round(75990 * 0.0077 + 65));
+  assert.equal(venta.descuento, 4000, "descuento por producto: 43.990 → 39.990");
+  const tin = data.lotes.find(l => l.productoId === prods.miniTin.id);
+  assert.equal(Math.round(venta.lineas.find(l => l.productoId === prods.miniTin.id).gananciaUnidad), Math.round(18000 / 1.19 - tin.costo), "ganancia con el costo real del lote (con despacho)");
+  assert.equal(Math.round(venta.gananciaNeta), Math.round(venta.ganancia - venta.comision));
+
+  // Inventario y factura de compra
+  assert.deepEqual([tin.vendidas, tin.disponible], [2, 8]);
+  assert.deepEqual(tin.unidadesVendidas.map(u => u.oc), ["OC-0001", "OC-0001"]);
+  const compra = data.compras[0];
+  assert.deepEqual([compra.vendidas, compra.unidades, compra.estadoVenta, compra.ventasAcumuladas], [3, 40, "vendiendo", 75990]);
+  assert.equal(Math.round(compra.gananciaAcumulada), Math.round(venta.ganancia));
+
+  // Efectivo: sin comisión. Vender todo deja la factura "vendida completa"
+  const resto = [[prods.miniTin.id, 8], [prods.binderEng.id, 23], [prods.binderEsp.id, 6]].map(([id, n]) => ({ productoId: id, cantidad: n }));
+  const v2 = s.ok("crearVenta", { fecha: "2026-10-06", medioPago: "efectivo", cliente: "juan perez", canal: "Evento", evento: "Torneo martes", lineas: resto }).result;
+  assert.equal(v2.comision, 0);
+  const d2 = s.ok("bootstrap").data;
+  assert.equal(d2.compras[0].estadoVenta, "vendida");
+  assert.equal(d2.clientes[0].nombre, "Juan Perez", "el cliente escrito se crea");
+  assert.equal(d2.clientes[0].compras, 1);
+
+  // No se puede anular la factura con ventas; anular la venta devuelve el stock
+  assert.match(errorDe(s.call("anularCompra", { id: compra.id })), /tiene productos vendidos/);
+  s.ok("anularVenta", { id: v2.id });
+  assert.equal(lote(s, prods.miniTin.id)[0].disponible, 8);
+  assert.equal(s.ok("bootstrap").data.compras[0].estadoVenta, "vendiendo");
+});
+
+test("venta en varios lotes (FIFO) y cuenta por cobrar con abonos", () => {
+  const s = createServer();
+  const { prods } = conInventario(s);
+  // Segundo lote de Mini Tin con otro costo
+  const pv2 = s.ok("guardarPreventa", { proveedorId: asmodee(s).id, productoId: prods.miniTin.id, lanzamiento: "2026-11-01", solicitado: 5, costoNeto: 9000 }).result;
+  s.ok("registrarAsignacion", { lineas: [{ id: pv2.id, asignado: 5 }] });
+  s.ok("crearCompra", { preventas: [pv2.id], factura: "TIN-2", fecha: "2026-11-01", despacho: 0 });
+
+  const v = s.ok("crearVenta", { fecha: "2026-11-05", medioPago: "transferencia", cliente: "Ana", pagada: false, abono: 50000,
+    lineas: [{ productoId: prods.miniTin.id, cantidad: 12 }] }).result;
+  const venta = s.ok("bootstrap").data.ventas.find(x => x.id === v.id);
+  assert.deepEqual(venta.lineas.map(l => l.cantidad), [10, 2], "primero el lote más antiguo");
+  assert.deepEqual([venta.total, venta.cobrado, venta.saldo, venta.estadoPago], [216000, 50000, 166000, "abonada"]);
+  assert.equal(venta.lineas[1].costo, 9000);
+
+  assert.match(errorDe(s.call("registrarCobro", { ventaId: v.id, fecha: "2026-11-06", monto: 200000 })), /no puede ser mayor a 166000/);
+  s.ok("registrarCobro", { ventaId: v.id, fecha: "2026-11-06", monto: 166000 });
+  const pagada = s.ok("bootstrap").data.ventas.find(x => x.id === v.id);
+  assert.deepEqual([pagada.saldo, pagada.estadoPago], [0, "pagada"]);
+  assert.match(errorDe(s.call("registrarCobro", { ventaId: v.id, fecha: "2026-11-07", monto: 1 })), /ya está pagada/);
+  assert.equal(s.ok("bootstrap").data.clientes[0].deuda, 0);
+});

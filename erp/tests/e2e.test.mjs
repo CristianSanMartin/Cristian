@@ -219,6 +219,61 @@ test("factura de compra: las preventas seleccionadas pasan a Compras e Inventari
   }
 });
 
+test("venta: carrito con descuento por producto, comisión TUU, stock y acumulado en la factura", { skip }, async () => {
+  const browser = await chromium.launch();
+  try {
+    const { page, errores } = await abrir(browser);
+    await page.click('[data-nav="ventas"]');
+    const form = page.locator("#nueva-venta");
+    // Tienda y débito por defecto
+    assert.equal(await form.locator('select[name="canal"]').inputValue(), "Tienda");
+
+    // Sin stock suficiente (quedan 9 Battle Deck ENG del ejemplo)
+    await form.locator('[name="producto"]').fill("30th Celebration – Battle Deck · ENG");
+    await form.locator('[name="cantidad"]').fill("20");
+    await page.click('[data-action="agregarAlCarrito"]');
+    assert.match(await form.locator(".form-error").textContent(), /Stock insuficiente.*quedan 9/);
+
+    await form.locator('[name="producto"]').fill("30th Celebration – Battle Deck · ENG");
+    await form.locator('[name="cantidad"]').fill("2");
+    await page.click('[data-action="agregarAlCarrito"]');
+    // Descuento en la línea: 26.990 → 24.990
+    await form.locator("[data-carrito-precio]").fill("24990");
+    const totales = form.locator("[data-nv-totales]");
+    assert.match(await totales.textContent(), /Total\$49\.980.*Descuentos\$4\.000.*Comisión TUU\$450/);
+    await form.locator('[name="cliente"]').fill("maria soto");
+    await form.locator('button[type="submit"]').click();
+    await toast(page, /OC-0004 registrada · \$49\.980/);
+
+    const fila = page.locator("#vt-tbody tr.fila-compra", { hasText: "OC-0004" });
+    assert.match(await fila.textContent(), /Maria Soto.*Tienda.*Débito.*2.*\$49\.980.*\$450.*Pagada/s);
+    // Detalle abierto: sale de la factura 30th-DECK
+    assert.match(await page.locator(".detalle-compra").first().textContent(), /Battle Deck.*30th-DECK.*lista \$26\.990/s);
+
+    // Por cobrar del ejemplo: registrar el abono que falta
+    const pendiente = page.locator("#vt-tbody tr.fila-compra", { hasText: "Ana Rojas" });
+    assert.match(await pendiente.textContent(), /Abonada.*debe \$16\.990/s);
+    await pendiente.click();
+    await page.locator('.abono-form button[type="submit"]').click();
+    await toast(page, /Abono registrado/);
+    assert.match(await page.locator("#vt-tbody tr.fila-compra", { hasText: "Ana Rojas" }).textContent(), /Pagada/);
+
+    // La factura de compra acumula lo vendido
+    await page.click('[data-nav="compras"]');
+    assert.match(await page.locator("#cp-tbody tr.fila-compra", { hasText: "30th-DECK" }).textContent(), /6 \/ 24.*Vendiendo/s);
+    // Inventario unidad por unidad: la unidad vendida muestra su OC y cliente
+    await page.click('[data-nav="inventario"]');
+    await page.click('[data-action="modoInventario"][data-id="unidad"]');
+    assert.match(await page.locator("#inv-tbody").textContent(), /OC-0004.*Maria Soto/s);
+    // Cliente creado con su ficha
+    await page.click('[data-nav="clientes"]');
+    assert.match(await page.locator("#cl-tbody tr", { hasText: "Maria Soto" }).textContent(), /1.*\$49\.980/s);
+    assert.deepEqual(errores, []);
+  } finally {
+    await browser.close();
+  }
+});
+
 test("rol solo lectura: ve la información pero no las acciones", { skip }, async () => {
   const browser = await chromium.launch();
   try {
@@ -240,7 +295,7 @@ test("se adapta a celular sin desbordar la página", { skip }, async () => {
   const browser = await chromium.launch();
   try {
     const { page, errores } = await abrir(browser, { viewport: { width: 390, height: 844 } });
-    for (const vista of ["dashboard", "preventas", "compras", "inventario", "productos", "proveedores", "admin"]) {
+    for (const vista of ["dashboard", "preventas", "compras", "inventario", "ventas", "productos", "clientes", "proveedores", "admin"]) {
       await page.click("#menu-toggle");
       await page.click(`[data-nav="${vista}"]`);
       const ancho = await page.evaluate(() => document.documentElement.scrollWidth);

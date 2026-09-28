@@ -1,0 +1,399 @@
+<script>
+/* =========================================================
+   Ventas (OC correlativa) y Clientes.
+   La venta se arma como un carrito: los productos salen del
+   inventario (lote más antiguo primero), con su ganancia real
+   y la comisión de la máquina POS en débito / crédito.
+========================================================= */
+(function () {
+  'use strict';
+  const { fmt, esc } = GS;
+  const data = () => GS.state.data;
+  const iva = () => data().app.iva;
+  const kpi = (l, v, sub) => '<div class="kpi-card"><div class="kpi-label">' + l + '</div><div class="kpi-value small">' + v + '</div><div class="kpi-sub">' + sub + '</div></div>';
+  const signo = (n) => (n < 0 ? 'text-danger' : 'text-success');
+  const ESTADO_PAGO = {
+    pagada: { label: 'Pagada', cls: 'st-ok' },
+    abonada: { label: 'Abonada', cls: 'st-parcial' },
+    pendiente: { label: 'Por cobrar', cls: 'st-cancelada' },
+    anulada: { label: 'Anulada', cls: 'st-pedido' },
+  };
+
+  /* ---------- nueva venta (carrito) ---------- */
+
+  const carrito = [];   // { productoId, cantidad, precio }
+  const borrador = { producto: '', cantidad: '1', fecha: '', cliente: '', canal: 'Tienda', evento: '', medioPago: 'debito', boleta: '', pagada: true, abono: '', notas: '' };
+  const abiertas = new Set();
+
+  /** Stock disponible por producto y su costo promedio ponderado de lo que queda (para estimar la ganancia antes de guardar). */
+  function stock() {
+    const res = {};
+    data().lotes.forEach((l) => {
+      if (l.disponible <= 0) return;
+      const r = res[l.productoId] = res[l.productoId] || { disponible: 0, lotes: [] };
+      r.disponible += l.disponible;
+      r.lotes.push(l);
+    });
+    return res;
+  }
+  /** Costo de vender n unidades sacándolas del lote más antiguo, igual que el servidor. */
+  function costoFifo(productoId, n, yaUsadas) {
+    const s = stock()[productoId];
+    if (!s) return 0;
+    let saltar = yaUsadas || 0;
+    let falta = n;
+    let costo = 0;
+    s.lotes.slice().sort((a, b) => (a.fecha + a.id).localeCompare(b.fecha + b.id)).forEach((l) => {
+      let disp = l.disponible;
+      const s1 = Math.min(saltar, disp);
+      saltar -= s1;
+      disp -= s1;
+      const t = Math.min(falta, disp);
+      costo += t * l.costo;
+      falta -= t;
+    });
+    return costo;
+  }
+  const prod = (id) => data().productos.find((p) => p.id === id);
+  const enCarrito = (id) => carrito.filter((x) => x.productoId === id).reduce((t, x) => t + (Number(x.cantidad) || 0), 0);
+
+  function productoDeTexto(texto) {
+    const t = GS.norm(String(texto || '').trim());
+    if (!t) return null;
+    const conStock = stock();
+    const lista = data().productos.filter((p) => conStock[p.id]);
+    return lista.find((p) => GS.norm(p.nombreCompleto) === t || GS.norm(p.id) === t)
+      || lista.find((p) => GS.norm(p.nombreCompleto + ' (' + conStock[p.id].disponible + ' disp.)') === t)
+      || (lista.filter((p) => GS.norm(p.nombreCompleto).includes(t)).length === 1 ? lista.find((p) => GS.norm(p.nombreCompleto).includes(t)) : null);
+  }
+
+  function panelVenta() {
+    if (!GS.puede('operador')) return '';
+    if (!borrador.fecha) borrador.fecha = data().hoy;
+    const conStock = stock();
+    const opciones = data().productos.filter((p) => conStock[p.id]).sort((a, b) => a.nombreCompleto.localeCompare(b.nombreCompleto))
+      .map((p) => '<option value="' + esc(p.nombreCompleto) + '">' + esc(p.id + ' · ' + conStock[p.id].disponible + ' disp.') + '</option>').join('');
+    const clientes = data().clientes.filter((c) => c.activo).map((c) => '<option value="' + esc(c.nombre) + '">' + esc(c.id + (c.idPokemon ? ' · ' + c.idPokemon : '')) + '</option>').join('');
+    const medios = data().catalogos.mediosPago;
+    return '<div class="panel inline-panel" id="nueva-venta"><form novalidate>' +
+      '<div class="inline-panel-head"><h3>Nueva venta</h3><span class="muted">Agrega los productos al carrito. Salen del inventario desde la factura más antigua.</span></div>' +
+      '<div class="venta-agregar">' +
+      '<div class="form-field grow"><label for="nv-producto">Producto</label><input id="nv-producto" name="producto" list="nv-productos" autocomplete="off" value="' + esc(borrador.producto) + '" placeholder="' + (opciones ? 'Escribe o elige un producto con stock' : 'No hay productos en inventario') + '"><datalist id="nv-productos">' + opciones + '</datalist></div>' +
+      '<div class="form-field small"><label for="nv-cant">Cant.</label><input id="nv-cant" name="cantidad" type="number" min="1" step="1" value="' + esc(borrador.cantidad) + '"></div>' +
+      '<div class="form-field add-submit"><button type="button" class="btn secondary" data-action="agregarAlCarrito">' + GS.icon('plus', 2.4) + 'Agregar</button></div>' +
+      '</div>' +
+      '<div class="hint" data-nv-info></div>' +
+      '<div class="table-wrap carrito"><table class="data-table"><thead><tr><th>Producto</th><th class="right">Cant.</th><th class="right">Precio venta</th><th class="right">Precio cobrado</th>' +
+      '<th class="right">Subtotal</th><th class="right">Ganancia real</th><th></th></tr></thead><tbody data-carrito></tbody></table></div>' +
+      '<div class="form-grid venta-grid">' +
+      '<div class="form-field"><label for="nv-fecha">Fecha *</label><input id="nv-fecha" type="date" name="fecha" value="' + esc(borrador.fecha) + '"></div>' +
+      '<div class="form-field"><label for="nv-cliente">Cliente</label><input id="nv-cliente" name="cliente" list="nv-clientes" autocomplete="off" value="' + esc(borrador.cliente) + '" placeholder="Cliente general"><datalist id="nv-clientes">' + clientes + '</datalist></div>' +
+      '<div class="form-field"><label for="nv-canal">Canal</label><select id="nv-canal" name="canal">' + GS.options(data().catalogos.canales, borrador.canal) + '</select></div>' +
+      '<div class="form-field"><label for="nv-evento">Evento</label><input id="nv-evento" name="evento" value="' + esc(borrador.evento) + '" placeholder="Ej: Torneo martes"></div>' +
+      '<div class="form-field"><label for="nv-medio">Medio de pago</label><select id="nv-medio" name="medioPago">' + GS.options(Object.keys(medios).map((k) => ({ value: k, label: medios[k] })), borrador.medioPago) + '</select></div>' +
+      '<div class="form-field"><label for="nv-boleta">N° boleta</label><input id="nv-boleta" name="boleta" value="' + esc(borrador.boleta) + '"></div>' +
+      '<div class="form-field"><label class="check" style="margin-top:22px;"><input type="checkbox" name="pagada"' + (borrador.pagada ? ' checked' : '') + '> Pagada completa</label></div>' +
+      '<div class="form-field" data-abono' + (borrador.pagada ? ' hidden' : '') + '><label for="nv-abono">Abono ahora</label><input id="nv-abono" name="abono" type="number" min="0" step="1" value="' + esc(borrador.abono) + '" placeholder="0"></div>' +
+      '</div>' +
+      '<div class="venta-totales" data-nv-totales></div>' +
+      '<div class="form-error"></div>' +
+      '<div class="btn-row"><button type="submit" class="btn">' + GS.icon('check') + 'Registrar venta</button>' +
+      '<button type="button" class="btn ghost" data-action="vaciarCarrito">Vaciar</button></div>' +
+      '</form></div>';
+  }
+
+  function calcVenta(form) {
+    const info = form.querySelector('[data-nv-info]');
+    const p = productoDeTexto(form.elements.producto.value);
+    const st = stock();
+    info.innerHTML = p ? '→ <strong>' + esc(p.nombreCompleto) + '</strong> · ' + fmt.money(p.precio) + ' · <span class="text-success">' + (st[p.id].disponible - enCarrito(p.id)) + ' disponibles</span>'
+      : form.elements.producto.value.trim() ? '<span class="text-danger">Sin stock o no encontrado</span>' : '';
+    const usadas = {};
+    let total = 0;
+    let ganancia = 0;
+    let descuento = 0;
+    form.querySelector('[data-carrito]').innerHTML = carrito.length ? carrito.map((x, i) => {
+      const pr = prod(x.productoId);
+      const n = Number(x.cantidad) || 0;
+      const precio = x.precio === '' ? pr.precio : Number(x.precio) || 0;
+      const costo = costoFifo(x.productoId, n, usadas[x.productoId]);
+      usadas[x.productoId] = (usadas[x.productoId] || 0) + n;
+      const g = precio * n / (1 + iva()) - costo;
+      total += precio * n;
+      ganancia += g;
+      descuento += (pr.precio - precio) * n;
+      return '<tr><td class="cell-strong">' + esc(pr.nombre) + ' ' + GS.langPill(pr.idioma) + '<div class="cell-dim">' + esc(pr.edicion || '') + '</div></td>' +
+        '<td class="right"><input class="qty-input" type="number" min="1" step="1" data-carrito-cant="' + i + '" value="' + esc(x.cantidad) + '"></td>' +
+        '<td class="cell-num right">' + fmt.money(pr.precio) + '</td>' +
+        '<td class="right"><input class="qty-input price-input" type="number" min="0" step="1" data-carrito-precio="' + i + '" value="' + esc(x.precio) + '" placeholder="' + fmt.num(pr.precio) + '"></td>' +
+        '<td class="cell-num right">' + fmt.money(precio * n) + (precio < pr.precio ? '<div class="cell-dim">desc. ' + fmt.money((pr.precio - precio) * n) + '</div>' : '') + '</td>' +
+        '<td class="cell-num right ' + signo(g) + '">' + fmt.money(g) + '</td>' +
+        '<td><div class="row-actions">' + GS.iconBtn('quitarDelCarrito', String(i), 'trash', 'Quitar', 'danger') + '</div></td></tr>';
+    }).join('') : '<tr><td colspan="7" class="muted center">El carrito está vacío.</td></tr>';
+
+    const medio = form.elements.medioPago.value;
+    const pagada = form.elements.pagada.checked;
+    const abono = pagada ? total : Math.min(Number(form.elements.abono.value) || 0, total);
+    const regla = data().catalogos.comisiones[medio];
+    const comision = regla && abono ? Math.round(abono * regla.pct + regla.fijo) : 0;
+    const neto = total / (1 + iva());
+    const fila = (l, v, cls) => '<div class="' + (cls || '') + '"><span>' + l + '</span><strong>' + v + '</strong></div>';
+    form.querySelector('[data-nv-totales]').innerHTML = carrito.length
+      ? fila('Total', fmt.money(total), 'grande') +
+        fila('Neto / IVA', fmt.money(neto) + ' / ' + fmt.money(total - neto)) +
+        (descuento > 0 ? fila('Descuentos', fmt.money(descuento)) : '') +
+        fila('Comisión ' + (regla ? 'TUU' : ''), regla ? fmt.money(comision) + ' <span class="cell-dim">(' + (regla.pct * 100).toLocaleString('es-CL') + '% + ' + fmt.money(regla.fijo) + ')</span>' : '$0') +
+        fila('Ganancia real', '<span class="' + signo(ganancia - comision) + '">' + fmt.money(ganancia - comision) + '</span>') +
+        (pagada ? '' : fila('Queda por cobrar', '<span class="text-gold">' + fmt.money(total - abono) + '</span>'))
+      : '';
+  }
+
+  function conectarVenta(el) {
+    const form = el.querySelector('#nueva-venta form');
+    if (!form) return;
+    form.addEventListener('input', (e) => {
+      const t = e.target;
+      if (t.dataset.carritoCant) carrito[t.dataset.carritoCant].cantidad = t.value;
+      else if (t.dataset.carritoPrecio) carrito[t.dataset.carritoPrecio].precio = t.value;
+      else if (t.name && t.name in borrador) borrador[t.name] = t.type === 'checkbox' ? t.checked : t.value;
+      if (t.name === 'pagada') form.querySelector('[data-abono]').hidden = t.checked;
+      if (t.dataset.carritoCant || t.dataset.carritoPrecio) {
+        // Recalcula sin redibujar los campos para no perder el foco.
+        const pos = t.selectionStart;
+        calcVenta(form);
+        const again = form.querySelector('[data-carrito-' + (t.dataset.carritoCant ? 'cant' : 'precio') + '="' + (t.dataset.carritoCant || t.dataset.carritoPrecio) + '"]');
+        if (again) { again.focus(); try { again.setSelectionRange(pos, pos); } catch (err) { /* number inputs */ } }
+        return;
+      }
+      calcVenta(form);
+    });
+    form.elements.producto.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); GS.actions.agregarAlCarrito(); }
+    });
+    GS.bindForm(form, async (v) => {
+      if (!carrito.length) throw new Error('Agrega al menos un producto a la venta.');
+      const r = await GS.api('crearVenta', {
+        fecha: v.fecha, cliente: v.cliente, canal: v.canal, evento: v.evento, medioPago: v.medioPago, boleta: v.boleta,
+        pagada: v.pagada, abono: v.abono,
+        lineas: carrito.map((x) => ({ productoId: x.productoId, cantidad: x.cantidad, precio: x.precio })),
+      });
+      GS.state.data = r.data;
+      carrito.length = 0;
+      Object.assign(borrador, { producto: '', cantidad: '1', cliente: '', evento: '', boleta: '', pagada: true, abono: '', notas: '' });
+      abiertas.add(r.result.id);
+      GS.render();
+      GS.toast(r.result.id + ' registrada · ' + fmt.money(r.result.total));
+      return r.result;
+    });
+    calcVenta(form);
+  }
+
+  GS.actions.agregarAlCarrito = () => {
+    const form = document.querySelector('#nueva-venta form');
+    const p = productoDeTexto(form.elements.producto.value);
+    const errBox = form.querySelector('.form-error');
+    errBox.classList.remove('show');
+    const n = Number(form.elements.cantidad.value) || 1;
+    const falla = (m) => { errBox.textContent = m; errBox.classList.add('show'); };
+    if (!p) return falla('Elige un producto con stock de la lista.');
+    const disp = stock()[p.id].disponible - enCarrito(p.id);
+    if (n > disp) return falla('Stock insuficiente de ' + p.nombreCompleto + ': quedan ' + disp + '.');
+    const mismo = carrito.find((x) => x.productoId === p.id && x.precio === '');
+    if (mismo) mismo.cantidad = String((Number(mismo.cantidad) || 0) + n);
+    else carrito.push({ productoId: p.id, cantidad: String(n), precio: '' });
+    borrador.producto = '';
+    borrador.cantidad = '1';
+    form.elements.producto.value = '';
+    form.elements.cantidad.value = '1';
+    calcVenta(form);
+    form.elements.producto.focus();
+  };
+  GS.actions.quitarDelCarrito = (i) => {
+    carrito.splice(Number(i), 1);
+    calcVenta(document.querySelector('#nueva-venta form'));
+  };
+  GS.actions.vaciarCarrito = () => {
+    carrito.length = 0;
+    calcVenta(document.querySelector('#nueva-venta form'));
+  };
+
+  /* ---------- lista de ventas ---------- */
+
+  const colsVentas = [
+    { id: 'fecha', label: 'Fecha', valor: (v) => v.fecha, texto: (v) => fmt.date(v.fecha), celda: (v) => '<span class="nowrap">' + fmt.date(v.fecha) + '</span>' },
+    { id: 'oc', label: 'OC', valor: (v) => v.id, celda: (v) => '<span class="cell-strong nowrap">' + esc(v.id) + '</span>' + (v.boleta ? '<div class="cell-dim">Boleta ' + esc(v.boleta) + '</div>' : '') },
+    { id: 'cliente', label: 'Cliente', valor: (v) => v.cliente, celda: (v) => esc(v.cliente) },
+    { id: 'canal', label: 'Canal', valor: (v) => v.canal, celda: (v) => esc(v.canal) },
+    { id: 'evento', label: 'Evento', valor: (v) => v.evento, celda: (v) => esc(v.evento || '—') },
+    { id: 'medio', label: 'Medio de pago', valor: (v) => v.medioPagoLabel, celda: (v) => esc(v.medioPagoLabel) },
+    { id: 'unidades', label: 'Unidades', right: true, valor: (v) => v.unidades, celda: (v) => fmt.num(v.unidades) },
+    { id: 'total', label: 'Total', right: true, valor: (v) => v.total, texto: (v) => fmt.money(v.total), celda: (v) => '<strong>' + fmt.money(v.total) + '</strong>' },
+    { id: 'comision', label: 'Comisión', right: true, valor: (v) => v.comision, texto: (v) => fmt.money(v.comision), celda: (v) => (v.comision ? fmt.money(v.comision) : '—') },
+    { id: 'ganancia', label: 'Ganancia real', right: true, valor: (v) => v.gananciaNeta, texto: (v) => fmt.money(v.gananciaNeta),
+      celda: (v) => '<span class="' + (v.anulada ? 'muted' : signo(v.gananciaNeta)) + '">' + fmt.money(v.gananciaNeta) + '</span>' },
+    { id: 'pago', label: 'Pago', valor: (v) => ESTADO_PAGO[v.estadoPago].label, celda: (v) => GS.badge(ESTADO_PAGO, v.estadoPago) +
+      (v.saldo > 0 ? '<div class="cell-dim">debe ' + fmt.money(v.saldo) + '</div>' : '') },
+  ];
+  const buscadas = () => {
+    const q = GS.norm((GS.filters('ventas', { q: '' }).q || '').trim());
+    return data().ventas.filter((v) => !q || GS.norm(v.id + ' ' + v.cliente + ' ' + v.evento + ' ' + v.boleta + ' ' + v.lineas.map((l) => l.producto).join(' ')).includes(q));
+  };
+  GS.tablaRegistrar('ventas', { filas: buscadas, columnas: colsVentas, alCambiar: () => GS.views.ventas.update() });
+
+  function detalleVenta(v) {
+    const loteDe = {};
+    data().lotes.forEach((l) => { loteDe[l.id] = l; });
+    const filas = v.lineas.map((l) => '<tr><td>' + GS.thumb(l.imagen) + '</td><td class="cell-strong">' + esc(l.productoNombre) + ' ' + GS.langPill(l.idioma) + '<div class="cell-dim">' + esc(l.edicion || '') + '</div></td>' +
+      '<td>' + esc(loteDe[l.loteId] ? loteDe[l.loteId].factura : '') + '<div class="cell-dim">' + esc(l.loteId) + '</div></td>' +
+      '<td class="cell-num right">' + fmt.num(l.cantidad) + '</td>' +
+      '<td class="cell-num right">' + fmt.money(l.precio) + (l.precio < l.precioLista ? '<div class="cell-dim">lista ' + fmt.money(l.precioLista) + '</div>' : '') + '</td>' +
+      '<td class="cell-num right">' + fmt.money(l.subtotal) + '</td><td class="cell-num right">' + fmt.money(l.costo) + '</td>' +
+      '<td class="cell-num right ' + signo(l.ganancia) + '">' + fmt.money(l.ganancia) + '</td></tr>').join('');
+    const t = (l, val, cls) => '<tr class="' + (cls || '') + '"><td colspan="7" class="right">' + l + '</td><td class="cell-num right">' + val + '</td></tr>';
+    const cobros = v.cobros.length ? '<p class="table-note">Abonos: ' + v.cobros.map((c) => fmt.date(c.fecha) + ' ' + fmt.money(c.monto) + ' (' + esc(data().catalogos.mediosPago[c.medioPago] || c.medioPago) + ')').join(' · ') + '</p>' : '';
+    const abono = !v.anulada && v.saldo > 0 && GS.puede('operador')
+      ? '<form class="abono-form" data-venta="' + esc(v.id) + '" novalidate><strong>Registrar abono</strong>' +
+        '<input type="number" name="monto" min="1" max="' + v.saldo + '" step="1" value="' + v.saldo + '" aria-label="Monto">' +
+        '<input type="date" name="fecha" value="' + esc(data().hoy) + '" aria-label="Fecha">' +
+        '<select name="medioPago" aria-label="Medio de pago">' + GS.options(Object.keys(data().catalogos.mediosPago).map((k) => ({ value: k, label: data().catalogos.mediosPago[k] })), 'transferencia') + '</select>' +
+        '<button type="submit" class="btn small">Guardar abono</button><span class="form-error"></span></form>'
+      : '';
+    return '<div class="detalle-compra"><table class="data-table"><thead><tr><th></th><th>Producto</th><th>Factura / lote</th><th class="right">Cant.</th><th class="right">Precio</th>' +
+      '<th class="right">Subtotal</th><th class="right">Costo u.</th><th class="right">Ganancia real</th></tr></thead><tbody>' + filas + '</tbody><tfoot>' +
+      t('Total', fmt.money(v.total)) + t('Neto / IVA (débito)', fmt.money(v.neto) + ' / ' + fmt.money(v.iva)) +
+      (v.descuento > 0 ? t('Descuentos', fmt.money(v.descuento)) : '') +
+      t('Comisión ' + esc(v.medioPagoLabel), fmt.money(v.comision)) +
+      t('<strong>Ganancia real</strong>', '<strong class="' + signo(v.gananciaNeta) + '">' + fmt.money(v.gananciaNeta) + '</strong>', 'total-row') +
+      '</tfoot></table>' + cobros + abono + (v.notas ? '<p class="table-note">Notas: ' + esc(v.notas) + '</p>' : '') + '</div>';
+  }
+
+  GS.views.ventas = {
+    title: 'Ventas',
+    render(el) {
+      const f = GS.filters('ventas', { q: '' });
+      el.innerHTML =
+        '<div class="page-head"><div><h1>Ventas</h1><p>Cada venta con su OC, el lote de donde salió cada producto y la ganancia real después de la comisión.</p></div>' +
+        '<button class="btn ghost" data-action="exportarVentas">' + GS.icon('download') + 'Exportar</button></div>' +
+        panelVenta() +
+        '<div class="filters-bar"><div class="search-box">' + GS.icon('search') + '<input type="text" data-filter="ventas.q" value="' + esc(f.q) + '" placeholder="Buscar OC, cliente, evento, boleta o producto..."></div></div>' +
+        '<div id="vt-resumen"></div>' +
+        '<div class="table-wrap"><table class="data-table wide"><thead><tr id="vt-thead"></tr></thead><tbody id="vt-tbody"></tbody></table></div>';
+      conectarVenta(el);
+      this.update();
+    },
+    update() {
+      const rows = GS.tablaAplicar('ventas', buscadas(), colsVentas);
+      const admin = GS.puede('admin');
+      const n = colsVentas.length + 2;
+      document.getElementById('vt-thead').innerHTML = '<th></th>' + GS.tablaEncabezado('ventas', colsVentas) + '<th></th>';
+      document.getElementById('vt-tbody').innerHTML = rows.length ? rows.map((v) => {
+        const open = abiertas.has(v.id);
+        return '<tr class="fila-compra' + (open ? ' abierta' : '') + (v.anulada ? ' row-muted' : '') + '" data-action="verVenta" data-id="' + esc(v.id) + '">' +
+          '<td><span class="chev">' + (open ? '▾' : '▸') + '</span></td>' +
+          colsVentas.map((c) => '<td class="' + (c.right ? 'cell-num right' : '') + '">' + c.celda(v) + '</td>').join('') +
+          '<td><div class="row-actions">' + (admin && !v.anulada ? GS.iconBtn('anularVenta', v.id, 'trash', 'Anular venta', 'danger') : '') + '</div></td></tr>' +
+          (open ? '<tr class="detalle-row"><td colspan="' + n + '">' + detalleVenta(v) + '</td></tr>' : '');
+      }).join('') : '<tr><td colspan="' + n + '">' + GS.empty('Aún no hay ventas', 'Registra la primera con el formulario de arriba.', 'ventas') + '</td></tr>';
+      const wrap = document.getElementById('vt-tbody').closest('.table-wrap');
+      document.querySelectorAll('#vt-tbody .detalle-compra').forEach((d) => { d.style.width = Math.max(320, wrap.clientWidth - 36) + 'px'; });
+      document.querySelectorAll('#vt-tbody .abono-form').forEach((form) => {
+        GS.bindForm(form, async (v) => {
+          await GS.mutate('registrarCobro', Object.assign({ ventaId: form.dataset.venta }, v), 'Abono registrado');
+        });
+      });
+
+      const vivas = rows.filter((v) => !v.anulada);
+      const sum = (k) => vivas.reduce((t, v) => t + v[k], 0);
+      const mes = data().hoy.slice(0, 7);
+      const delMes = vivas.filter((v) => v.fecha.slice(0, 7) === mes);
+      document.getElementById('vt-resumen').innerHTML = '<div class="kpi-grid">' +
+        kpi('Vendido este mes', fmt.money(delMes.reduce((t, v) => t + v.total, 0)), delMes.length + (delMes.length === 1 ? ' venta' : ' ventas')) +
+        kpi('Total vendido', fmt.money(sum('total')), vivas.length + ' ventas · ' + fmt.num(sum('unidades')) + ' unidades') +
+        kpi('Ganancia real', '<span class="text-success">' + fmt.money(sum('gananciaNeta')) + '</span>', fmt.money(sum('comision')) + ' en comisiones') +
+        kpi('Por cobrar', '<span class="' + (sum('saldo') ? 'text-gold' : '') + '">' + fmt.money(sum('saldo')) + '</span>', vivas.filter((v) => v.saldo > 0).length + ' ventas pendientes') + '</div>';
+    },
+  };
+
+  GS.actions.verVenta = (id, el) => {
+    if (el && el.closest && el.closest('.abono-form')) return;
+    if (abiertas.has(id)) abiertas.delete(id); else abiertas.add(id);
+    GS.views.ventas.update();
+  };
+
+  GS.actions.anularVenta = (id) => {
+    const v = data().ventas.find((x) => x.id === id);
+    GS.confirm({
+      title: 'Anular ' + v.id,
+      message: 'La venta <strong>' + esc(v.id) + '</strong> (' + fmt.money(v.total) + ', ' + esc(v.cliente) + ') queda anulada y sus ' + v.unidades + ' unidades vuelven al inventario. La OC no se reutiliza y queda en la auditoría.',
+      confirmLabel: 'Sí, anular',
+      danger: true,
+      onConfirm: () => GS.mutate('anularVenta', { id: id }, v.id + ' anulada'),
+    });
+  };
+
+  GS.actions.exportarVentas = () => {
+    const filas = [];
+    data().ventas.forEach((v) => v.lineas.forEach((l) => filas.push([v.fecha, v.id, v.boleta, v.cliente, v.canal, v.evento, v.medioPagoLabel, v.anulada ? 'Anulada' : ESTADO_PAGO[v.estadoPago].label,
+      l.productoId, l.producto, l.loteId, l.cantidad, l.precioLista, l.precio, l.subtotal, Math.round(l.costo), Math.round(l.ganancia)])));
+    GS.downloadCsv('ventas-' + data().hoy + '.csv',
+      ['Fecha', 'OC', 'Boleta', 'Cliente', 'Canal', 'Evento', 'Medio de pago', 'Estado', 'SKU', 'Producto', 'Lote', 'Cant.', 'Precio lista', 'Precio', 'Subtotal', 'Costo u.', 'Ganancia real'], filas);
+  };
+
+  /* ---------- Clientes ---------- */
+
+  const colsClientes = [
+    { id: 'nombre', label: 'Nombre', valor: (c) => c.nombre, celda: (c) => '<span class="cell-strong">' + esc(c.nombre) + '</span><div class="cell-dim">' + esc(c.id) + '</div>' },
+    { id: 'idPokemon', label: 'ID Pokémon', valor: (c) => c.idPokemon, celda: (c) => esc(c.idPokemon || '—') },
+    { id: 'telefono', label: 'Teléfono', valor: (c) => c.telefono, celda: (c) => esc(c.telefono || '—') },
+    { id: 'instagram', label: 'Instagram', valor: (c) => c.instagram, celda: (c) => esc(c.instagram || '—') },
+    { id: 'compras', label: 'Compras', right: true, valor: (c) => c.compras, celda: (c) => fmt.num(c.compras) },
+    { id: 'total', label: 'Total gastado', right: true, valor: (c) => c.totalGastado, texto: (c) => fmt.money(c.totalGastado), celda: (c) => fmt.money(c.totalGastado) },
+    { id: 'deuda', label: 'Deuda', right: true, valor: (c) => c.deuda, texto: (c) => fmt.money(c.deuda), celda: (c) => (c.deuda ? '<span class="text-gold">' + fmt.money(c.deuda) + '</span>' : '—') },
+    { id: 'ultima', label: 'Última compra', valor: (c) => c.ultimaCompra, texto: (c) => (c.ultimaCompra ? fmt.date(c.ultimaCompra) : ''), celda: (c) => (c.ultimaCompra ? fmt.date(c.ultimaCompra) : '—') },
+  ];
+  const clientesBuscados = () => {
+    const q = GS.norm((GS.filters('clientes', { q: '' }).q || '').trim());
+    return data().clientes.filter((c) => !q || GS.norm([c.id, c.nombre, c.idPokemon, c.telefono, c.instagram].join(' ')).includes(q));
+  };
+  GS.tablaRegistrar('clientes', { filas: clientesBuscados, columnas: colsClientes, alCambiar: () => GS.views.clientes.update() });
+
+  GS.views.clientes = {
+    title: 'Clientes',
+    render(el) {
+      const f = GS.filters('clientes', { q: '' });
+      el.innerHTML = '<div class="page-head"><div><h1>Clientes</h1><p>Fichas de clientes con su historial de compras. Las ventas sin cliente quedan como "Cliente general".</p></div>' +
+        (GS.puede('operador') ? '<button class="btn" data-action="nuevoCliente">' + GS.icon('plus', 2.4) + 'Nuevo cliente</button>' : '') + '</div>' +
+        '<div class="filters-bar"><div class="search-box">' + GS.icon('search') + '<input type="text" data-filter="clientes.q" value="' + esc(f.q) + '" placeholder="Buscar nombre, ID Pokémon, teléfono o Instagram..."></div></div>' +
+        '<div class="table-wrap"><table class="data-table wide"><thead><tr id="cl-thead"></tr></thead><tbody id="cl-tbody"></tbody></table></div>';
+      this.update();
+    },
+    update() {
+      const rows = GS.tablaAplicar('clientes', clientesBuscados(), colsClientes);
+      const op = GS.puede('operador');
+      document.getElementById('cl-thead').innerHTML = GS.tablaEncabezado('clientes', colsClientes) + '<th></th>';
+      document.getElementById('cl-tbody').innerHTML = rows.length
+        ? rows.map((c) => '<tr class="' + (c.activo ? '' : 'row-muted') + '">' + colsClientes.map((col) => '<td class="' + (col.right ? 'cell-num right' : '') + '">' + col.celda(c) + '</td>').join('') +
+          '<td><div class="row-actions">' + (op ? GS.iconBtn('editarCliente', c.id, 'edit', 'Editar') : '') + '</div></td></tr>').join('')
+        : '<tr><td colspan="' + (colsClientes.length + 1) + '">' + GS.empty('Aún no hay clientes', 'Se crean al escribir su nombre en una venta, o con "Nuevo cliente".', 'clientes') + '</td></tr>';
+    },
+  };
+
+  function clienteForm(c) {
+    const x = c || { nombre: '', idPokemon: '', telefono: '', instagram: '', notas: '', activo: true };
+    GS.formModal({
+      title: c ? 'Editar ' + c.id : 'Nuevo cliente',
+      submitLabel: 'Guardar',
+      fields: () => '<div class="form-grid">' +
+        '<div class="form-field full"><label for="cl-nombre">Nombre *</label><input id="cl-nombre" name="nombre" value="' + esc(x.nombre) + '"></div>' +
+        '<div class="form-field"><label for="cl-poke">ID Pokémon</label><input id="cl-poke" name="idPokemon" value="' + esc(x.idPokemon) + '"></div>' +
+        '<div class="form-field"><label for="cl-tel">Teléfono</label><input id="cl-tel" name="telefono" value="' + esc(x.telefono) + '"></div>' +
+        '<div class="form-field"><label for="cl-ig">Instagram</label><input id="cl-ig" name="instagram" value="' + esc(x.instagram) + '" placeholder="@usuario"></div>' +
+        '<div class="form-field"><label class="check" style="margin-top:22px;"><input type="checkbox" name="activo"' + (x.activo ? ' checked' : '') + '> Activo</label></div>' +
+        '<div class="form-field full"><label for="cl-notas">Notas</label><input id="cl-notas" name="notas" value="' + esc(x.notas) + '"></div></div>',
+      onSubmit: (v) => GS.mutate('guardarCliente', Object.assign(c ? { id: c.id } : {}, v), (r) => r.nombre + ' guardado'),
+    });
+  }
+  GS.actions.nuevoCliente = () => clienteForm(null);
+  GS.actions.editarCliente = (id) => clienteForm(data().clientes.find((c) => c.id === id));
+})();
+</script>

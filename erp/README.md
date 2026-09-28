@@ -12,7 +12,7 @@ Se construye por etapas:
 |---|---|---|
 | 1 | Catálogo de productos y proveedores, preventas por producto con asignación | ✅ |
 | 2 | Compras (facturas desde preventas, despacho prorrateado) e inventario por lote | ✅ base (faltan cuotas y reposición) |
-| 3 | Ventas con OC, clientes y cuentas por cobrar | Pendiente |
+| 3 | Ventas con OC, clientes y cuentas por cobrar | ✅ base (faltan ventas por monto) |
 | 4 | Finanzas: caja, GAV, aportes, SII, caja de singles, resumen mensual | Pendiente |
 
 ## Estructura
@@ -31,6 +31,8 @@ erp/
 │   │   ├── Productos.js      catálogo (nombre + edición + idioma)
 │   │   ├── Preventas.js      preventas (un registro por producto solicitado) y asignación
 │   │   ├── Compras.js        facturas desde preventas, despacho prorrateado e inventario por lote
+│   │   ├── Ventas.js         ventas (OC), salida FIFO por lote, comisión POS y abonos
+│   │   ├── Clientes.js       fichas de clientes
 │   │   ├── Usuarios.js       usuarios y roles
 │   │   └── Api.js            doGet, api(), instalar(), foto de datos
 │   └── client/               frontend (plantillas HtmlService)
@@ -74,6 +76,10 @@ erp/
 | `Productos` | SKU `GS-0001`, nombre, edición, idioma, tipo, factor (Booster Box = 36), PVP, precio de venta propio |
 | `Preventas` | `PVI-000001`: proveedor, producto, lanzamiento, solicitado, asignado, estado, costo neto |
 | `Compras` | `CP-0001`: factura del proveedor (N°, fecha, despacho neto) |
+| `Clientes` | `CLI-0001`: nombre, ID Pokémon, teléfono, Instagram |
+| `Ventas` | `OC-0001`: fecha, cliente, canal, evento, medio de pago, boleta, abono, comisión |
+| `Ventas_Lineas` | `VL-000001`: unidades que salen de un lote, con precio y costo al vender |
+| `Cobros` | `COB-000001`: abonos a ventas por cobrar |
 | `Compras_Lineas` | `CPI-000001`: producto de la factura = lote del inventario (cantidad, costo neto, despacho prorrateado) |
 | `Auditoria` | historial de cambios |
 

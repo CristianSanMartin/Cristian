@@ -90,6 +90,12 @@ const preview = `
     call('registrarAsignacion', { lineas: lineas.filter(function (x) { return x[1] != null; }).map(function (x) { return { id: x[0].id, asignado: x[1] }; }) });
     // Los Battle Deck ya llegaron con su factura: están en Compras e Inventario (neto < $1.000.000, con despacho).
     call('crearCompra', { preventas: [lineas[3][0].id, lineas[4][0].id], factura: '30th-DECK', fecha: hoy });
+    // Algunas ventas de esa factura: tienda con débito (comisión TUU), y una por cobrar.
+    call('guardarCliente', { nombre: 'Juan Pérez', idPokemon: '1234567', telefono: '+56 9 1111 2222', instagram: 'juanpk' });
+    call('crearVenta', { fecha: hoy, cliente: 'Juan Pérez', medioPago: 'debito', boleta: '1001', lineas: [{ productoId: p.deckEng.id, cantidad: 2 }] });
+    call('crearVenta', { fecha: hoy, medioPago: 'efectivo', lineas: [{ productoId: p.deckEsp.id, cantidad: 1, precio: 24990 }] });
+    call('crearVenta', { fecha: hoy, cliente: 'Ana Rojas', canal: 'Evento', evento: 'Torneo martes', medioPago: 'transferencia', pagada: false, abono: 10000,
+      lineas: [{ productoId: p.deckEng.id, cantidad: 1 }] });
   }
 
   function runner(ok, fail) {
