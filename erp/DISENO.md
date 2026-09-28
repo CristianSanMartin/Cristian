@@ -156,7 +156,15 @@ preventa de origen `PVI` (si aplica).
 Se crea como **"pagar el carrito"**: se marcan las preventas asignadas que vienen en la
 factura (de una o varias fechas de lanzamiento) y se completa el encabezado.
 
-**Ciclo:** `armada → pagada → recibida`. El pedido se paga antes del despacho; el stock
+**Implementado (v2.3):** en Preventas se seleccionan las preventas asignadas y se presiona
+"Crear factura de compra": se ingresa el N° de factura real, la fecha y (si difiere de la regla)
+el despacho. Al registrarla, la factura queda en **Compras** con sus productos, el despacho como
+ítem y los totales (neto, IVA, total) para conciliar con la factura física; las preventas pasan a
+"En inventario" y cada línea entra al **Inventario** como un lote con su costo real. Un
+administrador puede anular una factura mal ingresada (sus preventas vuelven a "Asignada").
+Pendiente: pago en cuotas y costo financiero, compras de reposición sin preventa, recepción parcial.
+
+**Ciclo previsto:** `armada → pagada → recibida`. El pedido se paga antes del despacho; el stock
 entra al inventario al **recibir**. Mientras tanto figura como "entrante".
 
 **Reglas:**

@@ -15,7 +15,7 @@
 
 const APP = {
   nombre: 'GS Prime ERP',
-  version: '2.2.0',
+  version: '2.3.0',
   tz: 'America/Santiago',
   iva: 0.19,
 };
@@ -55,6 +55,20 @@ const SCHEMA = {
     cols: Object.assign({
       id: 's', proveedorId: 's', productoId: 's', lanzamiento: 'd', solicitado: 'n', asignado: 'n',
       estado: 's', costoNeto: 'n', notas: 's',
+    }, AUDIT_COLS),
+  },
+  /** Factura de un proveedor (CP-0001). */
+  Compras: {
+    key: 'id',
+    cols: Object.assign({
+      id: 's', proveedorId: 's', factura: 's', fecha: 'd', despacho: 'n', notas: 's',
+    }, AUDIT_COLS),
+  },
+  /** Línea de la factura (CPI-000001) = un lote del inventario. despacho = parte prorrateada del despacho. */
+  Compras_Lineas: {
+    key: 'id',
+    cols: Object.assign({
+      id: 's', compraId: 's', preventaId: 's', productoId: 's', cantidad: 'n', costoNeto: 'n', despacho: 'n',
     }, AUDIT_COLS),
   },
   Auditoria: {

@@ -88,6 +88,8 @@ const preview = `
       [pedir(p.dittoEng, f3, 54, 31758.81), null], [pedir(p.dittoEsp, f3, 12, 31758.81), null],
     ];
     call('registrarAsignacion', { lineas: lineas.filter(function (x) { return x[1] != null; }).map(function (x) { return { id: x[0].id, asignado: x[1] }; }) });
+    // Los Battle Deck ya llegaron con su factura: están en Compras e Inventario (neto < $1.000.000, con despacho).
+    call('crearCompra', { preventas: [lineas[3][0].id, lineas[4][0].id], factura: '30th-DECK', fecha: hoy });
   }
 
   function runner(ok, fail) {

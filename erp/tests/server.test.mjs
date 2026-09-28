@@ -382,3 +382,64 @@ test("imágenes: carpeta en Drive, subida al crear desde preventa, reemplazo y q
   assert.match(errorDe(s.call("guardarPreventa", { proveedorId: asmodee(s).id, producto: "OTRO - BLISTER ENG", lanzamiento: "2026-10-02", solicitado: 1, costoNeto: 1, imagen: { mime: "text/plain", base64: "QQ==" } })), /JPG, PNG o WEBP/);
   assert.equal(s.ok("bootstrap").data.productos.length, antes);
 });
+
+test("factura de compra desde preventas: pasan a inventario con el despacho prorrateado", () => {
+  const s = createServer();
+  const { pv: p, prods } = preventa30th(s);
+  s.ok("registrarAsignacion", { lineas: [
+    { id: p.binderEng.id, asignado: 24 }, { id: p.binderEsp.id, asignado: 6 }, { id: p.miniTin.id, asignado: 10 }, { id: p.deck.id, asignado: 12 },
+  ] });
+
+  // Validaciones: solo preventas asignadas, N° de factura y fecha obligatorios
+  assert.match(errorDe(s.call("crearCompra", { preventas: [], factura: "1", fecha: "2026-10-02" })), /al menos una preventa/);
+  assert.match(errorDe(s.call("crearCompra", { preventas: [p.binderEng.id], fecha: "2026-10-02" })), /N° de factura es obligatorio/);
+  assert.match(errorDe(s.call("crearCompra", { preventas: [p.binderEng.id], factura: "30th2" })), /fecha de la factura es obligatoria/);
+
+  // Neto $858.910 < $1.000.000: Asmodee cobra $15.000 de despacho
+  const c = s.ok("crearCompra", { preventas: [p.binderEng.id, p.binderEsp.id, p.miniTin.id], factura: "30th2", fecha: "2026-10-02" }).result;
+  assert.equal(c.id, "CP-0001");
+  const data = s.ok("bootstrap").data;
+  const compra = data.compras.find(x => x.id === c.id);
+  assert.deepEqual([compra.netoProductos, compra.despacho, compra.neto, compra.unidades], [858910, 15000, 873910, 40]);
+  assert.equal(Math.round(compra.total), Math.round(873910 * 1.19));
+  assert.equal(compra.lineas.length, 3);
+
+  // Despacho por participación en $: Mini Tin $82.300 / $858.910 × $15.000 = $1.437 → $143,7 por unidad
+  const tin = data.lotes.find(l => l.preventaId === p.miniTin.id);
+  assert.equal(Math.round(tin.despacho), 1437);
+  assert.equal(Math.round(tin.costo), Math.round(8230 + 15000 * 82300 / 858910 / 10));
+  assert.equal(Math.round(tin.gananciaUnidad), Math.round(18000 / 1.19 - tin.costo));
+  assert.equal(Math.round(data.lotes.reduce((t, l) => t + l.despacho, 0)), 15000, "el despacho completo queda repartido");
+  assert.equal(tin.disponible, 10);
+
+  // Las preventas salen de pendientes y ya no se modifican
+  assert.equal(pv(s, p.binderEng.id).estado, "recibida");
+  assert.equal(pv(s, p.binderEng.id).factura, "30th2");
+  assert.match(errorDe(s.call("registrarAsignacion", { lineas: [{ id: p.binderEng.id, asignado: 1 }] })), /ya pasó a una compra/);
+  assert.match(errorDe(s.call("crearCompra", { preventas: [p.binderEng.id], factura: "otra", fecha: "2026-10-02" })), /no está asignada/);
+
+  // N° de factura único por proveedor
+  assert.match(errorDe(s.call("crearCompra", { preventas: [p.deck.id], factura: "30TH2", fecha: "2026-10-30" })), /ya está registrada \(CP-0001\)/);
+
+  // Despacho gratis desde $1.000.000, y se puede corregir a mano según la factura real
+  const grande = s.ok("guardarPreventa", { proveedorId: asmodee(s).id, productoId: prods.deck.id, lanzamiento: "2026-10-30", solicitado: 70, costoNeto: 15876.5 }).result;
+  s.ok("registrarAsignacion", { lineas: [{ id: grande.id, asignado: 70 }] });
+  const c2 = s.ok("crearCompra", { preventas: [grande.id, p.deck.id], factura: "DECK-1", fecha: "2026-10-30" }).result;
+  assert.equal(s.ok("bootstrap").data.compras.find(x => x.id === c2.id).despacho, 0, "neto $1.301.873 ≥ $1.000.000");
+  s.ok("anularCompra", { id: c2.id });
+  const c3 = s.ok("crearCompra", { preventas: [grande.id], factura: "DECK-1", fecha: "2026-10-30", despacho: 9000 }).result;
+  assert.equal(s.ok("bootstrap").data.compras.find(x => x.id === c3.id).despacho, 9000);
+});
+
+test("anular una factura devuelve las preventas a asignadas (solo administrador)", () => {
+  const s = createServer();
+  const { pv: p } = preventa30th(s);
+  s.ok("registrarAsignacion", { lineas: [{ id: p.miniTin.id, asignado: 10 }] });
+  const c = s.ok("crearCompra", { preventas: [p.miniTin.id], factura: "F-1", fecha: "2026-10-02" }).result;
+  s.ok("guardarUsuario", { email: "socio@gsprime.cl", nombre: "Socio", rol: "operador" });
+  assert.equal(s.as("socio@gsprime.cl").call("anularCompra", { id: c.id }).code, "SIN_PERMISO");
+  s.as("admin@gsprime.cl").ok("anularCompra", { id: c.id });
+  const data = s.ok("bootstrap").data;
+  assert.deepEqual([data.compras.length, data.lotes.length], [0, 0]);
+  assert.deepEqual([pv(s, p.miniTin.id).estado, pv(s, p.miniTin.id).asignado], ["asignada", 10]);
+});

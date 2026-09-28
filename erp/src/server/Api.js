@@ -36,6 +36,9 @@ function rutas_() {
     registrarAsignacion: { rol: 'operador', write: true, fn: Preventas.registrarAsignacion },
     fijarPreciosVenta: { rol: 'operador', write: true, fn: Productos.fijarPrecios },
 
+    crearCompra: { rol: 'operador', write: true, fn: Compras.crear },
+    anularCompra: { rol: 'admin', write: true, fn: Compras.anular },
+
     guardarUsuario: { rol: 'admin', write: true, fn: Usuarios.guardar },
   };
 }
@@ -144,6 +147,11 @@ const Snapshot = {
     const proveedores = Db.all('Proveedores');
     const productos = Db.all('Productos');
     const preventas = Preventas.vista(productos, proveedores);
+    const compras = Compras.vista(productos, proveedores);
+    // Factura en la que quedó cada preventa recibida.
+    const facturaDe = {};
+    compras.lotes.forEach((l) => { facturaDe[l.preventaId] = { compraId: l.compraId, factura: l.factura }; });
+    preventas.forEach((pv) => Object.assign(pv, facturaDe[pv.id] || { compraId: '', factura: '' }));
 
     // Último costo neto conocido de cada producto (de su preventa con lanzamiento más reciente).
     const ultimoCosto = {};
@@ -171,6 +179,8 @@ const Snapshot = {
       proveedores: proveedores,
       productos: prods,
       preventas: preventas,
+      compras: compras.compras,
+      lotes: compras.lotes,
       usuarios: Auth.puede(user, 'admin') ? Db.all('Usuarios') : [],
     };
   },

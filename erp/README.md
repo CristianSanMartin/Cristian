@@ -11,7 +11,7 @@ Se construye por etapas:
 | Etapa | Contenido | Estado |
 |---|---|---|
 | 1 | Catálogo de productos y proveedores, preventas por producto con asignación | ✅ |
-| 2 | Compras (pedidos/facturas, despacho prorrateado) e inventario por lote | Pendiente |
+| 2 | Compras (facturas desde preventas, despacho prorrateado) e inventario por lote | ✅ base (faltan cuotas y reposición) |
 | 3 | Ventas con OC, clientes y cuentas por cobrar | Pendiente |
 | 4 | Finanzas: caja, GAV, aportes, SII, caja de singles, resumen mensual | Pendiente |
 
@@ -30,6 +30,7 @@ erp/
 │   │   ├── Proveedores.js    proveedores y regla de despacho
 │   │   ├── Productos.js      catálogo (nombre + edición + idioma)
 │   │   ├── Preventas.js      preventas (un registro por producto solicitado) y asignación
+│   │   ├── Compras.js        facturas desde preventas, despacho prorrateado e inventario por lote
 │   │   ├── Usuarios.js       usuarios y roles
 │   │   └── Api.js            doGet, api(), instalar(), foto de datos
 │   └── client/               frontend (plantillas HtmlService)
@@ -72,6 +73,8 @@ erp/
 | `Proveedores` | nombre, RUT, contacto, costo de despacho y monto para despacho gratis |
 | `Productos` | SKU `GS-0001`, nombre, edición, idioma, tipo, factor (Booster Box = 36), PVP, precio de venta propio |
 | `Preventas` | `PVI-000001`: proveedor, producto, lanzamiento, solicitado, asignado, estado, costo neto |
+| `Compras` | `CP-0001`: factura del proveedor (N°, fecha, despacho neto) |
+| `Compras_Lineas` | `CPI-000001`: producto de la factura = lote del inventario (cantidad, costo neto, despacho prorrateado) |
 | `Auditoria` | historial de cambios |
 
 Las columnas se leen por nombre: puedes reordenarlas o agregar columnas propias en

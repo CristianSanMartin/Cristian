@@ -2,7 +2,7 @@
 /* =========================================================
    Administración (solo admin): usuarios, auditoría e
    importación desde el ERP anterior. Además, las vistas
-   "Pronto" de Compras y Ventas.
+   "Pronto" de Ventas y Finanzas.
 ========================================================= */
 (function () {
   'use strict';
@@ -91,10 +91,6 @@
       },
     };
   }
-  proximamente('compras', 'Compras', 'Pedidos y facturas a proveedores, desde las preventas asignadas o por reposición.',
-    'Etapa 2: arma el pedido de cada fecha de lanzamiento con las líneas asignadas, calcula el despacho (gratis desde el umbral del proveedor) y lo reparte en el costo por participación en $.');
-  proximamente('inventario', 'Inventario', 'Stock por lote de factura, con vista unidad por unidad como la planilla.',
-    'Etapa 2: cada línea de compra recibida es un lote. Verás cada unidad con Proveedor, Factura, Serie, Costo, Crédito fiscal, Neto, Débito, Pago SII y Ganancia.');
   proximamente('ventas', 'Ventas', 'Ventas con OC correlativa, clientes, canal y evento.',
     'Etapa 3: ventas con OC automática, cliente (o Cliente general), evento, medio de pago, cuentas por cobrar y ganancia real por venta.');
   proximamente('finanzas', 'Finanzas', 'Caja, gastos, aportes, pagos al SII y resumen mensual.',

@@ -151,6 +151,65 @@ test("preventas como carrito: agregar productos uno a uno, asignar en la tabla y
   }
 });
 
+test("factura de compra: las preventas seleccionadas pasan a Compras e Inventario con el despacho prorrateado", { skip }, async () => {
+  const browser = await chromium.launch();
+  try {
+    const { page, errores } = await abrir(browser);
+    await page.click('[data-nav="preventas"]');
+    const fila = (texto) => page.locator("#pv-tbody tr", { hasText: texto });
+
+    // Una preventa solo solicitada no se puede facturar
+    await fila("PVI-000006").locator("[data-sel]").check();
+    await page.click('[data-action="abrirFactura"]');
+    assert.match(await page.locator("#crear-factura").textContent(), /Solo se facturan preventas asignadas.*PVI-000006/);
+    await fila("PVI-000006").locator("[data-sel]").uncheck();
+
+    // Carrito: tres preventas asignadas del mismo lanzamiento
+    for (const id of ["PVI-000001", "PVI-000002", "PVI-000003"]) await fila(id).locator("[data-sel]").check();
+    await page.click('[data-action="abrirFactura"]');
+    const panel = page.locator("#crear-factura");
+    assert.match(await panel.locator("[data-despacho-hint]").textContent(), /Corresponde \$15\.000: faltan \$141\.090 para despacho gratis/);
+    assert.match(await panel.locator("tfoot").textContent(), /Neto productos\$858\.910.*Despacho\$15\.000.*Neto factura\$873\.910.*Total factura\$1\.039\.953/);
+    // El despacho se reparte por participación en $ (Mini Tin: $82.300 de $858.910)
+    assert.match(await panel.locator("tbody tr", { hasText: "Mini Tin" }).textContent(), /\$1\.437/);
+
+    await panel.locator('button[type="submit"]').click();
+    await panel.locator(".form-error.show").waitFor();
+    assert.match(await panel.locator(".form-error").textContent(), /N° de factura es obligatorio/);
+    await panel.locator('[name="factura"]').fill("30th2");
+    await panel.locator('button[type="submit"]').click();
+    await toast(page, /CP-0002 registrada: 3 productos pasaron a Inventario/);
+
+    // Queda en Compras con el detalle abierto: productos, despacho como ítem y totales
+    assert.equal(await page.locator('.nav-item.active').getAttribute("data-nav"), "compras");
+    const detalle = page.locator(".detalle-compra");
+    assert.match(await detalle.textContent(), /Binder Collection.*Mini Tin.*Despacho.*\$15\.000.*Total factura\$1\.039\.953/s);
+    assert.match(await page.locator("#cp-tbody tr.fila-compra", { hasText: "30th2" }).textContent(), /Asmodee.*40.*\$858\.910.*\$15\.000.*\$873\.910/s);
+
+    // Las preventas salen de "por comprar" y el producto está en Inventario con su costo real
+    await page.click('[data-nav="preventas"]');
+    assert.equal(await fila("PVI-000001").count(), 0);
+    await page.click('[data-nav="inventario"]');
+    const tin = page.locator("#inv-tbody tr", { hasText: "Mini Tin" });
+    assert.match(await tin.textContent(), /30th2.*10.*\$8\.230.*\$144.*\$8\.374/s);
+    // Unidad por unidad, como la planilla: 24 + 6 + 10 + 12 + 12 del ejemplo
+    await page.click('[data-action="modoInventario"][data-id="unidad"]');
+    assert.equal(await page.locator("#inv-tbody tr").count(), 64);
+    assert.match(await page.locator("#inv-tfoot").textContent(), /Total/);
+
+    // Anular (administrador) devuelve las preventas a asignadas
+    await page.click('[data-nav="compras"]');
+    await page.locator("#cp-tbody tr.fila-compra", { hasText: "30th2" }).locator('[data-action="anularCompra"]').click();
+    await modal(page).locator(".btn.danger, [data-confirm]").first().click();
+    await toast(page, /Factura 30th2 anulada/);
+    await page.click('[data-nav="preventas"]');
+    assert.match(await fila("PVI-000001").textContent(), /Asignada/);
+    assert.deepEqual(errores, []);
+  } finally {
+    await browser.close();
+  }
+});
+
 test("rol solo lectura: ve la información pero no las acciones", { skip }, async () => {
   const browser = await chromium.launch();
   try {
@@ -172,7 +231,7 @@ test("se adapta a celular sin desbordar la página", { skip }, async () => {
   const browser = await chromium.launch();
   try {
     const { page, errores } = await abrir(browser, { viewport: { width: 390, height: 844 } });
-    for (const vista of ["dashboard", "preventas", "productos", "proveedores", "admin"]) {
+    for (const vista of ["dashboard", "preventas", "compras", "inventario", "productos", "proveedores", "admin"]) {
       await page.click("#menu-toggle");
       await page.click(`[data-nav="${vista}"]`);
       const ancho = await page.evaluate(() => document.documentElement.scrollWidth);
