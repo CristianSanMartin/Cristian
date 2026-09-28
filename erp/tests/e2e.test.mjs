@@ -188,7 +188,12 @@ test("factura de compra: las preventas seleccionadas pasan a Compras e Inventari
     assert.match(await detalle.textContent(), /Binder Collection.*Mini Tin.*Despacho.*\$15\.000.*Total factura\$1\.039\.953/s);
     // El despacho se reparte por participación en $ (Mini Tin: $82.300 de $858.910 → $1.437)
     assert.match(await detalle.locator("tbody tr", { hasText: "Mini Tin" }).textContent(), /\$1\.437/);
-    assert.match(await page.locator("#cp-tbody tr.fila-compra", { hasText: "30th2" }).textContent(), /Asmodee.*40.*\$858\.910.*\$15\.000.*\$873\.910/s);
+    assert.match(await page.locator("#cp-tbody tr.fila-compra", { hasText: "30th2" }).textContent(), /Asmodee.*30th2.*3.*40.*\$873\.910.*\$166\.043.*\$1\.039\.953.*0 \/ 40.*\$0.*Sin ventas/s);
+    // Sin columnas de neto productos ni despacho; primero fecha, proveedor y factura
+    const titulosCp = (await page.locator("#cp-thead th").allTextContents()).map((t) => t.replace(/[▾▲▼⧩]/g, "").trim());
+    assert.deepEqual(titulosCp.slice(1, 4), ["Fecha", "Proveedor", "Factura"]);
+    assert.ok(!titulosCp.includes("Neto productos") && !titulosCp.includes("Despacho"));
+    assert.ok(titulosCp.includes("Ventas acumuladas") && titulosCp.includes("Ganancia acumulada"));
 
     // Las preventas salen de "por comprar" y el producto está en Inventario con su costo real
     await page.click('[data-nav="preventas"]');

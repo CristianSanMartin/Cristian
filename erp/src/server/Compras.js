@@ -118,7 +118,10 @@ const Compras = {
         debito: e.debito,
         pagoSii: e.pagoSii,
         gananciaUnidad: e.ganancia,
+        // Se completan con las ventas (etapa 3): unidades vendidas, venta bruta y ganancia realizada del lote.
         vendidas: 0,
+        ventasAcumuladas: 0,
+        gananciaAcumulada: 0,
         disponible: disponible,
         valorInventario: disponible * costo,
         gananciaProyectada: disponible * e.ganancia,
@@ -136,6 +139,13 @@ const Compras = {
       c.total = c.neto + c.iva;
       const prov = provPorId[c.proveedorId];
       c.despachoGratisDesde = prov ? prov.despachoUmbral : 0;
+      // Resultado de la factura: lo vendido hasta ahora y si ya se vendió todo lo comprado.
+      const suma = (k) => c.lineas.reduce((s, l) => s + l[k], 0);
+      c.vendidas = suma('vendidas');
+      c.ventasAcumuladas = suma('ventasAcumuladas');
+      c.gananciaAcumulada = suma('gananciaAcumulada');
+      c.gananciaProyectada = c.lineas.reduce((s, l) => s + l.cantidad * l.gananciaUnidad, 0);
+      c.estadoVenta = c.vendidas === 0 ? 'sin_ventas' : c.vendidas < c.unidades ? 'vendiendo' : 'vendida';
     });
     compras.sort((a, b) => (b.fecha + b.id).localeCompare(a.fecha + a.id));
     lotes.sort((a, b) => (a.fecha + a.id).localeCompare(b.fecha + b.id));

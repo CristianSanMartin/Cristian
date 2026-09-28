@@ -18,18 +18,26 @@
 
   /* ---------- Compras ---------- */
 
+  const ESTADO_VENTA = { sin_ventas: 'Sin ventas', vendiendo: 'Vendiendo', vendida: 'Vendida completa' };
   const colsCompras = [
-    { id: 'factura', label: 'Factura', valor: (c) => c.factura, celda: (c) => '<span class="cell-strong">' + esc(c.factura) + '</span><div class="cell-dim">' + esc(c.id) + '</div>' },
-    { id: 'proveedor', label: 'Proveedor', valor: (c) => c.proveedor, celda: (c) => esc(c.proveedor) },
     { id: 'fecha', label: 'Fecha', valor: (c) => c.fecha, texto: (c) => fmt.date(c.fecha), celda: (c) => '<span class="nowrap">' + fmt.date(c.fecha) + '</span>' },
+    { id: 'proveedor', label: 'Proveedor', valor: (c) => c.proveedor, celda: (c) => esc(c.proveedor) },
+    { id: 'factura', label: 'Factura', valor: (c) => c.factura, celda: (c) => '<span class="cell-strong">' + esc(c.factura) + '</span><div class="cell-dim">' + esc(c.id) + '</div>' },
     { id: 'productos', label: 'Productos', right: true, valor: (c) => c.lineas.length, celda: (c) => fmt.num(c.lineas.length) },
     { id: 'unidades', label: 'Unidades', right: true, valor: (c) => c.unidades, celda: (c) => fmt.num(c.unidades) },
-    { id: 'netoProductos', label: 'Neto productos', right: true, valor: (c) => c.netoProductos, texto: (c) => fmt.money(c.netoProductos), celda: (c) => fmt.money(c.netoProductos) },
-    { id: 'despacho', label: 'Despacho', right: true, valor: (c) => c.despacho, texto: (c) => (c.despacho ? fmt.money(c.despacho) : 'Gratis'),
-      celda: (c) => (c.despacho ? fmt.money(c.despacho) : '<span class="text-success">Gratis</span>') },
     { id: 'neto', label: 'Neto', right: true, valor: (c) => c.neto, texto: (c) => fmt.money(c.neto), celda: (c) => fmt.money(c.neto) },
     { id: 'iva', label: 'IVA', right: true, valor: (c) => c.iva, texto: (c) => fmt.money(c.iva), celda: (c) => fmt.money(c.iva) },
     { id: 'total', label: 'Total', right: true, valor: (c) => c.total, texto: (c) => fmt.money(c.total), celda: (c) => '<strong>' + fmt.money(c.total) + '</strong>' },
+    // Resultado de la factura: se acumula con cada venta de sus productos (Ventas, etapa 3).
+    { id: 'vendidas', label: 'Vendidas', right: true, clase: 'col-res', valor: (c) => c.vendidas / (c.unidades || 1), texto: (c) => c.vendidas + ' / ' + c.unidades,
+      celda: (c) => fmt.num(c.vendidas) + '<span class="cell-dim"> / ' + fmt.num(c.unidades) + '</span>' +
+        '<div class="barra-venta"><span style="width:' + Math.round(100 * c.vendidas / (c.unidades || 1)) + '%"></span></div>' },
+    { id: 'ventas', label: 'Ventas acumuladas', right: true, valor: (c) => c.ventasAcumuladas, texto: (c) => fmt.money(c.ventasAcumuladas), celda: (c) => fmt.money(c.ventasAcumuladas) },
+    { id: 'ganancia', label: 'Ganancia acumulada', right: true, valor: (c) => c.gananciaAcumulada, texto: (c) => fmt.money(c.gananciaAcumulada),
+      celda: (c) => '<strong class="' + (c.gananciaAcumulada < 0 ? 'text-danger' : c.gananciaAcumulada > 0 ? 'text-success' : '') + '">' + fmt.money(c.gananciaAcumulada) + '</strong>' +
+        '<div class="cell-dim">de ' + fmt.money(c.gananciaProyectada) + ' proyectada</div>' },
+    { id: 'estadoVenta', label: 'Estado', valor: (c) => ESTADO_VENTA[c.estadoVenta], celda: (c) =>
+      '<span class="badge ' + { sin_ventas: 'st-pedido', vendiendo: 'st-parcial', vendida: 'st-ok' }[c.estadoVenta] + '">' + ESTADO_VENTA[c.estadoVenta] + '</span>' },
   ];
   const buscadasCompras = () => buscar(data().compras, GS.filters('compras', DEF_C).q, (c) => c.id + ' ' + c.factura + ' ' + c.proveedor + ' ' + c.lineas.map((l) => l.producto + ' ' + l.preventaId).join(' '));
   GS.tablaRegistrar('compras', { filas: buscadasCompras, columnas: colsCompras, alCambiar: () => GS.views.compras.update() });
@@ -80,7 +88,7 @@
           const open = abiertas.has(c.id);
           return '<tr class="fila-compra' + (open ? ' abierta' : '') + '" data-action="verCompra" data-id="' + esc(c.id) + '">' +
             '<td><span class="chev">' + (open ? '▾' : '▸') + '</span></td>' +
-            colsCompras.map((col) => '<td class="' + (col.right ? 'cell-num right' : '') + '">' + col.celda(c) + '</td>').join('') +
+            colsCompras.map((col) => '<td class="' + (col.right ? 'cell-num right ' : '') + (col.clase || '') + '">' + col.celda(c) + '</td>').join('') +
             '<td><div class="row-actions">' + (admin ? GS.iconBtn('anularCompra', c.id, 'trash', 'Anular factura', 'danger') : '') + '</div></td></tr>' +
             (open ? '<tr class="detalle-row"><td colspan="' + n + '">' + detalleCompra(c) + '</td></tr>' : '');
         }).join('')
@@ -90,10 +98,10 @@
       document.querySelectorAll('.detalle-compra').forEach((d) => { d.style.width = Math.max(320, wrap.clientWidth - 36) + 'px'; });
       const sum = (k) => rows.reduce((t, c) => t + c[k], 0);
       document.getElementById('cp-resumen').innerHTML = '<div class="kpi-grid">' +
-        kpi('Facturas', rows.length, fmt.num(sum('unidades')) + ' unidades') +
-        kpi('Neto', fmt.money(sum('neto')), fmt.money(sum('despacho')) + ' en despacho') +
-        kpi('IVA (crédito fiscal)', fmt.money(sum('iva')), '19% del neto') +
-        kpi('Total facturado', fmt.money(sum('total')), 'Neto + IVA') + '</div>';
+        kpi('Facturas', rows.length, fmt.num(sum('vendidas')) + ' de ' + fmt.num(sum('unidades')) + ' unidades vendidas') +
+        kpi('Total facturado', fmt.money(sum('total')), fmt.money(sum('neto')) + ' neto + ' + fmt.money(sum('iva')) + ' IVA') +
+        kpi('Ventas acumuladas', fmt.money(sum('ventasAcumuladas')), 'De los productos de estas facturas') +
+        kpi('Ganancia acumulada', '<span class="text-success">' + fmt.money(sum('gananciaAcumulada')) + '</span>', 'de ' + fmt.money(sum('gananciaProyectada')) + ' proyectada vendiendo todo') + '</div>';
     },
   };
 
