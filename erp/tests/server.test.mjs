@@ -522,3 +522,17 @@ test("venta en varios lotes (FIFO) y cuenta por cobrar con abonos", () => {
   assert.match(errorDe(s.call("registrarCobro", { ventaId: v.id, fecha: "2026-11-07", monto: 1 })), /ya está pagada/);
   assert.equal(s.ok("bootstrap").data.clientes[0].deuda, 0);
 });
+
+test("venta desde un lote elegido en Inventario: sale de ese lote aunque haya uno más antiguo", () => {
+  const s = createServer();
+  const { prods } = conInventario(s);
+  const pv2 = s.ok("guardarPreventa", { proveedorId: asmodee(s).id, productoId: prods.miniTin.id, lanzamiento: "2026-11-01", solicitado: 5, costoNeto: 9000 }).result;
+  s.ok("registrarAsignacion", { lineas: [{ id: pv2.id, asignado: 5 }] });
+  s.ok("crearCompra", { preventas: [pv2.id], factura: "TIN-2", fecha: "2026-11-01", despacho: 0 });
+  const nuevo = lote(s, prods.miniTin.id).find(l => l.factura === "TIN-2");
+  assert.match(errorDe(s.call("crearVenta", { fecha: "2026-11-05", lineas: [{ productoId: prods.miniTin.id, cantidad: 6, loteId: nuevo.id }] })), /en ese lote: quedan 5/);
+  const v = s.ok("crearVenta", { fecha: "2026-11-05", lineas: [{ productoId: prods.miniTin.id, cantidad: 2, loteId: nuevo.id }, { productoId: prods.miniTin.id, cantidad: 1 }] }).result;
+  const venta = s.ok("bootstrap").data.ventas.find(x => x.id === v.id);
+  assert.deepEqual(venta.lineas.map(l => [l.loteId === nuevo.id, l.cantidad]), [[true, 2], [false, 1]], "2 del lote elegido y 1 por FIFO del más antiguo");
+  assert.equal(lote(s, prods.miniTin.id).find(l => l.id === nuevo.id).disponible, 3);
+});

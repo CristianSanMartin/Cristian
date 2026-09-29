@@ -286,14 +286,24 @@ test("inventario: el stock disponible se toma y se lleva a una venta", { skip },
     // Un lote por producto de la factura (Battle Deck ENG: 12 comprados, 3 vendidos, 9 disponibles)
     const deckEng = page.locator('#inv-tbody tr[data-lote]', { hasText: "Battle Deck" }).filter({ has: page.locator(".lang-ENG") });
     assert.match(await deckEng.textContent(), /30th-DECK.*12.*3.*9.*\$26\.990/s);
-    // Marcar no despliega la fila; seleccionar dos lotes y venderlos
-    for (const row of await page.locator("#inv-tbody tr[data-lote]").all()) await row.locator("[data-sel-stock]").check();
-    assert.equal(await page.locator("#inv-tbody .detalle-compra").count(), 0);
+    // Sin casilla en la fila del lote: se marcan las unidades disponibles al desplegarlo
+    assert.equal(await deckEng.locator("input[type=checkbox]").count(), 0);
+    await deckEng.click();
+    const libres = page.locator("#inv-tbody .detalle-compra [data-sel-unidad]");
+    assert.equal(await libres.count(), 9, "solo las 9 disponibles se pueden marcar");
+    await libres.nth(0).check();
+    await libres.nth(1).check();
+    await page.waitForSelector("text=2 unidades seleccionadas");
     await page.click('[data-action="venderSeleccion"]');
-    await toast(page, /2 productos agregados a la venta/);
+    await toast(page, /2 unidades agregadas a la venta/);
     assert.equal(await page.locator('.nav-item.active').getAttribute("data-nav"), "ventas");
-    assert.equal(await page.locator("#nueva-venta [data-carrito] tr").count(), 2);
+    const linea = page.locator("#nueva-venta [data-carrito] tr");
+    assert.equal(await linea.count(), 1);
+    assert.match(await linea.textContent(), /Battle Deck.*factura 30th-DECK/s);
+    assert.equal(await linea.locator("[data-carrito-cant]").inputValue(), "2");
     assert.match(await page.locator("#nueva-venta [data-nv-totales]").textContent(), /Total\$53\.980/);
+    await page.locator('#nueva-venta button[type="submit"]').click();
+    await toast(page, /OC-0004 registrada/);
     // Editar la ficha (foto, precio) desde el inventario
     await page.click('[data-nav="inventario"]');
     await page.locator('#inv-tbody [data-action="editarProducto"]').first().click();

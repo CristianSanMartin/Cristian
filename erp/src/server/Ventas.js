@@ -26,15 +26,16 @@ const Ventas = {
 
     const lotes = Ventas.lotesDisponibles();
     const lineas = [];
-    entrada.forEach((x) => {
+    // Las unidades elegidas de un lote específico (desde Inventario) se reservan primero; el resto sale por FIFO.
+    entrada.slice().sort((a, b) => (b.loteId ? 1 : 0) - (a.loteId ? 1 : 0)).forEach((x) => {
       const prod = Productos.requerir(x.productoId);
       const nombre = Productos.nombreCompleto(prod);
       const cantidad = Util.entero(x.cantidad, 'La cantidad de ' + nombre, { requerido: true, min: 1 });
       const precioLista = Productos.precio(prod);
       const precio = x.precio === '' || x.precio == null ? precioLista : Util.entero(x.precio, 'El precio de ' + nombre);
-      const suyos = lotes.filter((l) => l.productoId === prod.id && l.disponible > 0);
+      const suyos = lotes.filter((l) => l.productoId === prod.id && l.disponible > 0 && (!x.loteId || l.id === String(x.loteId)));
       const stock = suyos.reduce((t, l) => t + l.disponible, 0);
-      if (cantidad > stock) throw new AppError('Stock insuficiente de ' + nombre + ': ' + (stock ? 'quedan ' + stock : 'no hay unidades') + ' en inventario.');
+      if (cantidad > stock) throw new AppError('Stock insuficiente de ' + nombre + (x.loteId ? ' en ese lote' : '') + ': ' + (stock ? 'quedan ' + stock : 'no hay unidades') + ' en inventario.');
       let falta = cantidad;
       suyos.forEach((l) => {
         if (!falta) return;

@@ -21,7 +21,7 @@
 
   /* ---------- nueva venta (carrito) ---------- */
 
-  const carrito = [];   // { productoId, cantidad, precio }
+  const carrito = [];   // { productoId, cantidad, precio, loteId? } — loteId: unidades elegidas en Inventario
   const borrador = { producto: '', cantidad: '1', fecha: '', cliente: '', canal: 'Tienda', evento: '', medioPago: 'debito', boleta: '', pagada: true, abono: '', notas: '' };
   const abiertas = new Set();
 
@@ -116,13 +116,14 @@
       const pr = prod(x.productoId);
       const n = Number(x.cantidad) || 0;
       const precio = x.precio === '' ? pr.precio : Number(x.precio) || 0;
-      const costo = costoFifo(x.productoId, n, usadas[x.productoId]);
-      usadas[x.productoId] = (usadas[x.productoId] || 0) + n;
+      const lote = x.loteId && data().lotes.find((l) => l.id === x.loteId);
+      const costo = lote ? lote.costo * n : costoFifo(x.productoId, n, usadas[x.productoId]);
+      if (!lote) usadas[x.productoId] = (usadas[x.productoId] || 0) + n;
       const g = precio * n / (1 + iva()) - costo;
       total += precio * n;
       ganancia += g;
       descuento += (pr.precio - precio) * n;
-      return '<tr><td class="cell-strong">' + esc(pr.nombre) + ' ' + GS.langPill(pr.idioma) + '<div class="cell-dim">' + esc(pr.edicion || '') + '</div></td>' +
+      return '<tr><td class="cell-strong">' + esc(pr.nombre) + ' ' + GS.langPill(pr.idioma) + '<div class="cell-dim">' + esc([pr.edicion, lote ? 'factura ' + lote.factura : ''].filter(Boolean).join(' · ')) + '</div></td>' +
         '<td class="right"><input class="qty-input" type="number" min="1" step="1" data-carrito-cant="' + i + '" value="' + esc(x.cantidad) + '"></td>' +
         '<td class="cell-num right">' + fmt.money(pr.precio) + '</td>' +
         '<td class="right"><input class="qty-input price-input" type="number" min="0" step="1" data-carrito-precio="' + i + '" value="' + esc(x.precio) + '" placeholder="' + fmt.num(pr.precio) + '"></td>' +
@@ -175,7 +176,7 @@
       const r = await GS.api('crearVenta', {
         fecha: v.fecha, cliente: v.cliente, canal: v.canal, evento: v.evento, medioPago: v.medioPago, boleta: v.boleta,
         pagada: v.pagada, abono: v.abono,
-        lineas: carrito.map((x) => ({ productoId: x.productoId, cantidad: x.cantidad, precio: x.precio })),
+        lineas: carrito.map((x) => ({ productoId: x.productoId, cantidad: x.cantidad, precio: x.precio, loteId: x.loteId || '' })),
       });
       GS.state.data = r.data;
       carrito.length = 0;
@@ -198,9 +199,9 @@
     if (!p) return falla('Elige un producto con stock de la lista.');
     const disp = stock()[p.id].disponible - enCarrito(p.id);
     if (n > disp) return falla('Stock insuficiente de ' + p.nombreCompleto + ': quedan ' + disp + '.');
-    const mismo = carrito.find((x) => x.productoId === p.id && x.precio === '');
+    const mismo = carrito.find((x) => x.productoId === p.id && x.precio === '' && !x.loteId);
     if (mismo) mismo.cantidad = String((Number(mismo.cantidad) || 0) + n);
-    else carrito.push({ productoId: p.id, cantidad: String(n), precio: '' });
+    else carrito.push({ productoId: p.id, cantidad: String(n), precio: '', loteId: '' });
     borrador.producto = '';
     borrador.cantidad = '1';
     form.elements.producto.value = '';
@@ -209,12 +210,15 @@
     form.elements.producto.focus();
   };
   /** Agrega un producto al carrito de la nueva venta (desde Inventario). */
-  GS.agregarAVenta = (productoId, n) => {
-    const disp = (stock()[productoId] || { disponible: 0 }).disponible - enCarrito(productoId);
+  GS.agregarAVenta = (productoId, n, loteId) => {
+    const lote = loteId && data().lotes.find((l) => l.id === loteId);
+    const disp = lote
+      ? lote.disponible - carrito.filter((x) => x.loteId === loteId).reduce((t, x) => t + (Number(x.cantidad) || 0), 0)
+      : (stock()[productoId] || { disponible: 0 }).disponible - enCarrito(productoId);
     if (disp <= 0) return;
-    const mismo = carrito.find((x) => x.productoId === productoId && x.precio === '');
+    const mismo = carrito.find((x) => x.productoId === productoId && x.precio === '' && (x.loteId || '') === (loteId || ''));
     if (mismo) mismo.cantidad = String((Number(mismo.cantidad) || 0) + Math.min(n, disp));
-    else carrito.push({ productoId: productoId, cantidad: String(Math.min(n, disp)), precio: '' });
+    else carrito.push({ productoId: productoId, cantidad: String(Math.min(n, disp)), precio: '', loteId: loteId || '' });
   };
   GS.actions.quitarDelCarrito = (i) => {
     carrito.splice(Number(i), 1);
