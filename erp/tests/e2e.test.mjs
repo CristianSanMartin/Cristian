@@ -200,10 +200,11 @@ test("factura de compra: las preventas seleccionadas pasan a Compras e Inventari
     await page.click('[data-nav="preventas"]');
     assert.equal(await fila("PVI-000001").count(), 0);
     await page.click('[data-nav="inventario"]');
-    // Sin pestañas: una lista de lotes; costo = $8.230 + $144 de despacho = $8.374
+    // Un pool por producto (sin factura ni fecha); costo = $8.230 + $144 de despacho = $8.374
     assert.equal(await page.locator('[data-action="modoInventario"]').count(), 0);
     const tin = page.locator("#inv-tbody tr.fila-compra", { hasText: "Mini Tin" });
-    assert.match(await tin.textContent(), /30th2.*10.*\$8\.374.*\$8\.230 \+ \$144 desp\./s);
+    assert.match(await tin.textContent(), /10.*\$8\.374.*\$8\.230 \+ \$144 desp\./s);
+    assert.doesNotMatch(await page.locator("#inv-thead").textContent(), /Factura|Fecha/);
     // La flecha despliega el lote unidad por unidad, como la planilla
     await tin.click();
     const unidades = page.locator("#inv-tbody .detalle-compra tbody tr");
@@ -283,10 +284,10 @@ test("inventario: el stock disponible se toma y se lleva a una venta", { skip },
   try {
     const { page, errores } = await abrir(browser);
     await page.click('[data-nav="inventario"]');
-    // Un lote por producto de la factura (Battle Deck ENG: 12 comprados, 3 vendidos, 9 disponibles)
-    const deckEng = page.locator('#inv-tbody tr[data-lote]', { hasText: "Battle Deck" }).filter({ has: page.locator(".lang-ENG") });
-    assert.match(await deckEng.textContent(), /30th-DECK.*12.*3.*9.*\$26\.990/s);
-    // Sin casilla en la fila del lote: se marcan las unidades disponibles al desplegarlo
+    // Un pool por producto (Battle Deck ENG: 12 comprados, 3 vendidos, 9 disponibles)
+    const deckEng = page.locator('#inv-tbody tr[data-producto]', { hasText: "Battle Deck" }).filter({ has: page.locator(".lang-ENG") });
+    assert.match(await deckEng.textContent(), /12.*3.*9.*\$26\.990/s);
+    // Sin casilla en la fila del producto: se marcan las unidades disponibles al desplegarlo
     assert.equal(await deckEng.locator("input[type=checkbox]").count(), 0);
     await deckEng.click();
     const libres = page.locator("#inv-tbody .detalle-compra [data-sel-unidad]");

@@ -182,10 +182,12 @@ margen, y estado comercial `recibida → vendiendo → agotada`.
 
 ## 8. Inventario
 
-**Implementado (v2.4):** Inventario es una sola lista de **lotes** (un producto de una factura):
-comprado, vendidas, disponible, costo (precio + despacho), precio de venta y ganancia. La flecha
-de cada lote **despliega sus unidades una por una** (Serie, estado, OC, cliente, valor unitario,
-costo, crédito, venta, neto, débito, pago SII, ganancia), como la planilla. Desde la lista se
+**Implementado (v2.4):** Inventario es un **pool por producto**: todo su stock junto, venga de la
+factura o proveedor que venga (sin columnas de factura ni fecha): comprado, vendidas, disponible,
+costo (precio + despacho; promedio si llegó en varias compras), precio de venta y ganancia. La
+flecha **despliega sus unidades una por una** (estado, OC, cliente, valor unitario, costo, crédito,
+venta, neto, débito, pago SII, ganancia), como la planilla. Por dentro cada unidad sigue ligada a
+su lote (factura), así Compras conserva el resultado de cada factura. Desde la lista se
 marca y se presiona **"Vender"** para llevar los productos al carrito de una venta; el lápiz edita
 la ficha (nombre, foto, precio). Los lotes agotados se ocultan salvo "Mostrar agotados".
 **No hay pestaña de catálogo:** las ediciones se renuevan cada ~3 meses; la ficha de cada
