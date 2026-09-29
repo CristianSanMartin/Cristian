@@ -200,13 +200,15 @@ test("factura de compra: las preventas seleccionadas pasan a Compras e Inventari
     await page.click('[data-nav="preventas"]');
     assert.equal(await fila("PVI-000001").count(), 0);
     await page.click('[data-nav="inventario"]');
-    await page.click('[data-action="modoInventario"][data-id="lote"]');
-    const tin = page.locator("#inv-tbody tr", { hasText: "Mini Tin" });
-    assert.match(await tin.textContent(), /30th2.*10.*\$8\.230.*\$144.*\$8\.374/s);
-    // Unidad por unidad, como la planilla: 24 + 6 + 10 + 12 + 12 del ejemplo
-    await page.click('[data-action="modoInventario"][data-id="unidad"]');
-    assert.equal(await page.locator("#inv-tbody tr").count(), 64);
-    assert.match(await page.locator("#inv-tfoot").textContent(), /Total/);
+    // Sin pestañas: una lista de lotes; costo = $8.230 + $144 de despacho = $8.374
+    assert.equal(await page.locator('[data-action="modoInventario"]').count(), 0);
+    const tin = page.locator("#inv-tbody tr.fila-compra", { hasText: "Mini Tin" });
+    assert.match(await tin.textContent(), /30th2.*10.*\$8\.374.*\$8\.230 \+ \$144 desp\./s);
+    // La flecha despliega el lote unidad por unidad, como la planilla
+    await tin.click();
+    const unidades = page.locator("#inv-tbody .detalle-compra tbody tr");
+    assert.equal(await unidades.count(), 10);
+    assert.match(await unidades.first().textContent(), /1 \/ 10.*Disponible/s);
 
     // Anular (administrador) devuelve las preventas a asignadas
     await page.click('[data-nav="compras"]');
@@ -263,10 +265,10 @@ test("venta: carrito con descuento por producto, comisión TUU, stock y acumulad
     // La factura de compra acumula lo vendido
     await page.click('[data-nav="compras"]');
     assert.match(await page.locator("#cp-tbody tr.fila-compra", { hasText: "30th-DECK" }).textContent(), /6 \/ 24.*Vendiendo/s);
-    // Inventario unidad por unidad: la unidad vendida muestra su OC y cliente
+    // Inventario: al desplegar el lote, la unidad vendida muestra su OC y cliente
     await page.click('[data-nav="inventario"]');
-    await page.click('[data-action="modoInventario"][data-id="unidad"]');
-    assert.match(await page.locator("#inv-tbody").textContent(), /OC-0004.*Maria Soto/s);
+    await page.locator("#inv-tbody tr.fila-compra", { hasText: "Battle Deck" }).filter({ has: page.locator(".lang-ENG") }).click();
+    assert.match(await page.locator("#inv-tbody .detalle-compra").textContent(), /OC-0004.*Maria Soto/s);
     // Cliente creado con su ficha
     await page.click('[data-nav="clientes"]');
     assert.match(await page.locator("#cl-tbody tr", { hasText: "Maria Soto" }).textContent(), /1.*\$49\.980/s);
@@ -281,11 +283,12 @@ test("inventario: el stock disponible se toma y se lleva a una venta", { skip },
   try {
     const { page, errores } = await abrir(browser);
     await page.click('[data-nav="inventario"]');
-    // Vista por defecto: una fila por producto con stock (Battle Deck ENG: 12 − 3 vendidos)
-    const deckEng = page.locator('#inv-tbody tr[data-stock]', { hasText: "Battle Deck" }).filter({ has: page.locator(".lang-ENG") });
-    assert.match(await deckEng.textContent(), /30th-DECK.*9.*\$26\.990/s);
-    // Seleccionar dos productos y venderlos
-    for (const row of await page.locator("#inv-tbody tr[data-stock]").all()) await row.locator("[data-sel-stock]").check();
+    // Un lote por producto de la factura (Battle Deck ENG: 12 comprados, 3 vendidos, 9 disponibles)
+    const deckEng = page.locator('#inv-tbody tr[data-lote]', { hasText: "Battle Deck" }).filter({ has: page.locator(".lang-ENG") });
+    assert.match(await deckEng.textContent(), /30th-DECK.*12.*3.*9.*\$26\.990/s);
+    // Marcar no despliega la fila; seleccionar dos lotes y venderlos
+    for (const row of await page.locator("#inv-tbody tr[data-lote]").all()) await row.locator("[data-sel-stock]").check();
+    assert.equal(await page.locator("#inv-tbody .detalle-compra").count(), 0);
     await page.click('[data-action="venderSeleccion"]');
     await toast(page, /2 productos agregados a la venta/);
     assert.equal(await page.locator('.nav-item.active').getAttribute("data-nav"), "ventas");

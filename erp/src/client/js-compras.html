@@ -11,8 +11,7 @@
   const data = () => GS.state.data;
   const abiertas = new Set();   // facturas con el detalle desplegado
   const DEF_C = { q: '' };
-  const DEF_I = { q: '', modo: 'stock' };
-  const selStock = new Set();   // productos marcados para vender
+  const DEF_I = { q: '', agotados: false };
   const signo = (n) => (n < 0 ? 'text-danger' : 'text-success');
   const kpi = (l, v, sub) => '<div class="kpi-card"><div class="kpi-label">' + l + '</div><div class="kpi-value small">' + v + '</div><div class="kpi-sub">' + sub + '</div></div>';
   const buscar = (lista, q, texto) => { const n = GS.norm(q.trim()); return lista.filter((x) => !n || GS.norm(texto(x)).includes(n)); };
@@ -123,182 +122,136 @@
     });
   };
 
-  /* ---------- Inventario ---------- */
+  /* ---------- Inventario ----------
+     Una fila por lote (producto de una factura). La flecha despliega sus unidades una por una,
+     como la planilla, con la OC y el cliente de las vendidas. Desde aquí se toma el stock para vender. */
+
+  const lotesAbiertos = new Set();
+  const selStock = new Set();   // lotes marcados para vender
 
   const producto = (l) => '<div class="prod-cell">' + GS.thumb(l.imagen) + '<div><span class="cell-strong">' + esc(l.productoNombre) + '</span> ' + GS.langPill(l.idioma) +
     '<div class="cell-dim">' + esc(l.edicion || '') + '</div></div></div>';
   const colsLote = [
     { id: 'producto', label: 'Producto', clase: 'col-prod', valor: (l) => l.productoNombre, texto: (l) => l.productoNombre + ' ' + l.idioma, celda: producto },
-    { id: 'factura', label: 'Factura', valor: (l) => l.factura, celda: (l) => '<span class="cell-strong">' + esc(l.factura) + '</span><div class="cell-dim">' + esc(l.id) + '</div>' },
-    { id: 'proveedor', label: 'Proveedor', valor: (l) => l.proveedor, celda: (l) => esc(l.proveedor) },
+    { id: 'factura', label: 'Factura', valor: (l) => l.factura, celda: (l) => '<span class="cell-strong">' + esc(l.factura) + '</span><div class="cell-dim">' + esc(l.proveedor) + '</div>' },
     { id: 'fecha', label: 'Fecha', valor: (l) => l.fecha, texto: (l) => fmt.date(l.fecha), celda: (l) => '<span class="nowrap">' + fmt.date(l.fecha) + '</span>' },
     { id: 'cantidad', label: 'Comprado', right: true, valor: (l) => l.cantidad, celda: (l) => fmt.num(l.cantidad) },
     { id: 'vendidas', label: 'Vendidas', right: true, valor: (l) => l.vendidas, celda: (l) => (l.vendidas ? fmt.num(l.vendidas) : '—') },
-    { id: 'disponible', label: 'Disponible', right: true, valor: (l) => l.disponible, celda: (l) => '<strong>' + fmt.num(l.disponible) + '</strong>' },
-    { id: 'costoNeto', label: 'Precio unidad', right: true, valor: (l) => l.costoNeto, texto: (l) => fmt.cost(l.costoNeto), celda: (l) => fmt.cost(l.costoNeto) },
-    { id: 'despacho', label: 'Despacho u.', right: true, valor: (l) => l.despachoUnidad, texto: (l) => fmt.money(l.despachoUnidad), celda: (l) => fmt.money(l.despachoUnidad) },
-    { id: 'costo', label: 'Costo', right: true, valor: (l) => l.costo, texto: (l) => fmt.money(l.costo), celda: (l) => '<strong>' + fmt.money(l.costo) + '</strong>' },
-    { id: 'credito', label: 'Crédito fiscal', right: true, valor: (l) => l.credito, texto: (l) => fmt.money(l.credito), celda: (l) => fmt.money(l.credito) },
-    { id: 'valorUnitario', label: 'Valor unitario', right: true, valor: (l) => l.valorUnitario, texto: (l) => fmt.money(l.valorUnitario), celda: (l) => fmt.money(l.valorUnitario) },
+    { id: 'disponible', label: 'Disponible', right: true, valor: (l) => l.disponible, celda: (l) => '<strong class="stock-num">' + fmt.num(l.disponible) + '</strong>' },
+    { id: 'costo', label: 'Costo u.', right: true, valor: (l) => l.costo, texto: (l) => fmt.money(l.costo),
+      celda: (l) => '<strong>' + fmt.money(l.costo) + '</strong><div class="cell-dim">' + fmt.cost(l.costoNeto) + ' + ' + fmt.money(l.despachoUnidad) + ' desp.</div>' },
     { id: 'precio', label: 'Precio venta', right: true, valor: (l) => l.precioVenta, texto: (l) => fmt.money(l.precioVenta), celda: (l) => (l.precioVenta ? fmt.money(l.precioVenta) : '—') },
-    { id: 'ganU', label: 'Ganancia u.', right: true, valor: (l) => l.gananciaUnidad, texto: (l) => fmt.money(l.gananciaUnidad),
-      celda: (l) => (l.precioVenta ? '<span class="' + signo(l.gananciaUnidad) + '">' + fmt.money(l.gananciaUnidad) + '</span>' : '—') },
-    { id: 'ganT', label: 'Ganancia proyectada', right: true, valor: (l) => l.gananciaProyectada, texto: (l) => fmt.money(l.gananciaProyectada),
-      celda: (l) => (l.precioVenta ? '<span class="' + signo(l.gananciaProyectada) + '">' + fmt.money(l.gananciaProyectada) + '</span>' : '—') },
-    { id: 'valor', label: 'Valor a costo', right: true, valor: (l) => l.valorInventario, texto: (l) => fmt.money(l.valorInventario), celda: (l) => fmt.money(l.valorInventario) },
+    { id: 'ganT', label: 'Ganancia', right: true, valor: (l) => l.gananciaProyectada, texto: (l) => fmt.money(l.gananciaProyectada),
+      celda: (l) => (l.precioVenta ? '<span class="' + signo(l.gananciaProyectada) + '">' + fmt.money(l.gananciaProyectada) + '</span>' : '—') + '<div class="cell-dim">' + fmt.money(l.gananciaUnidad) + ' c/u</div>' },
   ];
-
-  /* Unidad por unidad, como la planilla: una fila por unidad con su serie dentro del lote. */
-  const colsUnidad = [
-    { id: 'proveedor', label: 'Proveedor', valor: (u) => u.lote.proveedor, celda: (u) => esc(u.lote.proveedor) },
-    { id: 'factura', label: 'Factura', valor: (u) => u.lote.factura, celda: (u) => esc(u.lote.factura) },
-    { id: 'serie', label: 'Serie', right: true, valor: (u) => u.serie, celda: (u) => u.serie + '<span class="cell-dim"> / ' + u.lote.cantidad + '</span>' },
-    { id: 'producto', label: 'Producto', clase: 'col-prod', valor: (u) => u.lote.productoNombre, texto: (u) => u.lote.productoNombre + ' ' + u.lote.idioma, celda: (u) => producto(u.lote) },
-    { id: 'estado', label: 'Estado', valor: (u) => (u.venta ? 'Vendida' : 'Disponible'), celda: (u) => (u.venta ? '<span class="badge st-parcial">Vendida</span>' : '<span class="badge st-ok">Disponible</span>') },
-    { id: 'oc', label: 'OC', valor: (u) => (u.venta ? u.venta.oc : ''), celda: (u) => (u.venta ? '<span class="cell-strong">' + esc(u.venta.oc) + '</span>' : '—') },
-    { id: 'cliente', label: 'Cliente', valor: (u) => (u.venta ? u.venta.cliente : ''), celda: (u) => (u.venta ? esc(u.venta.cliente) : '—') },
-    { id: 'valorUnitario', label: 'Valor unitario', right: true, valor: (u) => u.lote.valorUnitario, texto: (u) => fmt.money(u.lote.valorUnitario), celda: (u) => fmt.money(u.lote.valorUnitario) },
-    { id: 'costo', label: 'Costo', right: true, valor: (u) => u.lote.costo, texto: (u) => fmt.money(u.lote.costo), celda: (u) => fmt.money(u.lote.costo) },
-    { id: 'credito', label: 'Crédito fiscal', right: true, valor: (u) => u.lote.credito, texto: (u) => fmt.money(u.lote.credito), celda: (u) => fmt.money(u.lote.credito) },
-    { id: 'precio', label: '$ Venta', right: true, valor: (u) => u.lote.precioVenta, texto: (u) => fmt.money(u.lote.precioVenta), celda: (u) => fmt.money(u.lote.precioVenta) },
-    { id: 'ventaNeta', label: 'Neto', right: true, valor: (u) => u.lote.ventaNeta, texto: (u) => fmt.money(u.lote.ventaNeta), celda: (u) => fmt.money(u.lote.ventaNeta) },
-    { id: 'debito', label: 'Débito fiscal', right: true, valor: (u) => u.lote.debito, texto: (u) => fmt.money(u.lote.debito), celda: (u) => fmt.money(u.lote.debito) },
-    { id: 'pagoSii', label: 'Pago SII', right: true, valor: (u) => u.lote.pagoSii, texto: (u) => fmt.money(u.lote.pagoSii), celda: (u) => fmt.money(u.lote.pagoSii) },
-    { id: 'ganancia', label: 'Ganancia', right: true, valor: (u) => u.lote.gananciaUnidad, texto: (u) => fmt.money(u.lote.gananciaUnidad),
-      celda: (u) => '<span class="' + signo(u.lote.gananciaUnidad) + '">' + fmt.money(u.lote.gananciaUnidad) + '</span>' },
-  ];
-
-  /* Stock disponible: una fila por producto (suma de sus lotes), para tomarlo y venderlo. */
-  function stockPorProducto() {
-    const porProd = {};
-    data().lotes.forEach((l) => {
-      if (l.disponible <= 0) return;
-      const r = porProd[l.productoId] = porProd[l.productoId] || { productoId: l.productoId, lote: l, disponible: 0, valorInventario: 0, gananciaProyectada: 0, lotes: 0, facturas: [] };
-      r.disponible += l.disponible;
-      r.valorInventario += l.valorInventario;
-      r.gananciaProyectada += l.gananciaProyectada;
-      r.lotes++;
-      if (r.facturas.indexOf(l.factura) === -1) r.facturas.push(l.factura);
-    });
-    return Object.keys(porProd).map((k) => {
-      const r = porProd[k];
-      r.costo = r.valorInventario / r.disponible;
-      r.gananciaUnidad = r.gananciaProyectada / r.disponible;
-      r.precioVenta = r.lote.precioVenta;
-      return r;
-    });
-  }
-  const colsStock = [
-    { id: 'producto', label: 'Producto', clase: 'col-prod', valor: (r) => r.lote.productoNombre, texto: (r) => r.lote.productoNombre + ' ' + r.lote.idioma, celda: (r) => producto(r.lote) },
-    { id: 'facturas', label: 'Factura', valor: (r) => r.facturas.join(', '), celda: (r) => esc(r.facturas.join(', ')) },
-    { id: 'disponible', label: 'Disponible', right: true, valor: (r) => r.disponible, celda: (r) => '<strong class="stock-num">' + fmt.num(r.disponible) + '</strong>' },
-    { id: 'precio', label: 'Precio venta', right: true, valor: (r) => r.precioVenta, texto: (r) => fmt.money(r.precioVenta), celda: (r) => (r.precioVenta ? fmt.money(r.precioVenta) : '—') },
-    { id: 'costo', label: 'Costo u.', right: true, valor: (r) => r.costo, texto: (r) => fmt.money(r.costo), celda: (r) => fmt.money(r.costo) + (r.lotes > 1 ? '<div class="cell-dim">promedio</div>' : '') },
-    { id: 'ganU', label: 'Ganancia u.', right: true, valor: (r) => r.gananciaUnidad, texto: (r) => fmt.money(r.gananciaUnidad),
-      celda: (r) => (r.precioVenta ? '<span class="' + signo(r.gananciaUnidad) + '">' + fmt.money(r.gananciaUnidad) + '</span>' : '—') },
-  ];
-  const buscadasStock = () => buscar(stockPorProducto(), GS.filters('inventario', DEF_I).q, (r) => r.lote.producto + ' ' + r.facturas.join(' ') + ' ' + r.lote.proveedor);
-  GS.tablaRegistrar('stock', { filas: buscadasStock, columnas: colsStock, alCambiar: () => GS.views.inventario.update() });
 
   const textoLote = (l) => l.id + ' ' + l.factura + ' ' + l.producto + ' ' + l.proveedor + ' ' + l.preventaId;
   const buscadasLotes = () => buscar(data().lotes, GS.filters('inventario', DEF_I).q, textoLote);
-  const unidades = () => {
-    const res = [];
-    // Las primeras series son las vendidas (en orden de venta), con su OC y cliente.
-    buscadasLotes().forEach((l) => { for (let i = 1; i <= l.cantidad; i++) res.push({ lote: l, serie: i, venta: l.unidadesVendidas[i - 1] || null }); });
-    return res;
-  };
   GS.tablaRegistrar('lotes', { filas: buscadasLotes, columnas: colsLote, alCambiar: () => GS.views.inventario.update() });
-  GS.tablaRegistrar('unidades', { filas: unidades, columnas: colsUnidad, alCambiar: () => GS.views.inventario.update() });
+
+  /** Unidades del lote, una por fila (Serie 1…N): las primeras son las vendidas, en orden de venta. */
+  function detalleLote(l) {
+    const m = (v) => '<td class="cell-num right">' + fmt.money(v) + '</td>';
+    const filas = [];
+    for (let i = 1; i <= l.cantidad; i++) {
+      const u = l.unidadesVendidas[i - 1];
+      filas.push('<tr' + (u ? '' : ' class="unidad-libre"') + '><td class="cell-num right">' + i + '<span class="cell-dim"> / ' + l.cantidad + '</span></td>' +
+        '<td>' + (u ? '<span class="badge st-parcial">Vendida</span>' : '<span class="badge st-ok">Disponible</span>') + '</td>' +
+        '<td>' + (u ? '<span class="cell-strong">' + esc(u.oc) + '</span>' : '—') + '</td><td>' + (u ? esc(u.cliente) : '—') + '</td>' +
+        m(l.valorUnitario) + m(l.costo) + m(l.credito) + m(u ? u.precio : l.precioVenta) +
+        m((u ? u.precio : l.precioVenta) / (1 + data().app.iva)) +
+        m((u ? u.precio : l.precioVenta) - (u ? u.precio : l.precioVenta) / (1 + data().app.iva)) +
+        m((u ? u.precio : l.precioVenta) - (u ? u.precio : l.precioVenta) / (1 + data().app.iva) - l.credito) +
+        '<td class="cell-num right ' + signo((u ? u.precio : l.precioVenta) / (1 + data().app.iva) - l.costo) + '">' + fmt.money((u ? u.precio : l.precioVenta) / (1 + data().app.iva) - l.costo) + '</td></tr>');
+    }
+    return '<div class="detalle-compra"><table class="data-table"><thead><tr><th class="right">Serie</th><th>Estado</th><th>OC</th><th>Cliente</th>' +
+      '<th class="right">Valor unitario</th><th class="right">Costo</th><th class="right">Crédito fiscal</th><th class="right">$ Venta</th><th class="right">Neto</th>' +
+      '<th class="right">Débito fiscal</th><th class="right">Pago SII</th><th class="right">Ganancia</th></tr></thead><tbody>' + filas.join('') + '</tbody></table>' +
+      '<p class="table-note">Las vendidas muestran el precio real de su venta; las disponibles, el precio de venta actual.</p></div>';
+  }
 
   GS.views.inventario = {
     title: 'Inventario',
     render(el) {
       const f = GS.filters('inventario', DEF_I);
       el.innerHTML =
-        '<div class="page-head"><div><h1>Inventario</h1><p>El stock disponible para vender. Marca los productos y presiona "Vender" para llevarlos al carrito de una venta.</p></div>' +
+        '<div class="page-head"><div><h1>Inventario</h1><p>Un lote por producto de cada factura. Despliega un lote para ver sus unidades una por una; marca los que quieras vender y presiona "Vender".</p></div>' +
         '<button class="btn ghost" data-action="exportarInventario">' + GS.icon('download') + 'Exportar</button></div>' +
         '<div class="filters-bar"><div class="search-box">' + GS.icon('search') + '<input type="text" data-filter="inventario.q" value="' + esc(f.q) + '" placeholder="Buscar producto, factura o PVI..."></div>' +
-        '<div class="tabs mini">' + [['stock', 'Stock disponible'], ['lote', 'Por lote'], ['unidad', 'Unidad por unidad']].map((t) =>
-          '<button type="button" class="tab' + (f.modo === t[0] ? ' active' : '') + '" data-action="modoInventario" data-id="' + t[0] + '">' + t[1] + '</button>').join('') + '</div></div>' +
+        '<label class="check"><input type="checkbox" data-filter="inventario.agotados"' + (f.agotados ? ' checked' : '') + '> Mostrar agotados</label></div>' +
         '<div id="inv-resumen"></div>' +
         '<div id="inv-acciones"></div>' +
-        '<div class="table-wrap"><table class="data-table xwide"><thead><tr id="inv-thead"></tr></thead><tbody id="inv-tbody"></tbody><tfoot id="inv-tfoot"></tfoot></table></div>' +
+        '<div class="table-wrap"><table class="data-table compacta"><thead><tr id="inv-thead"></tr></thead><tbody id="inv-tbody"></tbody></table></div>' +
         '<p class="table-note">Costo = precio unidad neto + despacho prorrateado. Crédito fiscal = costo × 19%. Ganancia = precio de venta sin IVA − costo. El precio de venta es el del producto (el propio o el sugerido).</p>';
       this.update();
     },
     update() {
       const f = GS.filters('inventario', DEF_I);
-      const porUnidad = f.modo === 'unidad';
-      const porStock = f.modo === 'stock';
-      const tabla = porStock ? 'stock' : porUnidad ? 'unidades' : 'lotes';
-      const cols = porStock ? colsStock : porUnidad ? colsUnidad : colsLote;
-      const rows = GS.tablaAplicar(tabla, porStock ? buscadasStock() : porUnidad ? unidades() : buscadasLotes(), cols);
+      const rows = GS.tablaAplicar('lotes', buscadasLotes(), colsLote).filter((l) => f.agotados || l.disponible > 0);
       const op = GS.puede('operador');
-      // El stock cabe en pantalla; los lotes y unidades usan la tabla ancha, con todas las columnas de la planilla.
-      document.getElementById('inv-thead').closest('table').className = 'data-table ' + (porStock ? '' : 'xwide');
-      const celdas = (r) => cols.map((c) => '<td class="' + (c.right ? 'cell-num right ' : '') + (c.clase || '') + '">' + c.celda(r) + '</td>').join('');
-      document.getElementById('inv-thead').innerHTML = porStock ? (op ? '<th></th>' : '') + GS.tablaEncabezado(tabla, cols) + '<th></th>' : GS.tablaEncabezado(tabla, cols);
-      document.getElementById('inv-tbody').innerHTML = rows.length
-        ? rows.map((r) => (porStock
-          ? '<tr data-stock="' + esc(r.productoId) + '" class="' + (selStock.has(r.productoId) ? 'row-selected' : '') + '">' +
-            (op ? '<td><input type="checkbox" class="row-check" data-sel-stock="' + esc(r.productoId) + '"' + (selStock.has(r.productoId) ? ' checked' : '') + ' aria-label="Seleccionar ' + esc(r.lote.producto) + '"></td>' : '') +
-            celdas(r) + '<td><div class="row-actions">' + (op
-              ? '<button class="btn small secondary" data-action="venderStock" data-id="' + esc(r.productoId) + '">' + GS.icon('ventas') + 'Vender</button>' +
-                GS.iconBtn('editarProducto', r.productoId, 'edit', 'Editar nombre, foto o precio')
-              : '') + '</div></td></tr>'
-          : '<tr>' + celdas(r) + '</tr>')).join('')
-        : '<tr><td colspan="' + (cols.length + 2) + '">' + GS.empty('No hay stock disponible', 'Los productos entran al registrar su factura de compra desde Preventas.', 'inventario') + '</td></tr>';
-      barraStock(porStock);
+      const n = colsLote.length + 3;
+      document.getElementById('inv-thead').innerHTML = '<th></th><th></th>' + GS.tablaEncabezado('lotes', colsLote) + '<th></th>';
+      document.getElementById('inv-tbody').innerHTML = rows.length ? rows.map((l) => {
+        const open = lotesAbiertos.has(l.id);
+        const vendible = op && l.disponible > 0;
+        return '<tr class="fila-compra' + (open ? ' abierta' : '') + (l.disponible ? '' : ' row-muted') + (selStock.has(l.id) ? ' row-selected' : '') + '" data-action="verLote" data-id="' + esc(l.id) + '" data-lote="' + esc(l.id) + '">' +
+          '<td><span class="chev">' + (open ? '▾' : '▸') + '</span></td>' +
+          '<td>' + (vendible ? '<input type="checkbox" class="row-check" data-sel-stock="' + esc(l.id) + '"' + (selStock.has(l.id) ? ' checked' : '') + ' aria-label="Seleccionar ' + esc(l.producto) + '">' : '') + '</td>' +
+          colsLote.map((c) => '<td class="' + (c.right ? 'cell-num right ' : '') + (c.clase || '') + '">' + c.celda(l) + '</td>').join('') +
+          '<td><div class="row-actions">' + (vendible ? '<button class="btn small secondary" data-action="venderStock" data-id="' + esc(l.id) + '">' + GS.icon('ventas') + 'Vender</button>' : '') +
+          (op ? GS.iconBtn('editarProducto', l.productoId, 'edit', 'Editar nombre, foto o precio') : '') + '</div></td></tr>' +
+          (open ? '<tr class="detalle-row"><td colspan="' + n + '">' + detalleLote(l) + '</td></tr>' : '');
+      }).join('') : '<tr><td colspan="' + n + '">' + GS.empty('No hay stock disponible', 'Los productos entran al registrar su factura de compra desde Preventas.', 'inventario') + '</td></tr>';
+      const wrap = document.getElementById('inv-tbody').closest('.table-wrap');
+      document.querySelectorAll('#inv-tbody .detalle-compra').forEach((d) => { d.style.width = Math.max(320, wrap.clientWidth - 36) + 'px'; });
+      barraStock();
 
-      const lotes = porStock ? data().lotes.filter((l) => rows.some((r) => r.productoId === l.productoId)) : porUnidad ? Array.from(new Set(rows.map((u) => u.lote))) : rows;
-      const disp = lotes.reduce((t, l) => t + l.disponible, 0);
-      const sum = (k) => lotes.reduce((t, l) => t + l[k], 0);
-      const credito = lotes.reduce((t, l) => t + l.credito * l.disponible, 0);
+      const disp = rows.reduce((t, l) => t + l.disponible, 0);
+      const sum = (k) => rows.reduce((t, l) => t + l[k], 0);
+      const credito = rows.reduce((t, l) => t + l.credito * l.disponible, 0);
+      const productos = new Set(rows.filter((l) => l.disponible > 0).map((l) => l.productoId)).size;
       document.getElementById('inv-resumen').innerHTML = '<div class="kpi-grid">' +
-        kpi('Unidades disponibles', fmt.num(disp), (porStock ? rows.length + (rows.length === 1 ? ' producto' : ' productos') : lotes.length + (lotes.length === 1 ? ' lote' : ' lotes'))) +
+        kpi('Unidades disponibles', fmt.num(disp), productos + (productos === 1 ? ' producto' : ' productos')) +
         kpi('Valor a costo', fmt.money(sum('valorInventario')), fmt.money(credito) + ' de crédito fiscal') +
         kpi('Venta proyectada', fmt.money(sum('ventaProyectada')), 'Vendiendo todo al precio de venta') +
         kpi('Ganancia proyectada', '<span class="text-success">' + fmt.money(sum('gananciaProyectada')) + '</span>', 'Real neta') + '</div>';
-      document.getElementById('inv-tfoot').innerHTML = rows.length && porUnidad
-        ? '<tr class="total-row">' + cols.map((c) => {
-          const tot = { valorUnitario: 'valorUnitario', costo: 'costo', credito: 'credito', precio: 'precioVenta', ventaNeta: 'ventaNeta', debito: 'debito', pagoSii: 'pagoSii', ganancia: 'gananciaUnidad' }[c.id];
-          if (c.id === 'proveedor') return '<td><strong>Total</strong></td>';
-          return '<td class="cell-num right">' + (tot ? '<strong>' + fmt.money(rows.reduce((t, u) => t + u.lote[tot], 0)) + '</strong>' : '') + '</td>';
-        }).join('') + '</tr>'
-        : '';
     },
   };
 
-  function barraStock(porStock) {
+  GS.actions.verLote = (id, el) => {
+    if (lotesAbiertos.has(id)) lotesAbiertos.delete(id); else lotesAbiertos.add(id);
+    GS.views.inventario.update();
+  };
+
+  function barraStock() {
     const el = document.getElementById('inv-acciones');
-    if (!porStock || !selStock.size) { el.innerHTML = ''; return; }
+    if (!selStock.size) { el.innerHTML = ''; return; }
     el.innerHTML = '<div class="action-bar">' + GS.icon('check') + '<span><strong>' + selStock.size + '</strong> ' + (selStock.size === 1 ? 'producto seleccionado' : 'productos seleccionados') + '</span>' +
       '<button class="btn small" data-action="venderSeleccion">' + GS.icon('ventas') + 'Vender seleccionados</button>' +
       '<button class="btn ghost small" data-action="limpiarStock">Quitar selección</button></div>';
   }
+  document.addEventListener('click', (e) => {
+    // Marcar un lote no despliega la fila.
+    if (e.target.dataset && e.target.dataset.selStock) e.stopPropagation();
+  }, true);
   document.addEventListener('change', (e) => {
     const id = e.target.dataset && e.target.dataset.selStock;
     if (!id) return;
     if (e.target.checked) selStock.add(id); else selStock.delete(id);
     e.target.closest('tr').classList.toggle('row-selected', e.target.checked);
-    barraStock(true);
+    barraStock();
   });
-  /** Lleva los productos al carrito de Ventas (1 unidad de cada uno; la cantidad se ajusta allá). */
-  function vender(ids) {
-    ids.forEach((id) => GS.agregarAVenta(id, 1));
+  /** Lleva los productos de los lotes al carrito de Ventas (1 unidad de cada uno; la cantidad se ajusta allá). */
+  function vender(loteIds) {
+    const prods = Array.from(new Set(loteIds.map((id) => (data().lotes.find((l) => l.id === id) || {}).productoId).filter(Boolean)));
+    prods.forEach((id) => GS.agregarAVenta(id, 1));
     selStock.clear();
     GS.go('ventas');
-    GS.toast(ids.length === 1 ? 'Producto agregado a la venta' : ids.length + ' productos agregados a la venta');
+    GS.toast(prods.length === 1 ? 'Producto agregado a la venta' : prods.length + ' productos agregados a la venta');
   }
   GS.actions.venderStock = (id) => vender([id]);
   GS.actions.venderSeleccion = () => vender(Array.from(selStock));
   GS.actions.limpiarStock = () => { selStock.clear(); GS.views.inventario.update(); };
-
-  GS.actions.modoInventario = (modo) => {
-    GS.filters('inventario', DEF_I).modo = modo;
-    GS.render();
-  };
 
   GS.actions.exportarInventario = () => {
     const filas = [];
