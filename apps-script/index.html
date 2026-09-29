@@ -44,6 +44,36 @@
     select,input[type=search] { border:1px solid #d1d5db; border-radius:7px; padding:8px 10px; font-size:13px; }
     .filters { display:flex; flex-wrap:wrap; gap:9px; margin-bottom:12px; }
     .file-name { margin-top:12px; font-weight:bold; }
+      /* Pestañas y vista Rutas pendientes */
+    .tabs { display:flex; gap:6px; margin-bottom:18px; border-bottom:1px solid var(--line,#e5e7eb); }
+    .tab { border:0; background:none; color:var(--muted,#6b7280); padding:10px 16px; font-size:14px; font-weight:bold; cursor:pointer; border-bottom:3px solid transparent; margin-bottom:-1px; }
+    .tab.active { color:var(--accent,#2563eb); border-bottom-color:var(--accent,#2563eb); }
+    .tab:focus-visible { outline:3px solid var(--accent-line,#bfdbfe); outline-offset:2px; }
+    .rutas-layout { display:grid; grid-template-columns:320px minmax(0,1fr); gap:18px; align-items:start; }
+    .rutas-panel { position:sticky; top:12px; max-height:calc(100vh - 24px); overflow:auto; }
+    .rutas-panel h3 { font-size:13px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted,#6b7280); margin:18px 0 8px; }
+    .rutas-panel h3:first-child { margin-top:0; }
+    .carga { border:1px dashed var(--muted,#9ca3af); border-radius:8px; padding:10px 12px; margin-bottom:8px; cursor:pointer; }
+    .carga:hover { background:var(--hover,#f9fafb); }
+    .carga b { display:block; font-size:13px; }
+    .carga span { font-size:12px; color:var(--muted,#6b7280); overflow-wrap:anywhere; }
+    .carga.lista { border-style:solid; border-color:var(--ok,#047857); }
+    .prof-item { display:flex; justify-content:space-between; gap:8px; font-size:12px; padding:6px 0; border-bottom:1px solid var(--line,#e5e7eb); }
+    .prof-item button { border:0; background:none; color:var(--err,#b91c1c); cursor:pointer; font-size:12px; }
+    .estado-item { display:flex; align-items:center; justify-content:space-between; gap:8px; width:100%; border:1px solid var(--line,#e5e7eb); background:var(--surface,#fff); color:var(--fg,#1f2937); border-radius:8px; padding:9px 10px; margin-bottom:6px; cursor:pointer; font-size:13px; text-align:left; }
+    .estado-item.sel { border-color:var(--accent,#2563eb); background:var(--accent-soft,#eff6ff); }
+    .estado-item .n { font-weight:bold; font-variant-numeric:tabular-nums; }
+    .punto { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:7px; }
+    .p-err { background:var(--err,#b91c1c); } .p-warn { background:var(--warn,#b45309); } .p-ok { background:var(--ok,#047857); } .p-none { background:var(--muted,#9ca3af); }
+    .cobertura { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+    .cobertura label { font-size:12px; color:var(--muted,#6b7280); }
+    .cobertura input { width:100%; border:1px solid var(--line,#e5e7eb); background:var(--surface,#fff); color:var(--fg,#1f2937); border-radius:7px; padding:6px; font-size:12px; }
+    #rutasBody td, #sinRegistroBody td { white-space:nowrap; }
+    #rutasBody td:last-child { white-space:normal; min-width:220px; }
+    .nota { font-size:12px; color:var(--muted,#6b7280); line-height:1.45; margin:6px 0 0; }
+    .reglas summary { cursor:pointer; font-size:13px; font-weight:bold; }
+    .reglas ul { padding-left:18px; margin:8px 0 0; font-size:12px; line-height:1.5; color:var(--muted,#6b7280); }
+    @media (max-width:900px){ .rutas-layout { grid-template-columns:1fr; } .rutas-panel { position:static; max-height:none; } }
   </style>
 </head>
 <body>
@@ -53,6 +83,13 @@
     <p>Procesa proformas en bruto y revisa DELIVERY, SERVICE, TRANSFERENCIA y TL.</p>
   </div>
 
+  <div class="tabs">
+    <button class="tab active" data-vista="proforma" onclick="mostrarVista('proforma')">Revisión de proforma</button>
+    <button class="tab" data-vista="rutas" onclick="mostrarVista('rutas')">Rutas pendientes</button>
+  </div>
+  <div id="errorArea" class="card hidden"><div id="errorText" class="error-box"></div></div>
+
+  <div id="vistaProforma">
   <div class="card">
     <div id="dropArea" class="upload-area" onclick="document.getElementById('fileInput').click()">
       <h2>Cargar proforma Excel</h2>
@@ -67,7 +104,6 @@
     </div>
   </div>
 
-  <div id="errorArea" class="card hidden"><div id="errorText" class="error-box"></div></div>
 
   <div id="resultArea" class="hidden">
     <div class="card">
@@ -150,6 +186,91 @@
       <button class="button secondary" onclick="vaciarObjeciones()">Vaciar lista</button>
       <button class="button green" onclick="descargarTemplateTMS()">Descargar Template TMS</button>
       <button class="button green" onclick="descargarFormatoMail()">Descargar Formato mail</button>
+    </div>
+  </div>
+  </div>
+
+  <div id="vistaRutas" class="hidden">
+    <div class="rutas-layout">
+      <aside class="card rutas-panel">
+        <h3>Archivos</h3>
+        <div id="cargaRegistro" class="carga" onclick="document.getElementById('inRegistro').click()">
+          <b>Registro de operaciones</b><span id="txtRegistro">Excel con FECHA, CUENTA, ID RUTA</span>
+          <input id="inRegistro" type="file" accept=".xlsx,.xls,.xlsm">
+        </div>
+        <div id="cargaGeosort" class="carga" onclick="document.getElementById('inGeosort').click()">
+          <b>Geosort (opcional)</b><span id="txtGeosort">Detalle de rutas de Falabella, CSV o Excel</span>
+          <input id="inGeosort" type="file" accept=".csv,.xlsx,.xls">
+        </div>
+        <div id="cargaProformas" class="carga" onclick="document.getElementById('inProformas').click()">
+          <b>Proformas</b><span>Una o varias, en bruto o procesadas</span>
+          <input id="inProformas" type="file" accept=".xlsx,.xls,.xlsm" multiple>
+        </div>
+        <div id="listaProformas"></div>
+
+        <h3>Periodo cubierto por proformas</h3>
+        <div class="cobertura">
+          <div><label for="cobDesde">Desde</label><input id="cobDesde" type="date" onchange="cruzarRutas()"></div>
+          <div><label for="cobHasta">Hasta</label><input id="cobHasta" type="date" onchange="cruzarRutas()"></div>
+        </div>
+        <p class="nota">Se calcula solo con los días que las proformas pagan. Fuera de este rango una ruta no se marca como pendiente.</p>
+
+        <h3>Estado de las rutas</h3>
+        <div id="panelEstados"><p class="nota">Carga el registro y al menos una proforma.</p></div>
+        <div id="panelExtra"></div>
+
+        <h3>Reglas</h3>
+        <details class="reglas">
+          <summary>Cómo se clasifica cada ruta</summary>
+          <ul>
+            <li><b>Pagada:</b> el ID RUTA está como ID Viaje en alguna proforma (o en Viajes de Transferencia).</li>
+            <li><b>Pagada con otro ID:</b> no calza el ID, pero la misma patente y fecha tiene un viaje pagado que no está en el registro.</li>
+            <li><b>TL 2da vuelta:</b> TL sin pago con 2 o más TL de la misma patente ese día; se espera como objeción aprobada.</li>
+            <li><b>Pendiente:</b> dentro del periodo cubierto y sin pago en ninguna proforma cargada.</li>
+            <li><b>Sin proforma cargada:</b> fuera del periodo cubierto; falta cargar la proforma que la paga.</li>
+            <li>Las filas del registro con ID "-" son bonos o descuentos y no se cuentan.</li>
+          </ul>
+        </details>
+      </aside>
+
+      <main style="min-width:0">
+        <div class="card">
+          <h2>Rutas pendientes de pago</h2>
+          <div class="filters">
+            <select id="rEstado" onchange="renderPanelRutas();renderRutas()"><option value="">Todos los estados</option></select>
+            <select id="rTipo" onchange="renderRutas()">
+              <option value="">Todos los tipos</option><option>Ruta</option><option>TL</option><option>Transferencia</option><option>Sin ID</option>
+            </select>
+            <select id="rFuente" onchange="renderRutas()">
+              <option value="">Registro y geosort</option><option value="Registro">En registro</option><option value="Solo geosort">Solo en geosort</option>
+            </select>
+            <input id="rBuscar" type="search" placeholder="Buscar patente o ID" oninput="renderRutas()">
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr>
+                <th>Fecha</th><th>Patente</th><th>Origen</th><th>ID Ruta</th><th>Tipo</th><th>Fuente</th><th>Puntos entregados</th>
+                <th>Costo registro</th><th>Estado</th><th>Proforma</th><th>ID Sol. Pago</th><th>Valor Sol. Pago</th><th>Detalle</th>
+              </tr></thead>
+              <tbody id="rutasBody"></tbody>
+            </table>
+          </div>
+          <div class="actions">
+            <button class="button green" onclick="descargarCruceRutas()">Descargar cruce Excel</button>
+          </div>
+        </div>
+
+        <div id="sinRegistroArea" class="card hidden">
+          <h2>Pagado sin registro</h2>
+          <div class="info-box">Viajes que Falabella pagó y que no aparecen en el registro de operaciones, ni por ID ni por patente y fecha.</div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Proforma</th><th>Factura</th><th>ID Viaje</th><th>Fecha viaje</th><th>Origen</th><th>Patente</th><th>Tipo pago</th><th>ID Sol. Pago</th><th>Valor Sol. Pago</th><th>En geosort</th></tr></thead>
+              <tbody id="sinRegistroBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </main>
     </div>
   </div>
 </div>
@@ -753,6 +874,328 @@ function descargar(){
   const base=(archivo?.name||"Proforma.xlsx").replace(/\.(xlsx|xlsm|xls)$/i,"");
   XLSX.writeFile(wbProcesado,base+"_PROCESADA_WEB.xlsx");
 }
+
+// ---------- Pestañas ----------
+function mostrarVista(v){
+  document.getElementById("vistaProforma").classList.toggle("hidden",v!=="proforma");
+  document.getElementById("vistaRutas").classList.toggle("hidden",v!=="rutas");
+  document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("active",t.dataset.vista===v));
+}
+
+// ---------- Rutas pendientes ----------
+// Cruza el registro de operaciones (FECHA, CUENTA, ID RUTA) con las proformas y, si está, con el geosort.
+// Llave: ID RUTA = ID Viaje de la proforma (OT/TL) o Id Viaje de Viajes de Transferencia. Respaldo: patente + fecha.
+const rutasDatos={registro:null,registroNombre:"",geosort:null,geosortNombre:"",proformas:[]};
+let cruceRutas=null;
+
+const ESTADOS_RUTA=[
+  {k:"Pendiente",c:"p-err",b:"badge-error"},
+  {k:"Pagada con otro ID",c:"p-warn",b:"badge-warning"},
+  {k:"TL 2da vuelta (esperar objeción)",c:"p-warn",b:"badge-warning"},
+  {k:"Sin ID en registro",c:"p-warn",b:"badge-warning"},
+  {k:"Sin proforma cargada",c:"p-none",b:""},
+  {k:"Pagada",c:"p-ok",b:"badge-ok"}
+];
+// Un día cuenta como cubierto si la proforma paga al menos el 20% de los viajes del día más cargado (los rezagados no cuentan)
+const COBERTURA_MIN_PCT=0.2, COBERTURA_MIN_VIAJES=5;
+
+function patNorm(v){ return nt(String(v??"").split("/")[0]).replace(/[^A-Z0-9]/g,""); }
+function idRuta(v){ const s=nid(v); return /^[0-9A-F-]{36}$/i.test(s)?s.toLowerCase():s; }
+function tipoIdRuta(id){
+  if(!id||id==="0") return "Sin ID";
+  if(id.length===36) return "TL";
+  if(/^\d{5,6}$/.test(id)) return "Transferencia";
+  return "Ruta";
+}
+// Fecha a "AAAA-MM-DD": acepta serial de Excel, Date o texto dd-mm-aaaa / aaaa-mm-dd
+function fechaISO(v){
+  if(v===null||v===undefined||v==="") return "";
+  const p=n=>String(n).padStart(2,"0");
+  if(typeof v==="number"){ const d=XLSX.SSF.parse_date_code(v); return d?`${d.y}-${p(d.m)}-${p(d.d)}`:""; }
+  if(v instanceof Date) return `${v.getFullYear()}-${p(v.getMonth()+1)}-${p(v.getDate())}`;
+  const s=String(v).trim();
+  let m=s.match(/^(\d{4})-(\d{2})-(\d{2})/); if(m) return `${m[1]}-${m[2]}-${m[3]}`;
+  m=s.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/); if(m && m[3]!=="0001") return `${m[3]}-${p(m[2])}-${p(m[1])}`;
+  return "";
+}
+function fechaCL(iso){ return iso?iso.split("-").reverse().join("-"):""; }
+function leerLibro(file, cb){
+  const r=new FileReader();
+  r.onload=e=>{
+    try{
+      const u=new Uint8Array(e.target.result);
+      const esCsv=/\.csv$/i.test(file.name);
+      cb(esCsv ? {csv:new TextDecoder("utf-8").decode(u).replace(/^﻿/,"")} : {wb:XLSX.read(u,{type:"array",cellDates:false})});
+    }catch(err){ mostrarError(`No se pudo leer ${file.name}.\n\n${err.message}`); }
+  };
+  r.readAsArrayBuffer(file);
+}
+// CSV con separador ";" o "," y comillas (el geosort trae ";" dentro de campos entre comillas)
+function parseCSV(txt){
+  const primera=txt.slice(0,txt.indexOf("\n")>0?txt.indexOf("\n"):txt.length);
+  const sep=(primera.split(";").length>=primera.split(",").length)?";":",";
+  const rows=[]; let row=[], cell="", q=false;
+  for(let i=0;i<txt.length;i++){
+    const ch=txt[i];
+    if(q){ if(ch==='"'){ if(txt[i+1]==='"'){cell+='"';i++;} else q=false; } else cell+=ch; }
+    else if(ch==='"') q=true;
+    else if(ch===sep){ row.push(cell); cell=""; }
+    else if(ch==="\n"){ row.push(cell.replace(/\r$/,"")); rows.push(row); row=[]; cell=""; }
+    else cell+=ch;
+  }
+  if(cell!==""||row.length){ row.push(cell); rows.push(row); }
+  return rows.filter(r=>r.some(c=>c!==""));
+}
+function hojaConColumnas(wb, cols){
+  for(const n of wb.SheetNames){
+    const m=matrix(wb.Sheets[n]);
+    for(let i=0;i<Math.min(m.length,10);i++) if(cols.every(c=>idx(m[i],[c])>=0)) return m.slice(i);
+  }
+  return null;
+}
+
+// Registro: una fila por ruta (se agrupan destinos del mismo ID); "-" = bonos/descuentos
+function parseRegistro(wb){
+  const m=hojaConColumnas(wb,["FECHA","ID RUTA"]);
+  if(!m) throw new Error("El registro no tiene las columnas FECHA e ID RUTA.");
+  const h=m[0], c={fecha:idx(h,["FECHA"]),cuenta:idx(h,["CUENTA"]),pat:idx(h,["PATENTE"]),origen:idx(h,["ORIGEN"]),id:idx(h,["ID RUTA"]),
+    total:idx(h,["TOTAL RUTA","TARIFA BASE"]),loc:idx(h,["LOCALIDAD"]),cat:idx(h,["CATEGORIA"])};
+  const out=[], porId=new Map(); let ajustes=0;
+  for(const r of m.slice(1)){
+    const idRaw=nid(r[c.id]), fecha=fechaISO(r[c.fecha]);
+    if(!fecha && !idRaw) continue;
+    if(idRaw==="-"){ ajustes++; continue; }
+    const id=idRuta(idRaw), g={fecha,patente:String(r[c.pat]??"").split("/")[0].trim(),pat:patNorm(r[c.pat]),cuenta:c.cuenta>=0?r[c.cuenta]:"",
+      origen:c.origen>=0?r[c.origen]:"",id:id==="0"?"":id,total:c.total>=0?num(r[c.total]):0,localidad:c.loc>=0?String(r[c.loc]??""):"",categoria:c.cat>=0?r[c.cat]:""};
+    if(g.id && porId.has(g.id)){ const o=porId.get(g.id); o.total+=g.total; if(g.localidad&&!o.localidad.includes(g.localidad)) o.localidad+=", "+g.localidad; continue; }
+    if(g.id) porId.set(g.id,g);
+    out.push(g);
+  }
+  return {rutas:out,ajustes};
+}
+
+// Proforma: índice de viajes pagados (OT/TL/SERVICE/DELIVERY + transferencias)
+function parseProformaRutas(wb){
+  const hojas=[], viajes=new Map();
+  const ot=wb.SheetNames.find(n=>nt(n)==="ORDENES DE TRANSPORTE");
+  if(ot) hojas.push(matrix(wb.Sheets[ot]));
+  else for(const n of wb.SheetNames) if(["DELIVERY","SERVICE","TL"].includes(nt(n))) hojas.push(matrix(wb.Sheets[n]));
+  const tr=wb.SheetNames.find(n=>nt(n)==="VIAJES DE TRANSFERENCIA");
+  if(tr) hojas.push(matrix(wb.Sheets[tr]));
+  if(!hojas.length) throw new Error("No se encontraron hojas de viajes (Ordenes de Transporte o DELIVERY/SERVICE/TL).");
+  let proforma="", factura="";
+  for(const m of hojas){
+    if(!m.length) continue;
+    const h=m[0], c={prof:idx(h,["ID Proforma","Id Proforma"]),fac:idx(h,["Factura"]),sol:idx(h,["ID Sol. Pago","Id Sol. Pago"]),
+      viaje:idx(h,["ID Viaje","Id Viaje (Solicitud de transporte)"]),tipo:idx(h,["Tipo de solicitud de pago","Tipo Solicitud de pago"]),
+      valor:idx(h,["Valor"]),fecha:idx(h,["Fecha Creación Viaje","Fecha creación Viaje","Fecha Creacion Viaje"]),origen:idx(h,["Origen"]),
+      pat:idx(h,["Patente"]),estado:idx(h,["Estado Sol. Pago"])};
+    if(c.viaje<0) continue;
+    for(const r of m.slice(1)){
+      const id=idRuta(r[c.viaje]); if(!id) continue;
+      if(!proforma&&c.prof>=0) proforma=nid(r[c.prof]); if(!factura&&c.fac>=0) factura=nid(r[c.fac]);
+      if(!viajes.has(id)) viajes.set(id,{id,proforma:c.prof>=0?nid(r[c.prof]):"",factura:c.fac>=0?nid(r[c.fac]):"",sols:new Map(),
+        tipo:c.tipo>=0?r[c.tipo]:"",estado:c.estado>=0?r[c.estado]:"",fecha:fechaISO(r[c.fecha]),origen:c.origen>=0?r[c.origen]:"",patente:c.pat>=0?r[c.pat]:"",pat:patNorm(r[c.pat])});
+      const v=viajes.get(id), sol=nid(r[c.sol]);
+      // El Valor se repite en cada fila de la Sol. Pago (en la procesada va solo en x=1): se toma el mayor
+      if(sol) v.sols.set(sol,Math.max(v.sols.get(sol)||0,num(r[c.valor])));
+    }
+  }
+  const lista=[...viajes.values()].map(v=>({...v,sol:[...v.sols.keys()].join(", "),valor:[...v.sols.values()].reduce((a,b)=>a+b,0),sols:undefined}));
+  const fechas=lista.map(v=>v.fecha).filter(Boolean).sort();
+  return {proforma:proforma||"?",factura,viajes:lista,desde:fechas[0]||"",hasta:fechas[fechas.length-1]||""};
+}
+
+// Geosort: una fila por punto → una ruta por Idruta
+function parseGeosort(m){
+  const h=m[0], c={id:idx(h,["Idruta","ID RUTA"]),pat:idx(h,["Patente"]),estado:idx(h,["Estado"]),ct:idx(h,["Ct"]),
+    fp:idx(h,["Fechapactada"]),fi:idx(h,["Fechainicioruta"]),activa:idx(h,["Activa"])};
+  if(c.id<0) throw new Error("El geosort no tiene la columna Idruta.");
+  const rutas=new Map();
+  for(const r of m.slice(1)){
+    const id=idRuta(r[c.id]); if(!id) continue;
+    if(!rutas.has(id)) rutas.set(id,{id,patente:r[c.pat],pat:patNorm(r[c.pat]),ct:c.ct>=0?r[c.ct]:"",fecha:fechaISO(r[c.fp])||fechaISO(r[c.fi]),puntos:0,entregados:0,planificada:true});
+    const g=rutas.get(id); g.puntos++;
+    const est=nt(r[c.estado]);
+    if(est==="TERMINADO") g.entregados++;
+    if(est!=="PLANIFICADO") g.planificada=false;
+  }
+  return [...rutas.values()];
+}
+
+function coberturaSugerida(){
+  const porDia=new Map();
+  for(const p of rutasDatos.proformas) for(const v of p.viajes) if(v.fecha) porDia.set(v.fecha,(porDia.get(v.fecha)||0)+1);
+  const tope=Math.max(COBERTURA_MIN_VIAJES,Math.max(0,...porDia.values())*COBERTURA_MIN_PCT);
+  const dias=[...porDia].filter(([,n])=>n>=tope).map(([d])=>d).sort();
+  return {desde:dias[0]||"",hasta:dias[dias.length-1]||""};
+}
+function ajustarCobertura(){
+  const s=coberturaSugerida();
+  document.getElementById("cobDesde").value=s.desde;
+  document.getElementById("cobHasta").value=s.hasta;
+}
+
+function cruzarRutas(){
+  const reg=rutasDatos.registro;
+  if(!reg||!rutasDatos.proformas.length){ cruceRutas=null; renderPanelRutas(); renderRutas(); return; }
+  const desde=document.getElementById("cobDesde").value, hasta=document.getElementById("cobHasta").value;
+  const pagos=new Map();
+  for(const p of rutasDatos.proformas) for(const v of p.viajes) if(!pagos.has(v.id)) pagos.set(v.id,v);
+  const geo=new Map((rutasDatos.geosort||[]).map(g=>[g.id,g]));
+
+  // Filas: registro + rutas del geosort que salieron y no están en el registro
+  const filas=reg.rutas.map(r=>({...r,fuente:"Registro",geo:geo.get(r.id)||null}));
+  const enRegistro=new Set(reg.rutas.map(r=>r.id).filter(Boolean));
+  let planificadas=0;
+  for(const g of geo.values()){
+    if(enRegistro.has(g.id)) continue;
+    if(g.planificada&&!g.entregados){ planificadas++; continue; }
+    filas.push({fecha:g.fecha,patente:g.patente,pat:g.pat,origen:g.ct,id:g.id,total:0,localidad:"",fuente:"Solo geosort",geo:g});
+  }
+
+  // Respaldo por patente + fecha: viajes pagados cuyo ID no está en el registro
+  const idsFilas=new Set(filas.map(f=>f.id).filter(Boolean));
+  const libres=new Map();
+  for(const v of pagos.values()){
+    if(idsFilas.has(v.id)) continue;
+    const k=v.pat+"|"+v.fecha; if(!libres.has(k)) libres.set(k,[]); libres.get(k).push(v);
+  }
+  const usados=new Set();
+  const tlPorDia=new Map();
+  for(const f of filas) if(tipoIdRuta(f.id)==="TL"){ const k=f.pat+"|"+f.fecha; tlPorDia.set(k,(tlPorDia.get(k)||0)+1); }
+
+  for(const f of filas){
+    f.tipo=tipoIdRuta(f.id); f.pago=null; f.detalle="";
+    const p=f.id?pagos.get(f.id):null;
+    if(p){ f.estado="Pagada"; f.pago=p; continue; }
+    const k=f.pat+"|"+f.fecha, alt=libres.get(k);
+    if(alt&&alt.length){
+      f.estado="Pagada con otro ID"; f.pago=alt[0];
+      f.detalle="Mismo día y patente: "+alt.map(v=>`${v.id} (${v.tipo} ${money(v.valor)})`).join(", ");
+      alt.forEach(v=>usados.add(v.id)); continue;
+    }
+    if(f.tipo==="Sin ID"){ f.estado="Sin ID en registro"; continue; }
+    if(f.tipo==="TL"&&(tlPorDia.get(k)||0)>=2){ f.estado="TL 2da vuelta (esperar objeción)"; f.detalle="Más de un TL de la patente ese día"; continue; }
+    if(!desde||!hasta||f.fecha<desde||f.fecha>hasta){ f.estado="Sin proforma cargada"; continue; }
+    f.estado="Pendiente";
+  }
+  const orden=new Map(ESTADOS_RUTA.map((e,i)=>[e.k,i]));
+  filas.sort((a,b)=>orden.get(a.estado)-orden.get(b.estado)||a.fecha.localeCompare(b.fecha)||a.pat.localeCompare(b.pat));
+  const sinRegistro=[...pagos.values()].filter(v=>!idsFilas.has(v.id)&&!usados.has(v.id)).sort((a,b)=>a.fecha.localeCompare(b.fecha));
+  cruceRutas={filas,sinRegistro,planificadas,ajustes:reg.ajustes,desde,hasta};
+  renderPanelRutas(); renderRutas();
+}
+
+function renderListaProformas(){
+  document.getElementById("listaProformas").innerHTML=rutasDatos.proformas.map((p,i)=>
+    `<div class="prof-item"><span><b>${esc(p.proforma)}</b>${p.factura?" · fact. "+esc(p.factura):""} · ${p.viajes.length} viajes</span><button onclick="quitarProforma(${i})" aria-label="Quitar proforma ${esc(p.proforma)}">Quitar</button></div>`).join("");
+  document.getElementById("cargaProformas").classList.toggle("lista",rutasDatos.proformas.length>0);
+}
+function quitarProforma(i){ rutasDatos.proformas.splice(i,1); renderListaProformas(); ajustarCobertura(); cruzarRutas(); }
+
+function renderPanelRutas(){
+  const panel=document.getElementById("panelEstados"), extra=document.getElementById("panelExtra"), sel=document.getElementById("rEstado");
+  if(!cruceRutas){ panel.innerHTML='<p class="nota">Carga el registro y al menos una proforma.</p>'; extra.innerHTML=""; return; }
+  const cuenta=new Map(); cruceRutas.filas.forEach(f=>cuenta.set(f.estado,(cuenta.get(f.estado)||0)+1));
+  const actual=sel.value;
+  panel.innerHTML=ESTADOS_RUTA.map(e=>`<button class="estado-item${actual===e.k?" sel":""}" onclick="filtrarEstado('${e.k}')"><span><span class="punto ${e.c}"></span>${esc(e.k)}</span><span class="n">${cuenta.get(e.k)||0}</span></button>`).join("");
+  sel.innerHTML='<option value="">Todos los estados</option>'+ESTADOS_RUTA.map(e=>`<option${actual===e.k?" selected":""}>${esc(e.k)}</option>`).join("");
+  const soloGeo=cruceRutas.filas.filter(f=>f.fuente==="Solo geosort").length;
+  const pend=cruceRutas.filas.filter(f=>f.estado==="Pendiente");
+  extra.innerHTML=`<p class="nota">Pendientes: <b>${pend.length}</b> rutas, costo registrado ${money(pend.reduce((a,f)=>a+f.total,0))}.</p>`+
+    `<p class="nota">Pagado sin registro: <b>${cruceRutas.sinRegistro.length}</b> viajes.</p>`+
+    (rutasDatos.geosort?`<p class="nota">Solo en geosort (no registradas): <b>${soloGeo}</b>. Planificadas que no salieron: ${cruceRutas.planificadas}.</p>`:"")+
+    `<p class="nota">Ajustes del registro (bonos y descuentos) no considerados: ${cruceRutas.ajustes}.</p>`;
+}
+function filtrarEstado(k){ const s=document.getElementById("rEstado"); s.value=s.value===k?"":k; renderPanelRutas(); renderRutas(); }
+
+function renderRutas(){
+  const body=document.getElementById("rutasBody"), area=document.getElementById("sinRegistroArea");
+  body.innerHTML="";
+  if(!cruceRutas){ area.classList.add("hidden"); return; }
+  const est=document.getElementById("rEstado").value, tipo=document.getElementById("rTipo").value,
+        fuente=document.getElementById("rFuente").value, q=nt(document.getElementById("rBuscar").value).replace(/[^A-Z0-9-]/g,"");
+  const b=new Map(ESTADOS_RUTA.map(e=>[e.k,e.b]));
+  const html=[];
+  for(const f of cruceRutas.filas){
+    if(est&&f.estado!==est) continue;
+    if(tipo&&f.tipo!==tipo) continue;
+    if(fuente&&f.fuente!==fuente) continue;
+    if(q&&!f.pat.includes(q.replace(/-/g,""))&&!nt(f.id).includes(q)) continue;
+    const p=f.pago, g=f.geo;
+    const idTxt=f.id.length===36?`<span title="${esc(f.id)}">${esc(f.id.slice(0,8))}…</span>`:esc(f.id);
+    html.push(`<tr><td>${esc(fechaCL(f.fecha))}</td><td>${esc(f.patente)}</td><td>${esc(f.origen)}</td><td>${idTxt}</td><td>${esc(f.tipo)}</td><td>${esc(f.fuente)}</td>
+      <td>${g?`${g.entregados} / ${g.puntos}`:""}</td><td>${f.fuente==="Registro"?money(f.total):""}</td><td><span class="badge ${b.get(f.estado)||""}">${esc(f.estado)}</span></td>
+      <td>${esc(p?.proforma||"")}</td><td>${esc(p?.sol||"")}</td><td>${p?money(p.valor):""}</td><td>${esc(f.detalle)}</td></tr>`);
+  }
+  body.innerHTML=html.join("")||'<tr><td colspan="13">Sin rutas para este filtro.</td></tr>';
+  const sr=cruceRutas.sinRegistro, geo=new Set((rutasDatos.geosort||[]).map(g=>g.id));
+  area.classList.toggle("hidden",!sr.length);
+  document.getElementById("sinRegistroBody").innerHTML=sr.map(v=>`<tr><td>${esc(v.proforma)}</td><td>${esc(v.factura)}</td><td>${esc(v.id)}</td><td>${esc(fechaCL(v.fecha))}</td>
+    <td>${esc(v.origen)}</td><td>${esc(v.patente)}</td><td>${esc(v.tipo)}</td><td>${esc(v.sol)}</td><td>${money(v.valor)}</td><td>${rutasDatos.geosort?(geo.has(v.id)?"Sí":"No"):""}</td></tr>`).join("");
+}
+
+function libroCruceRutas(){
+  const wb=XLSX.utils.book_new(), c=cruceRutas;
+  const res=[["Estado","Rutas","Costo registro"]];
+  for(const e of ESTADOS_RUTA){ const fs=c.filas.filter(f=>f.estado===e.k); res.push([e.k,fs.length,fs.reduce((a,f)=>a+f.total,0)]); }
+  res.push([],["Periodo cubierto",fechaCL(c.desde)+" a "+fechaCL(c.hasta)],["Proformas",rutasDatos.proformas.map(p=>p.proforma).join(", ")],
+    ["Pagado sin registro",c.sinRegistro.length],["Ajustes del registro no considerados",c.ajustes]);
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(res),"Resumen");
+  const rows=[["Fecha","Patente","Origen","Localidad","ID Ruta","Tipo","Fuente","Puntos","Entregados","Costo registro","Estado","Proforma","Factura","ID Sol. Pago","Valor Sol. Pago","Detalle"]];
+  for(const f of c.filas) rows.push([fechaCL(f.fecha),f.patente,f.origen,f.localidad||"",idCelda(f.id),f.tipo,f.fuente,f.geo?.puntos??"",f.geo?.entregados??"",f.fuente==="Registro"?f.total:"",
+    f.estado,f.pago?.proforma||"",f.pago?.factura||"",f.pago?.sol||"",f.pago?f.pago.valor:"",f.detalle]);
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),"Rutas");
+  const sr=[["Proforma","Factura","ID Viaje","Fecha viaje","Origen","Patente","Tipo pago","ID Sol. Pago","Valor Sol. Pago"]];
+  for(const v of c.sinRegistro) sr.push([v.proforma,v.factura,idCelda(v.id),fechaCL(v.fecha),v.origen,v.patente,v.tipo,v.sol,v.valor]);
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(sr),"Pagado sin registro");
+  return wb;
+}
+function descargarCruceRutas(){
+  if(!cruceRutas) return mostrarError("Carga el registro y al menos una proforma.");
+  XLSX.writeFile(libroCruceRutas(),`Cruce rutas ${hoyArchivo()}.xlsx`);
+}
+
+document.getElementById("inRegistro").addEventListener("change",e=>{
+  const f=e.target.files?.[0]; if(!f) return; ocultarError();
+  leerLibro(f,({wb})=>{
+    try{
+      if(!wb) throw new Error("El registro debe ser un Excel.");
+      rutasDatos.registro=parseRegistro(wb); rutasDatos.registroNombre=f.name;
+      document.getElementById("txtRegistro").textContent=`${f.name} · ${rutasDatos.registro.rutas.length} rutas`;
+      document.getElementById("cargaRegistro").classList.add("lista");
+      cruzarRutas();
+    }catch(err){ mostrarError(err.message); }
+  });
+  e.target.value="";
+});
+document.getElementById("inGeosort").addEventListener("change",e=>{
+  const f=e.target.files?.[0]; if(!f) return; ocultarError();
+  leerLibro(f,({wb,csv})=>{
+    try{
+      const m=csv?parseCSV(csv):hojaConColumnas(wb,["Idruta"]);
+      if(!m) throw new Error("El geosort no tiene la columna Idruta.");
+      rutasDatos.geosort=parseGeosort(m); rutasDatos.geosortNombre=f.name;
+      document.getElementById("txtGeosort").textContent=`${f.name} · ${rutasDatos.geosort.length} rutas`;
+      document.getElementById("cargaGeosort").classList.add("lista");
+      cruzarRutas();
+    }catch(err){ mostrarError(err.message); }
+  });
+  e.target.value="";
+});
+document.getElementById("inProformas").addEventListener("change",e=>{
+  const files=[...(e.target.files||[])]; ocultarError();
+  for(const f of files) leerLibro(f,({wb})=>{
+    try{
+      if(!wb) throw new Error("La proforma debe ser un Excel.");
+      const p=parseProformaRutas(wb); p.archivo=f.name;
+      rutasDatos.proformas=rutasDatos.proformas.filter(x=>x.proforma!==p.proforma).concat([p]);
+      renderListaProformas(); ajustarCobertura(); cruzarRutas();
+    }catch(err){ mostrarError(`${f.name}: ${err.message}`); }
+  });
+  e.target.value="";
+});
 
 function mostrarError(m){ document.getElementById("errorText").textContent=m; document.getElementById("errorArea").classList.remove("hidden"); }
 function ocultarError(){ document.getElementById("errorArea").classList.add("hidden"); }
