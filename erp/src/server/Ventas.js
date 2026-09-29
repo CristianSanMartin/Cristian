@@ -54,6 +54,7 @@ const Ventas = {
     const comision = regla && abono ? Math.round(abono * regla.pct + regla.fijo) : 0;
 
     const clienteId = Clientes.resolver(p, user);
+    if (abono < total && !clienteId) throw new AppError('Una venta con saldo por cobrar necesita un cliente (no puede ser "Cliente general").');
     const sello = Util.sello(user, true);
     const venta = Object.assign({
       id: Util.siguienteId('OC', 4), fecha: fecha, clienteId: clienteId, canal: canal, evento: evento, medioPago: medioPago,

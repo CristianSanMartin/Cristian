@@ -1,9 +1,9 @@
 <script>
 /* =========================================================
-   Ventas (OC correlativa) y Clientes.
-   La venta se arma como un carrito: los productos salen del
-   inventario (lote más antiguo primero), con su ganancia real
-   y la comisión de la máquina POS en débito / crédito.
+   Venta en curso (carrito que se arma desde Inventario),
+   tablero de Ventas (informativo) y Clientes con cobranza.
+   Los productos salen del lote elegido o del más antiguo,
+   con su ganancia real y la comisión TUU en débito/crédito.
 ========================================================= */
 (function () {
   'use strict';
@@ -22,8 +22,8 @@
   /* ---------- nueva venta (carrito) ---------- */
 
   const carrito = [];   // { productoId, cantidad, precio, loteId? } — loteId: unidades elegidas en Inventario
-  const borrador = { producto: '', cantidad: '1', fecha: '', cliente: '', canal: 'Tienda', evento: '', medioPago: 'debito', boleta: '', pagada: true, abono: '', notas: '' };
-  const abiertas = new Set();
+  const borrador = { fecha: '', cliente: '', canal: 'Tienda', evento: '', medioPago: 'debito', boleta: '', pagada: true, abono: '', notas: '' };
+  const abiertas = new Set();   // OC con el detalle desplegado en el tablero
 
   /** Stock disponible por producto y su costo promedio ponderado de lo que queda (para estimar la ganancia antes de guardar). */
   function stock() {
@@ -57,32 +57,14 @@
   const prod = (id) => data().productos.find((p) => p.id === id);
   const enCarrito = (id) => carrito.filter((x) => x.productoId === id).reduce((t, x) => t + (Number(x.cantidad) || 0), 0);
 
-  function productoDeTexto(texto) {
-    const t = GS.norm(String(texto || '').trim());
-    if (!t) return null;
-    const conStock = stock();
-    const lista = data().productos.filter((p) => conStock[p.id]);
-    return lista.find((p) => GS.norm(p.nombreCompleto) === t || GS.norm(p.id) === t)
-      || lista.find((p) => GS.norm(p.nombreCompleto + ' (' + conStock[p.id].disponible + ' disp.)') === t)
-      || (lista.filter((p) => GS.norm(p.nombreCompleto).includes(t)).length === 1 ? lista.find((p) => GS.norm(p.nombreCompleto).includes(t)) : null);
-  }
-
+  /** Panel "Venta en curso": aparece en Inventario cuando hay productos en el carrito. */
   function panelVenta() {
-    if (!GS.puede('operador')) return '';
+    if (!GS.puede('operador') || !carrito.length) return '';
     if (!borrador.fecha) borrador.fecha = data().hoy;
-    const conStock = stock();
-    const opciones = data().productos.filter((p) => conStock[p.id]).sort((a, b) => a.nombreCompleto.localeCompare(b.nombreCompleto))
-      .map((p) => '<option value="' + esc(p.nombreCompleto) + '">' + esc(p.id + ' · ' + conStock[p.id].disponible + ' disp.') + '</option>').join('');
     const clientes = data().clientes.filter((c) => c.activo).map((c) => '<option value="' + esc(c.nombre) + '">' + esc(c.id + (c.idPokemon ? ' · ' + c.idPokemon : '')) + '</option>').join('');
     const medios = data().catalogos.mediosPago;
     return '<div class="panel inline-panel" id="nueva-venta"><form novalidate>' +
-      '<div class="inline-panel-head"><h3>Nueva venta</h3><span class="muted">Agrega los productos al carrito. Salen del inventario desde la factura más antigua.</span></div>' +
-      '<div class="venta-agregar">' +
-      '<div class="form-field grow"><label for="nv-producto">Producto</label><input id="nv-producto" name="producto" list="nv-productos" autocomplete="off" value="' + esc(borrador.producto) + '" placeholder="' + (opciones ? 'Escribe o elige un producto con stock' : 'No hay productos en inventario') + '"><datalist id="nv-productos">' + opciones + '</datalist></div>' +
-      '<div class="form-field small"><label for="nv-cant">Cant.</label><input id="nv-cant" name="cantidad" type="number" min="1" step="1" value="' + esc(borrador.cantidad) + '"></div>' +
-      '<div class="form-field add-submit"><button type="button" class="btn secondary" data-action="agregarAlCarrito">' + GS.icon('plus', 2.4) + 'Agregar</button></div>' +
-      '</div>' +
-      '<div class="hint" data-nv-info></div>' +
+      '<div class="inline-panel-head"><h3>Venta en curso</h3><span class="muted">Sigue agregando productos desde la lista de abajo. Ajusta cantidades o precios (descuento por producto) aquí.</span></div>' +
       '<div class="table-wrap carrito"><table class="data-table"><thead><tr><th>Producto</th><th class="right">Cant.</th><th class="right">Precio venta</th><th class="right">Precio cobrado</th>' +
       '<th class="right">Subtotal</th><th class="right">Ganancia real</th><th></th></tr></thead><tbody data-carrito></tbody></table></div>' +
       '<div class="form-grid venta-grid">' +
@@ -98,16 +80,11 @@
       '<div class="venta-totales" data-nv-totales></div>' +
       '<div class="form-error"></div>' +
       '<div class="btn-row"><button type="submit" class="btn">' + GS.icon('check') + 'Registrar venta</button>' +
-      '<button type="button" class="btn ghost" data-action="vaciarCarrito">Vaciar</button></div>' +
+      '<button type="button" class="btn ghost" data-action="vaciarCarrito">Cancelar venta</button></div>' +
       '</form></div>';
   }
 
   function calcVenta(form) {
-    const info = form.querySelector('[data-nv-info]');
-    const p = productoDeTexto(form.elements.producto.value);
-    const st = stock();
-    info.innerHTML = p ? '→ <strong>' + esc(p.nombreCompleto) + '</strong> · ' + fmt.money(p.precio) + ' · <span class="text-success">' + (st[p.id].disponible - enCarrito(p.id)) + ' disponibles</span>'
-      : form.elements.producto.value.trim() ? '<span class="text-danger">Sin stock o no encontrado</span>' : '';
     const usadas = {};
     let total = 0;
     let ganancia = 0;
@@ -168,9 +145,6 @@
       }
       calcVenta(form);
     });
-    form.elements.producto.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); GS.actions.agregarAlCarrito(); }
-    });
     GS.bindForm(form, async (v) => {
       if (!carrito.length) throw new Error('Agrega al menos un producto a la venta.');
       const r = await GS.api('crearVenta', {
@@ -180,7 +154,7 @@
       });
       GS.state.data = r.data;
       carrito.length = 0;
-      Object.assign(borrador, { producto: '', cantidad: '1', cliente: '', evento: '', boleta: '', pagada: true, abono: '', notas: '' });
+      Object.assign(borrador, { cliente: '', evento: '', boleta: '', pagada: true, abono: '', notas: '' });
       abiertas.add(r.result.id);
       GS.render();
       GS.toast(r.result.id + ' registrada · ' + fmt.money(r.result.total));
@@ -189,44 +163,34 @@
     calcVenta(form);
   }
 
-  GS.actions.agregarAlCarrito = () => {
-    const form = document.querySelector('#nueva-venta form');
-    const p = productoDeTexto(form.elements.producto.value);
-    const errBox = form.querySelector('.form-error');
-    errBox.classList.remove('show');
-    const n = Number(form.elements.cantidad.value) || 1;
-    const falla = (m) => { errBox.textContent = m; errBox.classList.add('show'); };
-    if (!p) return falla('Elige un producto con stock de la lista.');
-    const disp = stock()[p.id].disponible - enCarrito(p.id);
-    if (n > disp) return falla('Stock insuficiente de ' + p.nombreCompleto + ': quedan ' + disp + '.');
-    const mismo = carrito.find((x) => x.productoId === p.id && x.precio === '' && !x.loteId);
-    if (mismo) mismo.cantidad = String((Number(mismo.cantidad) || 0) + n);
-    else carrito.push({ productoId: p.id, cantidad: String(n), precio: '', loteId: '' });
-    borrador.producto = '';
-    borrador.cantidad = '1';
-    form.elements.producto.value = '';
-    form.elements.cantidad.value = '1';
-    calcVenta(form);
-    form.elements.producto.focus();
+  /** Dibuja (o quita) el panel de venta en el contenedor indicado. */
+  GS.montarVenta = function (cont) {
+    if (!cont) return;
+    cont.innerHTML = panelVenta();
+    conectarVenta(cont);
   };
+  const remontar = () => GS.montarVenta(document.getElementById('inv-venta'));
+  GS.enCarrito = () => carrito.reduce((t, x) => t + (Number(x.cantidad) || 0), 0);
+
   /** Agrega un producto al carrito de la nueva venta (desde Inventario). */
   GS.agregarAVenta = (productoId, n, loteId) => {
     const lote = loteId && data().lotes.find((l) => l.id === loteId);
     const disp = lote
       ? lote.disponible - carrito.filter((x) => x.loteId === loteId).reduce((t, x) => t + (Number(x.cantidad) || 0), 0)
       : (stock()[productoId] || { disponible: 0 }).disponible - enCarrito(productoId);
-    if (disp <= 0) return;
+    if (disp <= 0) return 0;
     const mismo = carrito.find((x) => x.productoId === productoId && x.precio === '' && (x.loteId || '') === (loteId || ''));
     if (mismo) mismo.cantidad = String((Number(mismo.cantidad) || 0) + Math.min(n, disp));
     else carrito.push({ productoId: productoId, cantidad: String(Math.min(n, disp)), precio: '', loteId: loteId || '' });
+    return Math.min(n, disp);
   };
   GS.actions.quitarDelCarrito = (i) => {
     carrito.splice(Number(i), 1);
-    calcVenta(document.querySelector('#nueva-venta form'));
+    if (carrito.length) calcVenta(document.querySelector('#nueva-venta form')); else remontar();
   };
   GS.actions.vaciarCarrito = () => {
     carrito.length = 0;
-    calcVenta(document.querySelector('#nueva-venta form'));
+    remontar();
   };
 
   /* ---------- lista de ventas ---------- */
@@ -263,38 +227,147 @@
       '<td class="cell-num right ' + signo(l.ganancia) + '">' + fmt.money(l.ganancia) + '</td></tr>').join('');
     const t = (l, val, cls) => '<tr class="' + (cls || '') + '"><td colspan="7" class="right">' + l + '</td><td class="cell-num right">' + val + '</td></tr>';
     const cobros = v.cobros.length ? '<p class="table-note">Abonos: ' + v.cobros.map((c) => fmt.date(c.fecha) + ' ' + fmt.money(c.monto) + ' (' + esc(data().catalogos.mediosPago[c.medioPago] || c.medioPago) + ')').join(' · ') + '</p>' : '';
-    const abono = !v.anulada && v.saldo > 0 && GS.puede('operador')
-      ? '<form class="abono-form" data-venta="' + esc(v.id) + '" novalidate><strong>Registrar abono</strong>' +
-        '<input type="number" name="monto" min="1" max="' + v.saldo + '" step="1" value="' + v.saldo + '" aria-label="Monto">' +
-        '<input type="date" name="fecha" value="' + esc(data().hoy) + '" aria-label="Fecha">' +
-        '<select name="medioPago" aria-label="Medio de pago">' + GS.options(Object.keys(data().catalogos.mediosPago).map((k) => ({ value: k, label: data().catalogos.mediosPago[k] })), 'transferencia') + '</select>' +
-        '<button type="submit" class="btn small">Guardar abono</button><span class="form-error"></span></form>'
-      : '';
     return '<div class="detalle-compra"><table class="data-table"><thead><tr><th></th><th>Producto</th><th>Factura / lote</th><th class="right">Cant.</th><th class="right">Precio</th>' +
       '<th class="right">Subtotal</th><th class="right">Costo u.</th><th class="right">Ganancia real</th></tr></thead><tbody>' + filas + '</tbody><tfoot>' +
       t('Total', fmt.money(v.total)) + t('Neto / IVA (débito)', fmt.money(v.neto) + ' / ' + fmt.money(v.iva)) +
       (v.descuento > 0 ? t('Descuentos', fmt.money(v.descuento)) : '') +
       t('Comisión ' + esc(v.medioPagoLabel), fmt.money(v.comision)) +
       t('<strong>Ganancia real</strong>', '<strong class="' + signo(v.gananciaNeta) + '">' + fmt.money(v.gananciaNeta) + '</strong>', 'total-row') +
-      '</tfoot></table>' + cobros + abono + (v.notas ? '<p class="table-note">Notas: ' + esc(v.notas) + '</p>' : '') + '</div>';
+      '</tfoot></table>' + cobros + (v.saldo > 0 ? '<p class="table-note text-gold">Debe ' + fmt.money(v.saldo) + ': el abono se registra en Clientes.</p>' : '') + (v.notas ? '<p class="table-note">Notas: ' + esc(v.notas) + '</p>' : '') + '</div>';
+  }
+
+  /* ---------- tablero ---------- */
+
+  const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sept', 'oct', 'nov', 'dic'];
+  const nombreMes = (ym) => MESES[Number(ym.slice(5, 7)) - 1] + '-' + ym.slice(2, 4);
+  const mesAnterior = (ym) => { const d = new Date(ym + '-01T12:00:00Z'); d.setUTCMonth(d.getUTCMonth() - 1); return d.toISOString().slice(0, 7); };
+  const diasDelMes = (ym) => new Date(Date.UTC(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)), 0)).getUTCDate();
+  const vivas = () => data().ventas.filter((v) => !v.anulada);
+
+  /** Ventas y compras por mes (últimos 12 meses hasta el elegido). Compras = total de la factura con IVA. */
+  function porMes(hasta) {
+    const meses = [];
+    let m = hasta;
+    for (let i = 0; i < 12; i++) { meses.unshift(m); m = mesAnterior(m); }
+    const suma = (lista, k, ym) => lista.filter((x) => x.fecha.slice(0, 7) === ym).reduce((t, x) => t + x[k], 0);
+    return meses.map((ym) => ({ ym: ym, ventas: suma(vivas(), 'total', ym), ganancia: suma(vivas(), 'gananciaNeta', ym), compras: suma(data().compras, 'total', ym) }));
+  }
+
+  function tablero(ym) {
+    const hoy = data().hoy;
+    const delMes = vivas().filter((v) => v.fecha.slice(0, 7) === ym);
+    const ant = vivas().filter((v) => v.fecha.slice(0, 7) === mesAnterior(ym));
+    const sum = (l, k) => l.reduce((t, x) => t + x[k], 0);
+    const vendido = sum(delMes, 'total');
+    const meta = sum(ant, 'total');
+    const ganancia = sum(delMes, 'gananciaNeta');
+    const ticket = delMes.length ? vendido / delMes.length : 0;
+    const esActual = ym === hoy.slice(0, 7);
+    const dia = Number(hoy.slice(8, 10));
+    const proyeccion = esActual && dia ? (vendido / dia) * diasDelMes(ym) : vendido;
+    const avance = meta ? Math.min(100, Math.round((100 * vendido) / meta)) : 0;
+    const porCobrar = sum(vivas(), 'saldo');
+    const stockVenta = data().lotes.reduce((t, l) => t + l.ventaProyectada, 0);
+    const stockGan = data().lotes.reduce((t, l) => t + l.gananciaProyectada, 0);
+
+    const kpis = '<div class="kpi-grid">' +
+      kpi('Vendido en ' + nombreMes(ym), fmt.money(vendido),
+        (meta ? '<div class="meta-bar"><span style="width:' + avance + '%"></span></div>' + avance + '% de la meta (' + fmt.money(meta) + ', ' + nombreMes(mesAnterior(ym)) + ')' : 'Sin ventas el mes anterior para comparar')) +
+      kpi('Ganancia real', '<span class="text-success">' + fmt.money(ganancia) + '</span>', delMes.length + (delMes.length === 1 ? ' venta' : ' ventas') + ' · ' + fmt.money(sum(delMes, 'comision')) + ' en comisiones') +
+      kpi('Ticket promedio', fmt.money(ticket), fmt.num(sum(delMes, 'unidades')) + ' unidades vendidas') +
+      kpi(esActual ? 'Proyección de cierre' : 'Cierre del mes', fmt.money(proyeccion),
+        esActual ? 'Al ritmo actual (' + dia + ' de ' + diasDelMes(ym) + ' días)' + (meta ? ' · ' + (proyeccion >= meta ? '<span class="text-success">supera la meta</span>' : '<span class="text-gold">bajo la meta</span>') : '') : 'Mes cerrado') +
+      '</div>';
+
+    // Ventas vs compras, 12 meses (un solo eje: ambas en $).
+    const meses = porMes(ym);
+    const vsCompras = GS.graficoBarras({
+      categorias: meses.map((x) => nombreMes(x.ym)),
+      series: [{ nombre: 'Ventas', color: GS.COLORES.ventas, valores: meses.map((x) => x.ventas) }, { nombre: 'Compras', color: GS.COLORES.compras, valores: meses.map((x) => x.compras) }],
+      detalle: (i) => '<div class="g-sub">Diferencia ' + fmt.money(meses[i].ventas - meses[i].compras) + ' · ganancia real ' + fmt.money(meses[i].ganancia) + '</div>',
+      aria: 'Ventas y compras por mes',
+    });
+    const tabla = '<div class="table-wrap"><table class="data-table resumen-mensual"><thead><tr><th></th>' + meses.map((x) => '<th class="right">' + nombreMes(x.ym) + '</th>').join('') + '<th class="right">Total</th></tr></thead><tbody>' +
+      [['Ventas', 'ventas'], ['Compras', 'compras'], ['Ganancia real', 'ganancia']].map(([l, k]) => '<tr><td class="cell-strong">' + l + '</td>' +
+        meses.map((x) => '<td class="cell-num right">' + (x[k] ? fmt.money(x[k]) : '—') + '</td>').join('') + '<td class="cell-num right"><strong>' + fmt.money(meses.reduce((t, x) => t + x[k], 0)) + '</strong></td></tr>').join('') +
+      '<tr class="total-row"><td>Ventas − compras</td>' + meses.map((x) => '<td class="cell-num right ' + (x.ventas - x.compras < 0 ? 'text-danger' : '') + '">' + fmt.money(x.ventas - x.compras) + '</td>').join('') +
+      '<td class="cell-num right"><strong>' + fmt.money(meses.reduce((t, x) => t + x.ventas - x.compras, 0)) + '</strong></td></tr></tbody></table></div>';
+
+    // Ventas por día del mes elegido.
+    const dias = Array.from({ length: diasDelMes(ym) }, (_, i) => ym + '-' + String(i + 1).padStart(2, '0'));
+    const porDia = GS.graficoBarras({
+      categorias: dias.map((d) => String(Number(d.slice(8)))),
+      series: [{ nombre: 'Ventas', color: GS.COLORES.ventas, valores: dias.map((d) => sum(delMes.filter((v) => v.fecha === d), 'total')) }],
+      tituloTip: (i) => fmt.date(dias[i]),
+      detalle: (i) => { const vs = delMes.filter((v) => v.fecha === dias[i]); return vs.length ? '<div class="g-sub">' + vs.length + (vs.length === 1 ? ' venta' : ' ventas') + ' · ganancia ' + fmt.money(sum(vs, 'gananciaNeta')) + '</div>' : ''; },
+      alto: 260,
+      ancho: 620,
+      aria: 'Ventas por día',
+    });
+
+    // Desgloses del mes.
+    const agrupar = (clave) => {
+      const r = {};
+      delMes.forEach((v) => { const k = clave(v); r[k] = r[k] || { total: 0, n: 0 }; r[k].total += v.total; r[k].n++; });
+      return Object.keys(r).map((k) => ({ etiqueta: esc(k), valor: r[k].total, extra: r[k].n + (r[k].n === 1 ? ' venta' : ' ventas') })).sort((a, b) => b.valor - a.valor);
+    };
+    const prods = {};
+    delMes.forEach((v) => v.lineas.forEach((l) => {
+      const r = prods[l.productoId] = prods[l.productoId] || { etiqueta: esc(l.productoNombre) + ' ' + GS.langPill(l.idioma), valor: 0, u: 0, g: 0 };
+      r.valor += l.subtotal; r.u += l.cantidad; r.g += l.ganancia;
+    }));
+    const topProd = Object.values(prods).sort((a, b) => b.valor - a.valor).slice(0, 8).map((x) => Object.assign(x, { extra: fmt.num(x.u) + ' u. · ganancia ' + fmt.money(x.g) }));
+
+    // Ranking de clientes (sin "Cliente general"): del mes y acumulado.
+    const ranking = (lista) => {
+      const r = {};
+      lista.filter((v) => v.clienteId).forEach((v) => { const x = r[v.clienteId] = r[v.clienteId] || { etiqueta: esc(v.cliente), valor: 0, n: 0 }; x.valor += v.total; x.n++; });
+      return Object.values(r).sort((a, b) => b.valor - a.valor).slice(0, 10).map((x) => Object.assign(x, { extra: x.n + (x.n === 1 ? ' compra' : ' compras') }));
+    };
+
+    const tarjeta = (titulo, cuerpo, sub) => '<div class="panel dash-card"><div class="dash-card-head"><h3>' + titulo + '</h3>' + (sub ? '<span class="muted">' + sub + '</span>' : '') + '</div>' + cuerpo + '</div>';
+    return kpis +
+      tarjeta('Ventas vs compras', vsCompras + tabla, 'Últimos 12 meses · compras = total de facturas con IVA') +
+      '<div class="dash-2">' +
+      tarjeta('Ventas por día', porDia, nombreMes(ym)) +
+      tarjeta('Stock', '<div class="stock-proy"><div><span class="muted">Venta proyectada</span><strong>' + fmt.money(stockVenta) + '</strong></div>' +
+        '<div><span class="muted">Ganancia proyectada</span><strong class="text-success">' + fmt.money(stockGan) + '</strong></div>' +
+        '<div><span class="muted">Por cobrar</span><strong class="' + (porCobrar ? 'text-gold' : '') + '">' + fmt.money(porCobrar) + '</strong></div></div>' +
+        '<p class="table-note">Si vendes todo el inventario al precio de venta actual.</p>', 'Proyección') +
+      '</div><div class="dash-3">' +
+      tarjeta('Por canal', GS.barrasH(agrupar((v) => v.canal + (v.evento ? ' · ' + v.evento : ''))), nombreMes(ym)) +
+      tarjeta('Por medio de pago', GS.barrasH(agrupar((v) => v.medioPagoLabel)), nombreMes(ym)) +
+      tarjeta('Productos más vendidos', GS.barrasH(topProd), nombreMes(ym)) +
+      '</div><div class="dash-2">' +
+      tarjeta('Mejores clientes del mes', GS.barrasH(ranking(delMes), { ranking: true }), nombreMes(ym)) +
+      tarjeta('Mejores clientes acumulado', GS.barrasH(ranking(vivas()), { ranking: true }), 'Desde el inicio') +
+      '</div>';
   }
 
   GS.views.ventas = {
     title: 'Ventas',
     render(el) {
-      const f = GS.filters('ventas', { q: '' });
+      const f = GS.filters('ventas', { q: '', mes: '' });
+      const hoy = data().hoy.slice(0, 7);
+      const meses = Array.from(new Set([hoy].concat(data().ventas.map((v) => v.fecha.slice(0, 7))))).sort().reverse();
+      if (!f.mes) f.mes = hoy;
       el.innerHTML =
-        '<div class="page-head"><div><h1>Ventas</h1><p>Cada venta con su OC, el lote de donde salió cada producto y la ganancia real después de la comisión.</p></div>' +
-        '<button class="btn ghost" data-action="exportarVentas">' + GS.icon('download') + 'Exportar</button></div>' +
-        panelVenta() +
+        '<div class="page-head"><div><h1>Ventas</h1><p>Cómo van las ventas: avance contra el mes anterior, proyección, ventas vs compras, canales, productos y clientes. Las ventas se registran desde Inventario.</p></div>' +
+        '<div class="btn-row"><div class="select-input"><select data-filter="ventas.mes" aria-label="Mes">' + GS.options(meses.map((m) => ({ value: m, label: nombreMes(m) })), f.mes) + '</select></div>' +
+        (GS.puede('operador') ? '<button class="btn" data-nav="inventario">' + GS.icon('plus', 2.4) + 'Nueva venta</button>' : '') +
+        '<button class="btn ghost" data-action="exportarVentas">' + GS.icon('download') + 'Exportar</button></div></div>' +
+        '<div id="vt-tablero"></div>' +
+        '<div class="panel dash-card"><div class="dash-card-head"><h3>Órdenes de compra (OC)</h3><span class="muted">Consulta de cada venta</span></div>' +
         '<div class="filters-bar"><div class="search-box">' + GS.icon('search') + '<input type="text" data-filter="ventas.q" value="' + esc(f.q) + '" placeholder="Buscar OC, cliente, evento, boleta o producto..."></div></div>' +
-        '<div id="vt-resumen"></div>' +
-        '<div class="table-wrap"><table class="data-table wide"><thead><tr id="vt-thead"></tr></thead><tbody id="vt-tbody"></tbody></table></div>';
-      conectarVenta(el);
+        '<div class="table-wrap"><table class="data-table wide"><thead><tr id="vt-thead"></tr></thead><tbody id="vt-tbody"></tbody></table></div></div>';
       this.update();
     },
     update() {
-      const rows = GS.tablaAplicar('ventas', buscadas(), colsVentas);
+      const f = GS.filters('ventas', { q: '', mes: data().hoy.slice(0, 7) });
+      document.getElementById('vt-tablero').innerHTML = tablero(f.mes || data().hoy.slice(0, 7));
+      // La lista muestra el mes elegido; si se busca algo, busca en todas.
+      const mes = f.mes || data().hoy.slice(0, 7);
+      const rows = GS.tablaAplicar('ventas', buscadas().filter((v) => f.q || v.fecha.slice(0, 7) === mes), colsVentas);
       const admin = GS.puede('admin');
       const n = colsVentas.length + 2;
       document.getElementById('vt-thead').innerHTML = '<th></th>' + GS.tablaEncabezado('ventas', colsVentas) + '<th></th>';
@@ -305,29 +378,13 @@
           colsVentas.map((c) => '<td class="' + (c.right ? 'cell-num right' : '') + '">' + c.celda(v) + '</td>').join('') +
           '<td><div class="row-actions">' + (admin && !v.anulada ? GS.iconBtn('anularVenta', v.id, 'trash', 'Anular venta', 'danger') : '') + '</div></td></tr>' +
           (open ? '<tr class="detalle-row"><td colspan="' + n + '">' + detalleVenta(v) + '</td></tr>' : '');
-      }).join('') : '<tr><td colspan="' + n + '">' + GS.empty('Aún no hay ventas', 'Registra la primera con el formulario de arriba.', 'ventas') + '</td></tr>';
+      }).join('') : '<tr><td colspan="' + n + '">' + GS.empty('Aún no hay ventas', 'Se registran desde Inventario: marca los productos y completa la venta.', 'ventas') + '</td></tr>';
       const wrap = document.getElementById('vt-tbody').closest('.table-wrap');
       document.querySelectorAll('#vt-tbody .detalle-compra').forEach((d) => { d.style.width = Math.max(320, wrap.clientWidth - 36) + 'px'; });
-      document.querySelectorAll('#vt-tbody .abono-form').forEach((form) => {
-        GS.bindForm(form, async (v) => {
-          await GS.mutate('registrarCobro', Object.assign({ ventaId: form.dataset.venta }, v), 'Abono registrado');
-        });
-      });
-
-      const vivas = rows.filter((v) => !v.anulada);
-      const sum = (k) => vivas.reduce((t, v) => t + v[k], 0);
-      const mes = data().hoy.slice(0, 7);
-      const delMes = vivas.filter((v) => v.fecha.slice(0, 7) === mes);
-      document.getElementById('vt-resumen').innerHTML = '<div class="kpi-grid">' +
-        kpi('Vendido este mes', fmt.money(delMes.reduce((t, v) => t + v.total, 0)), delMes.length + (delMes.length === 1 ? ' venta' : ' ventas')) +
-        kpi('Total vendido', fmt.money(sum('total')), vivas.length + ' ventas · ' + fmt.num(sum('unidades')) + ' unidades') +
-        kpi('Ganancia real', '<span class="text-success">' + fmt.money(sum('gananciaNeta')) + '</span>', fmt.money(sum('comision')) + ' en comisiones') +
-        kpi('Por cobrar', '<span class="' + (sum('saldo') ? 'text-gold' : '') + '">' + fmt.money(sum('saldo')) + '</span>', vivas.filter((v) => v.saldo > 0).length + ' ventas pendientes') + '</div>';
     },
   };
 
-  GS.actions.verVenta = (id, el) => {
-    if (el && el.closest && el.closest('.abono-form')) return;
+  GS.actions.verVenta = (id) => {
     if (abiertas.has(id)) abiertas.delete(id); else abiertas.add(id);
     GS.views.ventas.update();
   };
@@ -369,25 +426,77 @@
   };
   GS.tablaRegistrar('clientes', { filas: clientesBuscados, columnas: colsClientes, alCambiar: () => GS.views.clientes.update() });
 
+  const clientesAbiertos = new Set();
+
+  /** Deudas del cliente: ventas por cobrar con el formulario de abono y aviso por WhatsApp. */
+  function detalleCliente(c) {
+    const deudas = data().ventas.filter((v) => v.clienteId === c.id && !v.anulada && v.saldo > 0);
+    const compras = data().ventas.filter((v) => v.clienteId === c.id && !v.anulada).slice(0, 8);
+    const medios = data().catalogos.mediosPago;
+    const wsp = (v) => {
+      const tel = String(c.telefono || '').replace(/\D/g, '');
+      if (!tel) return '';
+      const msg = 'Hola ' + c.nombre.split(' ')[0] + ', te escribimos de GS Prime. Tienes un saldo pendiente de ' + fmt.money(v.saldo) + ' por tu compra ' + v.id + ' del ' + fmt.date(v.fecha) + '. ¡Gracias!';
+      return '<a class="btn small ghost" target="_blank" rel="noopener" href="https://wa.me/' + tel + '?text=' + encodeURIComponent(msg) + '">WhatsApp</a>';
+    };
+    const deuda = deudas.length
+      ? '<h4 class="sub-titulo">Por cobrar</h4>' + deudas.map((v) =>
+        '<div class="deuda"><div><strong>' + esc(v.id) + '</strong> · ' + fmt.date(v.fecha) + ' · total ' + fmt.money(v.total) + ' · pagado ' + fmt.money(v.cobrado) +
+        ' · <span class="text-gold">debe ' + fmt.money(v.saldo) + '</span></div>' +
+        (GS.puede('operador') ? '<form class="abono-form" data-venta="' + esc(v.id) + '" novalidate>' +
+          '<input type="number" name="monto" min="1" max="' + v.saldo + '" step="1" value="' + v.saldo + '" aria-label="Monto">' +
+          '<input type="date" name="fecha" value="' + esc(data().hoy) + '" aria-label="Fecha">' +
+          '<select name="medioPago" aria-label="Medio de pago">' + GS.options(Object.keys(medios).map((k) => ({ value: k, label: medios[k] })), 'transferencia') + '</select>' +
+          '<button type="submit" class="btn small">Registrar abono</button>' + wsp(v) + '<span class="form-error"></span></form>' : '') + '</div>').join('')
+      : '';
+    const historial = '<h4 class="sub-titulo">Últimas compras</h4>' + (compras.length ? '<table class="data-table"><tbody>' + compras.map((v) =>
+      '<tr><td>' + fmt.date(v.fecha) + '</td><td class="cell-strong">' + esc(v.id) + '</td><td>' + esc(v.lineas.map((l) => l.productoNombre + ' ×' + l.cantidad).join(', ')) + '</td>' +
+      '<td class="cell-num right">' + fmt.money(v.total) + '</td><td>' + GS.badge(ESTADO_PAGO, v.estadoPago) + '</td></tr>').join('') + '</tbody></table>' : '<p class="muted">Sin compras.</p>');
+    return '<div class="detalle-compra">' + deuda + historial + '</div>';
+  }
+
   GS.views.clientes = {
     title: 'Clientes',
     render(el) {
       const f = GS.filters('clientes', { q: '' });
-      el.innerHTML = '<div class="page-head"><div><h1>Clientes</h1><p>Fichas de clientes con su historial de compras. Las ventas sin cliente quedan como "Cliente general".</p></div>' +
+      el.innerHTML = '<div class="page-head"><div><h1>Clientes</h1><p>Fichas con su historial y lo que deben. Despliega un cliente para registrar abonos o avisarle por WhatsApp.</p></div>' +
         (GS.puede('operador') ? '<button class="btn" data-action="nuevoCliente">' + GS.icon('plus', 2.4) + 'Nuevo cliente</button>' : '') + '</div>' +
         '<div class="filters-bar"><div class="search-box">' + GS.icon('search') + '<input type="text" data-filter="clientes.q" value="' + esc(f.q) + '" placeholder="Buscar nombre, ID Pokémon, teléfono o Instagram..."></div></div>' +
+        '<div id="cl-resumen"></div>' +
         '<div class="table-wrap"><table class="data-table wide"><thead><tr id="cl-thead"></tr></thead><tbody id="cl-tbody"></tbody></table></div>';
       this.update();
     },
     update() {
       const rows = GS.tablaAplicar('clientes', clientesBuscados(), colsClientes);
       const op = GS.puede('operador');
-      document.getElementById('cl-thead').innerHTML = GS.tablaEncabezado('clientes', colsClientes) + '<th></th>';
+      const n = colsClientes.length + 2;
+      document.getElementById('cl-thead').innerHTML = '<th></th>' + GS.tablaEncabezado('clientes', colsClientes) + '<th></th>';
       document.getElementById('cl-tbody').innerHTML = rows.length
-        ? rows.map((c) => '<tr class="' + (c.activo ? '' : 'row-muted') + '">' + colsClientes.map((col) => '<td class="' + (col.right ? 'cell-num right' : '') + '">' + col.celda(c) + '</td>').join('') +
-          '<td><div class="row-actions">' + (op ? GS.iconBtn('editarCliente', c.id, 'edit', 'Editar') : '') + '</div></td></tr>').join('')
-        : '<tr><td colspan="' + (colsClientes.length + 1) + '">' + GS.empty('Aún no hay clientes', 'Se crean al escribir su nombre en una venta, o con "Nuevo cliente".', 'clientes') + '</td></tr>';
+        ? rows.map((c) => {
+          const open = clientesAbiertos.has(c.id);
+          return '<tr class="fila-compra' + (open ? ' abierta' : '') + (c.activo ? '' : ' row-muted') + '" data-action="verCliente" data-id="' + esc(c.id) + '">' +
+            '<td><span class="chev">' + (open ? '▾' : '▸') + '</span></td>' +
+            colsClientes.map((col) => '<td class="' + (col.right ? 'cell-num right' : '') + '">' + col.celda(c) + '</td>').join('') +
+            '<td><div class="row-actions">' + (op ? GS.iconBtn('editarCliente', c.id, 'edit', 'Editar') : '') + '</div></td></tr>' +
+            (open ? '<tr class="detalle-row"><td colspan="' + n + '">' + detalleCliente(c) + '</td></tr>' : '');
+        }).join('')
+        : '<tr><td colspan="' + n + '">' + GS.empty('Aún no hay clientes', 'Se crean al escribir su nombre en una venta, o con "Nuevo cliente".', 'clientes') + '</td></tr>';
+      const wrap = document.getElementById('cl-tbody').closest('.table-wrap');
+      document.querySelectorAll('#cl-tbody .detalle-compra').forEach((d) => { d.style.width = Math.max(320, wrap.clientWidth - 36) + 'px'; });
+      document.querySelectorAll('#cl-tbody .abono-form').forEach((form) => {
+        GS.bindForm(form, async (v) => { await GS.mutate('registrarCobro', Object.assign({ ventaId: form.dataset.venta }, v), 'Abono registrado'); });
+      });
+      const deudores = data().clientes.filter((c) => c.deuda > 0);
+      document.getElementById('cl-resumen').innerHTML = deudores.length
+        ? '<div class="notice">' + GS.icon('money') + ' <strong>' + deudores.length + (deudores.length === 1 ? ' cliente debe' : ' clientes deben') + ' ' + fmt.money(deudores.reduce((t, c) => t + c.deuda, 0)) + '</strong>: ' +
+          deudores.map((c) => esc(c.nombre) + ' (' + fmt.money(c.deuda) + ')').join(', ') + '.</div>'
+        : '';
     },
+  };
+
+  GS.actions.verCliente = (id) => {
+    if (clientesAbiertos.has(id)) clientesAbiertos.delete(id); else clientesAbiertos.add(id);
+    GS.views.clientes.update();
   };
 
   function clienteForm(c) {

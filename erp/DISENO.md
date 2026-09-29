@@ -228,7 +228,23 @@ lote(s) de origen. Cada línea guarda su resultado económico (sección 3) al mo
 
 Anular una venta (administrador) devuelve el stock a su lote y queda auditado.
 
-**Implementado (v2.4):** formulario "Nueva venta" tipo carrito en Ventas (canal **Tienda** por
+**Dónde se vende (v2.4):** en **Inventario**. En la fila de cada producto se escribe la cantidad y
+"+ Venta" (sale de la compra más antigua), o se despliega y se marcan unidades (salen de ese lote).
+Arriba se abre el panel **"Venta en curso"** con el carrito y los datos de la venta; al registrarla
+se queda en Inventario. Una venta con saldo por cobrar exige un cliente.
+
+**Ventas es un tablero informativo:** vendido del mes con avance contra la **meta = ventas del mes
+anterior**, ganancia real, ticket promedio, **proyección de cierre** al ritmo actual; gráfico
+**ventas vs compras** de 12 meses (un solo eje, con la tabla mensual Ventas / Compras / Ganancia /
+Ventas − compras como en la planilla), ventas por día, por canal y evento, por medio de pago,
+productos más vendidos, proyección del stock y **ranking de clientes** del mes y acumulado. Abajo,
+la lista de OC del mes (consulta; el administrador puede anular).
+
+**Cobranza en Clientes:** al desplegar un cliente se ven sus deudas con "Registrar abono" y un
+botón **WhatsApp** (abre el chat con el mensaje del saldo listo para enviar, si tiene teléfono).
+Envío automático por WhatsApp: pendiente (requiere WhatsApp Business API).
+
+**Detalle (v2.4):** formulario "Nueva venta" tipo carrito (canal **Tienda** por
 defecto, medio de pago, N° de boleta, cliente escrito o "Cliente general"). El precio se completa
 con el precio de venta y se puede rebajar **por producto** (el precio es el mismo en todos los
 canales). Las unidades salen del lote más antiguo (FIFO), repartiéndose en varios lotes si hace

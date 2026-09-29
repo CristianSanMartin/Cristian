@@ -202,7 +202,7 @@
     return '<div class="detalle-compra"><table class="data-table"><thead><tr><th></th><th class="right">N°</th><th>Estado</th><th>OC</th><th>Cliente</th>' +
       '<th class="right">Valor unitario</th><th class="right">Costo</th><th class="right">Crédito fiscal</th><th class="right">$ Venta</th><th class="right">Neto</th>' +
       '<th class="right">Débito fiscal</th><th class="right">Pago SII</th><th class="right">Ganancia</th></tr></thead><tbody>' + filas.join('') + '</tbody></table>' +
-      '<p class="table-note">Marca las unidades disponibles que vas a vender y presiona "Vender seleccionadas". Las vendidas muestran el precio real de su venta; las disponibles, el precio de venta actual.</p></div>';
+      '<p class="table-note">Marca las unidades disponibles que vas a vender y presiona "Agregar a la venta". Las vendidas muestran el precio real de su venta; las disponibles, el precio de venta actual.</p></div>';
   }
 
   GS.views.inventario = {
@@ -215,9 +215,11 @@
         '<div class="filters-bar"><div class="search-box">' + GS.icon('search') + '<input type="text" data-filter="inventario.q" value="' + esc(f.q) + '" placeholder="Buscar producto..."></div>' +
         '<label class="check"><input type="checkbox" data-filter="inventario.agotados"' + (f.agotados ? ' checked' : '') + '> Mostrar agotados</label></div>' +
         '<div id="inv-resumen"></div>' +
+        '<div id="inv-venta"></div>' +
         '<div id="inv-acciones"></div>' +
         '<div class="table-wrap"><table class="data-table compacta"><thead><tr id="inv-thead"></tr></thead><tbody id="inv-tbody"></tbody></table></div>' +
-        '<p class="table-note">Costo = precio unidad neto + despacho prorrateado (si el producto llegó en varias compras, el promedio de lo disponible). Ganancia = precio de venta sin IVA − costo. El precio de venta es el del producto (el propio o el sugerido).</p>';
+        '<p class="table-note">Para vender: escribe la cantidad en la fila y presiona "+ Venta", o despliega el producto y marca unidades. Costo = precio unidad neto + despacho prorrateado (si el producto llegó en varias compras, el promedio de lo disponible). Ganancia = precio de venta sin IVA − costo. El precio de venta es el del producto (el propio o el sugerido).</p>';
+      GS.montarVenta(document.getElementById('inv-venta'));
       this.update();
     },
     update() {
@@ -232,7 +234,10 @@
         return '<tr class="fila-compra' + (open ? ' abierta' : '') + (r.disponible ? '' : ' row-muted') + '" data-action="verInventario" data-id="' + esc(r.productoId) + '" data-producto="' + esc(r.productoId) + '">' +
           '<td><span class="chev">' + (open ? '▾' : '▸') + '</span></td>' +
           colsInv.map((c) => '<td class="' + (c.right ? 'cell-num right ' : '') + (c.clase || '') + '">' + c.celda(r) + '</td>').join('') +
-          '<td><div class="row-actions">' + (vendible ? '<button class="btn small secondary" data-action="venderStock" data-id="' + esc(r.productoId) + '">' + GS.icon('ventas') + 'Vender</button>' : '') +
+          '<td><div class="row-actions">' + (vendible
+            ? '<input class="qty-input cant-venta" type="number" min="1" max="' + r.disponible + '" step="1" placeholder="Cant." data-cant-prod="' + esc(r.productoId) + '" aria-label="Cantidad a vender">' +
+              '<button class="btn small secondary" data-action="agregarProductoVenta" data-id="' + esc(r.productoId) + '">' + GS.icon('plus', 2.4) + 'Venta</button>'
+            : '') +
           (op ? GS.iconBtn('editarProducto', r.productoId, 'edit', 'Editar nombre, foto o precio') : '') + '</div></td></tr>' +
           (open ? '<tr class="detalle-row"><td colspan="' + n + '">' + detalleProducto(r) + '</td></tr>' : '');
       }).join('') : '<tr><td colspan="' + n + '">' + GS.empty('No hay stock disponible', 'Los productos entran al registrar su factura de compra desde Preventas.', 'inventario') + '</td></tr>';
@@ -259,7 +264,7 @@
     const el = document.getElementById('inv-acciones');
     if (!selUnidades.size) { el.innerHTML = ''; return; }
     el.innerHTML = '<div class="action-bar">' + GS.icon('check') + '<span><strong>' + selUnidades.size + '</strong> ' + (selUnidades.size === 1 ? 'unidad seleccionada' : 'unidades seleccionadas') + '</span>' +
-      '<button class="btn small" data-action="venderSeleccion">' + GS.icon('ventas') + 'Vender seleccionadas</button>' +
+      '<button class="btn small" data-action="agregarSeleccionVenta">' + GS.icon('plus', 2.4) + 'Agregar a la venta</button>' +
       '<button class="btn ghost small" data-action="limpiarStock">Quitar selección</button></div>';
   }
   document.addEventListener('change', (e) => {
@@ -269,28 +274,38 @@
     e.target.closest('tr').classList.toggle('row-selected', e.target.checked);
     barraStock();
   });
-  /** Lleva unidades de lotes al carrito de Ventas: { loteId: cantidad }. Salen de ese lote. */
-  function vender(porLote) {
+  // La cantidad en la fila no despliega el producto; Enter la agrega.
+  document.addEventListener('click', (e) => { if (e.target.dataset && e.target.dataset.cantProd) e.stopPropagation(); }, true);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target.dataset && e.target.dataset.cantProd) { e.preventDefault(); GS.actions.agregarProductoVenta(e.target.dataset.cantProd); }
+  });
+
+  /** Abre (o actualiza) el panel "Venta en curso" arriba de la lista. */
+  function mostrarVenta(n) {
+    GS.montarVenta(document.getElementById('inv-venta'));
+    GS.views.inventario.update();
+    const panel = document.getElementById('nueva-venta');
+    if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (n) GS.toast(n === 1 ? '1 unidad agregada a la venta' : n + ' unidades agregadas a la venta');
+    else GS.toast('No quedan más unidades disponibles de ese producto', true);
+  }
+  /** Unidades marcadas: salen de su lote. */
+  GS.actions.agregarSeleccionVenta = () => {
+    const porLote = {};
+    selUnidades.forEach((k) => { const id = k.split('|')[0]; porLote[id] = (porLote[id] || 0) + 1; });
     let n = 0;
     Object.keys(porLote).forEach((id) => {
       const l = data().lotes.find((x) => x.id === id);
-      if (!l) return;
-      GS.agregarAVenta(l.productoId, porLote[id], l.id);
-      n += porLote[id];
+      if (l) n += GS.agregarAVenta(l.productoId, porLote[id], l.id) || 0;
     });
     selUnidades.clear();
-    GS.go('ventas');
-    GS.toast(n === 1 ? '1 unidad agregada a la venta' : n + ' unidades agregadas a la venta');
-  }
-  GS.actions.venderStock = (productoId) => {
-    GS.agregarAVenta(productoId, 1);
-    GS.go('ventas');
-    GS.toast('1 unidad agregada a la venta');
+    mostrarVenta(n);
   };
-  GS.actions.venderSeleccion = () => {
-    const porLote = {};
-    selUnidades.forEach((k) => { const id = k.split('|')[0]; porLote[id] = (porLote[id] || 0) + 1; });
-    vender(porLote);
+  /** Cantidad escrita en la fila del producto (o 1): sale de la compra más antigua. */
+  GS.actions.agregarProductoVenta = (productoId) => {
+    const input = document.querySelector('[data-cant-prod="' + CSS.escape(productoId) + '"]');
+    const cant = Math.max(1, Number(input && input.value) || 1);
+    mostrarVenta(GS.agregarAVenta(productoId, cant) || 0);
   };
   GS.actions.limpiarStock = () => { selUnidades.clear(); GS.views.inventario.update(); };
 

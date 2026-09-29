@@ -96,6 +96,39 @@ const preview = `
     call('crearVenta', { fecha: hoy, medioPago: 'efectivo', lineas: [{ productoId: p.deckEsp.id, cantidad: 1, precio: 24990 }] });
     call('crearVenta', { fecha: hoy, cliente: 'Ana Rojas', canal: 'Evento', evento: 'Torneo martes', medioPago: 'transferencia', pagada: false, abono: 10000,
       lineas: [{ productoId: p.deckEng.id, cantidad: 1 }] });
+    historial();
+
+    // Seis meses anteriores con compras y ventas, para que el tablero de Ventas tenga qué mostrar.
+    function historial() {
+      var mes = function (n, d) { var x = new Date(hoy.slice(0, 7) + '-01T12:00:00Z'); x.setUTCMonth(x.getUTCMonth() - n); x.setUTCDate(d); return x.toISOString().slice(0, 10); };
+      var ediciones = ['Journey Together', 'Prismatic Evolutions', 'Surging Sparks', 'Stellar Crown', 'Shrouded Fable', 'Twilight Masquerade'];
+      var clientes = ['Juan Pérez', 'Ana Rojas', 'Diego Muñoz', 'Camila Soto', 'Tomás Vera', ''];
+      var medios = ['debito', 'credito', 'efectivo', 'transferencia', 'debito', 'debito'];
+      var canales = ['Tienda', 'Tienda', 'Tienda', 'Evento', 'Instagram', 'Tienda'];
+      var semilla = 7;
+      var azar = function (n) { semilla = (semilla * 9301 + 49297) % 233280; return Math.floor((semilla / 233280) * n); };
+      for (var n = 6; n >= 1; n--) {
+        var ed = ediciones[n - 1];
+        var bundle = call('guardarProducto', { nombre: 'Booster Bundle', edicion: ed, idioma: 'ENG', tipo: 'Booster Bundle', pvp: 32990 });
+        var etb = call('guardarProducto', { nombre: 'Elite Trainer Box', edicion: ed, idioma: 'ENG', tipo: 'Elite Trainer Box', pvp: 64990 });
+        var a = call('guardarPreventa', { proveedorId: asmodee.id, productoId: bundle.id, lanzamiento: mes(n, 2), solicitado: 30, costoNeto: 19500 });
+        var b = call('guardarPreventa', { proveedorId: asmodee.id, productoId: etb.id, lanzamiento: mes(n, 2), solicitado: 20, costoNeto: 38900 });
+        var cantA = 18 + azar(10);
+        var cantB = 8 + azar(8);
+        call('registrarAsignacion', { lineas: [{ id: a.id, asignado: cantA }, { id: b.id, asignado: cantB }] });
+        call('crearCompra', { preventas: [a.id, b.id], factura: ed.split(' ')[0].toUpperCase() + '-' + (100 + n), fecha: mes(n, 3) });
+        var ventas = 6 + azar(7);
+        for (var i = 0; i < ventas; i++) {
+          var k = azar(6);
+          var cli = clientes[k];
+          var lineasV = [{ productoId: bundle.id, cantidad: 1 + azar(3) }];
+          if (azar(3) === 0) lineasV.push({ productoId: etb.id, cantidad: 1 });
+          try {
+            call('crearVenta', { fecha: mes(n, 4 + azar(24)), cliente: cli, canal: canales[k], evento: canales[k] === 'Evento' ? 'Torneo mensual' : '', medioPago: medios[azar(6)], lineas: lineasV });
+          } catch (e) { /* sin stock: se omite */ }
+        }
+      }
+    }
   }
 
   function runner(ok, fail) {

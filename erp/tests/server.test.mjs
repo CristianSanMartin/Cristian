@@ -508,6 +508,7 @@ test("venta en varios lotes (FIFO) y cuenta por cobrar con abonos", () => {
   s.ok("registrarAsignacion", { lineas: [{ id: pv2.id, asignado: 5 }] });
   s.ok("crearCompra", { preventas: [pv2.id], factura: "TIN-2", fecha: "2026-11-01", despacho: 0 });
 
+  assert.match(errorDe(s.call("crearVenta", { fecha: "2026-11-05", pagada: false, abono: 0, lineas: [{ productoId: prods.miniTin.id, cantidad: 1 }] })), /necesita un cliente/);
   const v = s.ok("crearVenta", { fecha: "2026-11-05", medioPago: "transferencia", cliente: "Ana", pagada: false, abono: 50000,
     lineas: [{ productoId: prods.miniTin.id, cantidad: 12 }] }).result;
   const venta = s.ok("bootstrap").data.ventas.find(x => x.id === v.id);

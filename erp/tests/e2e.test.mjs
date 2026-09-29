@@ -60,7 +60,8 @@ test("preventas como carrito: agregar productos uno a uno, asignar en la tabla y
     await form.locator("[data-img-hint]", { hasText: "lista para guardar" }).waitFor();
     assert.match(await form.locator("[data-calc]").textContent(), /Total neto \$2\.400\.000.*Ganancia real \$39\.655/);
     await form.locator('button[type="submit"]').click();
-    await toast(page, /PVI-000008 agregada/);
+    await toast(page, /PVI-\d{6} agregada/);
+    const PV1 = (await page.textContent("#toast-msg")).match(/PVI-\d{6}/)[0];
 
     // La fecha se mantiene para el siguiente producto; no hay campo proforma
     assert.equal(await form.locator('[name="proforma"]').count(), 0);
@@ -69,12 +70,14 @@ test("preventas como carrito: agregar productos uno a uno, asignar en la tabla y
     // Producto que ya existe, escrito como aparece en el catálogo
     await form.locator('[name="producto"]').fill("Destined Rivals – Booster Box · ENG");
     await form.locator('[name="producto"]').dispatchEvent("change");
-    assert.match(await form.locator("[data-producto]").textContent(), /GS-0008/);
+    assert.match(await form.locator("[data-producto]").textContent(), /GS-\d{4}/);
+    assert.doesNotMatch(await form.locator("[data-producto]").textContent(), /producto nuevo/);
     assert.equal(await form.locator('[name="pvp"]').inputValue(), "189990", "precarga el precio sugerido del catálogo");
     await form.locator('[name="solicitado"]').fill("5");
     await form.locator('[name="costoNeto"]').fill("118000");
     await form.locator('button[type="submit"]').click();
-    await toast(page, /PVI-000009 agregada/);
+    await page.waitForFunction((a) => /PVI-\d{6} agregada/.test(document.getElementById("toast-msg").textContent) && !document.getElementById("toast-msg").textContent.includes(a), PV1);
+    const PV2 = (await page.textContent("#toast-msg")).match(/PVI-\d{6}/)[0];
     // La tabla no muestra el PVI: solo el nombre y, debajo, la edición
     assert.doesNotMatch(await page.locator("#pv-tbody").textContent(), /PVI-0000/);
 
@@ -102,47 +105,47 @@ test("preventas como carrito: agregar productos uno a uno, asignar en la tabla y
     // Ordenar por Cant. descendente
     await menu("cant");
     await page.click('.col-menu [data-orden="desc"]');
-    assert.equal(await page.locator("#pv-tbody tr").first().getAttribute("data-pv"), "PVI-000008");
+    assert.equal(await page.locator("#pv-tbody tr").first().getAttribute("data-pv"), PV1);
     await menu("cant");
     await page.click('.col-menu [data-orden="asc"]');
-    assert.equal(await page.locator("#pv-tbody tr").first().getAttribute("data-pv"), "PVI-000009");
+    assert.equal(await page.locator("#pv-tbody tr").first().getAttribute("data-pv"), PV2);
 
     // Nuevo cant. en la tabla: queda pendiente hasta guardar
-    await fila("PVI-000008").locator("[data-asig]").fill("6");
+    await fila(PV1).locator("[data-asig]").fill("6");
     await page.waitForSelector("text=1 cantidad asignada sin guardar");
     await page.click('[data-action="guardarAsignaciones"]');
     await toast(page, /Asignación guardada/);
-    assert.match(await fila("PVI-000008").textContent(), /Asignada/);
+    assert.match(await fila(PV1).textContent(), /Asignada/);
     assert.match(await pedido.textContent(), /Pedido \$1\.310\.000 neto/);
 
     // Precio de venta: vacío muestra el sugerido en gris; al escribirlo queda como precio propio
-    const precio = fila("PVI-000008").locator("[data-precio]");
+    const precio = fila(PV1).locator("[data-precio]");
     assert.equal(await precio.inputValue(), "");
     assert.equal(await precio.getAttribute("placeholder"), "189.990");
-    assert.match(await fila("PVI-000008").textContent(), /el sugerido/);
+    assert.match(await fila(PV1).textContent(), /el sugerido/);
     await precio.fill("199990");
     await page.waitForSelector("text=1 precio de venta sin guardar");
     // Es del producto: otro producto no cambia
-    assert.equal(await fila("PVI-000009").locator("[data-precio]").inputValue(), "");
+    assert.equal(await fila(PV2).locator("[data-precio]").inputValue(), "");
     await precio.press("Enter");
     await toast(page, /Precio de venta guardado/);
-    assert.match(await fila("PVI-000008").textContent(), /precio propio/);
+    assert.match(await fila(PV1).textContent(), /precio propio/);
     // Borrarlo vuelve al sugerido
-    await fila("PVI-000008").locator("[data-precio]").fill("");
+    await fila(PV1).locator("[data-precio]").fill("");
     await page.click('[data-action="guardarPrecios"]');
     await toast(page, /Precio de venta guardado/);
-    assert.match(await fila("PVI-000008").textContent(), /el sugerido/);
+    assert.match(await fila(PV1).textContent(), /el sugerido/);
 
     // En bloque: seleccionar y marcar sin asignación
-    await fila("PVI-000009").locator("[data-sel]").check();
+    await fila(PV2).locator("[data-sel]").check();
     await page.click('[data-action="sinAsignacion"]');
     await toast(page, /Marcadas sin asignación/);
-    assert.equal(await fila("PVI-000009").count(), 0, "el filtro de Estado por defecto oculta las sin asignación");
+    assert.equal(await fila(PV2).count(), 0, "el filtro de Estado por defecto oculta las sin asignación");
     assert.match(await pedido.textContent(), /Pedido \$720\.000 neto.*faltan \$280\.000 para despacho gratis/);
 
     // La imagen subida se muestra en la preventa (ya no hay pestaña de catálogo)
     assert.equal(await page.locator('[data-nav="productos"]').count(), 0);
-    const src = await fila("PVI-000008").locator("img.thumb").getAttribute("src");
+    const src = await fila(PV1).locator("img.thumb").getAttribute("src");
     assert.match(src, /^data:image\/jpeg;base64,/);
 
     assert.deepEqual(errores, []);
@@ -224,70 +227,81 @@ test("factura de compra: las preventas seleccionadas pasan a Compras e Inventari
   }
 });
 
-test("venta: carrito con descuento por producto, comisión TUU, stock y acumulado en la factura", { skip }, async () => {
+test("venta desde Inventario: cantidad en la fila, descuento, comisión TUU, stock y acumulado en la factura", { skip }, async () => {
   const browser = await chromium.launch();
   try {
     const { page, errores } = await abrir(browser);
-    await page.click('[data-nav="ventas"]');
+    await page.click('[data-nav="inventario"]');
+    const deckEng = page.locator('#inv-tbody tr[data-producto]', { hasText: "Battle Deck" }).filter({ has: page.locator(".lang-ENG") });
+    // Sin panel de venta hasta agregar algo
+    assert.equal(await page.locator("#nueva-venta").count(), 0);
+    // Cantidad en la fila: no despliega el producto y no deja pasar el stock (quedan 9)
+    await deckEng.locator("[data-cant-prod]").fill("20");
+    assert.equal(await page.locator("#inv-tbody .detalle-compra").count(), 0);
+    await deckEng.locator('[data-action="agregarProductoVenta"]').click();
+    await toast(page, /9 unidades agregadas a la venta/);
+    await page.click('[data-action="vaciarCarrito"]');
+    assert.equal(await page.locator("#nueva-venta").count(), 0);
+
+    await deckEng.locator("[data-cant-prod]").fill("2");
+    await deckEng.locator("[data-cant-prod]").press("Enter");
+    await toast(page, /2 unidades agregadas a la venta/);
     const form = page.locator("#nueva-venta");
-    // Tienda y débito por defecto
     assert.equal(await form.locator('select[name="canal"]').inputValue(), "Tienda");
-
-    // Sin stock suficiente (quedan 9 Battle Deck ENG del ejemplo)
-    await form.locator('[name="producto"]').fill("30th Celebration – Battle Deck · ENG");
-    await form.locator('[name="cantidad"]').fill("20");
-    await page.click('[data-action="agregarAlCarrito"]');
-    assert.match(await form.locator(".form-error").textContent(), /Stock insuficiente.*quedan 9/);
-
-    await form.locator('[name="producto"]').fill("30th Celebration – Battle Deck · ENG");
-    await form.locator('[name="cantidad"]').fill("2");
-    await page.click('[data-action="agregarAlCarrito"]');
     // Descuento en la línea: 26.990 → 24.990
     await form.locator("[data-carrito-precio]").fill("24990");
-    const totales = form.locator("[data-nv-totales]");
-    assert.match(await totales.textContent(), /Total\$49\.980.*Descuentos\$4\.000.*Comisión TUU\$450/);
+    assert.match(await form.locator("[data-nv-totales]").textContent(), /Total\$49\.980.*Descuentos\$4\.000.*Comisión TUU\$450/);
+    // Por cobrar sin cliente no se permite
+    await form.locator('[name="pagada"]').uncheck();
+    await form.locator('button[type="submit"]').click();
+    await form.locator(".form-error.show").waitFor();
+    assert.match(await form.locator(".form-error").textContent(), /necesita un cliente/);
+    await form.locator('[name="pagada"]').check();
     await form.locator('[name="cliente"]').fill("maria soto");
     await form.locator('button[type="submit"]').click();
-    await toast(page, /OC-0004 registrada · \$49\.980/);
-
-    const fila = page.locator("#vt-tbody tr.fila-compra", { hasText: "OC-0004" });
-    assert.match(await fila.textContent(), /Maria Soto.*Tienda.*Débito.*2.*\$49\.980.*\$450.*Pagada/s);
-    // Detalle abierto: sale de la factura 30th-DECK
-    assert.match(await page.locator(".detalle-compra").first().textContent(), /Battle Deck.*30th-DECK.*lista \$26\.990/s);
-
-    // Por cobrar del ejemplo: registrar el abono que falta
-    const pendiente = page.locator("#vt-tbody tr.fila-compra", { hasText: "Ana Rojas" });
-    assert.match(await pendiente.textContent(), /Abonada.*debe \$16\.990/s);
-    await pendiente.click();
-    await page.locator('.abono-form button[type="submit"]').click();
-    await toast(page, /Abono registrado/);
-    assert.match(await page.locator("#vt-tbody tr.fila-compra", { hasText: "Ana Rojas" }).textContent(), /Pagada/);
+    await toast(page, /OC-\d{4} registrada · \$49\.980/);
+    // Se queda en Inventario, sin panel, con el stock rebajado
+    assert.equal(await page.locator('.nav-item.active').getAttribute("data-nav"), "inventario");
+    assert.equal(await page.locator("#nueva-venta").count(), 0);
+    assert.match(await deckEng.textContent(), /12.*5.*7/s);
+    await deckEng.click();
+    assert.match(await page.locator("#inv-tbody .detalle-compra").textContent(), /OC-\d{4}.*Maria Soto/s);
 
     // La factura de compra acumula lo vendido
     await page.click('[data-nav="compras"]');
     assert.match(await page.locator("#cp-tbody tr.fila-compra", { hasText: "30th-DECK" }).textContent(), /6 \/ 24.*Vendiendo/s);
-    // Inventario: al desplegar el lote, la unidad vendida muestra su OC y cliente
-    await page.click('[data-nav="inventario"]');
-    await page.locator("#inv-tbody tr.fila-compra", { hasText: "Battle Deck" }).filter({ has: page.locator(".lang-ENG") }).click();
-    assert.match(await page.locator("#inv-tbody .detalle-compra").textContent(), /OC-0004.*Maria Soto/s);
-    // Cliente creado con su ficha
+
+    // Tablero de Ventas: la OC aparece en la lista del mes y en el ranking
+    await page.click('[data-nav="ventas"]');
+    assert.equal(await page.locator("#nueva-venta").count(), 0, "Ventas es informativo: sin formulario");
+    const fila = page.locator("#vt-tbody tr.fila-compra", { hasText: "Maria Soto" });
+    assert.match(await fila.textContent(), /Tienda.*Débito.*2.*\$49\.980.*\$450.*Pagada/s);
+    assert.match(await page.locator(".dash-card", { hasText: "Mejores clientes del mes" }).textContent(), /Maria Soto.*\$49\.980/s);
+    assert.ok(await page.locator("svg.grafico").count() >= 2, "gráficos de ventas vs compras y por día");
+    assert.match(await page.locator(".resumen-mensual").textContent(), /Ventas.*Compras.*Ventas − compras/s);
+
+    // Cobranza en Clientes: Ana Rojas debe $16.990 del ejemplo
     await page.click('[data-nav="clientes"]');
-    assert.match(await page.locator("#cl-tbody tr", { hasText: "Maria Soto" }).textContent(), /1.*\$49\.980/s);
+    const ana = page.locator("#cl-tbody tr.fila-compra", { hasText: "Ana Rojas" });
+    assert.match(await ana.textContent(), /\$16\.990/);
+    await ana.click();
+    await page.locator('#cl-tbody .abono-form button[type="submit"]').click();
+    await toast(page, /Abono registrado/);
+    assert.doesNotMatch(await page.locator("#cl-tbody tr.fila-compra", { hasText: "Ana Rojas" }).textContent(), /\$16\.990/);
+    assert.match(await page.locator("#cl-tbody tr.fila-compra", { hasText: "Maria Soto" }).textContent(), /1.*\$49\.980/s);
     assert.deepEqual(errores, []);
   } finally {
     await browser.close();
   }
 });
 
-test("inventario: el stock disponible se toma y se lleva a una venta", { skip }, async () => {
+test("inventario: se marcan unidades de un producto y se venden desde su lote", { skip }, async () => {
   const browser = await chromium.launch();
   try {
     const { page, errores } = await abrir(browser);
     await page.click('[data-nav="inventario"]');
-    // Un pool por producto (Battle Deck ENG: 12 comprados, 3 vendidos, 9 disponibles)
     const deckEng = page.locator('#inv-tbody tr[data-producto]', { hasText: "Battle Deck" }).filter({ has: page.locator(".lang-ENG") });
     assert.match(await deckEng.textContent(), /12.*3.*9.*\$26\.990/s);
-    // Sin casilla en la fila del producto: se marcan las unidades disponibles al desplegarlo
     assert.equal(await deckEng.locator("input[type=checkbox]").count(), 0);
     await deckEng.click();
     const libres = page.locator("#inv-tbody .detalle-compra [data-sel-unidad]");
@@ -295,18 +309,15 @@ test("inventario: el stock disponible se toma y se lleva a una venta", { skip },
     await libres.nth(0).check();
     await libres.nth(1).check();
     await page.waitForSelector("text=2 unidades seleccionadas");
-    await page.click('[data-action="venderSeleccion"]');
+    await page.click('[data-action="agregarSeleccionVenta"]');
     await toast(page, /2 unidades agregadas a la venta/);
-    assert.equal(await page.locator('.nav-item.active').getAttribute("data-nav"), "ventas");
     const linea = page.locator("#nueva-venta [data-carrito] tr");
     assert.equal(await linea.count(), 1);
     assert.match(await linea.textContent(), /Battle Deck.*factura 30th-DECK/s);
     assert.equal(await linea.locator("[data-carrito-cant]").inputValue(), "2");
-    assert.match(await page.locator("#nueva-venta [data-nv-totales]").textContent(), /Total\$53\.980/);
     await page.locator('#nueva-venta button[type="submit"]').click();
-    await toast(page, /OC-0004 registrada/);
+    await toast(page, /OC-\d{4} registrada/);
     // Editar la ficha (foto, precio) desde el inventario
-    await page.click('[data-nav="inventario"]');
     await page.locator('#inv-tbody [data-action="editarProducto"]').first().click();
     await modal(page).waitFor();
     assert.deepEqual(errores, []);
@@ -326,7 +337,7 @@ test("rol solo lectura: ve la información pero no las acciones", { skip }, asyn
     assert.equal(await page.locator("[data-asig], [data-sel], [data-action='editarPreventa']").count(), 0);
     await page.click('[data-nav="inventario"]');
     assert.match(await page.textContent("#inv-tbody"), /Battle Deck/);
-    assert.equal(await page.locator('[data-action="venderStock"], [data-action="editarProducto"], [data-sel-stock]').count(), 0);
+    assert.equal(await page.locator('[data-action="agregarProductoVenta"], [data-cant-prod], [data-action="editarProducto"], [data-sel-unidad]').count(), 0);
     assert.deepEqual(errores, []);
   } finally {
     await browser.close();
