@@ -16,8 +16,8 @@ const TL1 = "aaaaaaaa-0000-0000-0000-000000000001", TL2 = "aaaaaaaa-0000-0000-00
       TL3 = "aaaaaaaa-0000-0000-0000-000000000003";
 
 // ---------- Registro de operaciones ----------
-const reg = [["FECHA", "CUENTA", "PATENTE", "ORIGEN", "ID RUTA", "TOTAL RUTA", "LOCALIDAD"],
-  [d("2026-09-08"), "FALABELLA", "AAAA-11", "CT RANCAGUA (WMOS)", 14600001, 120000, "RANCAGUA"],   // pagada por ID
+const reg = [["FECHA", "CUENTA", "PATENTE", "ORIGEN", "ID RUTA", "TOTAL RUTA", "LOCALIDAD", "TERMINADO", "TOTAL", "NS", "INGRESO"],
+  [d("2026-09-08"), "FALABELLA", "AAAA-11", "CT RANCAGUA (WMOS)", 14600001, 100000, "RANCAGUA", 9, 10, 0.9, 125000], // pagada por ID
   [d("2026-09-08"), "FALABELLA", "BBBB-22", "CT RANCAGUA (WMOS)", 14600002, 120000, "MACHALI"],    // pendiente
   [d("2026-09-08"), "FALABELLA", "CCCC-33", "CT VALPARAISO (WMOS)", 14600003, 60000, "VIÑA DEL MAR"], // pagada con otro ID
   [d("2026-09-09"), "FALABELLA", "DDDD-44/Garate", "TREN LOGISTICO", TL1, 85000, "RM"],          // TL 2da vuelta
@@ -74,7 +74,7 @@ const errors = [];
 page.on("pageerror", e => errors.push(e.message));
 await page.route("**/xlsx.full.min.js", r => r.fulfill({ path: XLSX_JS, contentType: "application/javascript" }));
 await page.goto("file://" + HTML);
-await page.click("text=Rutas pendientes");
+await page.click("text=Control de rutas");
 const vistaProformaOculta = await page.isHidden("#vistaProforma");
 await page.setInputFiles("#inRegistro", path.join(tmp, "registro.xlsx"));
 await page.setInputFiles("#inGeosort", path.join(tmp, "geosort.csv"));
@@ -94,6 +94,22 @@ await page.click(".estado-item >> nth=0");
 const filasPendiente = await page.$$eval("#rutasBody tr", trs => trs.length);
 const [dl] = await Promise.all([page.waitForEvent("download"), page.click("text=Descargar cruce Excel")]);
 const out = path.join(tmp, "cruce.xlsx"); await dl.saveAs(out);
+// Almacén: cada carga queda en su hoja y volver a cargar el mismo archivo no duplica filas
+const hojas1 = await page.evaluate(`Object.fromEntries(Object.entries(almacenLocal.hojas).map(([k,v])=>[k,v.length-1]))`);
+await page.setInputFiles("#inProformas", path.join(tmp, "p1.xlsx"));
+await page.setInputFiles("#inRegistro", path.join(tmp, "registro.xlsx"));
+await page.waitForTimeout(500);
+await page.waitForFunction("rutasDatos.proformas.length===2 && cruceRutas");
+const hojas2 = await page.evaluate(`Object.fromEntries(Object.entries(almacenLocal.hojas).map(([k,v])=>[k,v.length-1]))`);
+const control = await page.evaluate(`(()=>{ const f=cruceRutas.filas.find(f=>f.id==="14600001");
+  const h=almacenLocal.hojas["CONTROL RUTAS"], r=h.find(r=>r[3]===14600001);
+  return {fila:[f.terminado,f.puntos,f.ns,f.total,f.cobro,f.validador,f.ingreso,f.dif,f.pago.proforma,f.pago.factura],
+    hoja:Object.fromEntries(h[0].map((k,i)=>[k,r[i]])),
+    dia:resumenDias().find(d=>d.fecha==="2026-09-08"),
+    shipmentHead:almacenLocal.hojas.SHIPMENT[0].slice(0,4), serviceX:almacenLocal.hojas.SERVICE[0].includes("x") }; })()`);
+await page.click(".estado-item.sel");
+await page.click("#diasBody tr >> text=08-09-2026");
+const filasDia = await page.$$eval("#rutasBody tr", trs => trs.length);
 const errText = await page.textContent("#errorText");
 await browser.close();
 
@@ -125,6 +141,14 @@ const wb = XLSX.readFile(out);
 check("Hojas del Excel", wb.SheetNames, ["Resumen", "Rutas", "Pagado sin registro"]);
 const resumen = XLSX.utils.sheet_to_json(wb.Sheets["Resumen"], { header: 1 });
 check("Resumen pendientes", resumen[1], ["Pendiente", 2, 120000]);
+
+check("Hojas guardadas", hojas1, { REGISTRO: 11, GEOSORT: 3, SERVICE: 21, TL: 1, DELIVERY: 2, SHIPMENT: 2, "VIAJES PAGADOS": 23, "CONTROL RUTAS": 10 });
+check("Recargar no duplica", hojas2, hojas1);
+check("Columnas de control", control.fila, [9, 10, 0.9, 100000, 125000, 25000, 120000, -5000, "37956", "361"]);
+check("Hoja CONTROL RUTAS", [control.hoja.FECHA, control.hoja.INGRESO, control.hoja["DIF. COBRO"], control.hoja.ESTADO], ["2026-09-08", 120000, -5000, "Pagada"]);
+check("Resumen del día", control.dia, { fecha: "2026-09-08", rutas: 3, pagadas: 1, revisar: 1, pendientes: 1, total: 280000, ingreso: 123000, dif: -5000 });
+check("Proforma repartida con x/y", [control.shipmentHead, control.serviceX], [["Id Proforma", "Factura", "Id Sol. Pago", "x"], true]);
+check("Filtro por día", filasDia, 3);
 
 console.log(fails ? `\n${fails} prueba(s) fallaron` : "\nTodas las pruebas pasaron");
 process.exit(fails ? 1 : 0);
