@@ -90,6 +90,10 @@
     .menu-filtro .pie button { border:0; border-radius:6px; padding:7px 12px; font-size:12px; cursor:pointer; }
     .menu-filtro .ok { background:var(--accent,#2563eb); color:#fff; }
     .menu-filtro .cancel { background:var(--chip,#f1f5f9); color:var(--fg,#1f2937); }
+    #rutasBody tr.match-geo td { background:var(--accent-soft,#eff6ff); }
+    #rutasBody tr.match-geo td:first-child { box-shadow:inset 3px 0 0 var(--accent,#2563eb); }
+    .muestra-geo { display:inline-block; width:12px; height:12px; border-radius:3px; vertical-align:-1px; margin-right:6px; background:var(--accent-soft,#eff6ff); box-shadow:inset 3px 0 0 var(--accent,#2563eb); border:1px solid var(--accent-line,#bfdbfe); }
+    #soloGeoBody td { white-space:nowrap; }
     .dif-neg { color:var(--err,#b91c1c); font-weight:bold; } .dif-pos { color:var(--warn,#b45309); font-weight:bold; }
     .nota { font-size:12px; color:var(--muted,#6b7280); line-height:1.45; margin:6px 0 0; }
     .reglas summary { cursor:pointer; font-size:13px; font-weight:bold; }
@@ -264,8 +268,8 @@
           <h2>Rutas por día</h2>
           <div class="table-wrap" style="max-height:320px">
             <table>
-              <thead><tr><th>Fecha</th><th>Rutas</th><th>Pagadas</th><th>Por revisar</th><th>Pendientes</th><th>Total ruta</th><th>Ingreso</th><th>Dif. cobro</th></tr></thead>
-              <tbody id="diasBody"><tr><td colspan="8">Carga el registro y al menos una proforma.</td></tr></tbody>
+              <thead><tr><th>Fecha</th><th>Rutas</th><th>En geosort</th><th>Pagadas</th><th>Por revisar</th><th>Pendientes</th><th>Total ruta</th><th>Ingreso</th><th>Dif. cobro</th><th>Geosort sin registro</th></tr></thead>
+              <tbody id="diasBody"><tr><td colspan="10">Carga el registro y al menos una proforma.</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -278,11 +282,12 @@
             <select id="rTipo" onchange="renderRutas()">
               <option value="">Todos los tipos</option><option>Ruta</option><option>TL</option><option>Transferencia</option><option>Sin ID</option>
             </select>
-            <select id="rFuente" onchange="renderRutas()">
-              <option value="">Registro y geosort</option><option value="Registro">En registro</option><option value="Solo geosort">Solo en geosort</option>
+            <select id="rGeo" onchange="renderRutas()">
+              <option value="">Con y sin geosort</option><option value="si">Con match en geosort</option><option value="no">Sin match en geosort</option>
             </select>
             <input id="rBuscar" type="search" placeholder="Buscar patente o ID" oninput="renderRutas()">
           </div>
+          <p class="nota" style="margin:0 0 8px"><span class="muestra-geo"></span>Rutas del registro de operaciones. Las resaltadas también están en el geosort.</p>
           <div class="table-wrap">
             <table>
               <thead id="rutasHead"></thead>
@@ -291,6 +296,17 @@
           </div>
           <div class="actions">
             <button class="button green" onclick="descargarCruceRutas()">Descargar cruce Excel</button>
+          </div>
+        </div>
+
+        <div id="soloGeoArea" class="card hidden">
+          <h2 id="tituloSoloGeo">Geosort sin registro</h2>
+          <div class="info-box">Rutas que salieron según el geosort de Falabella y que no están en el registro de operaciones. Las planificadas que no salieron no se muestran.</div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Fecha</th><th>Patente</th><th>ID Ruta</th><th>CT</th><th>Terminados</th><th>Puntos</th><th>NS</th><th>Estado</th><th>Proforma</th><th>Factura</th><th>Ingreso</th><th>Detalle</th></tr></thead>
+              <tbody id="soloGeoBody"></tbody>
+            </table>
           </div>
         </div>
 
@@ -1179,20 +1195,24 @@ const POR_REVISAR=["Pagada con otro ID","TL 2da vuelta (esperar objeción)","Sin
 function resumenDias(){
   const dias=new Map();
   for(const f of cruceRutas.filas){
-    if(!dias.has(f.fecha)) dias.set(f.fecha,{fecha:f.fecha,rutas:0,pagadas:0,revisar:0,pendientes:0,total:0,ingreso:0,dif:0});
-    const d=dias.get(f.fecha); d.rutas++; d.total+=f.fuente==="Registro"?f.total:0; d.ingreso+=f.ingreso; d.dif+=f.dif||0;
+    if(!dias.has(f.fecha)) dias.set(f.fecha,{fecha:f.fecha,rutas:0,enGeo:0,pagadas:0,revisar:0,pendientes:0,total:0,ingreso:0,dif:0,soloGeo:0});
+    const d=dias.get(f.fecha);
+    // La tabla del día cuenta solo el registro; las rutas del geosort sin registro van aparte
+    if(f.fuente!=="Registro"){ d.soloGeo++; continue; }
+    d.rutas++; if(f.geo) d.enGeo++; d.total+=f.fuente==="Registro"?f.total:0; d.ingreso+=f.ingreso; d.dif+=f.dif||0;
     if(f.estado==="Pagada") d.pagadas++; else if(f.estado==="Pendiente") d.pendientes++; else if(POR_REVISAR.includes(f.estado)) d.revisar++;
   }
   return [...dias.values()].sort((a,b)=>b.fecha.localeCompare(a.fecha));
 }
 function renderDias(){
   const body=document.getElementById("diasBody"), sel=document.getElementById("rDia");
-  if(!cruceRutas){ body.innerHTML='<tr><td colspan="8">Carga el registro y al menos una proforma.</td></tr>'; sel.innerHTML='<option value="">Todos los días</option>'; return; }
-  const dias=resumenDias(), actual=sel.value;
+  if(!cruceRutas){ body.innerHTML='<tr><td colspan="10">Carga el registro y al menos una proforma.</td></tr>'; sel.innerHTML='<option value="">Todos los días</option>'; return; }
+  const dias=resumenDias(), actual=sel.value, diasGeo=new Set((rutasDatos.geosort||[]).map(g=>g.fecha));
   sel.innerHTML='<option value="">Todos los días</option>'+dias.map(d=>`<option value="${d.fecha}"${d.fecha===actual?" selected":""}>${fechaCL(d.fecha)}</option>`).join("");
-  body.innerHTML=dias.map(d=>`<tr class="${d.fecha===actual?"sel":""}" onclick="elegirDia('${d.fecha}')"><td>${esc(fechaCL(d.fecha))}</td><td class="n">${d.rutas}</td><td class="n">${d.pagadas}</td>
-    <td class="n">${d.revisar||""}</td><td class="n${d.pendientes?" dif-neg":""}">${d.pendientes||""}</td><td class="n">${money(d.total)}</td><td class="n">${money(d.ingreso)}</td>${difTd(d.dif||null)}</tr>`).join("");
+  body.innerHTML=dias.map(d=>`<tr class="${d.fecha===actual?"sel":""}" onclick="elegirDia('${d.fecha}')"><td>${esc(fechaCL(d.fecha))}</td><td class="n">${d.rutas}</td><td class="n">${diasGeo.has(d.fecha)?d.enGeo:""}</td><td class="n">${d.pagadas}</td>
+    <td class="n">${d.revisar||""}</td><td class="n${d.pendientes?" dif-neg":""}">${d.pendientes||""}</td><td class="n">${money(d.total)}</td><td class="n">${money(d.ingreso)}</td>${difTd(d.dif||null)}<td class="n${d.soloGeo?" dif-pos":""}">${d.soloGeo||""}</td></tr>`).join("");
   document.getElementById("tituloRutas").textContent=actual?`Registro de rutas del ${fechaCL(actual)}`:"Registro de rutas";
+  document.getElementById("tituloSoloGeo").textContent=actual?`Geosort sin registro del ${fechaCL(actual)}`:"Geosort sin registro";
 }
 function elegirDia(f){ const s=document.getElementById("rDia"); s.value=s.value===f?"":f; renderDias(); renderRutas(); }
 
@@ -1202,6 +1222,7 @@ const COLS_RUTAS=[
   {k:"patente",t:"Patente",v:f=>f.patente,txt:f=>f.patente},
   {k:"id",t:"ID Ruta",v:f=>f.id,txt:f=>f.id},
   {k:"tipo",t:"Tipo",v:f=>f.tipo,txt:f=>f.tipo},
+  {k:"geo",t:"Geosort",v:f=>f.geo?"Sí":"No",txt:f=>f.geo?"Sí":"No"},
   {k:"terminado",t:"Terminado",n:1,v:f=>f.terminado,txt:f=>f.terminado??""},
   {k:"puntos",t:"Total",n:1,v:f=>f.puntos,txt:f=>f.puntos??""},
   {k:"ns",t:"NS",n:1,v:f=>f.ns,txt:f=>pct(f.ns)},
@@ -1216,7 +1237,7 @@ const COLS_RUTAS=[
   {k:"detalle",t:"Detalle",v:f=>detalleRuta(f),txt:f=>detalleRuta(f)}
 ];
 const ordenRutas={k:"",dir:1}, filtrosRutas={}; // filtrosRutas[k] = Set de valores visibles (sin clave = todos)
-function detalleRuta(f){ return [f.fuente==="Solo geosort"?"Solo en geosort":"",f.detalle].filter(Boolean).join(". "); }
+function detalleRuta(f){ return f.detalle||""; }
 function renderCabeceraRutas(){
   const flecha=c=>ordenRutas.k===c.k?(ordenRutas.dir>0?" ▲":" ▼"):"";
   document.getElementById("rutasHead").innerHTML="<tr>"+COLS_RUTAS.map(c=>`<th aria-sort="${ordenRutas.k===c.k?(ordenRutas.dir>0?"ascending":"descending"):"none"}">
@@ -1235,13 +1256,14 @@ function textoCol(c,f){ const t=String(c.txt(f)??"").trim(); return t===""?VACIO
 // Filas que pasan los selectores de arriba y los filtros de columna (menos la columna "excepto")
 function filasFiltradas(excepto){
   const dia=document.getElementById("rDia").value, est=document.getElementById("rEstado").value, tipo=document.getElementById("rTipo").value,
-        fuente=document.getElementById("rFuente").value, q=nt(document.getElementById("rBuscar").value).replace(/[^A-Z0-9-]/g,"");
+        geo=document.getElementById("rGeo").value, q=nt(document.getElementById("rBuscar").value).replace(/[^A-Z0-9-]/g,"");
   const fc=COLS_RUTAS.filter(c=>c.k!==excepto&&filtrosRutas[c.k]);
   return cruceRutas.filas.filter(f=>{
     if(dia&&f.fecha!==dia) return false;
     if(est&&f.estado!==est) return false;
     if(tipo&&f.tipo!==tipo) return false;
-    if(fuente&&f.fuente!==fuente) return false;
+    if(f.fuente!=="Registro") return false;
+    if(geo&&(geo==="si")!==!!f.geo) return false;
     if(q&&!f.pat.includes(q.replace(/-/g,""))&&!nt(f.id).includes(q)) return false;
     return fc.every(c=>filtrosRutas[c.k].has(textoCol(c,f)));
   });
@@ -1309,7 +1331,7 @@ function renderRutas(){
   const body=document.getElementById("rutasBody"), area=document.getElementById("sinRegistroArea");
   if(!document.getElementById("rutasHead").children.length) renderCabeceraRutas();
   body.innerHTML="";
-  if(!cruceRutas){ area.classList.add("hidden"); return; }
+  if(!cruceRutas){ area.classList.add("hidden"); document.getElementById("soloGeoArea").classList.add("hidden"); return; }
   const b=new Map(ESTADOS_RUTA.map(e=>[e.k,e.b]));
   let filas=filasFiltradas();
   if(ordenRutas.k){ const c=COLS_RUTAS.find(x=>x.k===ordenRutas.k); filas=[...filas].sort((a,b)=>compararRuta(c,a,b)); }
@@ -1317,13 +1339,20 @@ function renderRutas(){
   for(const f of filas){
     const p=f.pago;
     const idTxt=f.id.length===36?`<span title="${esc(f.id)}">${esc(f.id.slice(0,8))}…</span>`:esc(f.id);
-    html.push(`<tr><td>${esc(fechaCL(f.fecha))}</td><td>${esc(f.patente)}</td><td>${idTxt}</td><td>${esc(f.tipo)}</td>
-      <td class="n">${f.terminado??""}</td><td class="n">${f.puntos??""}</td><td class="n">${pct(f.ns)}</td>
+    html.push(`<tr class="${f.geo?"match-geo":""}"><td>${esc(fechaCL(f.fecha))}</td><td>${esc(f.patente)}</td><td>${idTxt}</td><td>${esc(f.tipo)}</td>
+      <td>${f.geo?"Sí":"No"}</td><td class="n">${f.terminado??""}</td><td class="n">${f.puntos??""}</td><td class="n">${pct(f.ns)}</td>
       <td class="n">${f.fuente==="Registro"?money(f.total):""}</td><td class="n">${mon(f.cobro)}</td>${difTd(f.validador)}
       <td class="n">${p?money(f.ingreso):""}</td>${difTd(f.dif)}<td>${esc(p?.proforma||"")}</td><td>${esc(p?.factura||"")}</td>
       <td><span class="badge ${b.get(f.estado)||""}">${esc(f.estado)}</span></td><td>${esc(detalleRuta(f))}</td></tr>`);
   }
-  body.innerHTML=html.join("")||'<tr><td colspan="16">Sin rutas para este filtro.</td></tr>';
+  body.innerHTML=html.join("")||'<tr><td colspan="17">Sin rutas para este filtro.</td></tr>';
+  // Geosort sin registro (respeta el día elegido)
+  const dia=document.getElementById("rDia").value, b2=new Map(ESTADOS_RUTA.map(e=>[e.k,e.b]));
+  const sg=cruceRutas.filas.filter(f=>f.fuente==="Solo geosort"&&(!dia||f.fecha===dia)).sort((a,b)=>a.fecha.localeCompare(b.fecha)||a.pat.localeCompare(b.pat));
+  document.getElementById("soloGeoArea").classList.toggle("hidden",!sg.length);
+  document.getElementById("soloGeoBody").innerHTML=sg.map(f=>`<tr><td>${esc(fechaCL(f.fecha))}</td><td>${esc(f.patente)}</td><td>${esc(f.id)}</td><td>${esc(f.origen)}</td>
+    <td class="n">${f.geo.entregados}</td><td class="n">${f.geo.puntos}</td><td class="n">${pct(f.ns)}</td><td><span class="badge ${b2.get(f.estado)||""}">${esc(f.estado)}</span></td>
+    <td>${esc(f.pago?.proforma||"")}</td><td>${esc(f.pago?.factura||"")}</td><td class="n">${f.pago?money(f.ingreso):""}</td><td>${esc(f.detalle)}</td></tr>`).join("");
   const sr=cruceRutas.sinRegistro, geo=new Set((rutasDatos.geosort||[]).map(g=>g.id));
   area.classList.toggle("hidden",!sr.length);
   document.getElementById("sinRegistroBody").innerHTML=sr.map(v=>`<tr><td>${esc(v.proforma)}</td><td>${esc(v.factura)}</td><td>${esc(v.id)}</td><td>${esc(fechaCL(v.fecha))}</td>

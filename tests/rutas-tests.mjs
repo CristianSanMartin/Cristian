@@ -122,7 +122,11 @@ await page.click(col("estado")); await page.fill(".menu-filtro input[type=search
 const filtroEstado = await page.$$eval("#rutasBody tr td:nth-child(2)", tds => tds.map(t => t.textContent));
 const valoresTipo = await (async () => { await page.click(col("tipo")); const v = await page.$$eval(".menu-filtro .valores label", ls => ls.map(l => l.textContent.trim())); await page.click(".menu-filtro .cancel"); return v; })();
 // Desmarcar un valor
-await page.click(col("patente")); await page.uncheck(".menu-filtro label:has-text('LLLL-10') input"); await page.click(".menu-filtro .ok");
+await page.click(col("estado")); await page.click(".menu-filtro [data-limpiar]");
+const geoVista = await page.evaluate(`({resaltadas:[...document.querySelectorAll("#rutasBody tr.match-geo td:nth-child(3)")].map(t=>t.textContent),
+  soloGeo:[...document.querySelectorAll("#soloGeoBody tr td:nth-child(3)")].map(t=>t.textContent),
+  dia09:resumenDias().find(d=>d.fecha==="2026-09-09")})`);
+await page.click(col("patente")); await page.uncheck(".menu-filtro label:has-text('AAAA-11') input"); await page.click(".menu-filtro .ok");
 const trasDesmarcar = await page.$$eval("#rutasBody tr td:nth-child(2)", tds => tds.map(t => t.textContent));
 const iconoActivo = await page.$$eval(".btn-filtro.activo", bs => bs.map(b => b.dataset.k));
 const errText = await page.textContent("#errorText");
@@ -151,7 +155,7 @@ check("Solo en geosort", res.est["14600050"], "Pendiente");
 check("Ajustes y planificadas fuera", [res.ajustes, res.plan, res.n], [1, 1, 10]);
 check("Pagado sin registro", res.sinReg, ["14400000"]);
 check("Puntos del geosort", res.geoPuntos, 2);
-check("Filtro por estado desde el panel", filasPendiente, 2);
+check("Filtro por estado desde el panel (solo registro)", filasPendiente, 1);
 const wb = XLSX.readFile(out);
 check("Hojas del Excel", wb.SheetNames, ["Resumen", "Rutas", "Pagado sin registro"]);
 const resumen = XLSX.utils.sheet_to_json(wb.Sheets["Resumen"], { header: 1 });
@@ -161,15 +165,18 @@ check("Hojas guardadas", hojas1, { REGISTRO: 11, GEOSORT: 3, SERVICE: 21, TL: 1,
 check("Recargar no duplica", hojas2, hojas1);
 check("Columnas de control", control.fila, [9, 10, 0.9, 100000, 125000, 25000, 120000, -5000, "37956", "361"]);
 check("Hoja CONTROL RUTAS", [control.hoja.FECHA, control.hoja.INGRESO, control.hoja["DIF. COBRO"], control.hoja.ESTADO], ["2026-09-08", 120000, -5000, "Pagada"]);
-check("Resumen del día", control.dia, { fecha: "2026-09-08", rutas: 3, pagadas: 1, revisar: 1, pendientes: 1, total: 280000, ingreso: 123000, dif: -5000 });
+check("Resumen del día", control.dia, { fecha: "2026-09-08", rutas: 3, enGeo: 1, pagadas: 1, revisar: 1, pendientes: 1, total: 280000, ingreso: 123000, dif: -5000, soloGeo: 0 });
 check("Proforma repartida con x/y", [control.shipmentHead, control.serviceX], [["Id Proforma", "Factura", "Id Sol. Pago", "x"], true]);
 check("Filtro por día", filasDia, 3);
 check("Orden por patente A-Z", patAsc, [...patAsc].sort((a, b) => a.localeCompare(b, "es")));
 check("Orden por patente Z-A", patDesc, [...patAsc].reverse());
-check("Filtro por columna Estado", filtroEstado, ["LLLL-10", "BBBB-22"]);
+check("Filtro por columna Estado", filtroEstado, ["BBBB-22"]);
 check("Valores del filtro según otros filtros", valoresTipo, ["(Seleccionar todo)", "Ruta"]);
-check("Desmarcar un valor", trasDesmarcar, ["BBBB-22"]);
-check("Icono de filtro activo", iconoActivo, ["patente", "estado"]);
+check("Desmarcar un valor", [trasDesmarcar.includes("AAAA-11"), trasDesmarcar.length], [false, 8]);
+check("Resaltadas con match en geosort", geoVista.resaltadas, ["14600001"]);
+check("Ventana geosort sin registro", geoVista.soloGeo, ["14600050"]);
+check("Día cuenta solo registro", [geoVista.dia09.rutas, geoVista.dia09.soloGeo], [4, 1]);
+check("Icono de filtro activo", iconoActivo, ["patente"]);
 
 console.log(fails ? `\n${fails} prueba(s) fallaron` : "\nTodas las pruebas pasaron");
 process.exit(fails ? 1 : 0);
