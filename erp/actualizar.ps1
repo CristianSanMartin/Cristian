@@ -9,12 +9,14 @@ $ErrorActionPreference = 'Stop'
 $rama = 'claude/erp-proyecto-profesional-sexsdd'
 $zipUrl = "https://github.com/CristianSanMartin/Cristian/archive/refs/heads/$rama.zip"
 $erp = $PSScriptRoot
+# Si el script quedó en la carpeta de arriba, usa la subcarpeta erp.
+if (-not (Test-Path (Join-Path $erp '.clasp.json')) -and (Test-Path (Join-Path $erp 'erp\.clasp.json'))) { $erp = Join-Path $erp 'erp' }
 $archivoImpl = Join-Path $erp '.implementacion'
 
 function Paso($n, $texto) { Write-Host ''; Write-Host "[$n/4] $texto" -ForegroundColor Cyan }
 
 if (-not (Test-Path (Join-Path $erp '.clasp.json'))) {
-  throw "No encuentro .clasp.json en $erp. Copia aquí el .clasp.json de tu carpeta anterior y vuelve a intentarlo."
+  throw "No encuentro .clasp.json en $erp. Pon actualizar.cmd y actualizar.ps1 en la carpeta erp que tiene tu .clasp.json."
 }
 if (-not (Get-Command clasp -ErrorAction SilentlyContinue)) {
   throw 'No encuentro clasp. Instálalo con: npm install -g @google/clasp  y luego: clasp login'
