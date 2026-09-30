@@ -15,7 +15,7 @@
 
 const APP = {
   nombre: 'GS Prime ERP',
-  version: '2.4.0',
+  version: '2.5.0',
   tz: 'America/Santiago',
   iva: 0.19,
 };
@@ -98,6 +98,11 @@ const SCHEMA = {
     cols: Object.assign({
       id: 's', ventaId: 's', fecha: 'd', monto: 'n', medioPago: 's', notas: 's',
     }, AUDIT_COLS),
+  },
+  /** Migraciones de datos ya aplicadas (ver Respaldos.js). */
+  Migraciones: {
+    key: 'id',
+    cols: { id: 's', descripcion: 's', aplicadaEn: 't', aplicadaPor: 's' },
   },
   Auditoria: {
     key: null,

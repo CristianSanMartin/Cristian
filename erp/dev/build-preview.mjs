@@ -39,9 +39,9 @@ const preview = `
   var reiniciada = !saved && !!store.get(KEY);
   var fake = createGasFake({ user: 'admin@gsprime.cl', state: saved ? JSON.parse(saved) : undefined });
   var g = fake.globals;
-  var server = new Function('SpreadsheetApp', 'Session', 'LockService', 'PropertiesService', 'Utilities', 'HtmlService', 'DriveApp',
+  var server = new Function('SpreadsheetApp', 'Session', 'LockService', 'PropertiesService', 'Utilities', 'HtmlService', 'DriveApp', 'ScriptApp',
     ${js(serverSource())} + '\\nreturn { api: api, instalar: instalar };')(
-    g.SpreadsheetApp, g.Session, g.LockService, g.PropertiesService, g.Utilities, g.HtmlService, g.DriveApp);
+    g.SpreadsheetApp, g.Session, g.LockService, g.PropertiesService, g.Utilities, g.HtmlService, g.DriveApp, g.ScriptApp);
   // Las imágenes "subidas a Drive" en la vista previa quedan en el navegador.
   window.previewImagen = function (id) {
     var f = fake.state.files[id];

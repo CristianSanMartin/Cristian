@@ -44,6 +44,9 @@ function rutas_() {
     anularVenta: { rol: 'admin', write: true, fn: Ventas.anular },
     guardarCliente: { rol: 'operador', write: true, fn: Clientes.guardar },
 
+    respaldos: { rol: 'admin', fn: () => Respaldos.estado() },
+    crearRespaldo: { rol: 'admin', write: true, fn: (p, u) => Respaldos.crear('manual', u) },
+
     guardarUsuario: { rol: 'admin', write: true, fn: Usuarios.guardar },
   };
 }
@@ -103,6 +106,12 @@ function instalar() {
       mensaje.push('La hoja "Preventas" de la versión anterior se renombró a "Preventas_v2_1" como respaldo.');
     }
   }
+  // Si la planilla ya tiene datos, primero se respalda (así cualquier cambio de estructura se puede deshacer).
+  const conDatos = ['Preventas', 'Compras', 'Ventas'].some((t) => { const h = ss.getSheetByName(t); return h && h.getLastRow() > 1; });
+  if (conDatos) {
+    const r = Respaldos.crear('antes de instalar v' + APP.version);
+    mensaje.push('Respaldo creado: "' + r.nombre + '".');
+  }
   Object.keys(SCHEMA).forEach((t) => Db.ensureSheet(t));
 
   HOJAS_OBSOLETAS.concat(['Hoja 1', 'Sheet1']).forEach((nombre) => {
@@ -129,6 +138,9 @@ function instalar() {
     }, Util.sello(sistema, true)));
     mensaje.push('Proveedor Asmodee creado con su regla de despacho.');
   }
+  const migradas = Migraciones.ejecutar(sistema);
+  if (migradas.length) mensaje.push('Migraciones aplicadas: ' + migradas.join(', ') + '.');
+  if (Respaldos.programar()) mensaje.push('Respaldo automático programado todas las noches (se guardan los últimos ' + Respaldos.CONSERVAR + ').');
   if (Imagenes.preparar()) mensaje.push('Se creó la carpeta "' + Imagenes.NOMBRE_CARPETA + '" en tu Google Drive para las imágenes de productos.');
   Audit.log(sistema, 'instalar', 'Sistema', '', { version: APP.version });
   mensaje.push('Hojas listas (versión ' + APP.version + '): ' + Object.keys(SCHEMA).join(', ') + '.');

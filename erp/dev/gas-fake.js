@@ -12,6 +12,7 @@ var createGasFake = function (opts) {
   var state = opts.state || { sheets: [], props: {} };
   state.files = state.files || {};
   state.folders = state.folders || {};
+  state.triggers = state.triggers || [];
   var currentUser = opts.user || '';
   var sheetTz = 'UTC';
 
@@ -110,6 +111,7 @@ var createGasFake = function (opts) {
 
   var spreadsheet = {
     getId: function () { return 'fake-spreadsheet'; },
+    getName: function () { return 'GS Prime ERP · Base de datos'; },
     getSpreadsheetTimeZone: function () { return sheetTz; },
     getSheets: function () { return state.sheets.map(function (d) { return new Sheet(d); }); },
     getSheetByName: function (name) {
@@ -168,8 +170,35 @@ var createGasFake = function (opts) {
       },
     },
     HtmlService: {},
+    ScriptApp: {
+      getProjectTriggers: function () {
+        return state.triggers.map(function (t) { return { getHandlerFunction: function () { return t.fn; } }; });
+      },
+      newTrigger: function (fn) {
+        var t = { fn: fn };
+        var b = { timeBased: function () { return b; }, everyDays: function (n) { t.days = n; return b; }, atHour: function (h) { t.hour = h; return b; },
+          create: function () { state.triggers.push(t); return t; } };
+        return b;
+      },
+    },
     DriveApp: {
       Access: { ANYONE_WITH_LINK: 'ANYONE_WITH_LINK' },
+      /** Archivo de Drive: la planilla (con su carpeta "GSPrime WEB") o una copia/imagen. */
+      getFileById: function (id) {
+        var iter = function (arr) { var i = 0; return { hasNext: function () { return i < arr.length; }, next: function () { return arr[i++]; } }; };
+        if (id === 'fake-spreadsheet') {
+          if (!state.folders['fld-root']) state.folders['fld-root'] = { name: 'GSPrime WEB', editors: [] };
+          return {
+            getParents: function () { return iter([gas.DriveApp.getFolderById('fld-root')]); },
+            makeCopy: function (name, folder) {
+              var fid = 'copia-' + (Object.keys(state.files).length + 1);
+              state.files[fid] = { folder: folder.getId(), name: name, copyOf: id, created: new Date().toISOString(), sheets: JSON.parse(JSON.stringify(state.sheets.map(function (x) { return { name: x.name, rows: x.values.length }; }))) };
+              return { getId: function () { return fid; } };
+            },
+          };
+        }
+        throw new Error('Archivo no encontrado: ' + id);
+      },
       Permission: { VIEW: 'VIEW' },
       createFolder: function (name) {
         var id = 'fld-' + Object.keys(state.folders).length;
@@ -182,6 +211,24 @@ var createGasFake = function (opts) {
         return {
           getId: function () { return id; },
           addEditor: function (email) { if (f.editors.indexOf(email) === -1) f.editors.push(email); },
+          createFolder: function (name) {
+            var nid = 'fld-' + Object.keys(state.folders).length;
+            state.folders[nid] = { name: name, editors: [], parent: id };
+            return gas.DriveApp.getFolderById(nid);
+          },
+          getFiles: function () {
+            var ids = Object.keys(state.files).filter(function (k) { return state.files[k].folder === id && !state.files[k].trashed; });
+            var i = 0;
+            return {
+              hasNext: function () { return i < ids.length; },
+              next: function () {
+                var k = ids[i++];
+                var x = state.files[k];
+                return { getId: function () { return k; }, getName: function () { return x.name; },
+                  getDateCreated: function () { return new Date(x.created || 0); }, setTrashed: function (v) { x.trashed = v; } };
+              },
+            };
+          },
           createFile: function (blob) {
             var fid = 'img-' + (Object.keys(state.files).length + 1);
             state.files[fid] = { folder: id, name: blob.name, mime: blob.mime, base64: blob.bytes, shared: false };

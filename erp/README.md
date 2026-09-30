@@ -183,6 +183,23 @@ Si falta lo primero, Google le pedirá permiso. Si falta lo segundo, verá
    Si se te olvida, el ERP no guarda nada y muestra "ERP sin instalar" indicando qué columnas faltan.
 3. **Implementar → Administrar implementaciones → ✏️ → Nueva versión → Implementar.**
 
+## Respaldos y cambios con datos reales
+
+- **Respaldo nocturno automático:** `instalar` programa un activador que todas las noches (3 a. m.)
+  copia la planilla completa en la carpeta **"GS Prime ERP · Respaldos"**, junto a la planilla. Se
+  guardan los últimos 30. En **Administración → Respaldos** se ven todos y se puede crear uno a mano.
+- **Respaldo antes de cada actualización:** si la planilla ya tiene datos, `instalar` crea una copia
+  ("antes de instalar v2.x") antes de tocar nada.
+- **Migraciones:** cuando un cambio necesita transformar datos existentes (crear una llave nueva,
+  separar un campo, recalcular algo), se escribe como una migración en `server/Respaldos.js`
+  (`MIGRACIONES`). `instalar` las ejecuta una sola vez, después de un respaldo, y las registra en la
+  hoja `Migraciones`. Nunca se edita ni se quita una migración ya publicada.
+- **Reglas que no se rompen:** las columnas se leen por nombre, `instalar` solo agrega (nunca borra
+  ni renombra) y los registros se enlazan por ID (`GS-`, `PVI-`, `CP-`, `CPI-`, `OC-`, `CLI-`), no por
+  nombre. Renombrar un producto o cliente no rompe nada.
+- **Volver atrás:** en Apps Script, *Implementar → Administrar implementaciones* permite volver a la
+  versión anterior del código; los datos se recuperan desde el respaldo.
+
 ## Límites conocidos
 
 - Cada operación tarda de 1 a 3 segundos (es la velocidad normal de Apps Script).

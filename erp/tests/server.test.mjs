@@ -537,3 +537,57 @@ test("venta desde un lote elegido en Inventario: sale de ese lote aunque haya un
   assert.deepEqual(venta.lineas.map(l => [l.loteId === nuevo.id, l.cantidad]), [[true, 2], [false, 1]], "2 del lote elegido y 1 por FIFO del más antiguo");
   assert.equal(lote(s, prods.miniTin.id).find(l => l.id === nuevo.id).disponible, 3);
 });
+
+test("respaldos: activador diario, respaldo antes de instalar con datos y se guardan los últimos 30", () => {
+  const s = createServer();
+  assert.deepEqual(JSON.parse(JSON.stringify(s.fake.state.triggers.map(t => [t.fn, t.hour]))), [["respaldoDiario", 3]], "instalar programa el respaldo de las 3 a. m.");
+  const copias = () => Object.values(s.fake.state.files).filter(f => f.copyOf && !f.trashed);
+  assert.equal(copias().length, 0, "planilla vacía: no hace falta respaldar");
+
+  preventa30th(s);
+  s.run("instalar()");
+  assert.equal(s.fake.state.triggers.length, 1, "no duplica el activador");
+  assert.equal(copias().length, 1);
+  assert.match(copias()[0].name, /GS Prime ERP · Base de datos · respaldo .* · antes de instalar v2\.5\.0/);
+  const carpeta = s.fake.state.folders[copias()[0].folder];
+  assert.deepEqual(JSON.parse(JSON.stringify([carpeta.name, carpeta.parent])), ["GS Prime ERP · Respaldos", "fld-root"], "junto a la planilla");
+
+  // Diario: uno por día aunque se llame dos veces
+  s.run("respaldoDiario()");
+  s.run("respaldoDiario()");
+  assert.equal(copias().filter(f => /· diario$/.test(f.name)).length, 1);
+  // Conserva los últimos 30 diarios
+  for (let i = 0; i < 35; i++) s.fake.state.files["viejo-" + i] = { folder: copias()[0].folder, name: "x · diario", copyOf: "fake-spreadsheet", created: new Date(2020, 0, i + 1).toISOString() };
+  s.run("respaldoDiario()");
+  assert.equal(copias().filter(f => /· diario$/.test(f.name)).length, 30);
+
+  // Manual (solo administrador) y listado
+  s.ok("guardarUsuario", { email: "socio@gsprime.cl", nombre: "Socio", rol: "operador" });
+  assert.equal(s.as("socio@gsprime.cl").call("crearRespaldo", {}).code, "SIN_PERMISO");
+  s.as("admin@gsprime.cl").ok("crearRespaldo", {});
+  const estado = s.ok("respaldos").data;
+  assert.equal(estado.programado, true);
+  assert.ok(estado.respaldos.some(r => /· manual$/.test(r.nombre)));
+  assert.match(estado.respaldos[0].url, /^https:\/\/docs\.google\.com\/spreadsheets\/d\//);
+});
+
+test("migraciones: corren una sola vez, después de un respaldo, y quedan registradas", () => {
+  const s = createServer();
+  const { prods } = preventa30th(s);
+  s.run(`MIGRACIONES.push({ id: "2026-10-01-notas", descripcion: "Marca los productos migrados", fn: () => {
+    Db.all("Productos").forEach((p) => Db.update("Productos", p.id, { notas: "migrado" }));
+  } })`);
+  assert.deepEqual(s.ok("respaldos").data.pendientes.map(m => m.id), ["2026-10-01-notas"]);
+  s.run("instalar()");
+  const data = s.ok("bootstrap").data;
+  assert.equal(data.productos.find(p => p.id === prods.miniTin.id).notas, "migrado");
+  const copias = Object.values(s.fake.state.files).filter(f => f.copyOf);
+  assert.ok(copias.some(f => /antes de migrar 2026-10-01-notas/.test(f.name)), "respaldo previo a la migración");
+  const estado = s.ok("respaldos").data;
+  assert.deepEqual([estado.pendientes.length, estado.migraciones.map(m => m.id)], [0, ["2026-10-01-notas"]]);
+
+  // Reinstalar no la vuelve a correr
+  s.ok("guardarProducto", { ...data.productos.find(p => p.id === prods.miniTin.id), notas: "editado" });
+  s.run("instalar()");
+  assert.equal(s.ok("bootstrap").data.productos.find(p => p.id === prods.miniTin.id).notas, "editado");
+});

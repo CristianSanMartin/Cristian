@@ -44,6 +44,42 @@
       '</tbody></table></div>';
   }
 
+  let respaldos = null;
+  function tabRespaldos() {
+    if (!respaldos) {
+      GS.api('respaldos').then((r) => { respaldos = r.data; GS.render(); }).catch((e) => GS.toast(e.message, true));
+      return '<div class="empty-state"><div class="spinner"></div>Cargando respaldos…</div>';
+    }
+    const r = respaldos;
+    const estado = r.programado
+      ? '<span class="badge st-ok">Activo</span> Respaldo automático todas las noches (3 a. m.). Se guardan los últimos ' + r.conservar + '.'
+      : '<span class="badge st-cancelada">Sin programar</span> Ejecuta <strong>instalar</strong> para activar el respaldo nocturno.';
+    return '<div class="notice">' + estado + ' Además se crea uno automáticamente <strong>antes de cada instalar o migración</strong>. ' +
+      'Cada respaldo es una copia completa de la planilla en la carpeta "GS Prime ERP · Respaldos", junto a la planilla. ' +
+      'Para volver atrás, abre la copia y reemplaza las hojas, o avísanos y lo hacemos juntos.</div>' +
+      '<div class="btn-row" style="justify-content:space-between;margin-bottom:12px;"><span class="muted" style="font-size:12px;">' + r.respaldos.length + ' respaldos guardados.</span>' +
+      '<button class="btn" data-action="crearRespaldo">' + GS.icon('download') + 'Crear respaldo ahora</button></div>' +
+      '<div class="table-wrap"><table class="data-table" style="min-width:640px;"><thead><tr><th>Fecha</th><th>Respaldo</th><th></th></tr></thead><tbody>' +
+      (r.respaldos.length
+        ? r.respaldos.map((x) => '<tr><td class="nowrap">' + esc(x.fecha) + '</td><td>' + esc(x.nombre) + '</td><td class="right"><a class="btn small ghost" href="' + esc(x.url) + '" target="_blank" rel="noopener">Abrir</a></td></tr>').join('')
+        : '<tr><td colspan="3" class="muted center">Aún no hay respaldos.</td></tr>') +
+      '</tbody></table></div>' +
+      '<h3 class="sub-titulo" style="margin-top:22px;">Migraciones de datos</h3>' +
+      (r.pendientes.length ? '<div class="notice warn">Hay ' + r.pendientes.length + ' migración(es) pendiente(s): ' + r.pendientes.map((m) => esc(m.id)).join(', ') + '. Se aplican al ejecutar <strong>instalar</strong>, después de un respaldo.</div>' : '') +
+      '<div class="table-wrap"><table class="data-table" style="min-width:640px;"><thead><tr><th>Aplicada</th><th>Migración</th><th>Qué cambió</th><th>Por</th></tr></thead><tbody>' +
+      (r.migraciones.length
+        ? r.migraciones.map((m) => '<tr><td class="nowrap">' + esc(m.aplicadaEn) + '</td><td class="cell-strong">' + esc(m.id) + '</td><td>' + esc(m.descripcion) + '</td><td>' + esc(m.aplicadaPor) + '</td></tr>').join('')
+        : '<tr><td colspan="4" class="muted center">Todavía no se ha aplicado ninguna migración.</td></tr>') +
+      '</tbody></table></div>';
+  }
+  GS.actions.crearRespaldo = async () => {
+    try {
+      await GS.mutate('crearRespaldo', {}, 'Respaldo creado en Google Drive');
+      respaldos = null;
+      GS.render();
+    } catch (e) { GS.toast(e.message, true); }
+  };
+
   GS.views.admin = {
     title: 'Administración',
     rol: 'admin',
@@ -51,9 +87,9 @@
       const f = GS.filters('admin', { tab: 'usuarios' });
       const tab = (id, label) => '<button class="tab' + (f.tab === id ? ' active' : '') + '" data-action="tab" data-id="admin.' + id + '">' + label + '</button>';
       el.innerHTML =
-        '<div class="page-head"><div><h1>Administración</h1><p>Usuarios y permisos, y registro de cambios.</p></div></div>' +
-        '<div class="tabs">' + tab('usuarios', 'Usuarios') + tab('auditoria', 'Auditoría') + '</div>' +
-        (f.tab === 'auditoria' ? tabAuditoria() : tabUsuarios());
+        '<div class="page-head"><div><h1>Administración</h1><p>Usuarios y permisos, registro de cambios y respaldos.</p></div></div>' +
+        '<div class="tabs">' + tab('usuarios', 'Usuarios') + tab('auditoria', 'Auditoría') + tab('respaldos', 'Respaldos') + '</div>' +
+        (f.tab === 'auditoria' ? tabAuditoria() : f.tab === 'respaldos' ? tabRespaldos() : tabUsuarios());
     },
   };
 

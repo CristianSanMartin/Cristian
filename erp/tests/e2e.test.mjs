@@ -326,6 +326,22 @@ test("inventario: se marcan unidades de un producto y se venden desde su lote", 
   }
 });
 
+test("administración: respaldos automáticos y manuales", { skip }, async () => {
+  const browser = await chromium.launch();
+  try {
+    const { page, errores } = await abrir(browser);
+    await page.click('[data-nav="admin"]');
+    await page.click('[data-action="tab"][data-id="admin.respaldos"]');
+    await page.waitForSelector("text=Respaldo automático todas las noches");
+    await page.click('[data-action="crearRespaldo"]');
+    await toast(page, /Respaldo creado/);
+    await page.waitForSelector("td:has-text('· manual')");
+    assert.deepEqual(errores, []);
+  } finally {
+    await browser.close();
+  }
+});
+
 test("rol solo lectura: ve la información pero no las acciones", { skip }, async () => {
   const browser = await chromium.launch();
   try {

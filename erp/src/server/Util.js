@@ -5,7 +5,11 @@ const Util = {
   },
 
   ahora() {
-    return Utilities.formatDate(new Date(), APP.tz, 'yyyy-MM-dd HH:mm:ss');
+    return Util.fechaHora(new Date());
+  },
+
+  fechaHora(d) {
+    return Utilities.formatDate(d, APP.tz, 'yyyy-MM-dd HH:mm:ss');
   },
 
   uuid() {
