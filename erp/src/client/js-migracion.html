@@ -1,0 +1,301 @@
+<script>
+/* =========================================================
+   Migración (solo administrador): zona de preparación para
+   traer el Excel histórico. Se carga el archivo, se homologan
+   proveedores, facturas, productos y clientes, se completan
+   las filas con datos faltantes y, cuando no quedan errores,
+   se importa al ERP (con respaldo previo, una sola vez).
+========================================================= */
+(function () {
+  'use strict';
+  const { fmt, esc } = GS;
+  const data = () => GS.state.data;
+  let est = null;            // estado de la migración (servidor)
+  let cargando = false;
+  const cambios = {};        // clave -> { destino?, accion?, extra?, confirmado? } sin guardar
+  const cambiosFilas = {};   // id -> { producto?, costo?, venta?, descartada? } sin guardar
+  const ui = { seccion: 'producto', soloPendientes: true, q: '' };
+  const SECCIONES = [['proveedor', 'Proveedores'], ['factura', 'Facturas'], ['producto', 'Productos'], ['cliente', 'Clientes y destinos'], ['filas', 'Filas a completar'], ['importar', 'Importar']];
+
+  function cargar() {
+    if (cargando) return;
+    cargando = true;
+    GS.api('migracion').then((r) => { est = r.data; cargando = false; GS.render(); }).catch((e) => { cargando = false; GS.toast(e.message, true); });
+  }
+  async function enviar(accion, datos, mensaje) {
+    const r = await GS.api(accion, datos);
+    GS.state.data = r.data;
+    est = r.result && r.result.filas ? r.result : est;
+    if (mensaje) GS.toast(typeof mensaje === 'function' ? mensaje(r.result) : mensaje);
+    return r.result;
+  }
+
+  /* ---------- lectura del Excel ---------- */
+
+  const COLUMNAS = { proveedor: /^proveedor$/, factura: /^factura$/, serie: /^serie$/, producto: /^producto$/, costo: /^costo$/, venta: /^\$?\s*venta$/, oc: /^oc$/, cliente: /^cliente$/, boleta: /^boleta$/ };
+  /** Filas (arreglo de arreglos) → objetos, buscando la fila de títulos en las primeras 15. */
+  function aObjetos(tabla) {
+    const norm = (v) => GS.norm(String(v == null ? '' : v).trim());
+    const iTit = tabla.slice(0, 15).findIndex((r) => r.some((v) => norm(v) === 'producto') && r.some((v) => norm(v) === 'proveedor'));
+    if (iTit === -1) throw new Error('No encontré la fila de títulos (debe tener al menos "Proveedor" y "Producto").');
+    const titulos = tabla[iTit].map(norm);
+    const pos = {};
+    Object.keys(COLUMNAS).forEach((k) => { pos[k] = titulos.findIndex((t) => COLUMNAS[k].test(t)); });
+    return tabla.slice(iTit + 1).map((r, i) => {
+      const o = { fila: iTit + 2 + i };
+      Object.keys(pos).forEach((k) => { o[k] = pos[k] === -1 ? '' : (r[pos[k]] == null ? '' : r[pos[k]]); });
+      return o;
+    }).filter((o) => Object.keys(COLUMNAS).some((k) => String(o[k]).trim() !== ''));
+  }
+  function cargarSheetJS() {
+    if (window.XLSX) return Promise.resolve();
+    return new Promise((ok, fail) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+      s.onload = ok;
+      s.onerror = () => fail(new Error('No se pudo cargar el lector de Excel. Usa la opción de pegar las filas.'));
+      document.head.appendChild(s);
+    });
+  }
+  async function leerArchivo(file) {
+    await cargarSheetJS();
+    const wb = window.XLSX.read(await file.arrayBuffer(), { type: 'array' });
+    const nombre = wb.SheetNames.find((n) => /stock/i.test(n)) || wb.SheetNames[0];
+    return aObjetos(window.XLSX.utils.sheet_to_json(wb.Sheets[nombre], { header: 1, raw: true, defval: '' }));
+  }
+  const leerPegado = (texto) => aObjetos(texto.replace(/\r/g, '').split('\n').filter((l) => l.trim()).map((l) => l.split('\t')));
+
+  /* ---------- pantalla ---------- */
+
+  const valor = (m, k) => (m.clave in cambios && k in cambios[m.clave] ? cambios[m.clave][k] : m[k]);
+  const pendientes = (tipo) => est.mapeos.filter((m) => m.tipo === tipo && !valor(m, 'confirmado')).length;
+
+  function panelCarga() {
+    return '<div class="panel inline-panel"><div class="inline-panel-head"><h3>1 · Cargar el Excel</h3><span class="muted">Sube el archivo (hoja "Stock", una fila por unidad) o pega las filas copiadas desde Excel, con la fila de títulos.</span></div>' +
+      '<div class="mig-carga"><label class="btn secondary" for="mig-archivo">' + GS.icon('download') + 'Subir Excel (.xlsx)</label><input id="mig-archivo" type="file" accept=".xlsx,.xls" class="visually-hidden" data-mig-archivo>' +
+      '<span class="muted">o</span><textarea data-mig-pegar rows="2" placeholder="Pega aquí las filas copiadas desde Excel (Ctrl+V)"></textarea>' +
+      '<button class="btn small" data-action="migPegar">Cargar lo pegado</button></div>' +
+      (est.resumen.filas ? '<p class="hint">Volver a cargar reemplaza las filas, pero conserva lo que ya homologaste.</p>' : '') + '</div>';
+  }
+
+  function resumen() {
+    const r = est.resumen;
+    const kpi = (l, v, sub) => '<div class="kpi-card"><div class="kpi-label">' + l + '</div><div class="kpi-value small">' + v + '</div><div class="kpi-sub">' + sub + '</div></div>';
+    return '<div class="kpi-grid">' +
+      kpi('Unidades a migrar', fmt.num(r.unidades), fmt.num(r.filas) + ' filas · ' + fmt.num(r.descartadas) + ' descartadas') +
+      kpi('Vendidas / salidas', fmt.num(r.vendidas), 'Se crean como ventas o salidas') +
+      kpi('Disponibles', fmt.num(r.disponibles), fmt.money(r.costoDisponible) + ' a costo') +
+      kpi('Por resolver', est.errores.length ? '<span class="text-gold">' + est.errores.length + '</span>' : '<span class="text-success">Listo</span>', est.errores.length ? est.errores.join(' · ') : 'Se puede importar') + '</div>';
+  }
+
+  function vistaProducto(destino) {
+    const i = GS.interpretarNombre(destino);
+    const existe = data().productos.find((p) => GS.norm(p.nombreCompleto) === GS.norm(destino));
+    return '<span class="cell-dim">' + esc([i.edicion, i.nombre].filter(Boolean).join(' – ')) + '</span> ' + GS.langPill(i.idioma || 'ENG') + ' <span class="pill">' + esc(i.tipo) + '</span>' +
+      (existe ? ' <span class="pill soon">ya existe ' + esc(existe.id) + '</span>' : '');
+  }
+
+  /** Posibles duplicados entre clientes (mismo nombre con una o dos letras distintas, o uno contenido en otro). */
+  function parecido(a, b) {
+    a = GS.norm(a); b = GS.norm(b);
+    if (!a || !b || a === b) return false;
+    if (a.length > 3 && b.length > 3 && (a.indexOf(b) === 0 || b.indexOf(a) === 0)) return true;
+    if (Math.abs(a.length - b.length) > 2) return false;
+    const d = Array.from({ length: a.length + 1 }, (_, i) => [i]);
+    for (let j = 1; j <= b.length; j++) d[0][j] = j;
+    for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    return d[a.length][b.length] <= 2;
+  }
+
+  function tablaMapeos(tipo) {
+    const q = GS.norm(ui.q);
+    let lista = est.mapeos.filter((m) => m.tipo === tipo && (!ui.soloPendientes || !valor(m, 'confirmado') || m.clave in cambios));
+    if (q) lista = lista.filter((m) => GS.norm(m.original + ' ' + valor(m, 'destino')).includes(q));
+    lista.sort((a, b) => b.unidades - a.unidades || a.original.localeCompare(b.original));
+    const clientes = est.mapeos.filter((m) => m.tipo === 'cliente' && valor(m, 'accion') === 'cliente');
+    const acciones = est.acciones;
+    const ayuda = {
+      proveedor: 'Nombre del proveedor en el ERP. Si ya existe (ej. Asmodee) se usa ese; si no, se crea.',
+      factura: 'N° de factura de cada compra. Las marcadas en amarillo no tienen número: complétalo. La fecha es opcional (si no, se usa la fecha de la migración).',
+      producto: 'Así quedará cada producto en el ERP: "Edición – Nombre · IDIOMA". Si dos nombres del Excel son el mismo producto, déjalos escritos igual.',
+      cliente: 'Qué es cada "cliente" del Excel: una venta a un cliente, a Cliente general, en un evento, o una salida que no es venta (premio, caja abierta). Para unir clientes repetidos, escríbelos igual.',
+    }[tipo];
+    const filas = lista.map((m) => {
+      const destino = valor(m, 'destino');
+      const accion = valor(m, 'accion');
+      const conf = valor(m, 'confirmado');
+      const falta = (tipo === 'factura' && !destino) || ((tipo === 'producto' || tipo === 'proveedor' || (tipo === 'cliente' && accion === 'cliente')) && !destino);
+      let celdas = '<td class="cell-strong">' + esc(m.original) + '</td><td class="cell-num right">' + fmt.num(m.unidades) + '</td>';
+      if (tipo === 'cliente') {
+        celdas += '<td><select data-mig="' + esc(m.clave) + '" data-campo="accion">' + GS.options(Object.keys(acciones).map((k) => ({ value: k, label: acciones[k] })), accion) + '</select></td>' +
+          '<td>' + (accion === 'cliente' ? '<input data-mig="' + esc(m.clave) + '" data-campo="destino" value="' + esc(destino) + '" placeholder="Nombre del cliente"' + (falta ? ' class="falta"' : '') + '>' : accion === 'evento' ? '<input data-mig="' + esc(m.clave) + '" data-campo="extra" value="' + esc(valor(m, 'extra')) + '" placeholder="Nombre del evento">' : '<span class="muted">—</span>') +
+          (accion === 'cliente' ? (clientes.filter((o) => o.clave !== m.clave && parecido(valor(o, 'destino'), destino)).slice(0, 2).map((o) =>
+            '<div class="hint">¿Es el mismo que <strong>' + esc(valor(o, 'destino')) + '</strong>? <button type="button" class="link-btn" data-action="migUnir" data-id="' + esc(m.clave + '§' + valor(o, 'destino')) + '">Unir</button></div>').join('')) : '') + '</td>';
+      } else if (tipo === 'factura') {
+        celdas += '<td><input data-mig="' + esc(m.clave) + '" data-campo="destino" value="' + esc(destino) + '" placeholder="N° de factura"' + (falta ? ' class="falta"' : '') + '></td>' +
+          '<td><input type="date" data-mig="' + esc(m.clave) + '" data-campo="extra" value="' + esc(valor(m, 'extra')) + '"></td>';
+      } else {
+        celdas += '<td><input class="ancho' + (falta ? ' falta' : '') + '" data-mig="' + esc(m.clave) + '" data-campo="destino" value="' + esc(destino) + '">' +
+          (tipo === 'producto' ? '<div data-vista="' + esc(m.clave) + '">' + vistaProducto(destino) + '</div>' : '') + '</td>';
+      }
+      return '<tr class="' + (m.clave in cambios ? 'mig-sucio' : '') + '">' + celdas +
+        '<td class="center"><input type="checkbox" class="row-check" data-mig="' + esc(m.clave) + '" data-campo="confirmado"' + (conf ? ' checked' : '') + ' aria-label="Confirmar"></td></tr>';
+    }).join('');
+    const titulos = { cliente: '<th>En el Excel</th><th class="right">Unid.</th><th>Qué es</th><th>Cliente / evento en el ERP</th>', factura: '<th>Proveedor · factura en el Excel</th><th class="right">Unid.</th><th>N° de factura</th><th>Fecha</th>' }[tipo] ||
+      '<th>En el Excel</th><th class="right">Unid.</th><th>En el ERP</th>';
+    return '<p class="table-note">' + ayuda + '</p>' +
+      '<div class="table-wrap"><table class="data-table mig-tabla"><thead><tr>' + titulos + '<th class="center">Confirmado</th></tr></thead><tbody>' +
+      (filas || '<tr><td colspan="6" class="muted center">' + (ui.soloPendientes ? '¡Todo confirmado en esta sección!' : 'Sin datos.') + '</td></tr>') + '</tbody></table></div>';
+  }
+
+  function tablaFilas() {
+    const porId = {};
+    est.filas.forEach((f) => { porId[f.id] = f; });
+    const v = (f, k) => (f.id in cambiosFilas && k in cambiosFilas[f.id] ? cambiosFilas[f.id][k] : f[k]);
+    const filas = est.problemas.map((p) => {
+      const f = porId[p.id];
+      return '<tr class="' + (f.id in cambiosFilas ? 'mig-sucio' : '') + '"><td class="cell-num">' + f.fila + '</td><td>' + esc(f.proveedor) + '<div class="cell-dim">' + esc(f.factura) + '</div></td>' +
+        '<td><input class="ancho' + (p.faltas.indexOf('producto') !== -1 ? ' falta' : '') + '" data-fila="' + esc(f.id) + '" data-campo="producto" value="' + esc(v(f, 'producto')) + '"></td>' +
+        '<td><input type="number" class="qty-input price-input' + (p.faltas.indexOf('costo') !== -1 ? ' falta' : '') + '" data-fila="' + esc(f.id) + '" data-campo="costo" value="' + esc(v(f, 'costo') || '') + '"></td>' +
+        '<td><input type="number" class="qty-input price-input' + (p.faltas.indexOf('precio de venta') !== -1 ? ' falta' : '') + '" data-fila="' + esc(f.id) + '" data-campo="venta" value="' + esc(v(f, 'venta') || '') + '"></td>' +
+        '<td>' + esc([f.oc, f.cliente].filter(Boolean).join(' · ') || 'disponible') + '</td>' +
+        '<td class="center"><input type="checkbox" class="row-check" data-fila="' + esc(f.id) + '" data-campo="descartada"' + (v(f, 'descartada') ? ' checked' : '') + ' aria-label="Descartar"></td></tr>';
+    }).join('');
+    return '<p class="table-note">Unidades con datos faltantes: complétalas o márcalas para descartar (no se importan).</p>' +
+      '<div class="table-wrap"><table class="data-table mig-tabla"><thead><tr><th>Fila</th><th>Proveedor · factura</th><th>Producto</th><th>Costo</th><th>$ Venta</th><th>OC · cliente</th><th class="center">Descartar</th></tr></thead><tbody>' +
+      (filas || '<tr><td colspan="7" class="muted center">¡No hay filas con datos faltantes!</td></tr>') + '</tbody></table></div>';
+  }
+
+  function panelImportar() {
+    const listo = !est.errores.length && !Object.keys(cambios).length && !Object.keys(cambiosFilas).length;
+    return '<div class="panel inline-panel"><div class="inline-panel-head"><h3>Importar al ERP</h3><span class="muted">Se crea todo de una vez, después de un respaldo automático. Solo se puede hacer una vez.</span></div>' +
+      (est.errores.length ? '<div class="notice warn">Falta resolver: <strong>' + esc(est.errores.join(' · ')) + '</strong>.</div>' : '<div class="notice">' + GS.icon('check') + ' Todo homologado y sin errores.</div>') +
+      '<ul class="mig-lista"><li><strong>Compras:</strong> una por factura, con un lote por producto y costo (el costo del Excel, sin despacho aparte).</li>' +
+      '<li><strong>Ventas:</strong> una por OC del Excel (queda anotada como "OC original"), con su cliente, boleta y precio real; medio de pago "Otro".</li>' +
+      '<li><strong>Salidas:</strong> premios y cajas abiertas salen del stock sin ser venta.</li>' +
+      '<li><strong>Stock:</strong> las unidades sin OC ni cliente quedan disponibles para vender.</li></ul>' +
+      '<div class="btn-row"><div class="form-field"><label for="mig-fecha">Fecha para ventas sin fecha</label><input id="mig-fecha" type="date" value="' + esc(data().hoy) + '"></div>' +
+      '<button class="btn" data-action="migImportar"' + (listo ? '' : ' disabled') + '>' + GS.icon('check') + 'Importar al ERP</button></div>' +
+      '<p class="hint">El Excel no trae fechas: las ventas quedan con esta fecha hasta que crucemos la caja diaria por OC.</p></div>';
+  }
+
+  GS.views.migracion = {
+    title: 'Migración',
+    rol: 'admin',
+    render(el) {
+      if (!est) { cargar(); el.innerHTML = '<div class="empty-state"><div class="spinner"></div>Cargando migración…</div>'; return; }
+      const cab = '<div class="page-head"><div><h1>Migración</h1><p>Prepara el histórico del Excel antes de pasarlo al ERP: revisa, homologa y confirma. Nada entra al ERP hasta que presiones "Importar".</p></div>' +
+        (est.resumen.filas && !est.importada ? '<button class="btn ghost" data-action="migLimpiar">Limpiar migración</button>' : '') + '</div>';
+      if (est.importada) {
+        el.innerHTML = cab + '<div class="notice">' + GS.icon('check') + ' <strong>Migración importada</strong> (' + esc(est.importada) + '). Ahora los datos se corrigen directamente en el ERP y cada cambio queda en la auditoría.</div>' + resumen();
+        return;
+      }
+      if (!est.resumen.filas) { el.innerHTML = cab + panelCarga(); conectarCarga(el); return; }
+      const pend = (id) => (id === 'filas' ? est.problemas.length : id === 'importar' ? 0 : pendientes(id));
+      const sec = ui.seccion;
+      el.innerHTML = cab + resumen() + panelCarga() +
+        '<div class="tabs">' + SECCIONES.map(([id, label]) => '<button class="tab' + (sec === id ? ' active' : '') + '" data-action="migSeccion" data-id="' + id + '">' + label +
+          (pend(id) ? ' <span class="pill soon">' + pend(id) + '</span>' : '') + '</button>').join('') + '</div>' +
+        (sec === 'importar' ? panelImportar()
+          : '<div class="filters-bar">' + (sec !== 'filas' ? '<div class="search-box">' + GS.icon('search') + '<input type="text" data-mig-buscar value="' + esc(ui.q) + '" placeholder="Buscar..."></div>' +
+            '<label class="check"><input type="checkbox" data-mig-pendientes' + (ui.soloPendientes ? ' checked' : '') + '> Solo pendientes</label>' : '') +
+            '<div class="btn-row" style="margin-left:auto;">' + (sec !== 'filas' ? '<button class="btn secondary small" data-action="migConfirmarTodo">Confirmar todo lo visible</button>' : '') +
+            '<button class="btn small" data-action="migGuardar"' + (Object.keys(cambios).length || Object.keys(cambiosFilas).length ? '' : ' disabled') + '>Guardar cambios</button></div></div>' +
+            (sec === 'filas' ? tablaFilas() : tablaMapeos(sec)));
+      conectarCarga(el);
+    },
+  };
+
+  function conectarCarga(el) {
+    const input = el.querySelector('[data-mig-archivo]');
+    if (input) input.addEventListener('change', async () => {
+      if (!input.files[0]) return;
+      try {
+        const filas = await leerArchivo(input.files[0]);
+        await enviar('migracionCargar', { filas: filas }, (r) => fmt.num(r.resumen.filas) + ' filas cargadas');
+        GS.render();
+      } catch (e) { GS.toast(e.message, true); }
+    });
+  }
+
+  // Edición en las tablas: queda pendiente hasta "Guardar cambios".
+  document.addEventListener('input', (e) => {
+    const t = e.target;
+    if (!t.dataset) return;
+    if (t.dataset.migBuscar !== undefined) { ui.q = t.value; const pos = t.selectionStart; GS.render(); const n = document.querySelector('[data-mig-buscar]'); if (n) { n.focus(); n.setSelectionRange(pos, pos); } return; }
+    if (t.dataset.mig) {
+      const c = cambios[t.dataset.mig] = cambios[t.dataset.mig] || {};
+      c[t.dataset.campo] = t.type === 'checkbox' ? t.checked : t.value;
+      t.closest('tr').classList.add('mig-sucio');
+      if (t.dataset.campo === 'destino') { const v = document.querySelector('[data-vista="' + CSS.escape(t.dataset.mig) + '"]'); if (v) v.innerHTML = vistaProducto(t.value); }
+      const g = document.querySelector('[data-action="migGuardar"]'); if (g) g.disabled = false;
+    }
+    if (t.dataset.fila) {
+      const c = cambiosFilas[t.dataset.fila] = cambiosFilas[t.dataset.fila] || {};
+      c[t.dataset.campo] = t.type === 'checkbox' ? t.checked : t.value;
+      t.closest('tr').classList.add('mig-sucio');
+      const g = document.querySelector('[data-action="migGuardar"]'); if (g) g.disabled = false;
+    }
+  });
+  document.addEventListener('change', (e) => {
+    const t = e.target;
+    if (t.dataset && t.dataset.mig && t.dataset.campo === 'accion') GS.render();   // cambia qué campos se muestran
+    if (t.dataset && t.dataset.migPendientes !== undefined) { ui.soloPendientes = t.checked; GS.render(); }
+  });
+
+  GS.actions.migSeccion = (id) => { ui.seccion = id; ui.q = ''; GS.render(); };
+  GS.actions.migUnir = (ref) => {
+    const [clave, destino] = ref.split('§');
+    (cambios[clave] = cambios[clave] || {}).destino = destino;
+    GS.render();
+  };
+  GS.actions.migConfirmarTodo = () => {
+    const q = GS.norm(ui.q);
+    est.mapeos.filter((m) => m.tipo === ui.seccion && (!q || GS.norm(m.original + ' ' + valor(m, 'destino')).includes(q)))
+      .forEach((m) => { (cambios[m.clave] = cambios[m.clave] || {}).confirmado = true; });
+    GS.actions.migGuardar();
+  };
+  GS.actions.migGuardar = async () => {
+    try {
+      const m = Object.keys(cambios).map((k) => Object.assign({ clave: k }, cambios[k]));
+      const f = Object.keys(cambiosFilas).map((k) => Object.assign({ id: k }, cambiosFilas[k]));
+      if (m.length) await enviar('migracionMapeos', { mapeos: m });
+      if (f.length) await enviar('migracionFilas', { filas: f });
+      Object.keys(cambios).forEach((k) => delete cambios[k]);
+      Object.keys(cambiosFilas).forEach((k) => delete cambiosFilas[k]);
+      GS.toast('Cambios guardados');
+      GS.render();
+    } catch (e) { GS.toast(e.message, true); }
+  };
+  GS.actions.migPegar = async () => {
+    try {
+      const filas = leerPegado(document.querySelector('[data-mig-pegar]').value);
+      await enviar('migracionCargar', { filas: filas }, (r) => fmt.num(r.resumen.filas) + ' filas cargadas');
+      GS.render();
+    } catch (e) { GS.toast(e.message, true); }
+  };
+  GS.actions.migImportar = () => {
+    const fecha = document.getElementById('mig-fecha').value;
+    GS.confirm({
+      title: 'Importar al ERP',
+      message: 'Se crearán las compras, el stock, las ventas y las salidas de <strong>' + fmt.num(est.resumen.unidades) + ' unidades</strong>. Antes se hace un respaldo automático de la planilla. Esto se hace una sola vez.',
+      confirmLabel: 'Sí, importar',
+      onConfirm: async () => {
+        const r = await enviar('migracionImportar', { fecha: fecha });
+        est = null;
+        GS.toast('Importado: ' + r.compras + ' facturas, ' + r.ventas + ' ventas, ' + r.salidas + ' salidas');
+        GS.render();
+      },
+    });
+  };
+  GS.actions.migLimpiar = () => {
+    GS.confirm({
+      title: 'Limpiar migración',
+      message: 'Se borran las filas cargadas y la homologación de la zona de migración. No toca nada del ERP.',
+      confirmLabel: 'Sí, limpiar',
+      danger: true,
+      onConfirm: async () => { await enviar('migracionLimpiar', {}, 'Migración limpiada'); GS.render(); },
+    });
+  };
+})();
+</script>

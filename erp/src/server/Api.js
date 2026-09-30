@@ -47,6 +47,13 @@ function rutas_() {
     respaldos: { rol: 'admin', fn: () => Respaldos.estado() },
     crearRespaldo: { rol: 'admin', write: true, fn: (p, u) => Respaldos.crear('manual', u) },
 
+    migracion: { rol: 'admin', fn: () => Migracion.estado() },
+    migracionCargar: { rol: 'admin', write: true, fn: Migracion.cargar },
+    migracionMapeos: { rol: 'admin', write: true, fn: Migracion.guardarMapeos },
+    migracionFilas: { rol: 'admin', write: true, fn: Migracion.guardarFilas },
+    migracionImportar: { rol: 'admin', write: true, fn: Migracion.importar },
+    migracionLimpiar: { rol: 'admin', write: true, fn: Migracion.limpiar },
+
     guardarUsuario: { rol: 'admin', write: true, fn: Usuarios.guardar },
   };
 }

@@ -342,6 +342,55 @@ test("administración: respaldos automáticos y manuales", { skip }, async () =>
   }
 });
 
+test("migración: pegar el Excel, homologar por secciones e importar", { skip }, async () => {
+  const browser = await chromium.launch();
+  try {
+    const { page, errores } = await abrir(browser);
+    await page.click('[data-nav="migracion"]');
+    const tsv = [
+      "PROVEEDOR\t\t\t\tSII",
+      "Proveedor\tFactura\tSerie\tProducto\tValor Unitario\tCosto\tCredito Fiscal\tNeto\tDebito Fiscal\tPago SII\tGanancia\t$ Venta\tOC\tCliente\tBoleta",
+      "Ludi\tL-77\t1\tPitch Black - ETB (ESP)\t$ 47.594\t$ 39.995\t\t\t\t\t\t$ 59.990\tOC401\tCAMILO PUG\t2001",
+      "Ludi\tL-77\t2\tPitch Black - ETB (ESP)\t$ 47.594\t$ 39.995\t\t\t\t\t\t$ 59.990\t\t\t",
+      "Ludi\t-\t1\tPitch Black - ETB (ESP)\t$ 47.594\t$ 39.995\t\t\t\t\t\t$ 59.990\tOC000\tPREMIOS | MUGRI\t",
+    ].join("\n");
+    await page.locator("[data-mig-pegar]").fill(tsv);
+    await page.click('[data-action="migPegar"]');
+    await toast(page, /3 filas cargadas/);
+    assert.match(await page.locator(".kpi-grid").textContent(), /Unidades a migrar3.*Disponibles1/s);
+
+    // Productos: la propuesta ya viene homologada
+    await page.click('[data-action="migSeccion"][data-id="producto"]');
+    assert.equal(await page.locator(".mig-tabla input[data-campo=destino]").first().inputValue(), "Pitch Black – ETB · ESP");
+    // Confirmar cada sección; en facturas completar la que viene con "-"
+    for (const sec of ["proveedor", "producto", "cliente"]) {
+      await page.click(`[data-action="migSeccion"][data-id="${sec}"]`);
+      await page.click('[data-action="migConfirmarTodo"]');
+      await toast(page, /Cambios guardados/);
+    }
+    await page.click('[data-action="migSeccion"][data-id="factura"]');
+    await page.locator(".mig-tabla input.falta").fill("L-78");
+    await page.click('[data-action="migConfirmarTodo"]');
+    await toast(page, /Cambios guardados/);
+
+    await page.click('[data-action="migSeccion"][data-id="importar"]');
+    await page.click('[data-action="migImportar"]');
+    await modal(page).locator("button.btn:not(.ghost)").last().click();
+    await toast(page, /Importado: 2 facturas, 1 ventas, 1 salidas/);
+    await page.waitForSelector("text=Migración importada");
+
+    // El stock quedó en Inventario y la venta con su OC original
+    await page.click('[data-nav="inventario"]');
+    const etb = page.locator('#inv-tbody tr[data-producto]', { hasText: "Pitch Black" });
+    assert.match(await etb.textContent(), /3.*1.*\+1 salidas.*1/s);
+    await etb.click();
+    assert.match(await page.locator("#inv-tbody .detalle-compra").textContent(), /Premio.*Premios \| Mugri|Premio.*PREMIOS \| MUGRI/s);
+    assert.deepEqual(errores, []);
+  } finally {
+    await browser.close();
+  }
+});
+
 test("rol solo lectura: ve la información pero no las acciones", { skip }, async () => {
   const browser = await chromium.launch();
   try {

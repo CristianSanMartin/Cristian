@@ -591,3 +591,84 @@ test("migraciones: corren una sola vez, después de un respaldo, y quedan regist
   s.run("instalar()");
   assert.equal(s.ok("bootstrap").data.productos.find(p => p.id === prods.miniTin.id).notas, "editado");
 });
+
+/** Muestra con las mismas particularidades del Excel "Stock" real. */
+function excelEjemplo() {
+  const u = (proveedor, factura, producto, costo, venta, oc = "", cliente = "", boleta = "") => ({ proveedor, factura, producto, costo, venta, oc, cliente, boleta });
+  const filas = [
+    u("Proveedor", "Factura", "Producto", "Costo", "$ Venta"),                         // título repetido
+    u("Asmodee", "30th", "30TH CELEBRATION - ETB (ENG)", 39995, 89000, "OC285", "DANI", "1001"),
+    u("Asmodee", "30th", "30TH CELEBRATION - ETB (ENG)", 39995, 89000),
+    u("Asmodee", "30th", "30th Celebration - Poster Collection (Eng)", 12054, 15000, "OC", "PREMIOS"),
+    u("Asmodee", "30th", "30th Celebration - Poster Collection (Eng)", 12054, 15000, "OC000", "PREMIOS | MUGRI"),
+    u("Asmodee", "-", "Luminose City  - Mini Tin (ENG)", 7010, 13990, "OC171", "CLIENTE NN"),
+    u("Asmodee", "-", "Luminose City  - Mini Tin (ENG)", 7010, 13990),
+    u("Panteon", 45642, "Phantasmal Flames | Blister (ESP)", "$ 5.500", "$ 9.990", "OC026", "Feria del Libro"),
+    u("Panteon", 45642, "Phantasmal Flames | Blister (ESP)", 5500, 9990, "OC300", "razor"),
+    u("Panteon", 45642, "Phantasmal Flames | Blister (ESP)", 5500, 9990, "OC301", "RAIZOR"),
+    u("Asmodee", "30th", "POKEMON TCG 30TH CELEBRATION - BINDER COLLECTION Epañol", 26252, 53000, "OC0", "ABIERTOS"),
+    u("", "", "", "", ""),                                                                 // fila vacía
+    u("Asmodee", "30th", "", "", 12000),                                                   // sin producto ni costo
+  ];
+  return filas.map((f, i) => ({ fila: i + 3, ...f }));
+}
+
+test("migración: carga el Excel, propone homologaciones y bloquea la importación hasta revisar", () => {
+  const s = createServer();
+  const e = s.ok("migracionCargar", { filas: excelEjemplo() }).result;
+  assert.deepEqual([e.resumen.filas, e.resumen.descartadas, e.resumen.unidades, e.resumen.vendidas, e.resumen.disponibles], [13, 2, 11, 8, 3]);
+  const m = (tipo, original) => e.mapeos.find(x => x.tipo === tipo && x.original === original);
+  assert.equal(m("producto", "30TH CELEBRATION - ETB (ENG)").destino, "30th Celebration – ETB · ENG");
+  assert.equal(m("producto", "Phantasmal Flames | Blister (ESP)").destino, "Phantasmal Flames – Blister · ESP");
+  assert.equal(m("producto", "POKEMON TCG 30TH CELEBRATION - BINDER COLLECTION Epañol").destino, "30th Celebration – Binder Collection · ESP");
+  assert.deepEqual(["PREMIOS", "PREMIOS | MUGRI", "ABIERTOS", "CLIENTE NN", "Feria del Libro", "DANI"].map(c => m("cliente", c).accion), ["premio", "premio", "apertura", "general", "evento", "cliente"]);
+  assert.equal(m("cliente", "Feria del Libro").extra, "Feria Del Libro");
+  assert.equal(m("factura", "Asmodee · -").destino, "", "factura '-' queda por completar");
+  assert.equal(m("proveedor", "Asmodee").destino, "Asmodee");
+  // La fila sin producto ni costo aparece como problema; nada está confirmado
+  assert.equal(e.problemas.length, 1);
+  assert.match(e.errores.join(" | "), /sin confirmar.*facturas sin número.*filas con datos faltantes/);
+  assert.match(errorDe(s.call("migracionImportar", { fecha: "2026-09-30" })), /Antes de importar resuelve/);
+  // Solo administrador
+  s.ok("guardarUsuario", { email: "socio@gsprime.cl", nombre: "Socio", rol: "operador" });
+  assert.equal(s.as("socio@gsprime.cl").call("migracion").code, "SIN_PERMISO");
+});
+
+test("migración: homologar, importar y queda todo en el ERP (lotes, ventas con OC original, salidas)", () => {
+  const s = createServer();
+  let e = s.ok("migracionCargar", { filas: excelEjemplo() }).result;
+  const clave = (tipo, original) => e.mapeos.find(x => x.tipo === tipo && x.original === original).clave;
+  // Completar la fila sin producto: se descarta. Número a la factura "-". Unir razor/RAIZOR.
+  e = s.ok("migracionFilas", { filas: [{ id: e.problemas[0].id, descartada: true }] }).result;
+  e = s.ok("migracionMapeos", { mapeos: [
+    { clave: clave("factura", "Asmodee · -"), destino: "LUM-001", extra: "2026-08-10" },
+    { clave: clave("cliente", "RAIZOR"), destino: "Razor" },
+  ] }).result;
+  e = s.ok("migracionMapeos", { mapeos: e.mapeos.map(x => ({ clave: x.clave, confirmado: true })) }).result;
+  assert.deepEqual(e.errores, []);
+  const r = s.ok("migracionImportar", { fecha: "2026-09-30" }).result;
+  assert.deepEqual([r.compras, r.ventas, r.salidas, r.unidades], [3, 5, 3, 10]);
+
+  const d = s.ok("bootstrap").data;
+  assert.ok(d.proveedores.some(p => p.nombre === "Panteon"), "proveedor nuevo");
+  const lum = d.compras.find(c => c.factura === "LUM-001");
+  assert.equal(lum.fecha, "2026-08-10");
+  const etb = d.lotes.find(l => l.producto === "30th Celebration – ETB · ENG");
+  assert.deepEqual([etb.cantidad, etb.vendidas, etb.disponible, etb.costo], [2, 1, 1, 39995]);
+  assert.equal(d.productos.find(p => p.id === etb.productoId).pvp, 89000, "precio de venta desde el Excel");
+  // Premios y cajas abiertas salen del stock sin ser venta
+  const poster = d.lotes.find(l => l.producto === "30th Celebration – Poster Collection · ENG");
+  assert.deepEqual([poster.vendidas, poster.salidas, poster.disponible], [0, 2, 0]);
+  assert.equal(poster.unidadesVendidas[0].salida, "premio");
+  // Ventas con la OC original en las notas; Razor y RAIZOR son el mismo cliente
+  const dani = d.ventas.find(v => v.cliente === "Dani");
+  assert.match(dani.notas, /OC original OC285/);
+  assert.deepEqual([dani.total, dani.boleta, dani.canal], [89000, "1001", "Tienda"]);
+  assert.equal(d.clientes.find(c => c.nombre === "Razor").compras, 2);
+  const feria = d.ventas.find(v => v.evento === "Feria Del Libro");
+  assert.deepEqual([feria.canal, feria.cliente, feria.total], ["Evento", "Cliente general", 9990]);
+  // Respaldo previo y no se puede importar dos veces
+  assert.ok(Object.values(s.fake.state.files).some(f => /antes de importar la migración/.test(f.name)));
+  assert.match(errorDe(s.call("migracionImportar", { fecha: "2026-09-30" })), /ya se importó/);
+  assert.match(errorDe(s.call("migracionMapeos", { mapeos: [] })), /ya se importó/);
+});

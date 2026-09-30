@@ -166,6 +166,32 @@ const Db = {
     return merged;
   },
 
+  /** Actualiza varios registros con una sola escritura: { clave: cambios }. */
+  actualizarVarios(table, cambios) {
+    const k = Db.schema(table).key;
+    const data = Db._load(table);
+    const claves = Object.keys(cambios);
+    if (!claves.length) return;
+    claves.forEach((c) => { if (!data.rows.some((r) => r.obj[k] === c)) throw new AppError('El registro ' + c + ' no existe.', 'NO_ENCONTRADO'); });
+    const primera = data.rows[0].rowNum;
+    const ultima = data.rows[data.rows.length - 1].rowNum;
+    const valores = data.sheet.getRange(primera, 1, ultima - primera + 1, data.headers.length).getValues();
+    data.rows.forEach((r) => {
+      const patch = cambios[r.obj[k]];
+      if (patch) valores[r.rowNum - primera] = Db._toRow(table, data.headers, Object.assign({}, r.obj, patch), r.raw);
+    });
+    data.sheet.getRange(primera, 1, valores.length, data.headers.length).setValues(valores);
+    delete Db._cache[table];
+  },
+
+  /** Deja la tabla vacía (solo el encabezado). Se usa en la zona de migración. */
+  vaciar(table) {
+    const data = Db._load(table);
+    const ultima = data.sheet.getLastRow();
+    if (ultima > 1) data.sheet.getRange(2, 1, ultima - 1, Math.max(data.headers.length, data.sheet.getLastColumn())).clearContent();
+    delete Db._cache[table];
+  },
+
   remove(table, key) {
     const k = Db.schema(table).key;
     const data = Db._load(table);

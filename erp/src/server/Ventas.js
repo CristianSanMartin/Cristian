@@ -115,11 +115,13 @@ const Ventas = {
     })).sort((a, b) => (a.fecha + a.id).localeCompare(b.fecha + b.id));
   },
 
+  /** Unidades que ya salieron de cada lote: vendidas (ventas no anuladas) + salidas (premios, aperturas…). */
   vendidasPorLote() {
     const anuladas = {};
     Db.all('Ventas').forEach((v) => { if (v.anulada) anuladas[v.id] = true; });
     const res = {};
     Db.all('Ventas_Lineas').forEach((l) => { if (!anuladas[l.ventaId]) res[l.loteId] = (res[l.loteId] || 0) + l.cantidad; });
+    Db.all('Salidas').forEach((x) => { if (!x.anulada) res[x.loteId] = (res[x.loteId] || 0) + x.cantidad; });
     return res;
   },
 
@@ -173,6 +175,14 @@ const Ventas = {
         r.ganancia += linea.ganancia;
         for (let i = 0; i < l.cantidad; i++) r.unidades.push({ oc: v.id, cliente: v.cliente, fecha: v.fecha, precio: l.precio });
       }
+    });
+
+    // Salidas que no son venta: ocupan unidades del lote, con su motivo en lugar de OC.
+    Db.all('Salidas').filter((x) => !x.anulada).forEach((x) => {
+      const r = porLote[x.loteId] = porLote[x.loteId] || { vendidas: 0, ventas: 0, ganancia: 0, unidades: [] };
+      r.salidas = (r.salidas || 0) + x.cantidad;
+      r.costoSalidas = (r.costoSalidas || 0) + x.costo * x.cantidad;
+      for (let i = 0; i < x.cantidad; i++) r.unidades.push({ oc: MOTIVOS_SALIDA[x.motivo] || x.motivo, cliente: x.notas, fecha: x.fecha, precio: 0, salida: x.motivo });
     });
 
     ventas.forEach((v) => {

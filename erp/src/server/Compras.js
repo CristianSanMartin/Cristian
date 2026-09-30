@@ -102,7 +102,8 @@ const Compras = {
       const costo = l.cantidad ? l.costoNeto + l.despacho / l.cantidad : l.costoNeto;
       const e = Economia.unidad(costo, precio);
       const vendido = porLote[l.id] || { vendidas: 0, ventas: 0, ganancia: 0, unidades: [] };
-      const disponible = l.cantidad - vendido.vendidas;
+      const salidas = vendido.salidas || 0;
+      const disponible = l.cantidad - vendido.vendidas - salidas;
       const lote = Object.assign(l, {
         factura: c ? c.factura : '',
         fecha: c ? c.fecha : '',
@@ -129,6 +130,8 @@ const Compras = {
         ventasAcumuladas: vendido.ventas,
         gananciaAcumulada: vendido.ganancia,
         unidadesVendidas: vendido.unidades,
+        salidas: salidas,
+        costoSalidas: vendido.costoSalidas || 0,
         disponible: disponible,
         valorInventario: disponible * costo,
         gananciaProyectada: disponible * e.ganancia,
@@ -149,10 +152,12 @@ const Compras = {
       // Resultado de la factura: lo vendido hasta ahora y si ya se vendió todo lo comprado.
       const suma = (k) => c.lineas.reduce((s, l) => s + l[k], 0);
       c.vendidas = suma('vendidas');
+      c.salidas = suma('salidas');
       c.ventasAcumuladas = suma('ventasAcumuladas');
       c.gananciaAcumulada = suma('gananciaAcumulada');
       c.gananciaProyectada = c.lineas.reduce((s, l) => s + l.cantidad * l.gananciaUnidad, 0);
-      c.estadoVenta = c.vendidas === 0 ? 'sin_ventas' : c.vendidas < c.unidades ? 'vendiendo' : 'vendida';
+      const salieron = c.vendidas + c.salidas;
+      c.estadoVenta = salieron === 0 ? 'sin_ventas' : salieron < c.unidades ? 'vendiendo' : 'vendida';
     });
     compras.sort((a, b) => (b.fecha + b.id).localeCompare(a.fecha + a.id));
     lotes.sort((a, b) => (a.fecha + a.id).localeCompare(b.fecha + b.id));

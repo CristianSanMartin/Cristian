@@ -26,7 +26,7 @@ function interpretarNombre_(raw, modo) {
   ];
   var IDIOMAS = [
     [/\b(ENGLISH|INGL[EÉ]S|ENG|ING)\b/i, 'ENG'],
-    [/\b(ESPA[NÑ]OL|SPANISH|ESP)\b/i, 'ESP'],
+    [/\b(ESPA[NÑ]OL|EPA[NÑ]OL|SPANISH|ESP)\b|\(ES\)/i, 'ESP'],
     [/\b(JAPANESE|JAPON[EÉ]S|JPN|JP)\b/i, 'JPN'],
   ];
   var SIGLAS = ['TCG', 'ETB', 'EX', 'GX', 'V', 'VMAX', 'VSTAR', 'SV'];
@@ -40,15 +40,19 @@ function interpretarNombre_(raw, modo) {
 
   var s = String(raw || '').replace(/\s+/g, ' ').trim();
   if (modo === 'titulo') return titulo(s);
+  // "Edición – Nombre · ENG" (como lo muestra el ERP) se lee igual que "Edición - Nombre ENG".
+  s = s.replace(/\s+·\s+/g, ' ');
   var idioma = '';
   IDIOMAS.forEach(function (x) {
     if (!idioma && x[0].test(s)) { idioma = x[1]; s = s.replace(x[0], ' ').replace(/\s+/g, ' ').trim(); }
   });
+  s = s.replace(/\(\s*\)/g, ' ').replace(/\s+/g, ' ').trim();
   s = s.replace(/^POK[EÉ]MON\s+(TCG\s+)?/i, '').replace(/[\s-]+$/, '');
   var edicion = '';
   var nombre = s;
-  var corte = s.indexOf(' - ');
-  if (corte > 0) { edicion = s.slice(0, corte); nombre = s.slice(corte + 3); }
+  // Separador entre edición y nombre: " - ", " – " o " | ".
+  var sep = /\s(-|–|\|)\s/.exec(s);
+  if (sep && sep.index > 0) { edicion = s.slice(0, sep.index); nombre = s.slice(sep.index + sep[0].length); }
   var upper = s.toUpperCase();
   var tipo = 'Otro';
   for (var i = 0; i < TIPOS.length; i++) {

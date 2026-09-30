@@ -835,6 +835,16 @@ svg.grafico{width:100%;height:auto;display:block;overflow:visible;}
 /* ---------- inventario: vender ---------- */
 .qty-input.cant-venta{width:64px;padding:6px;}
 
+/* ---------- migración ---------- */
+.mig-carga{display:flex;flex-wrap:wrap;gap:10px;align-items:center;}
+.mig-carga textarea{flex:1;min-width:240px;background:var(--panel-2);border:1px solid var(--panel-border);border-radius:8px;color:var(--white);padding:8px 10px;font:inherit;font-size:12.5px;}
+.mig-tabla input,.mig-tabla select{background:var(--panel-2);border:1px solid var(--panel-border);border-radius:6px;color:var(--white);padding:6px 8px;font:inherit;font-size:12.5px;}
+.mig-tabla input.ancho{width:100%;min-width:260px;}
+.mig-tabla input.falta{border-color:var(--gold);background:rgba(246,180,0,.08);}
+.mig-tabla tr.mig-sucio td{background:rgba(246,180,0,.05);}
+.mig-lista{margin:8px 0 14px 18px;font-size:13px;line-height:1.7;color:var(--text-dim);}
+.mig-lista strong{color:var(--white);}
+
 @media (max-width:520px){
   .topbar .user-chip > div:last-child{display:none;}
   .modal-overlay{padding:10px;}

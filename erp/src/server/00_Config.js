@@ -99,6 +99,26 @@ const SCHEMA = {
       id: 's', ventaId: 's', fecha: 'd', monto: 'n', medioPago: 's', notas: 's',
     }, AUDIT_COLS),
   },
+  /** Unidades que salen del stock sin ser venta: premios de torneo, cajas abiertas, uso interno. costo = del lote. */
+  Salidas: {
+    key: 'id',
+    cols: Object.assign({
+      id: 's', fecha: 'd', motivo: 's', loteId: 's', productoId: 's', cantidad: 'n', costo: 'n', notas: 's', anulada: 'b',
+    }, AUDIT_COLS),
+  },
+  /** Zona de migración: el Excel histórico unidad por unidad, para revisar antes de importar. */
+  Migracion: {
+    key: 'id',
+    cols: {
+      id: 's', fila: 'n', proveedor: 's', factura: 's', serie: 's', producto: 's', costo: 'n', venta: 'n',
+      oc: 's', cliente: 's', boleta: 's', descartada: 'b', nota: 's',
+    },
+  },
+  /** Homologación de la migración: cómo queda cada proveedor, factura, producto y cliente del Excel. */
+  Migracion_Mapeos: {
+    key: 'clave',
+    cols: { clave: 's', tipo: 's', original: 's', destino: 's', accion: 's', extra: 's', confirmado: 'b' },
+  },
   /** Migraciones de datos ya aplicadas (ver Respaldos.js). */
   Migraciones: {
     key: 'id',
@@ -114,6 +134,9 @@ const SCHEMA = {
 const HOJAS_OBSOLETAS = ['Pagos', 'Movimientos', 'Preventas_Lineas'];
 
 const IDIOMAS = ['ENG', 'ESP', 'JPN', 'Otro'];
+
+/** Motivos de salida de stock que no son venta. */
+const MOTIVOS_SALIDA = { premio: 'Premio', apertura: 'Caja abierta', interno: 'Uso interno', perdida: 'Pérdida' };
 
 /** Ventas: canal (Tienda por defecto) y medios de pago. */
 const CANALES = ['Tienda', 'Evento', 'Instagram', 'WhatsApp', 'Otro'];

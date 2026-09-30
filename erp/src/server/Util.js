@@ -29,6 +29,18 @@ const Util = {
     return prefijo + '-' + String(valor).padStart(ancho || 4, '0');
   },
 
+  /** Reserva n correlativos de una vez (importaciones grandes): una sola escritura en Secuencias. */
+  reservarIds(prefijo, ancho, n) {
+    if (!n) return [];
+    const fila = Db.get('Secuencias', prefijo);
+    const desde = (fila ? fila.valor : 0) + 1;
+    if (fila) Db.update('Secuencias', prefijo, { valor: desde + n - 1 });
+    else Db.insert('Secuencias', { clave: prefijo, valor: desde + n - 1 });
+    const res = [];
+    for (let i = 0; i < n; i++) res.push(prefijo + '-' + String(desde + i).padStart(ancho || 4, '0'));
+    return res;
+  },
+
   /** Campos de auditoría para un registro nuevo o actualizado. */
   sello(user, nuevo) {
     const ahora = Util.ahora();

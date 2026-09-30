@@ -183,6 +183,21 @@ Si falta lo primero, Google le pedirá permiso. Si falta lo segundo, verá
    Si se te olvida, el ERP no guarda nada y muestra "ERP sin instalar" indicando qué columnas faltan.
 3. **Implementar → Administrar implementaciones → ✏️ → Nueva versión → Implementar.**
 
+## Migración del histórico (Excel)
+
+**Migración** (menú Sistema, solo administrador) es una zona de preparación: nada entra al ERP
+hasta presionar "Importar".
+
+1. **Cargar:** subir el Excel (hoja "Stock", una fila por unidad) o pegar las filas copiadas.
+2. **Homologar** por secciones, con propuestas automáticas: proveedores, facturas (completar las
+   que vienen sin número y, opcionalmente, su fecha), productos (nombre normalizado
+   "Edición – Nombre · IDIOMA") y clientes/destinos (venta a cliente, Cliente general, evento,
+   premio o caja abierta). Para unir dos nombres del Excel se escriben igual. Cada fila se confirma.
+3. **Filas a completar:** unidades sin producto, costo o precio: se completan o se descartan.
+4. **Importar:** con todo confirmado, respalda la planilla y crea compras (lotes con su costo),
+   ventas (una por OC; la OC original queda en las notas), salidas (premios, cajas abiertas) y el
+   stock disponible. Se hace una sola vez; después se corrige en el ERP con auditoría.
+
 ## Respaldos y cambios con datos reales
 
 - **Respaldo nocturno automático:** `instalar` programa un activador que todas las noches (3 a. m.)

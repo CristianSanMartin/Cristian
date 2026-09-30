@@ -139,6 +139,7 @@
       r.lotes.push(l);
       r.cantidad += l.cantidad;
       r.vendidas += l.vendidas;
+      r.salidas = (r.salidas || 0) + (l.salidas || 0);
       r.disponible += l.disponible;
       r.valorInventario += l.valorInventario;
       r.gananciaProyectada += l.gananciaProyectada;
@@ -163,7 +164,7 @@
   const colsInv = [
     { id: 'producto', label: 'Producto', clase: 'col-prod', valor: (r) => r.ref.productoNombre, texto: (r) => r.ref.productoNombre + ' ' + r.ref.idioma, celda: (r) => producto(r.ref) },
     { id: 'cantidad', label: 'Comprado', right: true, valor: (r) => r.cantidad, celda: (r) => fmt.num(r.cantidad) },
-    { id: 'vendidas', label: 'Vendidas', right: true, valor: (r) => r.vendidas, celda: (r) => (r.vendidas ? fmt.num(r.vendidas) : '—') },
+    { id: 'vendidas', label: 'Vendidas', right: true, valor: (r) => r.vendidas, celda: (r) => (r.vendidas ? fmt.num(r.vendidas) : '—') + (r.salidas ? '<div class="cell-dim">+' + fmt.num(r.salidas) + ' salidas</div>' : '') },
     { id: 'disponible', label: 'Disponible', right: true, valor: (r) => r.disponible, celda: (r) => '<strong class="stock-num">' + fmt.num(r.disponible) + '</strong>' },
     { id: 'costo', label: 'Costo u.', right: true, valor: (r) => r.costo, texto: (r) => fmt.money(r.costo),
       celda: (r) => '<strong>' + fmt.money(r.costo) + '</strong><div class="cell-dim">' + (r.unCosto
@@ -193,8 +194,8 @@
         filas.push('<tr' + (u ? '' : ' class="unidad-libre' + (selUnidades.has(clave) ? ' row-selected' : '') + '"') + '>' +
           '<td>' + (marcable ? '<input type="checkbox" class="row-check" data-sel-unidad="' + esc(clave) + '"' + (selUnidades.has(clave) ? ' checked' : '') + ' aria-label="Seleccionar unidad ' + n + '">' : '') + '</td>' +
           '<td class="cell-num right">' + n + '<span class="cell-dim"> / ' + r.cantidad + '</span></td>' +
-          '<td>' + (u ? '<span class="badge st-parcial">Vendida</span>' : '<span class="badge st-ok">Disponible</span>') + '</td>' +
-          '<td>' + (u ? '<span class="cell-strong">' + esc(u.oc) + '</span>' : '—') + '</td><td>' + (u ? esc(u.cliente) : '—') + '</td>' +
+          '<td>' + (u ? (u.salida ? '<span class="badge st-pedido">' + esc(u.oc) + '</span>' : '<span class="badge st-parcial">Vendida</span>') : '<span class="badge st-ok">Disponible</span>') + '</td>' +
+          '<td>' + (u && !u.salida ? '<span class="cell-strong">' + esc(u.oc) + '</span>' : '—') + '</td><td>' + (u ? esc(u.cliente) : '—') + '</td>' +
           m(l.valorUnitario) + m(l.costo) + m(l.credito) + m(precio) + m(precio / iva) + m(precio - precio / iva) + m(precio - precio / iva - l.credito) +
           '<td class="cell-num right ' + signo(precio / iva - l.costo) + '">' + fmt.money(precio / iva - l.costo) + '</td></tr>');
       }
