@@ -176,6 +176,14 @@ Si falta lo primero, Google le pedirá permiso. Si falta lo segundo, verá
 
 ### 6. Actualizar a una versión nueva
 
+**En Windows, con doble clic:** abre la carpeta `erp` (la que tiene tu `.clasp.json`) y ejecuta
+**`actualizar.cmd`**. Descarga la última versión desde GitHub, reemplaza el código (conserva
+`.clasp.json`), hace `clasp push -f` y actualiza la implementación de la aplicación web a la
+versión nueva, así que el link no cambia. La primera vez te pregunta cuál implementación usar
+y la recuerda en `erp/.implementacion`. Después solo queda el paso 2 cuando corresponda.
+
+**A mano:**
+
 1. Descarga la versión nueva (conserva tu `erp/.clasp.json`) y ejecuta `clasp push` dentro de `erp`.
 2. **Obligatorio cuando cambia la estructura de datos:** en el editor de Apps Script ejecuta **`instalar`** (o en la planilla, menú
    **GS Prime ERP → Instalar / actualizar hojas**). Crea las hojas nuevas, agrega columnas
