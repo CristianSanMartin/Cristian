@@ -1055,11 +1055,28 @@ function parseProformaRutas(wb){
       }
     }
   }
+  // Resumen Sol Pago, columna Viajes: "PATENTE (id1,id2)" lista las rutas hermanas (que comparten Sol. Pago)
+  const rs=wb.SheetNames.find(n=>nt(n)==="RESUMEN SOL PAGO");
+  if(rs){
+    const m=matrix(wb.Sheets[rs]), h=m[0]||[], cs=idx(h,["Sol Pago","ID Sol. Pago","Id Sol. Pago"]), cv=idx(h,["Viajes"]);
+    if(cs>=0&&cv>=0) for(const r of m.slice(1)){
+      const sol=nid(r[cs]), ids=viajesDeResumen(r[cv]); if(!sol||ids.length<2) continue;
+      if(!viajesPorSol.has(sol)) viajesPorSol.set(sol,new Set());
+      ids.forEach(id=>viajesPorSol.get(sol).add(id));
+    }
+  }
+  const hermanas=v=>[...new Set([...v.sols.keys()].flatMap(s=>[...(viajesPorSol.get(s)||[])]))].filter(x=>x!==v.id);
   // valorRuta: lo pagado a esa ruta; una Sol. Pago con varios viajes (TL doble) se reparte entre ellos
-  const lista=[...viajes.values()].map(v=>({...v,sol:[...v.sols.keys()].join(", "),valor:[...v.sols.values()].reduce((a,b)=>a+b,0),
+  const lista=[...viajes.values()].map(v=>({...v,hermanas:hermanas(v).join(", "),sol:[...v.sols.keys()].join(", "),valor:[...v.sols.values()].reduce((a,b)=>a+b,0),
     valorRuta:Math.round([...v.sols].reduce((a,[s,x])=>a+x/(viajesPorSol.get(s)?.size||1),0)),sols:undefined}));
   const fechas=lista.map(v=>v.fecha).filter(Boolean).sort();
   return {proforma:proforma||"?",factura,viajes:lista,desde:fechas[0]||"",hasta:fechas[fechas.length-1]||""};
+}
+
+// "SBPZ46 (uuid1,uuid2)" → [uuid1, uuid2]; "14640177-1000…,14640177-1000…" (DELIVERY) → [14640177]
+function viajesDeResumen(v){
+  const s=String(v??""), m=s.match(/\(([^)]*)\)/);
+  return [...new Set((m?m[1]:s).split(",").map(x=>x.trim()).filter(Boolean).map(x=>/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(x)?x.toLowerCase():x.split("-")[0]))];
 }
 
 // Geosort: una fila por punto → una ruta por Idruta
@@ -1103,6 +1120,7 @@ function cruzarRutas(){
     if(!o){ pagos.set(v.id,{...v}); continue; }
     if(!o.proforma.split(", ").includes(v.proforma)){ o.proforma+=", "+v.proforma; if(v.factura) o.factura=o.factura?o.factura+", "+v.factura:v.factura; }
     o.sol=[o.sol,v.sol].filter(Boolean).join(", "); o.valor+=v.valor; o.valorRuta+=v.valorRuta;
+    o.hermanas=[...new Set([o.hermanas,v.hermanas].join(", ").split(", ").filter(Boolean))].join(", ");
   }
   const geo=new Map((rutasDatos.geosort||[]).map(g=>[g.id,g]));
 
@@ -1130,19 +1148,27 @@ function cruzarRutas(){
   for(const f of filas){
     f.tipo=tipoIdRuta(f.id); f.pago=null; f.detalle=""; f.ingreso=0;
     const p=f.id?pagos.get(f.id):null;
-    if(p){ f.estado="Pagada"; f.pago=p; f.ingreso=p.valorRuta; }
+    if(p){
+      f.estado="Pagada"; f.pago=p; f.ingreso=p.valorRuta;
+      if(p.hermanas) f.detalle="Sol. Pago compartida con "+textoHermanas(p,pagos);
+    }
     else{
-      const k=f.pat+"|"+f.fecha, alt=libres.get(k);
-      if(alt&&alt.length&&alt.some(v=>!usados.has(v.id))){
-        const libresAlt=alt.filter(v=>!usados.has(v.id));
+      const k=f.pat+"|"+f.fecha;
+      // Un viaje que comparte Sol. Pago con una ruta hermana de otro día pertenece a ese otro día (p. ej. 2da vuelta de la noche anterior)
+      const candidatos=(libres.get(k)||[]).filter(v=>!usados.has(v.id));
+      const deOtroDia=candidatos.filter(v=>hermanasOtroDia(v,pagos).length);
+      const libresAlt=candidatos.filter(v=>!deOtroDia.includes(v));
+      const nota=deOtroDia.map(v=>`${v.id} de la misma patente y día va en la Sol. Pago ${v.sol} con ${hermanasOtroDia(v,pagos).map(h=>h.id+" del "+fechaCL(h.fecha)).join(", ")}: no se usa como pago`).join(". ");
+      if(libresAlt.length){
         f.estado="Pagada con otro ID"; f.pago=libresAlt[0]; f.ingreso=libresAlt.reduce((a,v)=>a+v.valorRuta,0);
-        f.detalle="Mismo día y patente: "+libresAlt.map(v=>`${v.id} (${v.tipo} ${money(v.valorRuta)})`).join(", ");
+        f.detalle="Mismo día y patente: "+libresAlt.map(v=>`${v.id} (${v.tipo} ${money(v.valorRuta)})`+(v.hermanas?`, Sol. Pago compartida con ${textoHermanas(v,pagos)}`:"")).join("; ");
         libresAlt.forEach(v=>usados.add(v.id));
       }
       else if(f.tipo==="Sin ID") f.estado="Sin ID en registro";
       else if(f.tipo==="TL"&&(tlPorDia.get(k)||0)>=2){ f.estado="TL 2da vuelta (esperar objeción)"; f.detalle="Más de un TL de la patente ese día"; }
       else if(!desde||!hasta||f.fecha<desde||f.fecha>hasta) f.estado="Sin proforma cargada";
       else f.estado="Pendiente";
+      if(nota&&f.estado!=="Pagada con otro ID") f.detalle=[f.detalle,nota].filter(Boolean).join(". ");
     }
     // Columnas como en la planilla de control: Terminado/Total/NS del registro (o del geosort), Validador = Cobro − Total ruta
     if(!f.puntos&&!f.terminado){ f.terminado=null; f.puntos=null; f.ns=null; }
@@ -1157,6 +1183,13 @@ function cruzarRutas(){
   const sinRegistro=[...pagos.values()].filter(v=>!idsFilas.has(v.id)&&!usados.has(v.id)).sort((a,b)=>a.fecha.localeCompare(b.fecha));
   cruceRutas={filas,sinRegistro,planificadas,ajustes:reg.ajustes,desde,hasta};
   renderPanelRutas(); renderDias(); renderRutas();
+}
+
+function hermanasOtroDia(v,pagos){
+  return (v.hermanas?v.hermanas.split(", "):[]).map(id=>pagos.get(id)).filter(h=>h&&h.fecha&&v.fecha&&h.fecha!==v.fecha);
+}
+function textoHermanas(v,pagos){
+  return v.hermanas.split(", ").map(id=>{ const h=pagos.get(id); return id+(h&&h.fecha?` (${fechaCL(h.fecha)})`:""); }).join(", ");
 }
 
 function renderListaProformas(){
@@ -1392,7 +1425,7 @@ function descargarCruceRutas(){
 // Fuera de Apps Script (vista previa, pruebas) se usa un almacén en memoria con la misma lógica.
 const EN_APPS_SCRIPT=typeof google!=="undefined"&&!!google.script&&!!google.script.run;
 const HOJAS_PROFORMA=["SERVICE","TL","DELIVERY","SHIPMENT"];
-const H_VIAJES=["Proforma","Factura","ID Viaje","Fecha viaje","Origen","Patente","Tipo pago","Estado Sol. Pago","ID Sol. Pago","Valor Sol. Pago","Valor ruta"];
+const H_VIAJES=["Proforma","Factura","ID Viaje","Fecha viaje","Origen","Patente","Tipo pago","Estado Sol. Pago","ID Sol. Pago","Valor Sol. Pago","Valor ruta","Rutas hermanas"];
 const H_GEOSORT=["Idruta","Fecha","Patente","Ct","Puntos","Terminados","Planificada"];
 let urlLibro="";
 
@@ -1470,7 +1503,7 @@ function hojasDeProforma(wb){
       d={SERVICE:m("SERVICE"),TL:m("TL"),DELIVERY:m("DELIVERY"),TRANSFER:tr.length?tr:m("SHIPMENT"),OTROS:[]};
     }
     const p=parseProformaRutas(wb);
-    const viajes=[H_VIAJES,...p.viajes.map(v=>[v.proforma||p.proforma,v.factura||p.factura,idCelda(v.id),v.fecha,v.origen,v.patente,v.tipo,v.estado,v.sol,v.valor,v.valorRuta])];
+    const viajes=[H_VIAJES,...p.viajes.map(v=>[v.proforma||p.proforma,v.factura||p.factura,idCelda(v.id),v.fecha,v.origen,v.patente,v.tipo,v.estado,v.sol,v.valor,v.valorRuta,v.hermanas||""])];
     return {proforma:p.proforma,factura:p.factura,n:p.viajes.length,otros:Math.max((d.OTROS?.length||1)-1,0),
       SERVICE:d.SERVICE,TL:d.TL,DELIVERY:d.DELIVERY,SHIPMENT:d.TRANSFER||[],viajes};
   }finally{ wbEntrada=previo; }
@@ -1483,7 +1516,7 @@ function proformasDesdeHoja(m){
     const prof=nid(r[c["Proforma"]]), id=idRuta(r[c["ID Viaje"]]); if(!id) continue;
     if(!g.has(prof)) g.set(prof,{proforma:prof,factura:nid(r[c["Factura"]]),viajes:[]});
     g.get(prof).viajes.push({id,proforma:prof,factura:nid(r[c["Factura"]]),fecha:fechaISO(r[c["Fecha viaje"]]),origen:r[c["Origen"]],patente:r[c["Patente"]],
-      pat:patNorm(r[c["Patente"]]),tipo:r[c["Tipo pago"]],estado:r[c["Estado Sol. Pago"]],sol:nid(r[c["ID Sol. Pago"]]),valor:num(r[c["Valor Sol. Pago"]]),valorRuta:num(r[c["Valor ruta"]])});
+      pat:patNorm(r[c["Patente"]]),tipo:r[c["Tipo pago"]],estado:r[c["Estado Sol. Pago"]],sol:nid(r[c["ID Sol. Pago"]]),valor:num(r[c["Valor Sol. Pago"]]),valorRuta:num(r[c["Valor ruta"]]),hermanas:c["Rutas hermanas"]>=0?String(r[c["Rutas hermanas"]]??"").trim():""});
   }
   return [...g.values()].map(p=>{ const f=p.viajes.map(v=>v.fecha).filter(Boolean).sort(); return {...p,desde:f[0]||"",hasta:f[f.length-1]||""}; });
 }

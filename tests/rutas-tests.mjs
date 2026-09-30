@@ -129,6 +129,22 @@ const geoVista = await page.evaluate(`({resaltadas:[...document.querySelectorAll
 await page.click(col("patente")); await page.uncheck(".menu-filtro label:has-text('AAAA-11') input"); await page.click(".menu-filtro .ok");
 const trasDesmarcar = await page.$$eval("#rutasBody tr td:nth-child(2)", tds => tds.map(t => t.textContent));
 const iconoActivo = await page.$$eval(".btn-filtro.activo", bs => bs.map(b => b.dataset.k));
+// Rutas hermanas (Resumen Sol Pago): un viaje que comparte Sol. Pago con uno de otro día no paga la ruta de este día
+const hermanas = await page.evaluate(`(()=>{
+  const resumen=viajesDeResumen("SBPZ46 (6FC3CA3E-16b7-484d-8938-5366de2e1107,a99bebb9-f1bd-411e-8c14-818db80147e2)");
+  const deliv=viajesDeResumen("14640177-100000037095574,14640177-100000037095578");
+  const V=(id,fecha,hermanas)=>({id,proforma:"1",factura:"",fecha,origen:"TL - Hub XD",patente:"SBPZ46",pat:"SBPZ46",tipo:"SERVICE",estado:"",sol:"9",valor:180000,valorRuta:90000,hermanas});
+  const guardado={...rutasDatos};
+  rutasDatos.registro={rutas:[{fecha:"2026-09-01",patente:"SBPZ-46",pat:"SBPZ46",id:"cccccccc-0000-0000-0000-000000000001",total:85000,localidad:"",terminado:null,puntos:null,ns:null,cobro:null}],ajustes:0};
+  rutasDatos.geosort=null;
+  rutasDatos.proformas=[{proforma:"1",factura:"",desde:"2026-08-31",hasta:"2026-09-01",viajes:[
+    V("bbbbbbbb-0000-0000-0000-000000000002","2026-09-01","bbbbbbbb-0000-0000-0000-000000000001"),
+    V("bbbbbbbb-0000-0000-0000-000000000001","2026-08-31","bbbbbbbb-0000-0000-0000-000000000002")]}];
+  document.getElementById("cobDesde").value="2026-08-31"; document.getElementById("cobHasta").value="2026-09-01";
+  cruzarRutas();
+  const f=cruceRutas.filas[0], r={resumen,deliv,estado:f.estado,detalle:f.detalle,sinReg:cruceRutas.sinRegistro.length};
+  Object.assign(rutasDatos,guardado); ajustarCobertura(); cruzarRutas();
+  return r; })()`);
 const errText = await page.textContent("#errorText");
 await browser.close();
 
@@ -177,6 +193,10 @@ check("Resaltadas con match en geosort", geoVista.resaltadas, ["14600001"]);
 check("Ventana geosort sin registro", geoVista.soloGeo, ["14600050"]);
 check("Día cuenta solo registro", [geoVista.dia09.rutas, geoVista.dia09.soloGeo], [4, 1]);
 check("Icono de filtro activo", iconoActivo, ["patente"]);
+
+check("Rutas hermanas desde Resumen Sol Pago", [hermanas.resumen, hermanas.deliv], [["6fc3ca3e-16b7-484d-8938-5366de2e1107", "a99bebb9-f1bd-411e-8c14-818db80147e2"], ["14640177"]]);
+check("Hermana de otro día no paga la ruta", [hermanas.estado, hermanas.sinReg], ["Pendiente", 2]);
+check("Detalle explica la hermana", /va en la Sol. Pago 9 con bbbbbbbb-0000-0000-0000-000000000001 del 31-08-2026/.test(hermanas.detalle), true);
 
 console.log(fails ? `\n${fails} prueba(s) fallaron` : "\nTodas las pruebas pasaron");
 process.exit(fails ? 1 : 0);

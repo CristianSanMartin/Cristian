@@ -35,6 +35,7 @@ Si el script no está ligado a una planilla, usa la propiedad del script `SPREAD
 ## Reglas del cruce de rutas
 Cruza el registro de operaciones (FECHA, CUENTA, ID RUTA) con las proformas guardadas y, opcionalmente, con el geosort de Falabella.
 - Llave: ID RUTA = ID Viaje de la proforma (o Id Viaje de Viajes de Transferencia). Si no calza, se busca por patente + fecha ("Pagada con otro ID").
+- Rutas hermanas: la columna Viajes de "Resumen Sol Pago" dice qué viajes comparten una Sol. Pago. Un viaje cuya hermana es de otro día no se usa como "Pagada con otro ID" (suele ser la 2da vuelta de la noche anterior).
 - TL sin pago con 2 o más TL de la misma patente ese día: "TL 2da vuelta (esperar objeción)".
 - Solo se marca "Pendiente" dentro del periodo que pagan las proformas cargadas (se sugiere solo y se puede ajustar en el panel lateral).
 - Filas del registro con ID "-" (bonos y descuentos) no se consideran. Del geosort se descartan las rutas planificadas que no salieron.
