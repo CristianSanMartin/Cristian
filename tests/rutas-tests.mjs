@@ -16,8 +16,8 @@ const TL1 = "aaaaaaaa-0000-0000-0000-000000000001", TL2 = "aaaaaaaa-0000-0000-00
       TL3 = "aaaaaaaa-0000-0000-0000-000000000003";
 
 // ---------- Registro de operaciones ----------
-const reg = [["FECHA", "CUENTA", "PATENTE", "ORIGEN", "ID RUTA", "TOTAL RUTA", "LOCALIDAD"],
-  [d("2026-09-08"), "FALABELLA", "AAAA-11", "CT RANCAGUA (WMOS)", 14600001, 120000, "RANCAGUA"],   // pagada por ID
+const reg = [["FECHA", "CUENTA", "PATENTE", "ORIGEN", "ID RUTA", "TOTAL RUTA", "LOCALIDAD", "TERMINADO", "TOTAL", "NS", "INGRESO"],
+  [d("2026-09-08"), "FALABELLA", "AAAA-11", "CT RANCAGUA (WMOS)", 14600001, 100000, "RANCAGUA", 9, 10, 0.9, 125000], // pagada por ID
   [d("2026-09-08"), "FALABELLA", "BBBB-22", "CT RANCAGUA (WMOS)", 14600002, 120000, "MACHALI"],    // pendiente
   [d("2026-09-08"), "FALABELLA", "CCCC-33", "CT VALPARAISO (WMOS)", 14600003, 60000, "VIÑA DEL MAR"], // pagada con otro ID
   [d("2026-09-09"), "FALABELLA", "DDDD-44/Garate", "TREN LOGISTICO", TL1, 85000, "RM"],          // TL 2da vuelta
@@ -74,7 +74,7 @@ const errors = [];
 page.on("pageerror", e => errors.push(e.message));
 await page.route("**/xlsx.full.min.js", r => r.fulfill({ path: XLSX_JS, contentType: "application/javascript" }));
 await page.goto("file://" + HTML);
-await page.click("text=Rutas pendientes");
+await page.click("text=Control de rutas");
 const vistaProformaOculta = await page.isHidden("#vistaProforma");
 await page.setInputFiles("#inRegistro", path.join(tmp, "registro.xlsx"));
 await page.setInputFiles("#inGeosort", path.join(tmp, "geosort.csv"));
@@ -94,6 +94,57 @@ await page.click(".estado-item >> nth=0");
 const filasPendiente = await page.$$eval("#rutasBody tr", trs => trs.length);
 const [dl] = await Promise.all([page.waitForEvent("download"), page.click("text=Descargar cruce Excel")]);
 const out = path.join(tmp, "cruce.xlsx"); await dl.saveAs(out);
+// Almacén: cada carga queda en su hoja y volver a cargar el mismo archivo no duplica filas
+const hojas1 = await page.evaluate(`Object.fromEntries(Object.entries(almacenLocal.hojas).map(([k,v])=>[k,v.length-1]))`);
+await page.setInputFiles("#inProformas", path.join(tmp, "p1.xlsx"));
+await page.setInputFiles("#inRegistro", path.join(tmp, "registro.xlsx"));
+await page.waitForTimeout(500);
+await page.waitForFunction("rutasDatos.proformas.length===2 && cruceRutas");
+const hojas2 = await page.evaluate(`Object.fromEntries(Object.entries(almacenLocal.hojas).map(([k,v])=>[k,v.length-1]))`);
+const control = await page.evaluate(`(()=>{ const f=cruceRutas.filas.find(f=>f.id==="14600001");
+  const h=almacenLocal.hojas["CONTROL RUTAS"], r=h.find(r=>r[3]===14600001);
+  return {fila:[f.terminado,f.puntos,f.ns,f.total,f.cobro,f.validador,f.ingreso,f.dif,f.pago.proforma,f.pago.factura],
+    hoja:Object.fromEntries(h[0].map((k,i)=>[k,r[i]])),
+    dia:resumenDias().find(d=>d.fecha==="2026-09-08"),
+    shipmentHead:almacenLocal.hojas.SHIPMENT[0].slice(0,4), serviceX:almacenLocal.hojas.SERVICE[0].includes("x") }; })()`);
+await page.click(".estado-item.sel");
+await page.click("#diasBody tr >> text=08-09-2026");
+const filasDia = await page.$$eval("#rutasBody tr", trs => trs.length);
+// Filtros por columna y orden alfabético
+await page.click("#diasBody tr.sel");  // quitar filtro de día
+const col = k => `.btn-filtro[data-k="${k}"]`;
+await page.click(col("patente")); await page.click(".menu-filtro >> text=Ordenar de A a Z");
+const patAsc = await page.$$eval("#rutasBody tr td:nth-child(2)", tds => tds.map(t => t.textContent));
+await page.click(col("patente")); await page.click(".menu-filtro >> text=Ordenar de Z a A");
+const patDesc = await page.$$eval("#rutasBody tr td:nth-child(2)", tds => tds.map(t => t.textContent));
+// Filtro tipo Excel: buscar "pend" en Estado y aceptar
+await page.click(col("estado")); await page.fill(".menu-filtro input[type=search]", "pend"); await page.click(".menu-filtro .ok");
+const filtroEstado = await page.$$eval("#rutasBody tr td:nth-child(2)", tds => tds.map(t => t.textContent));
+const valoresTipo = await (async () => { await page.click(col("tipo")); const v = await page.$$eval(".menu-filtro .valores label", ls => ls.map(l => l.textContent.trim())); await page.click(".menu-filtro .cancel"); return v; })();
+// Desmarcar un valor
+await page.click(col("estado")); await page.click(".menu-filtro [data-limpiar]");
+const geoVista = await page.evaluate(`({resaltadas:[...document.querySelectorAll("#rutasBody tr.match-geo td:nth-child(3)")].map(t=>t.textContent),
+  soloGeo:[...document.querySelectorAll("#soloGeoBody tr td:nth-child(3)")].map(t=>t.textContent),
+  dia09:resumenDias().find(d=>d.fecha==="2026-09-09")})`);
+await page.click(col("patente")); await page.uncheck(".menu-filtro label:has-text('AAAA-11') input"); await page.click(".menu-filtro .ok");
+const trasDesmarcar = await page.$$eval("#rutasBody tr td:nth-child(2)", tds => tds.map(t => t.textContent));
+const iconoActivo = await page.$$eval(".btn-filtro.activo", bs => bs.map(b => b.dataset.k));
+// Rutas hermanas (Resumen Sol Pago): un viaje que comparte Sol. Pago con uno de otro día no paga la ruta de este día
+const hermanas = await page.evaluate(`(()=>{
+  const resumen=viajesDeResumen("SBPZ46 (6FC3CA3E-16b7-484d-8938-5366de2e1107,a99bebb9-f1bd-411e-8c14-818db80147e2)");
+  const deliv=viajesDeResumen("14640177-100000037095574,14640177-100000037095578");
+  const V=(id,fecha,hermanas)=>({id,proforma:"1",factura:"",fecha,origen:"TL - Hub XD",patente:"SBPZ46",pat:"SBPZ46",tipo:"SERVICE",estado:"",sol:"9",valor:180000,valorRuta:90000,hermanas});
+  const guardado={...rutasDatos};
+  rutasDatos.registro={rutas:[{fecha:"2026-09-01",patente:"SBPZ-46",pat:"SBPZ46",id:"cccccccc-0000-0000-0000-000000000001",total:85000,localidad:"",terminado:null,puntos:null,ns:null,cobro:null}],ajustes:0};
+  rutasDatos.geosort=null;
+  rutasDatos.proformas=[{proforma:"1",factura:"",desde:"2026-08-31",hasta:"2026-09-01",viajes:[
+    V("bbbbbbbb-0000-0000-0000-000000000002","2026-09-01","bbbbbbbb-0000-0000-0000-000000000001"),
+    V("bbbbbbbb-0000-0000-0000-000000000001","2026-08-31","bbbbbbbb-0000-0000-0000-000000000002")]}];
+  document.getElementById("cobDesde").value="2026-08-31"; document.getElementById("cobHasta").value="2026-09-01";
+  cruzarRutas();
+  const f=cruceRutas.filas[0], r={resumen,deliv,estado:f.estado,detalle:f.detalle,sinReg:cruceRutas.sinRegistro.length};
+  Object.assign(rutasDatos,guardado); ajustarCobertura(); cruzarRutas();
+  return r; })()`);
 const errText = await page.textContent("#errorText");
 await browser.close();
 
@@ -120,11 +171,32 @@ check("Solo en geosort", res.est["14600050"], "Pendiente");
 check("Ajustes y planificadas fuera", [res.ajustes, res.plan, res.n], [1, 1, 10]);
 check("Pagado sin registro", res.sinReg, ["14400000"]);
 check("Puntos del geosort", res.geoPuntos, 2);
-check("Filtro por estado desde el panel", filasPendiente, 2);
+check("Filtro por estado desde el panel (solo registro)", filasPendiente, 1);
 const wb = XLSX.readFile(out);
 check("Hojas del Excel", wb.SheetNames, ["Resumen", "Rutas", "Pagado sin registro"]);
 const resumen = XLSX.utils.sheet_to_json(wb.Sheets["Resumen"], { header: 1 });
 check("Resumen pendientes", resumen[1], ["Pendiente", 2, 120000]);
+
+check("Hojas guardadas", hojas1, { REGISTRO: 11, GEOSORT: 3, SERVICE: 21, TL: 1, DELIVERY: 2, SHIPMENT: 2, "VIAJES PAGADOS": 23, "CONTROL RUTAS": 10 });
+check("Recargar no duplica", hojas2, hojas1);
+check("Columnas de control", control.fila, [9, 10, 0.9, 100000, 125000, 25000, 120000, -5000, "37956", "361"]);
+check("Hoja CONTROL RUTAS", [control.hoja.FECHA, control.hoja.INGRESO, control.hoja["DIF. COBRO"], control.hoja.ESTADO], ["2026-09-08", 120000, -5000, "Pagada"]);
+check("Resumen del día", control.dia, { fecha: "2026-09-08", rutas: 3, enGeo: 1, pagadas: 1, revisar: 1, pendientes: 1, total: 280000, ingreso: 123000, dif: -5000, soloGeo: 0 });
+check("Proforma repartida con x/y", [control.shipmentHead, control.serviceX], [["Id Proforma", "Factura", "Id Sol. Pago", "x"], true]);
+check("Filtro por día", filasDia, 3);
+check("Orden por patente A-Z", patAsc, [...patAsc].sort((a, b) => a.localeCompare(b, "es")));
+check("Orden por patente Z-A", patDesc, [...patAsc].reverse());
+check("Filtro por columna Estado", filtroEstado, ["BBBB-22"]);
+check("Valores del filtro según otros filtros", valoresTipo, ["(Seleccionar todo)", "Ruta"]);
+check("Desmarcar un valor", [trasDesmarcar.includes("AAAA-11"), trasDesmarcar.length], [false, 8]);
+check("Resaltadas con match en geosort", geoVista.resaltadas, ["14600001"]);
+check("Ventana geosort sin registro", geoVista.soloGeo, ["14600050"]);
+check("Día cuenta solo registro", [geoVista.dia09.rutas, geoVista.dia09.soloGeo], [4, 1]);
+check("Icono de filtro activo", iconoActivo, ["patente"]);
+
+check("Rutas hermanas desde Resumen Sol Pago", [hermanas.resumen, hermanas.deliv], [["6fc3ca3e-16b7-484d-8938-5366de2e1107", "a99bebb9-f1bd-411e-8c14-818db80147e2"], ["14640177"]]);
+check("Hermana de otro día no paga la ruta", [hermanas.estado, hermanas.sinReg], ["Pendiente", 2]);
+check("Detalle explica la hermana", /va en la Sol. Pago 9 con bbbbbbbb-0000-0000-0000-000000000001 del 31-08-2026/.test(hermanas.detalle), true);
 
 console.log(fails ? `\n${fails} prueba(s) fallaron` : "\nTodas las pruebas pasaron");
 process.exit(fails ? 1 : 0);

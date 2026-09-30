@@ -2,7 +2,7 @@
   "name": "revision-proformas-falabella",
   "private": true,
   "scripts": {
-    "test": "node tests/run-tests.mjs && node tests/rutas-tests.mjs"
+    "test": "node tests/run-tests.mjs && node tests/rutas-tests.mjs && node tests/sheets-tests.mjs"
   },
   "devDependencies": {
     "playwright": "1.56.1",
