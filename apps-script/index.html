@@ -73,6 +73,10 @@
     #rutasBody td.n, #diasBody td.n { text-align:right; font-variant-numeric:tabular-nums; }
     #diasBody tr { cursor:pointer; }
     #diasBody tr.sel { background:var(--accent-soft,#eff6ff); }
+    #rutasHead th { vertical-align:top; }
+    .orden { border:0; background:none; color:inherit; font:inherit; font-weight:bold; cursor:pointer; padding:0; text-align:left; white-space:nowrap; }
+    .orden:focus-visible { outline:2px solid var(--accent-line,#bfdbfe); }
+    .filtro-col { display:block; width:100%; min-width:64px; margin-top:6px; border:1px solid var(--line,#e5e7eb); background:var(--surface,#fff); color:var(--fg,#1f2937); border-radius:5px; padding:4px 5px; font-size:11px; font-weight:normal; }
     .dif-neg { color:var(--err,#b91c1c); font-weight:bold; } .dif-pos { color:var(--warn,#b45309); font-weight:bold; }
     .nota { font-size:12px; color:var(--muted,#6b7280); line-height:1.45; margin:6px 0 0; }
     .reglas summary { cursor:pointer; font-size:13px; font-weight:bold; }
@@ -268,11 +272,7 @@
           </div>
           <div class="table-wrap">
             <table>
-              <thead><tr>
-                <th>Fecha</th><th>Patente</th><th>ID Ruta</th><th>Tipo</th><th>Terminado</th><th>Total</th><th>NS</th>
-                <th>Total ruta</th><th>Cobro</th><th>Validador</th><th>Ingreso</th><th>Dif. cobro</th><th>Proforma</th><th>Factura</th>
-                <th>Estado</th><th>Detalle</th>
-              </tr></thead>
+              <thead id="rutasHead"></thead>
               <tbody id="rutasBody"></tbody>
             </table>
           </div>
@@ -1183,27 +1183,73 @@ function renderDias(){
 }
 function elegirDia(f){ const s=document.getElementById("rDia"); s.value=s.value===f?"":f; renderDias(); renderRutas(); }
 
+// Columnas del registro de rutas: v = valor para ordenar, t = texto que se muestra y se filtra
+const COLS_RUTAS=[
+  {k:"fecha",t:"Fecha",v:f=>f.fecha,txt:f=>fechaCL(f.fecha)},
+  {k:"patente",t:"Patente",v:f=>f.patente,txt:f=>f.patente},
+  {k:"id",t:"ID Ruta",v:f=>f.id,txt:f=>f.id},
+  {k:"tipo",t:"Tipo",v:f=>f.tipo,txt:f=>f.tipo},
+  {k:"terminado",t:"Terminado",n:1,v:f=>f.terminado,txt:f=>f.terminado??""},
+  {k:"puntos",t:"Total",n:1,v:f=>f.puntos,txt:f=>f.puntos??""},
+  {k:"ns",t:"NS",n:1,v:f=>f.ns,txt:f=>pct(f.ns)},
+  {k:"total",t:"Total ruta",n:1,v:f=>f.fuente==="Registro"?f.total:null,txt:f=>f.fuente==="Registro"?money(f.total):""},
+  {k:"cobro",t:"Cobro",n:1,v:f=>f.cobro,txt:f=>mon(f.cobro)},
+  {k:"validador",t:"Validador",n:1,v:f=>f.validador,txt:f=>mon(f.validador)},
+  {k:"ingreso",t:"Ingreso",n:1,v:f=>f.pago?f.ingreso:null,txt:f=>f.pago?money(f.ingreso):""},
+  {k:"dif",t:"Dif. cobro",n:1,v:f=>f.dif,txt:f=>mon(f.dif)},
+  {k:"proforma",t:"Proforma",v:f=>f.pago?.proforma||"",txt:f=>f.pago?.proforma||""},
+  {k:"factura",t:"Factura",v:f=>f.pago?.factura||"",txt:f=>f.pago?.factura||""},
+  {k:"estado",t:"Estado",v:f=>f.estado,txt:f=>f.estado},
+  {k:"detalle",t:"Detalle",v:f=>detalleRuta(f),txt:f=>detalleRuta(f)}
+];
+const ordenRutas={k:"",dir:1}, filtrosRutas={};
+function detalleRuta(f){ return [f.fuente==="Solo geosort"?"Solo en geosort":"",f.detalle].filter(Boolean).join(". "); }
+function renderCabeceraRutas(){
+  const flecha=c=>ordenRutas.k===c.k?(ordenRutas.dir>0?" ▲":" ▼"):"";
+  document.getElementById("rutasHead").innerHTML="<tr>"+COLS_RUTAS.map(c=>`<th aria-sort="${ordenRutas.k===c.k?(ordenRutas.dir>0?"ascending":"descending"):"none"}">
+    <button class="orden" onclick="ordenarRutas('${c.k}')" title="Ordenar por ${esc(c.t)}">${esc(c.t)}${flecha(c)}</button>
+    <input class="filtro-col" type="search" data-k="${c.k}" value="${esc(filtrosRutas[c.k]||"")}" placeholder="Filtrar" aria-label="Filtrar ${esc(c.t)}" oninput="filtrarColumna(this)"></th>`).join("")+"</tr>";
+}
+function ordenarRutas(k){
+  if(ordenRutas.k===k) ordenRutas.dir=ordenRutas.dir>0?-1:(ordenRutas.k="",1); else { ordenRutas.k=k; ordenRutas.dir=1; }
+  renderCabeceraRutas(); renderRutas();
+}
+function filtrarColumna(el){ filtrosRutas[el.dataset.k]=el.value; renderRutas(); }
+// Vacíos al final; números por valor; texto en orden alfabético (es, con números naturales)
+function compararRuta(c,a,b){
+  const x=c.v(a), y=c.v(b), vx=x===null||x===undefined||x==="", vy=y===null||y===undefined||y==="";
+  if(vx||vy) return vx&&vy?0:vx?1:-1;
+  const r=c.n?x-y:String(x).localeCompare(String(y),"es",{numeric:true,sensitivity:"base"});
+  return r*ordenRutas.dir;
+}
+
 function renderRutas(){
   const body=document.getElementById("rutasBody"), area=document.getElementById("sinRegistroArea");
+  if(!document.getElementById("rutasHead").children.length) renderCabeceraRutas();
   body.innerHTML="";
   if(!cruceRutas){ area.classList.add("hidden"); return; }
   const dia=document.getElementById("rDia").value, est=document.getElementById("rEstado").value, tipo=document.getElementById("rTipo").value,
         fuente=document.getElementById("rFuente").value, q=nt(document.getElementById("rBuscar").value).replace(/[^A-Z0-9-]/g,"");
+  const fc=COLS_RUTAS.filter(c=>nt(filtrosRutas[c.k])).map(c=>[c,nt(filtrosRutas[c.k])]);
   const b=new Map(ESTADOS_RUTA.map(e=>[e.k,e.b]));
+  let filas=cruceRutas.filas.filter(f=>{
+    if(dia&&f.fecha!==dia) return false;
+    if(est&&f.estado!==est) return false;
+    if(tipo&&f.tipo!==tipo) return false;
+    if(fuente&&f.fuente!==fuente) return false;
+    if(q&&!f.pat.includes(q.replace(/-/g,""))&&!nt(f.id).includes(q)) return false;
+    return fc.every(([c,t])=>nt(c.txt(f)).includes(t));
+  });
+  if(ordenRutas.k){ const c=COLS_RUTAS.find(x=>x.k===ordenRutas.k); filas=[...filas].sort((a,b)=>compararRuta(c,a,b)); }
   const html=[];
-  for(const f of cruceRutas.filas){
-    if(dia&&f.fecha!==dia) continue;
-    if(est&&f.estado!==est) continue;
-    if(tipo&&f.tipo!==tipo) continue;
-    if(fuente&&f.fuente!==fuente) continue;
-    if(q&&!f.pat.includes(q.replace(/-/g,""))&&!nt(f.id).includes(q)) continue;
+  for(const f of filas){
     const p=f.pago;
     const idTxt=f.id.length===36?`<span title="${esc(f.id)}">${esc(f.id.slice(0,8))}…</span>`:esc(f.id);
     html.push(`<tr><td>${esc(fechaCL(f.fecha))}</td><td>${esc(f.patente)}</td><td>${idTxt}</td><td>${esc(f.tipo)}</td>
       <td class="n">${f.terminado??""}</td><td class="n">${f.puntos??""}</td><td class="n">${pct(f.ns)}</td>
       <td class="n">${f.fuente==="Registro"?money(f.total):""}</td><td class="n">${mon(f.cobro)}</td>${difTd(f.validador)}
       <td class="n">${p?money(f.ingreso):""}</td>${difTd(f.dif)}<td>${esc(p?.proforma||"")}</td><td>${esc(p?.factura||"")}</td>
-      <td><span class="badge ${b.get(f.estado)||""}">${esc(f.estado)}</span></td><td>${esc([f.fuente==="Solo geosort"?"Solo en geosort":"",f.detalle].filter(Boolean).join(". "))}</td></tr>`);
+      <td><span class="badge ${b.get(f.estado)||""}">${esc(f.estado)}</span></td><td>${esc(detalleRuta(f))}</td></tr>`);
   }
   body.innerHTML=html.join("")||'<tr><td colspan="16">Sin rutas para este filtro.</td></tr>';
   const sr=cruceRutas.sinRegistro, geo=new Set((rutasDatos.geosort||[]).map(g=>g.id));

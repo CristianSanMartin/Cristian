@@ -110,6 +110,14 @@ const control = await page.evaluate(`(()=>{ const f=cruceRutas.filas.find(f=>f.i
 await page.click(".estado-item.sel");
 await page.click("#diasBody tr >> text=08-09-2026");
 const filasDia = await page.$$eval("#rutasBody tr", trs => trs.length);
+// Filtros por columna y orden alfabético
+await page.click("#diasBody tr.sel");  // quitar filtro de día
+await page.click(".orden >> text=Patente");
+const patAsc = await page.$$eval("#rutasBody tr td:nth-child(2)", tds => tds.map(t => t.textContent));
+await page.click(".orden >> text=Patente");
+const patDesc = await page.$$eval("#rutasBody tr td:nth-child(2)", tds => tds.map(t => t.textContent));
+await page.fill('.filtro-col[data-k="estado"]', "pendi");
+const filtroEstado = await page.$$eval("#rutasBody tr td:nth-child(2)", tds => tds.map(t => t.textContent));
 const errText = await page.textContent("#errorText");
 await browser.close();
 
@@ -149,6 +157,9 @@ check("Hoja CONTROL RUTAS", [control.hoja.FECHA, control.hoja.INGRESO, control.h
 check("Resumen del día", control.dia, { fecha: "2026-09-08", rutas: 3, pagadas: 1, revisar: 1, pendientes: 1, total: 280000, ingreso: 123000, dif: -5000 });
 check("Proforma repartida con x/y", [control.shipmentHead, control.serviceX], [["Id Proforma", "Factura", "Id Sol. Pago", "x"], true]);
 check("Filtro por día", filasDia, 3);
+check("Orden por patente A-Z", patAsc, [...patAsc].sort((a, b) => a.localeCompare(b, "es")));
+check("Orden por patente Z-A", patDesc, [...patAsc].reverse());
+check("Filtro por columna Estado", filtroEstado, ["LLLL-10", "BBBB-22"]);
 
 console.log(fails ? `\n${fails} prueba(s) fallaron` : "\nTodas las pruebas pasaron");
 process.exit(fails ? 1 : 0);
