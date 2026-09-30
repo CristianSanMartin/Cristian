@@ -74,9 +74,22 @@
     #diasBody tr { cursor:pointer; }
     #diasBody tr.sel { background:var(--accent-soft,#eff6ff); }
     #rutasHead th { vertical-align:top; }
-    .orden { border:0; background:none; color:inherit; font:inherit; font-weight:bold; cursor:pointer; padding:0; text-align:left; white-space:nowrap; }
-    .orden:focus-visible { outline:2px solid var(--accent-line,#bfdbfe); }
-    .filtro-col { display:block; width:100%; min-width:64px; margin-top:6px; border:1px solid var(--line,#e5e7eb); background:var(--surface,#fff); color:var(--fg,#1f2937); border-radius:5px; padding:4px 5px; font-size:11px; font-weight:normal; }
+    .th-col { display:flex; align-items:center; gap:4px; white-space:nowrap; }
+    .btn-filtro { border:1px solid rgba(255,255,255,.35); background:rgba(255,255,255,.08); color:inherit; border-radius:4px; width:20px; height:20px; padding:0; font-size:10px; line-height:1; cursor:pointer; flex:none; }
+    .btn-filtro.activo { background:var(--accent,#2563eb); border-color:var(--accent,#2563eb); color:#fff; }
+    .btn-filtro:focus-visible { outline:2px solid var(--accent-line,#bfdbfe); outline-offset:1px; }
+    .menu-filtro { position:absolute; z-index:50; width:250px; background:var(--surface,#fff); color:var(--fg,#1f2937); border:1px solid var(--line,#e5e7eb); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,.18); padding:8px; font-size:13px; }
+    .menu-filtro .opc { display:block; width:100%; text-align:left; border:0; background:none; color:inherit; padding:7px 8px; border-radius:6px; cursor:pointer; font-size:13px; }
+    .menu-filtro .opc:hover, .menu-filtro .opc.sel { background:var(--accent-soft,#eff6ff); }
+    .menu-filtro hr { border:0; border-top:1px solid var(--line,#e5e7eb); margin:6px 0; }
+    .menu-filtro input[type=search] { width:100%; border:1px solid var(--line,#e5e7eb); background:var(--surface,#fff); color:var(--fg,#1f2937); border-radius:6px; padding:6px 8px; font-size:12px; }
+    .menu-filtro .valores { max-height:220px; overflow:auto; margin-top:6px; border:1px solid var(--line,#e5e7eb); border-radius:6px; padding:4px 0; }
+    .menu-filtro label { display:flex; gap:7px; align-items:center; padding:4px 8px; cursor:pointer; font-size:12px; }
+    .menu-filtro label:hover { background:var(--hover,#f9fafb); }
+    .menu-filtro .pie { display:flex; justify-content:flex-end; gap:6px; margin-top:8px; }
+    .menu-filtro .pie button { border:0; border-radius:6px; padding:7px 12px; font-size:12px; cursor:pointer; }
+    .menu-filtro .ok { background:var(--accent,#2563eb); color:#fff; }
+    .menu-filtro .cancel { background:var(--chip,#f1f5f9); color:var(--fg,#1f2937); }
     .dif-neg { color:var(--err,#b91c1c); font-weight:bold; } .dif-pos { color:var(--warn,#b45309); font-weight:bold; }
     .nota { font-size:12px; color:var(--muted,#6b7280); line-height:1.45; margin:6px 0 0; }
     .reglas summary { cursor:pointer; font-size:13px; font-weight:bold; }
@@ -1202,25 +1215,94 @@ const COLS_RUTAS=[
   {k:"estado",t:"Estado",v:f=>f.estado,txt:f=>f.estado},
   {k:"detalle",t:"Detalle",v:f=>detalleRuta(f),txt:f=>detalleRuta(f)}
 ];
-const ordenRutas={k:"",dir:1}, filtrosRutas={};
+const ordenRutas={k:"",dir:1}, filtrosRutas={}; // filtrosRutas[k] = Set de valores visibles (sin clave = todos)
 function detalleRuta(f){ return [f.fuente==="Solo geosort"?"Solo en geosort":"",f.detalle].filter(Boolean).join(". "); }
 function renderCabeceraRutas(){
   const flecha=c=>ordenRutas.k===c.k?(ordenRutas.dir>0?" ▲":" ▼"):"";
   document.getElementById("rutasHead").innerHTML="<tr>"+COLS_RUTAS.map(c=>`<th aria-sort="${ordenRutas.k===c.k?(ordenRutas.dir>0?"ascending":"descending"):"none"}">
-    <button class="orden" onclick="ordenarRutas('${c.k}')" title="Ordenar por ${esc(c.t)}">${esc(c.t)}${flecha(c)}</button>
-    <input class="filtro-col" type="search" data-k="${c.k}" value="${esc(filtrosRutas[c.k]||"")}" placeholder="Filtrar" aria-label="Filtrar ${esc(c.t)}" oninput="filtrarColumna(this)"></th>`).join("")+"</tr>";
+    <span class="th-col">${esc(c.t)}${flecha(c)}<button class="btn-filtro${filtrosRutas[c.k]?" activo":""}" data-k="${c.k}" onclick="abrirFiltro(event,'${c.k}')"
+      aria-label="Filtrar y ordenar ${esc(c.t)}" aria-haspopup="true">${filtrosRutas[c.k]?"⧩":"▾"}</button></span></th>`).join("")+"</tr>";
 }
-function ordenarRutas(k){
-  if(ordenRutas.k===k) ordenRutas.dir=ordenRutas.dir>0?-1:(ordenRutas.k="",1); else { ordenRutas.k=k; ordenRutas.dir=1; }
-  renderCabeceraRutas(); renderRutas();
-}
-function filtrarColumna(el){ filtrosRutas[el.dataset.k]=el.value; renderRutas(); }
 // Vacíos al final; números por valor; texto en orden alfabético (es, con números naturales)
-function compararRuta(c,a,b){
+function compararRuta(c,a,b,dir=ordenRutas.dir){
   const x=c.v(a), y=c.v(b), vx=x===null||x===undefined||x==="", vy=y===null||y===undefined||y==="";
   if(vx||vy) return vx&&vy?0:vx?1:-1;
   const r=c.n?x-y:String(x).localeCompare(String(y),"es",{numeric:true,sensitivity:"base"});
-  return r*ordenRutas.dir;
+  return r*dir;
+}
+const VACIO="(Vacías)";
+function textoCol(c,f){ const t=String(c.txt(f)??"").trim(); return t===""?VACIO:t; }
+// Filas que pasan los selectores de arriba y los filtros de columna (menos la columna "excepto")
+function filasFiltradas(excepto){
+  const dia=document.getElementById("rDia").value, est=document.getElementById("rEstado").value, tipo=document.getElementById("rTipo").value,
+        fuente=document.getElementById("rFuente").value, q=nt(document.getElementById("rBuscar").value).replace(/[^A-Z0-9-]/g,"");
+  const fc=COLS_RUTAS.filter(c=>c.k!==excepto&&filtrosRutas[c.k]);
+  return cruceRutas.filas.filter(f=>{
+    if(dia&&f.fecha!==dia) return false;
+    if(est&&f.estado!==est) return false;
+    if(tipo&&f.tipo!==tipo) return false;
+    if(fuente&&f.fuente!==fuente) return false;
+    if(q&&!f.pat.includes(q.replace(/-/g,""))&&!nt(f.id).includes(q)) return false;
+    return fc.every(c=>filtrosRutas[c.k].has(textoCol(c,f)));
+  });
+}
+
+// Menú tipo Excel: ordenar A-Z / Z-A, buscar y marcar valores
+let menuFiltro=null;
+function cerrarFiltro(){ if(menuFiltro){ menuFiltro.remove(); menuFiltro=null; document.removeEventListener("mousedown",fueraFiltro,true); document.removeEventListener("keydown",escFiltro,true); } }
+function fueraFiltro(e){ if(menuFiltro&&!menuFiltro.contains(e.target)&&!e.target.closest(".btn-filtro")) cerrarFiltro(); }
+function escFiltro(e){ if(e.key==="Escape") cerrarFiltro(); }
+function abrirFiltro(ev,k){
+  ev.stopPropagation();
+  const abierto=menuFiltro&&menuFiltro.dataset.k===k; cerrarFiltro(); if(abierto||!cruceRutas) return;
+  const c=COLS_RUTAS.find(x=>x.k===k);
+  // Valores posibles con los demás filtros aplicados, en el orden de la columna
+  const filas=[...filasFiltradas(k)].sort((a,b)=>compararRuta(c,a,b,1));
+  const valores=[...new Set(filas.map(f=>textoCol(c,f)))];
+  if(valores.includes(VACIO)) valores.push(valores.splice(valores.indexOf(VACIO),1)[0]);
+  const sel=new Set(filtrosRutas[k]||valores);
+  const m=menuFiltro=document.createElement("div"); m.className="menu-filtro"; m.dataset.k=k; m.setAttribute("role","dialog"); m.setAttribute("aria-label","Filtro "+c.t);
+  const az=c.n?["Ordenar de menor a mayor","Ordenar de mayor a menor"]:["Ordenar de A a Z","Ordenar de Z a A"];
+  m.innerHTML=`<button class="opc${ordenRutas.k===k&&ordenRutas.dir>0?" sel":""}" data-o="1">▲ ${az[0]}</button>
+    <button class="opc${ordenRutas.k===k&&ordenRutas.dir<0?" sel":""}" data-o="-1">▼ ${az[1]}</button>
+    ${filtrosRutas[k]?'<button class="opc" data-limpiar="1">✕ Borrar filtro de '+esc(c.t)+'</button>':""}<hr>
+    <input type="search" placeholder="Buscar" aria-label="Buscar valores">
+    <div class="valores"></div>
+    <div class="pie"><button class="cancel">Cancelar</button><button class="ok">Aceptar</button></div>`;
+  const lista=m.querySelector(".valores"), buscar=m.querySelector("input");
+  function pintar(){
+    const t=nt(buscar.value), vis=valores.filter(v=>!t||nt(v).includes(t));
+    const todos=vis.length&&vis.every(v=>sel.has(v));
+    lista.innerHTML=`<label><input type="checkbox" data-todos="1"${todos?" checked":""}> <b>(Seleccionar todo)</b></label>`+
+      vis.map((v,i)=>`<label><input type="checkbox" data-i="${valores.indexOf(v)}"${sel.has(v)?" checked":""}> ${esc(v)}</label>`).join("")+
+      (vis.length?"":'<p class="nota" style="padding:4px 8px">Sin coincidencias.</p>');
+  }
+  lista.addEventListener("change",e=>{
+    const cb=e.target;
+    if(cb.dataset.todos){ const t=nt(buscar.value); valores.filter(v=>!t||nt(v).includes(t)).forEach(v=>cb.checked?sel.add(v):sel.delete(v)); }
+    else { const v=valores[+cb.dataset.i]; cb.checked?sel.add(v):sel.delete(v); }
+    pintar();
+  });
+  buscar.addEventListener("input",pintar);
+  function aplicar(){
+    const t=nt(buscar.value);
+    // Como en Excel: si se buscó algo, Aceptar deja solo lo marcado entre lo encontrado
+    const final=t?valores.filter(v=>nt(v).includes(t)&&sel.has(v)):valores.filter(v=>sel.has(v));
+    if(final.length===valores.length) delete filtrosRutas[k]; else filtrosRutas[k]=new Set(final);
+    cerrarFiltro(); renderCabeceraRutas(); renderRutas();
+  }
+  m.querySelectorAll("[data-o]").forEach(b=>b.onclick=()=>{ ordenRutas.k=k; ordenRutas.dir=+b.dataset.o; cerrarFiltro(); renderCabeceraRutas(); renderRutas(); });
+  const limpiar=m.querySelector("[data-limpiar]"); if(limpiar) limpiar.onclick=()=>{ delete filtrosRutas[k]; cerrarFiltro(); renderCabeceraRutas(); renderRutas(); };
+  m.querySelector(".cancel").onclick=cerrarFiltro;
+  m.querySelector(".ok").onclick=aplicar;
+  buscar.addEventListener("keydown",e=>{ if(e.key==="Enter") aplicar(); });
+  pintar();
+  document.body.appendChild(m);
+  const r=ev.currentTarget.getBoundingClientRect(), w=m.offsetWidth;
+  m.style.top=(window.scrollY+r.bottom+4)+"px";
+  m.style.left=Math.max(8,Math.min(window.scrollX+r.left, window.scrollX+document.documentElement.clientWidth-w-8))+"px";
+  document.addEventListener("mousedown",fueraFiltro,true); document.addEventListener("keydown",escFiltro,true);
+  buscar.focus();
 }
 
 function renderRutas(){
@@ -1228,18 +1310,8 @@ function renderRutas(){
   if(!document.getElementById("rutasHead").children.length) renderCabeceraRutas();
   body.innerHTML="";
   if(!cruceRutas){ area.classList.add("hidden"); return; }
-  const dia=document.getElementById("rDia").value, est=document.getElementById("rEstado").value, tipo=document.getElementById("rTipo").value,
-        fuente=document.getElementById("rFuente").value, q=nt(document.getElementById("rBuscar").value).replace(/[^A-Z0-9-]/g,"");
-  const fc=COLS_RUTAS.filter(c=>nt(filtrosRutas[c.k])).map(c=>[c,nt(filtrosRutas[c.k])]);
   const b=new Map(ESTADOS_RUTA.map(e=>[e.k,e.b]));
-  let filas=cruceRutas.filas.filter(f=>{
-    if(dia&&f.fecha!==dia) return false;
-    if(est&&f.estado!==est) return false;
-    if(tipo&&f.tipo!==tipo) return false;
-    if(fuente&&f.fuente!==fuente) return false;
-    if(q&&!f.pat.includes(q.replace(/-/g,""))&&!nt(f.id).includes(q)) return false;
-    return fc.every(([c,t])=>nt(c.txt(f)).includes(t));
-  });
+  let filas=filasFiltradas();
   if(ordenRutas.k){ const c=COLS_RUTAS.find(x=>x.k===ordenRutas.k); filas=[...filas].sort((a,b)=>compararRuta(c,a,b)); }
   const html=[];
   for(const f of filas){

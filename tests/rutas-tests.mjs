@@ -112,12 +112,19 @@ await page.click("#diasBody tr >> text=08-09-2026");
 const filasDia = await page.$$eval("#rutasBody tr", trs => trs.length);
 // Filtros por columna y orden alfabético
 await page.click("#diasBody tr.sel");  // quitar filtro de día
-await page.click(".orden >> text=Patente");
+const col = k => `.btn-filtro[data-k="${k}"]`;
+await page.click(col("patente")); await page.click(".menu-filtro >> text=Ordenar de A a Z");
 const patAsc = await page.$$eval("#rutasBody tr td:nth-child(2)", tds => tds.map(t => t.textContent));
-await page.click(".orden >> text=Patente");
+await page.click(col("patente")); await page.click(".menu-filtro >> text=Ordenar de Z a A");
 const patDesc = await page.$$eval("#rutasBody tr td:nth-child(2)", tds => tds.map(t => t.textContent));
-await page.fill('.filtro-col[data-k="estado"]', "pendi");
+// Filtro tipo Excel: buscar "pend" en Estado y aceptar
+await page.click(col("estado")); await page.fill(".menu-filtro input[type=search]", "pend"); await page.click(".menu-filtro .ok");
 const filtroEstado = await page.$$eval("#rutasBody tr td:nth-child(2)", tds => tds.map(t => t.textContent));
+const valoresTipo = await (async () => { await page.click(col("tipo")); const v = await page.$$eval(".menu-filtro .valores label", ls => ls.map(l => l.textContent.trim())); await page.click(".menu-filtro .cancel"); return v; })();
+// Desmarcar un valor
+await page.click(col("patente")); await page.uncheck(".menu-filtro label:has-text('LLLL-10') input"); await page.click(".menu-filtro .ok");
+const trasDesmarcar = await page.$$eval("#rutasBody tr td:nth-child(2)", tds => tds.map(t => t.textContent));
+const iconoActivo = await page.$$eval(".btn-filtro.activo", bs => bs.map(b => b.dataset.k));
 const errText = await page.textContent("#errorText");
 await browser.close();
 
@@ -160,6 +167,9 @@ check("Filtro por día", filasDia, 3);
 check("Orden por patente A-Z", patAsc, [...patAsc].sort((a, b) => a.localeCompare(b, "es")));
 check("Orden por patente Z-A", patDesc, [...patAsc].reverse());
 check("Filtro por columna Estado", filtroEstado, ["LLLL-10", "BBBB-22"]);
+check("Valores del filtro según otros filtros", valoresTipo, ["(Seleccionar todo)", "Ruta"]);
+check("Desmarcar un valor", trasDesmarcar, ["BBBB-22"]);
+check("Icono de filtro activo", iconoActivo, ["patente", "estado"]);
 
 console.log(fails ? `\n${fails} prueba(s) fallaron` : "\nTodas las pruebas pasaron");
 process.exit(fails ? 1 : 0);
