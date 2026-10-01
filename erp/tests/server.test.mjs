@@ -813,7 +813,9 @@ test("migración: homologar, importar y queda todo en el ERP (lotes, ventas con 
 
 /** Migra el Excel de stock de ejemplo (ventas con OC original OC285, OC171, OC026, OC300, OC301). */
 function migrarStock(s) {
-  let e = s.ok("migracionCargar", { filas: excelEjemplo() }).result;
+  // + una venta post-release PR171: es otra serie, no la OC171
+  const pr = { fila: 99, proveedor: "Asmodee", factura: "-", producto: "Luminose City  - Mini Tin (ENG)", costo: 7010, venta: 13990, oc: "PR171", cliente: "POST-RELEASE", boleta: "" };
+  let e = s.ok("migracionCargar", { filas: excelEjemplo().concat([pr]) }).result;
   const clave = (tipo, original) => e.mapeos.find(x => x.tipo === tipo && x.original === original).clave;
   e = s.ok("migracionFilas", { filas: [{ id: e.problemas[0].id, descartada: true }] }).result;
   e = s.ok("migracionMapeos", { mapeos: [{ clave: clave("factura", "Asmodee · -"), destino: "LUM-001" }] }).result;
@@ -862,15 +864,15 @@ test("migración de la caja: homologa, fecha las OC, ajusta montos, ventas por m
   assert.equal(m("Ventas con OC").accion, "oc");
   // OC: cruce con lo migrado
   const oc = (n) => e.ocs.find(o => o.oc === n);
-  assert.deepEqual([oc("OC285").diferencia, oc("OC171").monto, oc("OC171").diferencia, oc("OC171").fecha, oc("OC48").ventas.length], [0, 15000, 1010, "2025-07-11", 0]);
-  assert.deepEqual(e.ocSoloErp, ["OC300", "OC301"]);
+  assert.deepEqual([oc("OC285").diferencia, oc("OC171").monto, oc("OC171").diferencia, oc("OC171").fecha, oc("OC048").ventas.length], [0, 15000, 1010, "2025-07-11", 0]);
+  assert.deepEqual(e.ocSoloErp, ["OC300", "OC301", "PR171"], "PR171 no se confunde con OC171");
   assert.match(e.errores.join(), /sin confirmar/);
   assert.match(errorDe(s.call("cajaImportar", {})), /sin confirmar/);
 
   e = s.ok("cajaMapeos", { mapeos: e.mapeos.map(x => ({ clave: x.clave, confirmado: true })) }).result;
   assert.deepEqual(e.errores, []);
   const r = s.ok("cajaImportar", { consolidarTorneos: true }).result;
-  assert.deepEqual([r.ventasFechadas, r.ajustes, r.ventasNuevas, r.movimientos, r.ocSinCaja], [3, 1, 5, 7, 2]);
+  assert.deepEqual([r.ventasFechadas, r.ajustes, r.ventasNuevas, r.movimientos, r.ocSinCaja], [3, 1, 5, 7, 3]);
 
   const d = s.ok("bootstrap").data;
   const porOc = (n) => d.ventas.filter(v => new RegExp("OC original " + n + "\\b").test(v.notas));
@@ -882,7 +884,7 @@ test("migración de la caja: homologa, fecha las OC, ajusta montos, ventas por m
   const t = d.ventas.filter(v => v.lineas.some(l => l.categoria === "Torneo"));
   assert.deepEqual(t.map(v => [v.fecha, v.total]).sort(), [["2025-07-05", 16000], ["2025-07-06", 9000]]);
   assert.equal(t.find(v => v.fecha === "2025-07-05").lineas[0].descripcion, "Torneos del día (2)");
-  const nueva = d.ventas.find(v => /OC original OC48 /.test(v.notas));
+  const nueva = d.ventas.find(v => /OC original OC048 /.test(v.notas));
   assert.deepEqual([nueva.total, nueva.lineas[0].categoria], [20000, "Otro"]);
   const mov = (cat) => d.movimientos.filter(x => x.categoria === cat);
   assert.deepEqual(mov("aporte").map(x => [x.monto, x.subcategoria, x.notas]).sort(), [[32940, "Jaime", "Sleeved - jorney together"], [335000, "Ignacio", ""]]);

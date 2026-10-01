@@ -37,10 +37,10 @@ const MigracionCaja = {
     return '';
   },
 
-  /** "OC001", "OC 12", "OC164 BOOSTER", "PR-5" → "OC1", "OC12", "OC164", "OC5". */
+  /** "OC001", "OC 1", "OC164 BOOSTER", "PR-5" → "OC001", "OC001", "OC164", "PR005". OC y PR (post-release) son series distintas. */
   normalizarOc(v) {
     const m = /^\s*(OC|PR)\s*-?\s*0*(\d+)/i.exec(String(v || ''));
-    return m ? 'OC' + Number(m[2]) : '';
+    return m ? m[1].toUpperCase() + String(Number(m[2])).padStart(3, '0') : '';
   },
 
   /** Clave del grupo de homologación: glosa + observación sin montos ni cantidades. */
@@ -196,10 +196,10 @@ const MigracionCaja = {
       const vs = porOc[k] || [];
       const erp = vs.reduce((t, v) => t + (totalVenta[v.id] || 0), 0);
       return Object.assign(o, { ventas: vs.map((v) => v.id), montoErp: erp, diferencia: vs.length ? o.monto - erp : null });
-    }).sort((a, b) => Number(a.oc.slice(2)) - Number(b.oc.slice(2)));
+    }).sort((a, b) => a.oc.localeCompare(b.oc));
     const enCaja = {};
     listaOc.forEach((o) => { enCaja[o.oc] = true; });
-    const soloErp = Object.keys(porOc).filter((k) => !enCaja[k]).sort((a, b) => Number(a.slice(2)) - Number(b.slice(2)));
+    const soloErp = Object.keys(porOc).filter((k) => !enCaja[k]).sort();
     const accionDe = {};
     vigentes.forEach((m) => { accionDe[m.clave] = m; });
     const suma = (fn) => activas.filter(fn).reduce((t, f) => t + f.entradas - f.salidas, 0);

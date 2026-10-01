@@ -103,7 +103,7 @@
   GS.tablaRegistrar('cajaGrupos', { filas: grupos, columnas: colsGrupos, alCambiar: () => GS.render() });
 
   const colsOc = [
-    { id: 'oc', label: 'OC', valor: (o) => Number(o.oc.slice(2)), texto: (o) => o.oc, celda: (o) => '<span class="cell-strong">' + esc(o.oc) + '</span>' },
+    { id: 'oc', label: 'OC', valor: (o) => o.oc, texto: (o) => o.oc, celda: (o) => '<span class="cell-strong">' + esc(o.oc) + '</span>' },
     { id: 'fecha', label: 'Fecha (caja)', clase: 'nowrap', valor: (o) => o.fecha, texto: (o) => fmt.date(o.fecha), celda: (o) => fmt.date(o.fecha) + (o.filas > 1 ? '<div class="cell-dim">' + o.filas + ' pagos</div>' : '') },
     { id: 'monto', label: 'Caja', right: true, valor: (o) => o.monto, texto: (o) => fmt.money(o.monto), celda: (o) => fmt.money(o.monto) },
     { id: 'erp', label: 'En el ERP', right: true, valor: (o) => o.montoErp, texto: (o) => fmt.money(o.montoErp), celda: (o) => (o.ventas.length ? fmt.money(o.montoErp) : '—') },
