@@ -91,7 +91,7 @@
   function vistaProducto(destino) {
     const i = GS.interpretarNombre(destino);
     const existe = data().productos.find((p) => GS.norm(p.nombreCompleto) === GS.norm(destino));
-    return '<span class="cell-dim">' + esc([i.edicion, i.nombre].filter(Boolean).join(' – ')) + '</span> ' + GS.langPill(i.idioma || 'ENG') + ' <span class="pill">' + esc(i.tipo) + '</span>' +
+    return '<span class="cell-dim">' + esc([i.edicion, i.nombre].filter(Boolean).join(' – ')) + '</span> ' + GS.langPill(i.idioma) + ' <span class="pill">' + esc(i.tipo) + '</span>' +
       (existe ? ' <span class="pill soon">ya existe ' + esc(existe.id) + '</span>' : '');
   }
 

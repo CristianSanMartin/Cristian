@@ -329,6 +329,16 @@ test("nombres siempre en formato título e idioma detectado por ING/ENG/ESP", ()
   assert.deepEqual([b.edicion, b.nombre, b.idioma, b.tipo], ["Destined Rivals", "Elite Trainer Box", "ESP", "Elite Trainer Box"]);
 });
 
+test("si el nombre no indica idioma, el producto queda sin idioma (no se asume ENG)", () => {
+  const s = createServer();
+  const pv = s.ok("guardarPreventa", { proveedorId: asmodee(s).id, producto: "Pokemon TCG Mega Evolution - Booster Box", lanzamiento: "2026-11-01", solicitado: 2, costoNeto: 100000 }).result;
+  const prod = s.ok("bootstrap").data.productos.find(p => p.id === pv.productoId);
+  assert.deepEqual([prod.idioma, prod.nombreCompleto], ["", "Mega Evolution – Booster Box"]);
+  // Con idioma es otro producto distinto
+  const eng = s.ok("guardarPreventa", { proveedorId: asmodee(s).id, producto: "Pokemon TCG Mega Evolution - Booster Box ENG", lanzamiento: "2026-11-01", solicitado: 1, costoNeto: 100000 }).result;
+  assert.notEqual(eng.productoId, pv.productoId);
+});
+
 test("si la preventa tiene errores no se crea el producto escrito", () => {
   const s = createServer();
   const antes = s.ok("bootstrap").data.productos.length;

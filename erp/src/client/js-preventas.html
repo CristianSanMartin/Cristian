@@ -79,9 +79,9 @@
     const directo = prods.find((p) => GS.norm(p.nombreCompleto) === t || GS.norm(p.id) === t);
     if (directo) return { prod: directo };
     const i = GS.interpretarNombre(texto);
-    const clave = (x) => [x.nombre, x.edicion, x.idioma || 'ENG'].map(GS.norm).join('|');
+    const clave = (x) => [x.nombre, x.edicion, x.idioma || ''].map(GS.norm).join('|');
     const prod = prods.find((p) => clave(p) === clave(i));
-    return prod ? { prod: prod } : { nuevo: Object.assign({}, i, { idioma: i.idioma || 'ENG' }), detectado: i.idioma };
+    return prod ? { prod: prod } : { nuevo: i, detectado: i.idioma };
   }
 
   function calcAgregar(form) {
@@ -99,7 +99,7 @@
     else if (r.prod) info.innerHTML = '→ <strong>' + esc([r.prod.edicion, r.prod.nombre].filter(Boolean).join(' – ')) + '</strong> ' + GS.langPill(r.prod.idioma) +
       ' · ' + esc(r.prod.tipo) + ' <span class="pill">' + esc(r.prod.id) + '</span>' + (r.prod.activo ? '' : ' <span class="text-danger">archivado</span>');
     else info.innerHTML = '→ <strong>' + esc([r.nuevo.edicion, r.nuevo.nombre].filter(Boolean).join(' – ')) + '</strong> ' + GS.langPill(r.nuevo.idioma) +
-      ' · ' + esc(r.nuevo.tipo) + (r.detectado ? '' : ' <span class="muted">(idioma no indicado: se usará ENG)</span>') +
+      ' · ' + esc(r.nuevo.tipo) + (r.detectado ? '' : ' <span class="muted">(sin idioma: escribe ENG o ESP si corresponde)</span>') +
       ' <span class="pill soon">producto nuevo: se crea al agregar</span>';
 
     const prod = r && r.prod;

@@ -154,7 +154,7 @@
   /** Formulario de producto. También lo usa Preventas para crear un producto sin salir de la línea. */
   GS.editarProducto = function (prod, onSaved, sugerido) {
     const c = data().catalogos;
-    const p = prod || Object.assign({ nombre: '', edicion: '', idioma: 'ENG', tipo: 'Booster Box', factor: '', pvp: '', precioManual: false, precioVenta: '', stockMinimo: '', imagen: '', codigoProveedor: '', notas: '' }, sugerido || {});
+    const p = prod || Object.assign({ nombre: '', edicion: '', idioma: '', tipo: 'Booster Box', factor: '', pvp: '', precioManual: false, precioVenta: '', stockMinimo: '', imagen: '', codigoProveedor: '', notas: '' }, sugerido || {});
     const ediciones = Array.from(new Set(data().productos.map((x) => x.edicion).filter(Boolean))).sort();
     let imagenNueva = null;
     GS.formModal({
@@ -170,7 +170,7 @@
         '<div class="form-field"><label>Edición / colección</label><input name="edicion" list="dl-ediciones" value="' + esc(p.edicion) + '" placeholder="Ej: 30th Celebration">' +
         '<datalist id="dl-ediciones">' + ediciones.map((x) => '<option value="' + esc(x) + '">').join('') + '</datalist></div>' +
         '<div class="form-field"><label>Nombre *</label><input name="nombre" value="' + esc(p.nombre) + '" placeholder="Ej: Binder Collection"></div>' +
-        '<div class="form-field"><label>Idioma</label><select name="idioma">' + GS.options(c.idiomas, p.idioma) + '</select></div>' +
+        '<div class="form-field"><label>Idioma</label><select name="idioma">' + GS.options([{ value: '', label: 'Sin idioma' }].concat(c.idiomas), p.idioma) + '</select></div>' +
         '<div class="form-field"><label>Tipo</label><select name="tipo">' + GS.options(Object.keys(c.tipos), p.tipo) + '</select></div>' +
         '<div class="form-field"><label>Unidades del proveedor por unidad</label><input name="factor" type="number" min="1" step="1" value="' + esc(p.factor || c.tipos[p.tipo] || 1) + '">' +
         '<span class="hint">Booster Box = 36 (el proveedor factura sobres).</span></div>' +

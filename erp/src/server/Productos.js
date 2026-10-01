@@ -14,7 +14,7 @@ const Productos = {
     const datos = {
       nombre: interpretarNombre_(Util.texto(p.nombre, 'El nombre', { requerido: true, max: 150 }), 'titulo'),
       edicion: interpretarNombre_(Util.texto(p.edicion, 'La edición', { max: 80 }), 'titulo'),
-      idioma: Util.opcion(p.idioma || 'ENG', 'El idioma', IDIOMAS),
+      idioma: p.idioma ? Util.opcion(p.idioma, 'El idioma', IDIOMAS) : '',   // sin idioma si no se indica
       tipo: tipo,
       factor: Util.entero(p.factor === '' || p.factor == null ? TIPOS_PRODUCTO[tipo] : p.factor, 'El factor de conversión', { min: 1 }),
       pvp: Util.entero(p.pvp, 'El PVP'),
@@ -70,7 +70,7 @@ const Productos = {
     const todos = Db.all('Productos');
     const norm = Util.normalizar(raw);
     const i = interpretarNombre_(raw);
-    const datos = { nombre: i.nombre || raw, edicion: i.edicion, idioma: i.idioma || 'ENG', tipo: i.tipo };
+    const datos = { nombre: i.nombre || raw, edicion: i.edicion, idioma: i.idioma, tipo: i.tipo };   // si el nombre no dice el idioma, no se asume
     let prod = todos.find((x) => Util.normalizar(Productos.nombreCompleto(x)) === norm || Util.normalizar(x.id) === norm)
       || todos.find((x) => Productos._clave(x) === Productos._clave(datos));
     const precio = pvp === '' || pvp == null ? null : Util.entero(pvp, 'El precio sugerido');
@@ -116,7 +116,7 @@ const Productos = {
   },
 
   nombreCompleto(prod) {
-    return [prod.edicion, prod.nombre].filter(Boolean).join(' – ') + ' · ' + prod.idioma;
+    return [prod.edicion, prod.nombre].filter(Boolean).join(' – ') + (prod.idioma ? ' · ' + prod.idioma : '');
   },
 
   _clave(prod) {
