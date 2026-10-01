@@ -15,7 +15,7 @@
 
 const APP = {
   nombre: 'GS Prime ERP',
-  version: '2.6.0',
+  version: '2.6.1',
   tz: 'America/Santiago',
   iva: 0.19,
 };
@@ -173,7 +173,7 @@ const TIPOS_PRODUCTO = {
   'Battle Deck': 1,
   'Mini Tin': 1,
   'Tin': 1,
-  'Binder / Colección': 1,
+  'Binder Colección': 1,
   'Premium Collection': 1,
   'Blister': 1,
   'Sobre': 1,

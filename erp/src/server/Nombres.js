@@ -1,7 +1,7 @@
 /**
  * Interpreta el nombre de un producto tal como viene del proveedor:
  *   "POKEMON TCG 30TH CELEBRATION - BINDER COLLECTION ENGLISH"
- *   → { edicion: '30th Celebration', nombre: 'Binder Collection', idioma: 'ENG', tipo: 'Binder / Colección' }
+ *   → { edicion: '30th Celebration', nombre: 'Binder Collection', idioma: 'ENG', tipo: 'Binder Colección' }
  *
  * Con modo 'titulo' solo devuelve el texto en formato título ("binder COLLECTION" →
  * "Binder Collection"), que es como se guardan siempre nombres y ediciones.
@@ -19,7 +19,7 @@ function interpretarNombre_(raw, modo) {
     [/MINI\s+TIN/, 'Mini Tin'],
     [/\bTIN\b/, 'Tin'],
     [/PREMIUM\s+COLLECTION/, 'Premium Collection'],
-    [/BINDER|COLLECTION|COLECCI[OÓ]N/, 'Binder / Colección'],
+    [/BINDER|COLLECTION|COLECCI[OÓ]N/, 'Binder Colección'],
     [/BLISTER/, 'Blister'],
     [/SLEEVED\s+BOOSTER|BOOSTER\s+PACK|\bSOBRE\b/, 'Sobre'],
     [/SLEEVES|DECK\s+BOX|PLAYMAT|TAPETE|PORTACARTAS/, 'Accesorio'],

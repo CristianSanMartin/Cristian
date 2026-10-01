@@ -152,7 +152,7 @@ function instalar() {
     }, Util.sello(sistema, true)));
     mensaje.push('Proveedor Asmodee creado con su regla de despacho.');
   }
-  const migradas = Migraciones.ejecutar(sistema);
+  const migradas = Migraciones.ejecutar(sistema, { respaldar: conDatos });   // planilla vacía: nada que respaldar
   if (migradas.length) mensaje.push('Migraciones aplicadas: ' + migradas.join(', ') + '.');
   if (Respaldos.programar()) mensaje.push('Respaldo automático programado todas las noches (se guardan los últimos ' + Respaldos.CONSERVAR + ').');
   if (Imagenes.preparar()) mensaje.push('Se creó la carpeta "' + Imagenes.NOMBRE_CARPETA + '" en tu Google Drive para las imágenes de productos.');

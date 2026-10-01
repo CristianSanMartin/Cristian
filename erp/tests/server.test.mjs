@@ -8,7 +8,7 @@ const errorDe = (res) => { assert.equal(res.ok, false, "se esperaba un error"); 
 const asmodee = (s) => s.ok("bootstrap").data.proveedores.find(p => p.nombre === "Asmodee");
 
 function producto(s, datos = {}) {
-  return s.ok("guardarProducto", { nombre: "Binder Collection", edicion: "30th Celebration", idioma: "ENG", tipo: "Binder / Colección", pvp: 43990, ...datos }).result;
+  return s.ok("guardarProducto", { nombre: "Binder Collection", edicion: "30th Celebration", idioma: "ENG", tipo: "Binder Colección", pvp: 43990, ...datos }).result;
 }
 
 /** Productos solicitados a Asmodee para 30th Celebration, con los números reales de la planilla de GS Prime. */
@@ -700,6 +700,15 @@ test("exportar datos para la demo: un JSON con todas las hojas que se puede volv
   assert.equal(venta.id, "OC-0002", "los correlativos siguen donde iban");
 });
 
+test("migración: el tipo 'Binder / Colección' pasa a 'Binder Colección' en los productos existentes", () => {
+  const s = createServer();
+  const { prods } = preventa30th(s);
+  s.run(`Db.update("Productos", "${prods.binderEng.id}", { tipo: "Binder / Colección" });
+    Db.vaciar("Migraciones");`);
+  s.run("instalar()");
+  assert.equal(s.ok("bootstrap").data.productos.find(p => p.id === prods.binderEng.id).tipo, "Binder Colección");
+});
+
 test("migraciones: corren una sola vez, después de un respaldo, y quedan registradas", () => {
   const s = createServer();
   const { prods } = preventa30th(s);
@@ -713,7 +722,7 @@ test("migraciones: corren una sola vez, después de un respaldo, y quedan regist
   const copias = Object.values(s.fake.state.files).filter(f => f.copyOf);
   assert.ok(copias.some(f => /antes de migrar 2026-10-01-notas/.test(f.name)), "respaldo previo a la migración");
   const estado = s.ok("respaldos").data;
-  assert.deepEqual([estado.pendientes.length, estado.migraciones.map(m => m.id)], [0, ["2026-10-01-notas"]]);
+  assert.deepEqual([estado.pendientes.length, estado.migraciones.map(m => m.id).filter(id => id === "2026-10-01-notas")], [0, ["2026-10-01-notas"]]);
 
   // Reinstalar no la vuelve a correr
   s.ok("guardarProducto", { ...data.productos.find(p => p.id === prods.miniTin.id), notas: "editado" });

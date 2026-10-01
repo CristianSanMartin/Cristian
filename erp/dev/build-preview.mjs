@@ -20,7 +20,10 @@ if (DATOS && !Array.isArray(DATOS.hojas)) throw new Error("DEMO_DATOS no es una 
 
 // Huella del esquema de datos: si cambia, la vista previa descarta los datos guardados del navegador.
 const config = fs.readFileSync(path.join(ERP, "src", "server", "00_Config.js"), "utf8");
-const esquemaHash = crypto.createHash("sha1").update(config.slice(config.indexOf("const SCHEMA"), config.indexOf("const HOJAS_OBSOLETAS"))).digest("hex").slice(0, 10);
+// Incluye las migraciones de datos: si hay una nueva, la demo ejecuta instalar y la aplica.
+const respaldos = fs.readFileSync(path.join(ERP, "src", "server", "Respaldos.js"), "utf8");
+const migracionesIds = (respaldos.match(/id: '[^']+'/g) || []).join(",");
+const esquemaHash = crypto.createHash("sha1").update(config.slice(config.indexOf("const SCHEMA"), config.indexOf("const HOJAS_OBSOLETAS")) + migracionesIds).digest("hex").slice(0, 10);
 
 const preview = `
 <script>${fakeSource().replace(/<\/script/gi, "<\\/script")}</script>
@@ -100,8 +103,8 @@ const preview = `
       return call('guardarProducto', Object.assign({ nombre: nombre, edicion: '30th Celebration', idioma: idioma, tipo: tipo, pvp: pvp }, extra || {}));
     };
     var p = {
-      binderEng: prod('Binder Collection', 'ENG', 'Binder / Colección', 43990),
-      binderEsp: prod('Binder Collection', 'ESP', 'Binder / Colección', 43990),
+      binderEng: prod('Binder Collection', 'ENG', 'Binder Colección', 43990),
+      binderEsp: prod('Binder Collection', 'ESP', 'Binder Colección', 43990),
       tinEng: prod('Mini Tin', 'ENG', 'Mini Tin', 13990, { precioManual: true, precioVenta: 18000 }),
       deckEng: prod('Battle Deck', 'ENG', 'Battle Deck', 26990),
       deckEsp: prod('Battle Deck', 'ESP', 'Battle Deck', 26990),

@@ -14,6 +14,15 @@
 /** Migraciones de datos, en orden. Nunca editar ni quitar una ya publicada: se agrega una nueva. */
 const MIGRACIONES = [
   // { id: '2026-10-01-ejemplo', descripcion: 'Qué cambia y por qué', fn: (user) => { ... } },
+  {
+    id: '2026-10-01-tipo-binder',
+    descripcion: 'Tipo de producto "Binder / Colección" pasa a llamarse "Binder Colección"',
+    fn: () => {
+      const cambios = {};
+      Db.all('Productos').forEach((p) => { if (p.tipo === 'Binder / Colección') cambios[p.id] = { tipo: 'Binder Colección' }; });
+      if (Object.keys(cambios).length) Db.actualizarVarios('Productos', cambios);
+    },
+  },
 ];
 
 const Respaldos = {
@@ -133,10 +142,10 @@ const Migraciones = {
   },
 
   /** Ejecuta las pendientes en orden, después de un respaldo. Si una falla, se detiene (las siguientes no corren). */
-  ejecutar(user) {
+  ejecutar(user, opts) {
     const pendientes = Migraciones.pendientes();
     if (!pendientes.length) return [];
-    Respaldos.crear('antes de migrar ' + pendientes.map((m) => m.id).join(', '));
+    if (!opts || opts.respaldar !== false) Respaldos.crear('antes de migrar ' + pendientes.map((m) => m.id).join(', '));
     pendientes.forEach((m) => {
       m.fn(user);
       Db.insert('Migraciones', { id: m.id, descripcion: m.descripcion, aplicadaEn: Util.ahora(), aplicadaPor: user.email || '' });
