@@ -15,7 +15,7 @@
 
 const APP = {
   nombre: 'GS Prime ERP',
-  version: '2.7.0',
+  version: '2.7.1',
   tz: 'America/Santiago',
   iva: 0.19,
 };
@@ -124,6 +124,8 @@ const SCHEMA = {
     key: 'id',
     cols: {
       id: 's', fila: 'n', fecha: 'd', glosa: 's', entradas: 'n', salidas: 'n', detalle: 's', obs: 's', oc: 's', clave: 's', descartada: 'b', nota: 's',
+      // Destino propio de la fila (vacío = el de su grupo) y lo que se creó al migrarla (vacío = pendiente).
+      accion: 's', destino: 's', extra: 's', migrada: 's', firma: 's',
     },
   },
   /** Toma de inventario: foto de lo que debería haber, conteo unidad por unidad y cierre con ajustes. */

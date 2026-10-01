@@ -44,7 +44,7 @@ function rutas_() {
     cajaCargar: { rol: 'admin', write: true, fn: MigracionCaja.cargar },
     cajaMapeos: { rol: 'admin', write: true, fn: MigracionCaja.guardarMapeos },
     cajaFilas: { rol: 'admin', write: true, fn: MigracionCaja.guardarFilas },
-    cajaImportar: { rol: 'admin', write: true, fn: MigracionCaja.importar },
+    cajaMigrar: { rol: 'admin', write: true, fn: MigracionCaja.migrar },
     cajaLimpiar: { rol: 'admin', write: true, fn: MigracionCaja.limpiar },
     editarVenta: { rol: 'admin', write: true, fn: Ventas.editar },
     guardarMovimiento: { rol: 'operador', write: true, fn: Finanzas.guardar },

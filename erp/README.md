@@ -211,11 +211,15 @@ y la recuerda en `erp/.implementacion`. Después solo queda el paso 2 cuando cor
   compras por monto, GAV, GOPM, SII, comisiones, flujo del mes y acumulado, resultado de singles e IVA
   estimado) y libro de movimientos (hoja `Finanzas`). Singles: las compras se registran como "Compra
   por monto" con detalle "Singles…" y se comparan con las ventas de singles.
-- **Migración → Caja diaria:** carga el Excel de caja (Fecha, Glosa, Entradas, Salidas, Obs), agrupa
-  por glosa + observación y propone qué es cada grupo: venta con OC, venta por monto, movimiento de
-  Finanzas o no importar (compras ya facturadas, saldos arrastrados). Al importar, las OC ya migradas
-  toman la fecha real de la caja y, si el monto difiere, se agrega una línea "Ajuste" (manda la caja);
-  los torneos del mismo día se pueden consolidar. Hoja `Migracion_Caja`.
+- **Migración → Caja diaria (por partes):** carga el Excel de caja (Fecha, Glosa, Entradas, Salidas,
+  Obs). Cada fila queda *pendiente*, *migrada* (con lo que se creó) o *no se migra*. Se filtra (búsqueda
+  o ▾ de cada columna), se marcan filas y "Migrar selección" migra solo esas. Destinos: venta con OC
+  (la venta ya migrada toma su fecha real y, si el monto difiere, una línea "Ajuste"; las filas de una
+  OC van juntas), venta por monto (los torneos de un día quedan en una sola venta), movimiento de
+  Finanzas, **pago de factura** (concilia con una factura del ERP —se propone la del mismo proveedor y
+  total— sin crear un gasto nuevo) o no migrar. Cada grupo (glosa + observación) tiene un destino por
+  defecto y cada fila puede tener uno propio. Volver a cargar el Excel no duplica lo migrado. Hoja
+  `Migracion_Caja`.
 - **Editar venta** (administrador): fecha, boleta y notas desde la lista de Ventas.
 
 ## Demo con los datos reales

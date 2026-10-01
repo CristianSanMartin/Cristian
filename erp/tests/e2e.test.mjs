@@ -414,13 +414,23 @@ test("venta por monto, Finanzas y migración de la caja diaria", { skip }, async
       "01-06-2025\t23-06-2025\tSaldo\t\t435532\ta.Saldo 2025"].join("\n");
     await page.fill("[data-caja-pegar]", tsv);
     await page.click('[data-action="cajaPegar"]');
-    await toast(page, /4 filas cargadas/);
-    await page.click('[data-action="cajaConfirmarTodo"]');
-    await toast(page, /Cambios guardados/);
-    await page.click('[data-action="cajaSeccion"][data-id="importar"]');
-    await page.click('[data-action="cajaImportar"]');
+    await toast(page, /4 filas cargadas · 4 pendientes/);
+    // Por partes: primero solo lo de singles (compra y venta)
+    await page.fill("[data-caja-buscar]", "singles");
+    await page.click('[data-action="cajaMarcarVisibles"]');
+    assert.match(await page.locator("#caja-seleccion").textContent(), /2 filas · entradas \$24\.500 · salidas \$100\.000/);
+    await page.click('[data-action="cajaMigrar"]');
     await modal(page).locator('button[type="submit"]').click();
-    await toast(page, /Caja importada: 0 ventas fechadas, 1 ventas nuevas, 2 movimientos/);
+    await toast(page, /2 filas migradas · 1 ventas nuevas, 0 fechadas, 1 movimientos, 0 facturas/);
+    // Luego el resto, cambiando el destino del aporte a "Otro ingreso"
+    await page.fill("[data-caja-buscar]", "");
+    await page.click('[data-action="cajaMarcarVisibles"]');
+    await page.click('[data-action="cajaMigrar"]');
+    await modal(page).locator('button[type="submit"]').click();
+    await toast(page, /2 filas migradas · 0 ventas nuevas, 0 fechadas, 1 movimientos, 0 facturas/);
+    await page.selectOption("[data-caja-estado]", "");
+    assert.equal(await page.locator(".badge:has-text('Migrada')").count(), 3);
+    assert.equal(await page.locator(".badge:has-text('No se migra')").count(), 1, "el saldo 2025 no se migra");
     assert.deepEqual(errores, []);
   } finally {
     await browser.close();
