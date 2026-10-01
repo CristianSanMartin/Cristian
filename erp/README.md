@@ -191,6 +191,17 @@ y la recuerda en `erp/.implementacion`. Después solo queda el paso 2 cuando cor
    Si se te olvida, el ERP no guarda nada y muestra "ERP sin instalar" indicando qué columnas faltan.
 3. **Implementar → Administrar implementaciones → ✏️ → Nueva versión → Implementar.**
 
+## Inventario: productos y toma de inventario
+
+- **Inventario → Productos:** todos los productos con foto, idioma, precio y stock. Filtro rápido
+  (sin imagen, sin idioma, creados en la migración, con/sin stock), lápiz para editar (incluida la
+  foto) y **Unir** (administrador) para juntar duplicados: stock, preventas, ventas, premios y conteos
+  pasan al producto que se conserva y el otro se elimina.
+- **Inventario → Toma de inventario:** al iniciar se guarda lo que debería haber, lote por lote. Se
+  marca cada unidad encontrada y se suman las "unidades de más"; el avance se guarda solo. Hay hoja
+  para imprimir. Al cerrar (administrador): faltantes → salida "Pérdida" de su lote; unidades de más →
+  lote de ajuste ("Ajuste TOM-0001") al último costo conocido. Hojas `Tomas` y `Tomas_Lineas`.
+
 ## Demo con los datos reales
 
 La vista previa (demo) corre el mismo código que la web, pero con sus propios datos guardados en el

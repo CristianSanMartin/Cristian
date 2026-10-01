@@ -15,7 +15,7 @@
 
 const APP = {
   nombre: 'GS Prime ERP',
-  version: '2.5.2',
+  version: '2.6.0',
   tz: 'America/Santiago',
   iva: 0.19,
 };
@@ -105,6 +105,21 @@ const SCHEMA = {
     cols: Object.assign({
       id: 's', fecha: 'd', motivo: 's', loteId: 's', productoId: 's', cantidad: 'n', costo: 'n', notas: 's', anulada: 'b',
     }, AUDIT_COLS),
+  },
+  /** Toma de inventario: foto de lo que debería haber, conteo unidad por unidad y cierre con ajustes. */
+  Tomas: {
+    key: 'id',
+    cols: Object.assign({
+      id: 's', fecha: 'd', estado: 's', notas: 's', cerradaEn: 't', cerradaPor: 's', resumen: 's',
+    }, AUDIT_COLS),
+  },
+  /**
+   * Una fila por lote con stock al iniciar la toma (esperado y marcas: "x" encontrada, "-" no),
+   * más una fila por producto con unidades de sobra (loteId vacío, sobrante > 0).
+   */
+  Tomas_Lineas: {
+    key: 'id',
+    cols: { id: 's', tomaId: 's', productoId: 's', loteId: 's', esperado: 'n', marcas: 's', sobrante: 'n' },
   },
   /** Zona de migración: el Excel histórico unidad por unidad, para revisar antes de importar. */
   Migracion: {

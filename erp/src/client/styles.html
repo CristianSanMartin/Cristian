@@ -849,4 +849,42 @@ svg.grafico{width:100%;height:auto;display:block;overflow:visible;}
   .topbar .user-chip > div:last-child{display:none;}
   .modal-overlay{padding:10px;}
 }
+
+/* ---------- toma de inventario ---------- */
+.toma-edicion{margin:18px 0 8px;}
+.toma-prod{background:var(--panel);border:1px solid var(--panel-border);border-left:3px solid var(--steel);border-radius:10px;padding:10px 12px;margin-bottom:8px;}
+.toma-prod.ok{border-left-color:var(--success);}
+.toma-prod.falta{border-left-color:var(--gold);}
+.toma-prod.sobra{border-left-color:var(--gold-deep);}
+.toma-head{display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
+.toma-head .prod-cell{flex:1 1 220px;min-width:0;}
+.toma-cifras{display:flex;gap:14px;font-size:12px;color:var(--text-dim);align-items:center;flex-wrap:wrap;}
+.toma-cifras strong{color:var(--white);font-size:14px;}
+.toma-dif{font-weight:700;color:var(--text-dim);}
+.toma-prod.ok .toma-dif{color:var(--success);}
+.toma-prod.falta .toma-dif,.toma-prod.sobra .toma-dif{color:var(--gold);}
+.toma-lote{display:flex;gap:10px;align-items:flex-start;margin-top:8px;}
+.toma-lote > .cell-dim{min-width:92px;padding-top:5px;font-size:11px;}
+.toma-chips{display:flex;flex-wrap:wrap;gap:5px;}
+.toma-chip{width:30px;height:28px;border-radius:6px;border:1px solid var(--panel-border);background:var(--black);color:var(--text-dim);font:600 11px Inter,system-ui,sans-serif;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;}
+.toma-chip.on{background:rgba(63,174,108,.18);border-color:var(--success);color:var(--success);}
+button.toma-chip:hover{border-color:var(--gold);}
+.toma-sobra{display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;}
+.toma-sobra strong{min-width:18px;text-align:center;}
+.toma-agregar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:14px;padding:12px;border:1px dashed var(--panel-border);border-radius:10px;}
+.toma-detalle{margin:6px 0 10px 18px;font-size:13px;}
+.toma-resumen-det{display:flex;gap:30px;flex-wrap:wrap;padding:6px 4px;}
+#print-area{display:none;}
+@media print{
+  body > *:not(#print-area){display:none !important;}
+  body{background:#fff !important;}
+  #print-area{display:block;color:#000;font:11px Arial,sans-serif;}
+  #print-area h1{font-size:16px;margin:0 0 4px;}
+  #print-area table{width:100%;border-collapse:collapse;margin-top:10px;}
+  #print-area th,#print-area td{border:1px solid #999;padding:4px 6px;text-align:left;vertical-align:top;}
+  #print-area .pa-ed td{background:#eee;font-weight:700;}
+  #print-area .pa-n{text-align:center;font-weight:700;}
+  #print-area .pa-blank{width:70px;}
+  #print-area tr{page-break-inside:avoid;}
+}
 </style>

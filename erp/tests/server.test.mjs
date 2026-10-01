@@ -537,6 +537,66 @@ test("quitar un producto de una factura: sale del inventario, reparte el despach
   assert.deepEqual([data.compras.length, data.lotes.length], [0, 0]);
 });
 
+test("toma de inventario: foto de lo esperado, marcas por unidad, sobrantes y cierre con ajustes", () => {
+  const s = createServer();
+  const { prods } = conInventario(s);   // Binder ENG 24, Binder ESP 6, Mini Tin 10
+  s.ok("crearVenta", { fecha: "2026-10-05", lineas: [{ productoId: prods.miniTin.id, cantidad: 2 }] });
+  s.ok("guardarUsuario", { email: "socio@gsprime.cl", nombre: "Socio", rol: "operador" });
+
+  // El operador inicia y cuenta; solo puede haber una abierta
+  s.as("socio@gsprime.cl");
+  const toma = s.ok("iniciarToma", { notas: "Conteo de octubre" }).result;
+  assert.equal(toma.id, "TOM-0001");
+  assert.match(errorDe(s.call("iniciarToma", {})), /Ya hay una toma abierta/);
+  let t = s.ok("bootstrap").data.tomas[0];
+  const linea = (prodId) => t.lineas.find(l => l.productoId === prodId && l.loteId);
+  assert.deepEqual([linea(prods.miniTin.id).esperado, linea(prods.miniTin.id).marcas], [8, "--------"]);
+  assert.equal(t.diferencias.esperado, 38);
+
+  // Encontradas: todo el Binder ENG, 5 de 6 ESP y 7 de 8 Mini Tin; 2 Mini Tin de más y 1 Deck que no debía haber
+  const lineas = [
+    { id: linea(prods.binderEng.id).id, marcas: "x".repeat(24) },
+    { id: linea(prods.binderEsp.id).id, marcas: "xxx-xx" },
+    { id: linea(prods.miniTin.id).id, marcas: "xxxxxxx-" },
+  ];
+  assert.match(errorDe(s.call("guardarToma", { id: toma.id, lineas: [{ id: lineas[1].id, marcas: "xx" }] })), /Marcas inválidas/);
+  s.ok("guardarToma", { id: toma.id, lineas, sobrantes: [{ productoId: prods.miniTin.id, cantidad: 2 }, { productoId: prods.deck.id, cantidad: 1 }] });
+  t = s.ok("bootstrap").data.tomas[0];
+  assert.deepEqual([t.diferencias.esperado, t.diferencias.encontrado], [38, 36 + 3]);
+  assert.deepEqual(t.diferencias.faltantes.map(f => [f.productoId, f.cantidad]), [[prods.binderEsp.id, 1], [prods.miniTin.id, 1]]);
+
+  // Cerrar es del administrador
+  assert.equal(s.call("cerrarToma", { id: toma.id, aplicarFaltantes: true, aplicarSobrantes: true }).code, "SIN_PERMISO");
+  s.as("admin@gsprime.cl");
+  const costoTin = lote(s, prods.miniTin.id)[0].costo;
+  const r = s.ok("cerrarToma", { id: toma.id, aplicarFaltantes: true, aplicarSobrantes: true }).result;
+  assert.deepEqual(r.aplicado, { faltantes: 2, sobrantes: 3, omitidos: 0 });
+  const d = s.ok("bootstrap").data;
+  assert.equal(d.tomas[0].estado, "cerrada");
+  const tin = d.lotes.filter(l => l.productoId === prods.miniTin.id);
+  const ajuste = tin.find(l => l.factura === "Ajuste TOM-0001");
+  const original = tin.find(l => l !== ajuste);
+  assert.deepEqual([original.disponible, ajuste.disponible], [7, 2], "faltante como pérdida y sobrante como lote de ajuste");
+  assert.equal(Math.round(ajuste.costo), Math.round(costoTin), "el sobrante entra al último costo");
+  assert.equal(d.compras.length, 1, "el ajuste no aparece como factura");
+  assert.equal(d.lotes.find(l => l.productoId === prods.deck.id).costo, 15876.5, "sin lotes: costo de su preventa");
+  assert.match(errorDe(s.call("guardarToma", { id: toma.id, lineas: [] })), /ya está cerrada/);
+});
+
+test("unir productos duplicados: el stock y el historial pasan al que se conserva", () => {
+  const s = createServer();
+  const { prods } = conInventario(s);
+  s.ok("crearVenta", { fecha: "2026-10-05", lineas: [{ productoId: prods.binderEsp.id, cantidad: 1 }] });
+  assert.match(errorDe(s.call("eliminarProducto", { id: prods.binderEsp.id })), /preventa|inventario/);
+  s.ok("unirProductos", { origenId: prods.binderEsp.id, destinoId: prods.binderEng.id });
+  const d = s.ok("bootstrap").data;
+  assert.equal(d.productos.some(p => p.id === prods.binderEsp.id), false);
+  const eng = d.lotes.filter(l => l.productoId === prods.binderEng.id);
+  assert.deepEqual([eng.length, eng.reduce((t, l) => t + l.disponible, 0)], [2, 29]);
+  assert.ok(d.ventas[0].lineas.every(l => l.productoId === prods.binderEng.id));
+  assert.match(errorDe(s.call("unirProductos", { origenId: prods.binderEng.id, destinoId: prods.binderEng.id })), /distintos/);
+});
+
 test("venta en varios lotes (FIFO) y cuenta por cobrar con abonos", () => {
   const s = createServer();
   const { prods } = conInventario(s);

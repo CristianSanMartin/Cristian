@@ -1,0 +1,319 @@
+<script>
+/* =========================================================
+   Inventario → Toma de inventario (inventario físico).
+   Se marca unidad por unidad lo que se encuentra; lo de más se
+   anota por producto. El avance se guarda solo cada pocos segundos.
+========================================================= */
+(function () {
+  'use strict';
+  const { fmt, esc } = GS;
+  const data = () => GS.state.data;
+  const kpi = (l, v, sub) => '<div class="kpi-card"><div class="kpi-label">' + l + '</div><div class="kpi-value small">' + v + '</div><div class="kpi-sub">' + sub + '</div></div>';
+
+  // Cambios aún no guardados en el servidor.
+  const local = { marcas: {}, sobr: {} };
+  let timer = null;
+  let estado = '';
+  let guardando = null;
+  const verHistorial = new Set();
+
+  const abierta = () => (data().tomas || []).find((t) => t.estado === 'abierta');
+  const prodDe = (id) => data().productos.find((p) => p.id === id) || { id: id, nombre: id, edicion: '', idioma: '', imagen: '' };
+  const loteDe = (id) => data().lotes.find((l) => l.id === id);
+  const marcasDe = (l) => (local.marcas[l.id] != null ? local.marcas[l.id] : l.marcas);
+  const cuenta = (m) => (m.match(/x/g) || []).length;
+  function sobranteDe(t, prodId) {
+    if (local.sobr[prodId] != null) return local.sobr[prodId];
+    const l = t.lineas.find((x) => !x.loteId && x.productoId === prodId);
+    return l ? l.sobrante : 0;
+  }
+
+  /** Productos de la toma con sus lotes, lo esperado, lo marcado y lo de más. */
+  function productos(t) {
+    const por = {};
+    const de = (id) => (por[id] = por[id] || { productoId: id, prod: prodDe(id), lineas: [], esperado: 0, marcadas: 0, sobrante: 0 });
+    t.lineas.forEach((l) => {
+      if (!l.loteId) { de(l.productoId); return; }
+      const r = de(l.productoId);
+      r.lineas.push(l);
+      r.esperado += l.esperado;
+      r.marcadas += cuenta(marcasDe(l));
+    });
+    Object.keys(local.sobr).forEach((id) => de(id));
+    return Object.keys(por).map((id) => {
+      const r = por[id];
+      r.sobrante = sobranteDe(t, id);
+      r.encontrado = r.marcadas + r.sobrante;
+      r.estado = !r.marcadas && !r.sobrante ? 'pend' : r.marcadas < r.esperado ? 'falta' : r.sobrante ? 'sobra' : 'ok';
+      return r;
+    }).filter((r) => r.esperado || r.sobrante || local.sobr[r.productoId] != null)
+      .sort((a, b) => ((a.prod.edicion || '~') + a.prod.nombre).localeCompare((b.prod.edicion || '~') + b.prod.nombre));
+  }
+
+  /* ---------- guardar (automático) ---------- */
+
+  function programar() {
+    estado = 'Cambios sin guardar…';
+    pintarEstado();
+    clearTimeout(timer);
+    timer = setTimeout(guardar, 2000);
+  }
+  function pintarEstado() {
+    const el = document.getElementById('toma-estado');
+    if (el) el.textContent = estado;
+  }
+  /** Envía lo pendiente. Devuelve una promesa (se puede esperar antes de cerrar la toma). */
+  function guardar() {
+    clearTimeout(timer);
+    const t = abierta();
+    if (!t) return Promise.resolve();
+    if (guardando) return guardando.then(guardar);
+    const marcas = Object.assign({}, local.marcas);
+    const sobr = Object.assign({}, local.sobr);
+    const lineas = Object.keys(marcas).map((id) => ({ id: id, marcas: marcas[id] }));
+    const sobrantes = Object.keys(sobr).map((id) => ({ productoId: id, cantidad: sobr[id] }));
+    if (!lineas.length && !sobrantes.length) return Promise.resolve();
+    estado = 'Guardando…';
+    pintarEstado();
+    guardando = GS.api('guardarToma', { id: t.id, lineas: lineas, sobrantes: sobrantes })
+      .then((res) => {
+        GS.state.data = res.data;
+        // Lo que no cambió mientras se guardaba ya quedó en el servidor.
+        Object.keys(marcas).forEach((id) => { if (local.marcas[id] === marcas[id]) delete local.marcas[id]; });
+        Object.keys(sobr).forEach((id) => { if (local.sobr[id] === sobr[id]) delete local.sobr[id]; });
+        estado = 'Guardado ' + new Date().toTimeString().slice(0, 5);
+      })
+      .catch((e) => { estado = 'No se pudo guardar'; GS.toast(e.message, true); throw e; })
+      .finally(() => { guardando = null; pintarEstado(); if (Object.keys(local.marcas).length || Object.keys(local.sobr).length) programar(); });
+    return guardando;
+  }
+  window.addEventListener('beforeunload', (e) => {
+    if (Object.keys(local.marcas).length || Object.keys(local.sobr).length) { guardar(); e.preventDefault(); e.returnValue = ''; }
+  });
+
+  /* ---------- pantalla ---------- */
+
+  function filaProducto(r, puede) {
+    const p = r.prod;
+    const dif = r.encontrado - r.esperado;
+    const chips = r.lineas.map((l) => {
+      const m = marcasDe(l);
+      const lote = loteDe(l.loteId);
+      let html = '';
+      for (let i = 0; i < l.esperado; i++) {
+        const on = m[i] === 'x';
+        html += puede
+          ? '<button type="button" class="toma-chip' + (on ? ' on' : '') + '" data-action="tomaMarca" data-id="' + esc(l.id + '|' + i) + '" aria-pressed="' + on + '" title="Unidad ' + (i + 1) + '">' + (i + 1) + '</button>'
+          : '<span class="toma-chip' + (on ? ' on' : '') + '">' + (i + 1) + '</span>';
+      }
+      return '<div class="toma-lote"><span class="cell-dim">' + esc(lote ? lote.factura || lote.id : l.loteId) + '</span><div class="toma-chips">' + html + '</div></div>';
+    }).join('');
+    return '<div class="toma-prod ' + r.estado + '" data-toma-prod="' + esc(r.productoId) + '">' +
+      '<div class="toma-head"><div class="prod-cell">' + GS.thumb(p.imagen) + '<div><span class="cell-strong">' + esc(p.nombre) + '</span> ' + GS.langPill(p.idioma) +
+      '<div class="cell-dim">' + esc(p.edicion || 'Sin edición') + '</div></div></div>' +
+      '<div class="toma-cifras"><span>Esperado <strong>' + fmt.num(r.esperado) + '</strong></span><span>Encontrado <strong>' + fmt.num(r.encontrado) + '</strong></span>' +
+      '<span class="toma-dif">' + (r.estado === 'pend' ? 'Sin revisar' : dif === 0 ? '✓ Calza' : (dif > 0 ? '+' : '') + fmt.num(dif)) + '</span></div>' +
+      (puede && r.esperado ? '<div class="btn-row"><button class="btn small ghost" data-action="tomaTodas" data-id="' + esc(r.productoId + '|x') + '">Todas</button>' +
+        '<button class="btn small ghost" data-action="tomaTodas" data-id="' + esc(r.productoId + '|-') + '">Ninguna</button></div>' : '') + '</div>' +
+      chips +
+      '<div class="toma-sobra"><span class="cell-dim">Unidades de más</span>' +
+      (puede ? '<button type="button" class="icon-btn" data-action="tomaSobra" data-id="' + esc(r.productoId + '|-1') + '" aria-label="Una menos">−</button>' : '') +
+      '<strong>' + fmt.num(r.sobrante) + '</strong>' +
+      (puede ? '<button type="button" class="icon-btn" data-action="tomaSobra" data-id="' + esc(r.productoId + '|1') + '" aria-label="Una más">+</button>' : '') + '</div></div>';
+  }
+
+  function vistaAbierta(el, t) {
+    const puede = GS.puede('operador');
+    const f = GS.filters('inventario', {});
+    const enLista = new Set(productos(t).map((r) => r.productoId));
+    const otros = data().productos.filter((p) => p.activo && !enLista.has(p.id)).sort((a, b) => a.nombreCompleto.localeCompare(b.nombreCompleto));
+    el.innerHTML =
+      '<div class="notice"><strong>' + esc(t.id) + '</strong> · iniciada el ' + esc(fmt.date ? fmt.date(t.fecha) : t.fecha) + ' por ' + esc(t.creadoPor || '') +
+      (t.notas ? ' · ' + esc(t.notas) : '') + '. Marca cada unidad que encuentres; las que sobren súmalas en "Unidades de más". El avance se guarda solo.</div>' +
+      '<div id="toma-resumen"></div>' +
+      '<div class="filters-bar"><div class="search-box">' + GS.icon('search') + '<input type="text" data-filter="inventario.tq" value="' + esc(f.tq || '') + '" placeholder="Buscar producto..."></div>' +
+      '<div class="select-input"><select data-filter="inventario.tver">' + GS.options([{ value: '', label: 'Todos' }, { value: 'pend', label: 'Sin revisar' }, { value: 'dif', label: 'Con diferencias' }, { value: 'ok', label: 'Calzan' }], f.tver || '') + '</select></div>' +
+      '<span class="muted" id="toma-estado" style="font-size:12px;">' + esc(estado) + '</span>' +
+      '<div class="btn-row" style="margin-left:auto;">' +
+      '<button class="btn ghost small" data-action="tomaImprimir">' + GS.icon('list') + 'Imprimir hoja</button>' +
+      (puede ? '<button class="btn secondary small" data-action="tomaGuardar">Guardar ahora</button>' : '') +
+      (GS.puede('admin') ? '<button class="btn ghost small" data-action="tomaAnular">Anular</button><button class="btn small" data-action="tomaCerrar">' + GS.icon('check') + 'Cerrar toma</button>' : '') +
+      '</div></div>' +
+      '<div id="toma-lista"></div>' +
+      (puede ? '<div class="toma-agregar"><span class="cell-dim">¿Encontraste un producto que no debería estar?</span>' +
+        '<div class="select-input"><select id="toma-otro"><option value="">Elige el producto…</option>' + otros.map((p) => '<option value="' + esc(p.id) + '">' + esc(p.nombreCompleto) + '</option>').join('') + '</select></div>' +
+        '<button class="btn small secondary" data-action="tomaAgregar">' + GS.icon('plus', 2.4) + 'Agregar como unidad de más</button></div>' : '');
+    actualizar();
+  }
+
+  function actualizar() {
+    const t = abierta();
+    const lista = document.getElementById('toma-lista');
+    if (!t || !lista) return;
+    const puede = GS.puede('operador');
+    const f = GS.filters('inventario', {});
+    const q = GS.norm((f.tq || '').trim());
+    const todos = productos(t);
+    const rows = todos.filter((r) => {
+      if (q && !GS.norm(r.prod.nombre + ' ' + r.prod.edicion + ' ' + r.prod.idioma + ' ' + r.productoId).includes(q)) return false;
+      if (f.tver === 'pend') return r.estado === 'pend';
+      if (f.tver === 'dif') return r.estado === 'falta' || r.estado === 'sobra';
+      if (f.tver === 'ok') return r.estado === 'ok';
+      return true;
+    });
+    let edicion = null;
+    lista.innerHTML = rows.length ? rows.map((r) => {
+      const ed = r.prod.edicion || 'Sin edición';
+      const titulo = ed !== edicion ? '<h3 class="sub-titulo toma-edicion">' + esc(ed) + '</h3>' : '';
+      edicion = ed;
+      return titulo + filaProducto(r, puede);
+    }).join('') : GS.empty('Nada que mostrar', 'Ajusta la búsqueda o el filtro.', 'inventario');
+
+    const sum = (k) => todos.reduce((s, r) => s + r[k], 0);
+    const esperado = sum('esperado');
+    const marcadas = sum('marcadas');
+    const revisados = todos.filter((r) => r.estado !== 'pend').length;
+    document.getElementById('toma-resumen').innerHTML = '<div class="kpi-grid">' +
+      kpi('Avance', fmt.num(marcadas) + ' / ' + fmt.num(esperado), '<div class="barra-venta"><span style="width:' + Math.round(100 * marcadas / (esperado || 1)) + '%"></span></div>') +
+      kpi('Productos revisados', fmt.num(revisados) + ' / ' + fmt.num(todos.length), todos.filter((r) => r.estado === 'ok').length + ' calzan') +
+      kpi('Sin encontrar', fmt.num(esperado - marcadas), 'unidades esperadas aún sin marcar') +
+      kpi('Unidades de más', fmt.num(sum('sobrante')), 'entran al inventario al cerrar') + '</div>';
+  }
+
+  function vistaSinToma(el) {
+    const tomas = (data().tomas || []).filter((t) => t.estado !== 'abierta');
+    const total = data().lotes.reduce((s, l) => s + l.disponible, 0);
+    el.innerHTML =
+      '<div class="panel inline-panel"><div class="inline-panel-head"><h3>Nueva toma de inventario</h3>' +
+      '<span class="muted">Se guarda lo que debería haber ahora (' + fmt.num(total) + ' unidades) y luego marcas, unidad por unidad, lo que encuentras. ' +
+      'Puedes imprimir la hoja para contar en papel. Al cerrar, un administrador decide si los faltantes se registran como pérdida y si las unidades de más entran al inventario.</span></div>' +
+      (GS.puede('operador') ? '<button class="btn" data-action="tomaIniciar">' + GS.icon('check') + 'Iniciar toma de inventario</button>' : '<p class="muted">Solo un operador o administrador puede iniciar una toma.</p>') + '</div>' +
+      '<h3 class="sub-titulo" style="margin-top:22px;">Tomas anteriores</h3>' +
+      '<div class="table-wrap"><table class="data-table" style="min-width:760px;"><thead><tr><th></th><th>Toma</th><th>Fecha</th><th>Estado</th><th class="right">Esperado</th><th class="right">Encontrado</th>' +
+      '<th class="right">Faltantes</th><th class="right">De más</th><th>Cerrada por</th></tr></thead><tbody>' +
+      (tomas.length ? tomas.map(filaHistorial).join('') : '<tr><td colspan="9" class="muted center">Todavía no hay tomas de inventario.</td></tr>') +
+      '</tbody></table></div>';
+  }
+
+  function filaHistorial(t) {
+    const r = t.resumen;
+    const u = (arr) => (arr || []).reduce((s, x) => s + x.cantidad, 0);
+    const open = verHistorial.has(t.id);
+    const lista = (titulo, arr) => (arr && arr.length ? '<div><strong>' + titulo + '</strong><ul class="toma-detalle">' +
+      arr.map((x) => '<li>' + esc(prodDe(x.productoId).nombreCompleto || x.productoId) + ' · ' + fmt.num(x.cantidad) + ' u. · ' + fmt.money(x.cantidad * x.costo) + '</li>').join('') + '</ul></div>' : '');
+    return '<tr class="fila-compra' + (open ? ' abierta' : '') + '"' + (r ? ' data-action="tomaVer" data-id="' + esc(t.id) + '"' : '') + '>' +
+      '<td>' + (r ? '<span class="chev">' + (open ? '▾' : '▸') + '</span>' : '') + '</td><td class="cell-strong">' + esc(t.id) + (t.notas ? '<div class="cell-dim">' + esc(t.notas) + '</div>' : '') + '</td>' +
+      '<td class="nowrap">' + esc(t.fecha) + '</td>' +
+      '<td><span class="badge ' + (t.estado === 'cerrada' ? 'st-ok' : 'st-cancelada') + '">' + (t.estado === 'cerrada' ? 'Cerrada' : 'Anulada') + '</span></td>' +
+      '<td class="cell-num right">' + (r ? fmt.num(r.esperado) : '—') + '</td><td class="cell-num right">' + (r ? fmt.num(r.encontrado) : '—') + '</td>' +
+      '<td class="cell-num right">' + (r ? fmt.num(u(r.faltantes)) + '<div class="cell-dim">' + fmt.money(r.valorFaltante) + '</div>' : '—') + '</td>' +
+      '<td class="cell-num right">' + (r ? fmt.num(u(r.sobrantes)) + '<div class="cell-dim">' + fmt.money(r.valorSobrante) + '</div>' : '—') + '</td>' +
+      '<td>' + esc(t.cerradaPor || '') + '<div class="cell-dim">' + esc(t.cerradaEn || '') + '</div></td></tr>' +
+      (open && r ? '<tr class="detalle-row"><td colspan="9"><div class="toma-resumen-det">' +
+        (lista('Faltantes', r.faltantes) + lista('Unidades de más', r.sobrantes) || '<span class="muted">Todo calzó.</span>') +
+        '<p class="table-note">Ajustes aplicados: ' + fmt.num(r.aplicado.faltantes) + ' u. como pérdida · ' + fmt.num(r.aplicado.sobrantes) + ' u. ingresadas' +
+        (r.aplicado.omitidos ? ' · ' + fmt.num(r.aplicado.omitidos) + ' faltantes no se ajustaron porque se vendieron durante la toma' : '') + '.</p></div></td></tr>' : '');
+  }
+
+  GS.toma = {
+    render(el) {
+      const t = abierta();
+      if (t) vistaAbierta(el, t); else vistaSinToma(el);
+    },
+    update: actualizar,
+  };
+
+  /* ---------- acciones ---------- */
+
+  function cambiar(fn) {
+    if (!GS.puede('operador')) return;
+    fn();
+    actualizar();
+    programar();
+  }
+  GS.actions.tomaMarca = (id) => cambiar(() => {
+    const [lineaId, i] = id.split('|');
+    const l = abierta().lineas.find((x) => x.id === lineaId);
+    const m = marcasDe(l).split('');
+    m[Number(i)] = m[Number(i)] === 'x' ? '-' : 'x';
+    local.marcas[lineaId] = m.join('');
+  });
+  GS.actions.tomaTodas = (id) => cambiar(() => {
+    const [prodId, c] = id.split('|');
+    abierta().lineas.filter((l) => l.loteId && l.productoId === prodId).forEach((l) => { local.marcas[l.id] = c.repeat(l.esperado); });
+  });
+  GS.actions.tomaSobra = (id) => cambiar(() => {
+    const [prodId, d] = id.split('|');
+    local.sobr[prodId] = Math.max(0, sobranteDe(abierta(), prodId) + Number(d));
+  });
+  GS.actions.tomaAgregar = () => {
+    const sel = document.getElementById('toma-otro');
+    if (!sel.value) return GS.toast('Elige el producto que encontraste.', true);
+    local.sobr[sel.value] = sobranteDe(abierta(), sel.value) + 1;
+    GS.render();
+    programar();
+  };
+  GS.actions.tomaGuardar = () => guardar().then(() => GS.toast('Avance guardado')).catch(() => {});
+  GS.actions.tomaVer = (id) => {
+    if (verHistorial.has(id)) verHistorial.delete(id); else verHistorial.add(id);
+    GS.render();
+  };
+
+  GS.actions.tomaIniciar = () => GS.formModal({
+    title: 'Iniciar toma de inventario',
+    submitLabel: 'Iniciar toma',
+    fields: () => '<p class="confirm-text" style="padding:0 0 12px;">Se guarda lo que debería haber en este momento. Las ventas que hagas mientras cuentas no cambian lo esperado; al cerrar se descuentan de los faltantes.</p>' +
+      '<div class="form-field"><label>Notas</label><input name="notas" placeholder="Ej: conteo de fin de mes"></div>',
+    onSubmit: (v) => GS.mutate('iniciarToma', v, (r) => 'Toma ' + r.id + ' iniciada'),
+  });
+
+  GS.actions.tomaAnular = () => {
+    const t = abierta();
+    GS.confirm({
+      title: 'Anular ' + t.id,
+      message: 'Se descarta el conteo y no se hace ningún ajuste al inventario. Queda en el historial como anulada.',
+      confirmLabel: 'Sí, anular',
+      danger: true,
+      onConfirm: () => { local.marcas = {}; local.sobr = {}; clearTimeout(timer); estado = ''; return GS.mutate('anularToma', { id: t.id }, 'Toma anulada'); },
+    });
+  };
+
+  GS.actions.tomaCerrar = async () => {
+    try { await guardar(); } catch (e) { return; }
+    const t = abierta();
+    const d = t.diferencias;
+    const u = (arr) => arr.reduce((s, x) => s + x.cantidad, 0);
+    const pend = productos(t).filter((r) => r.estado === 'pend').length;
+    GS.formModal({
+      title: 'Cerrar ' + t.id,
+      submitLabel: 'Cerrar toma',
+      fields: () =>
+        (pend ? '<div class="notice warn">Quedan ' + pend + ' productos sin revisar: sus unidades cuentan como faltantes.</div>' : '') +
+        '<div class="kpi-grid">' + kpi('Esperado', fmt.num(d.esperado), 'unidades') + kpi('Encontrado', fmt.num(d.encontrado), 'incluye las de más') +
+        kpi('Faltantes', fmt.num(u(d.faltantes)), fmt.money(d.valorFaltante) + ' a costo') + kpi('De más', fmt.num(u(d.sobrantes)), fmt.money(d.valorSobrante) + ' al último costo') + '</div>' +
+        '<label class="check" style="margin:8px 0;"><input type="checkbox" name="aplicarFaltantes"' + (pend ? '' : ' checked') + '> Registrar los faltantes como salida <strong>Pérdida</strong> (salen del inventario con su costo)</label>' +
+        '<label class="check" style="margin:8px 0;"><input type="checkbox" name="aplicarSobrantes" checked> Ingresar las unidades de más al inventario al último costo conocido</label>' +
+        '<p class="hint">Después de cerrar la toma no se puede editar. Si desmarcas una opción, la diferencia queda solo anotada en el historial.</p>',
+      onSubmit: (v) => GS.mutate('cerrarToma', { id: t.id, aplicarFaltantes: v.aplicarFaltantes, aplicarSobrantes: v.aplicarSobrantes }, 'Toma cerrada').then(() => { estado = ''; }),
+    });
+  };
+
+  /** Hoja para contar en papel: una casilla por unidad esperada y espacio para anotar. */
+  GS.actions.tomaImprimir = () => {
+    const t = abierta();
+    let area = document.getElementById('print-area');
+    if (!area) { area = document.createElement('div'); area.id = 'print-area'; document.body.appendChild(area); }
+    let edicion = null;
+    const filas = productos(t).map((r) => {
+      const ed = r.prod.edicion || 'Sin edición';
+      const cab = ed !== edicion ? '<tr class="pa-ed"><td colspan="5">' + esc(ed) + '</td></tr>' : '';
+      edicion = ed;
+      const lotes = r.lineas.map((l) => { const lote = loteDe(l.loteId); return esc(lote ? lote.factura : l.loteId) + ': ' + '☐'.repeat(l.esperado); }).join('<br>');
+      return cab + '<tr><td>' + esc(r.prod.nombre) + (r.prod.idioma ? ' · ' + esc(r.prod.idioma) : '') + '</td><td class="pa-n">' + r.esperado + '</td><td>' + (lotes || '—') + '</td><td class="pa-blank"></td><td class="pa-blank"></td></tr>';
+    }).join('');
+    area.innerHTML = '<h1>Toma de inventario ' + esc(t.id) + '</h1><p>' + esc(data().app.nombre) + ' · ' + esc(t.fecha) + (t.notas ? ' · ' + esc(t.notas) : '') + ' · Contado por: ____________________</p>' +
+      '<table><thead><tr><th>Producto</th><th>Esperado</th><th>Unidades (marca cada una)</th><th>De más</th><th>Observaciones</th></tr></thead><tbody>' + filas + '</tbody></table>';
+    window.print();   // al imprimir solo se muestra #print-area (ver styles)
+  };
+})();
+</script>

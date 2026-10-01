@@ -326,6 +326,55 @@ test("inventario: se marcan unidades de un producto y se venden desde su lote", 
   }
 });
 
+test("inventario: productos (filtros, editar, unir) y toma de inventario unidad por unidad", { skip }, async () => {
+  const browser = await chromium.launch();
+  try {
+    const { page, errores } = await abrir(browser);
+    await page.click('[data-nav="inventario"]');
+
+    // Productos: filtro rápido y unir duplicados
+    await page.click('[data-action="tab"][data-id="inventario.productos"]');
+    const total = await page.locator("#prod-tbody tr").count();
+    await page.selectOption('[data-filter="productos.rapido"]', "sinImagen");
+    assert.equal(await page.locator("#prod-tbody tr").count(), total, "los de ejemplo no tienen foto");
+    await page.selectOption('[data-filter="productos.rapido"]', "conStock");
+    const conStock = await page.locator("#prod-tbody tr").count();
+    assert.ok(conStock > 0 && conStock < total);
+    await page.selectOption('[data-filter="productos.rapido"]', "");
+    const fila = page.locator("#prod-tbody tr", { hasText: "GS-0005" });
+    await fila.locator('[data-action="unirProducto"]').click();
+    await modal(page).locator('select[name="destinoId"]').selectOption("GS-0004");
+    await modal(page).locator('button[type="submit"]').click();
+    await toast(page, /Productos unidos/);
+    assert.equal(await page.locator("#prod-tbody tr", { hasText: "GS-0005" }).count(), 0);
+    assert.match(await page.locator("#prod-tbody tr", { hasText: "GS-0004" }).textContent(), /20/, "9 + 11 Battle Deck");
+
+    // Toma: iniciar, marcar unidades, una de más, guardar y cerrar con ajustes
+    await page.click('[data-action="tab"][data-id="inventario.toma"]');
+    await page.click('[data-action="tomaIniciar"]');
+    await modal(page).locator('[name="notas"]').fill("Conteo de prueba");
+    await modal(page).locator('button[type="submit"]').click();
+    await toast(page, /Toma TOM-0001 iniciada/);
+    const deck = page.locator('[data-toma-prod="GS-0004"]');
+    await deck.locator('[data-action="tomaTodas"][data-id$="|x"]').click();
+    await deck.locator('[data-action="tomaMarca"]').first().click();   // una no se encontró
+    await deck.locator('[data-action="tomaSobra"][data-id$="|1"]').click();
+    assert.match(await deck.locator(".toma-cifras").textContent(), /Esperado 20.*Encontrado 20/);
+    await page.click('[data-action="tomaGuardar"]');
+    await toast(page, /Avance guardado/);
+    await page.click('[data-action="tomaCerrar"]');
+    assert.match(await modal(page).textContent(), /productos sin revisar/);
+    await modal(page).locator('button[type="submit"]').click();
+    await toast(page, /Toma cerrada/);
+    await page.waitForSelector("td:has-text('TOM-0001')");
+    await page.click('[data-action="tab"][data-id="inventario.stock"]');
+    assert.equal(await page.locator('[data-action="tab"][data-id="inventario.toma"] .pill').count(), 0);
+    assert.deepEqual(errores, []);
+  } finally {
+    await browser.close();
+  }
+});
+
 test("administración: respaldos automáticos y manuales", { skip }, async () => {
   const browser = await chromium.launch();
   try {

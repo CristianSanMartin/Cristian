@@ -106,6 +106,7 @@ const Ventas = {
     const vendidas = Ventas.vendidasPorLote();
     const fechaCompra = {};
     Db.all('Compras').forEach((c) => { fechaCompra[c.id] = c.fecha; });
+    Db.all('Tomas').forEach((t) => { fechaCompra[t.id] = t.fecha; });   // lotes de ajuste por sobrantes
     return Db.all('Compras_Lineas').map((l) => ({
       id: l.id,
       productoId: l.productoId,

@@ -16,19 +16,48 @@
 
   /* ---------- productos ---------- */
 
-  const DEF_PROD = { q: '', edicion: '', idioma: '', tipo: '', estado: 'activos' };
+  const DEF_PROD = { q: '', edicion: '', idioma: '', tipo: '', estado: 'activos', rapido: '' };
+
+  /** Stock disponible por producto y productos que llegaron con la migración del Excel. */
+  function infoStock() {
+    const notas = {};
+    data().compras.forEach((c) => { notas[c.id] = c.notas || ''; });
+    const stock = {};
+    const migrados = new Set();
+    data().lotes.forEach((l) => {
+      stock[l.productoId] = (stock[l.productoId] || 0) + l.disponible;
+      if (/^Migración/.test(notas[l.compraId] || '')) migrados.add(l.productoId);
+    });
+    return { stock: stock, migrados: migrados };
+  }
+  const RAPIDOS = [
+    { value: '', label: 'Todos' },
+    { value: 'sinImagen', label: 'Sin imagen' },
+    { value: 'sinIdioma', label: 'Sin idioma' },
+    { value: 'migracion', label: 'Creados en la migración' },
+    { value: 'conStock', label: 'Con stock' },
+    { value: 'sinStock', label: 'Sin stock' },
+  ];
 
   function productosFiltrados() {
     const f = GS.filters('productos', DEF_PROD);
     const q = GS.norm(f.q.trim());
+    const info = infoStock();
     return data().productos
       .filter((p) => {
+        const st = info.stock[p.id] || 0;
+        if (f.rapido === 'sinImagen' && p.imagen) return false;
+        if (f.rapido === 'sinIdioma' && p.idioma) return false;
+        if (f.rapido === 'migracion' && !info.migrados.has(p.id)) return false;
+        if (f.rapido === 'conStock' && !st) return false;
+        if (f.rapido === 'sinStock' && st) return false;
         if (f.estado === 'activos' ? !p.activo : f.estado === 'archivados' ? p.activo : false) return false;
         if (f.edicion && p.edicion !== f.edicion) return false;
         if (f.idioma && p.idioma !== f.idioma) return false;
         if (f.tipo && p.tipo !== f.tipo) return false;
         return !q || GS.norm(p.id + ' ' + p.nombreCompleto + ' ' + p.tipo + ' ' + p.codigoProveedor).includes(q);
       })
+      .map((p) => Object.assign(p, { stock: info.stock[p.id] || 0, migrado: info.migrados.has(p.id) }))
       .sort((a, b) => a.nombreCompleto.localeCompare(b.nombreCompleto));
   }
 
@@ -98,31 +127,35 @@
     return '<tr class="' + (p.activo ? '' : 'row-muted') + '">' +
       '<td>' + GS.thumb(p.imagen) + '</td>' +
       '<td class="nowrap cell-dim">' + esc(p.id) + '</td>' +
-      '<td class="cell-strong">' + esc(p.nombre) + '<div class="cell-dim">' + esc(p.edicion || 'Sin edición') + ' · ' + esc(p.tipo) + (p.factor > 1 ? ' · ' + p.factor + ' u. proveedor' : '') + (p.activo ? '' : ' · archivado') + '</div></td>' +
+      '<td class="cell-strong">' + esc(p.nombre) + '<div class="cell-dim">' + esc(p.edicion || 'Sin edición') + ' · ' + esc(p.tipo) + (p.factor > 1 ? ' · ' + p.factor + ' u. proveedor' : '') + (p.activo ? '' : ' · archivado') + (p.migrado ? ' · migración' : '') + '</div></td>' +
       '<td>' + GS.langPill(p.idioma) + '</td>' +
       '<td class="cell-num right">' + (p.pvp ? fmt.money(p.pvp) : '—') + '</td>' +
       '<td class="cell-num right cell-strong">' + (p.precio ? fmt.money(p.precio) : '—') + (p.precioManual ? '<div><span class="pill soon">manual</span></div>' : '') + '</td>' +
+      '<td class="cell-num right">' + (p.stock ? '<strong>' + fmt.num(p.stock) + '</strong>' : '—') + '</td>' +
       '<td class="cell-num right">' + (p.ultimoCosto ? fmt.cost(p.ultimoCosto) : '—') + '</td>' +
-      '<td class="cell-num right ' + (p.gananciaUnidad < 0 ? 'text-danger' : '') + '">' + (p.gananciaUnidad == null ? '—' : fmt.money(p.gananciaUnidad)) + '</td>' +
-      '<td class="cell-num right">' + (p.margen == null ? '—' : fmt.pct(p.margen)) + '</td>' +
       '<td><div class="row-actions">' +
       (operador ? GS.iconBtn('editarProducto', p.id, 'edit', 'Editar') : '') +
+      (GS.puede('admin') ? GS.iconBtn('unirProducto', p.id, 'move', 'Unir con otro producto (duplicado)') : '') +
       (operador ? GS.iconBtn('archivarProducto', p.id, 'archive', p.activo ? 'Archivar' : 'Reactivar') : '') +
       '</div></td></tr>';
   }
 
   GS.views.productos = {
     title: 'Productos',
-    render(el, d) {
+    /** opts.embebido: dentro de Inventario (sin encabezado de página). */
+    render(el, d, opts) {
       const f = GS.filters('productos', DEF_PROD);
       const ediciones = Array.from(new Set(d.productos.map((p) => p.edicion).filter(Boolean))).sort();
-      el.innerHTML =
-        '<div class="page-head"><div><h1>Productos</h1><p>Catálogo: cada producto es nombre + edición + idioma.</p></div>' +
-        '<div class="btn-row">' +
+      const botones = '<div class="btn-row">' +
         '<button class="btn ghost" data-action="exportarProductos">' + GS.icon('download') + 'Exportar</button>' +
         (GS.puede('operador') ? '<button class="btn" data-action="nuevoProducto">' + GS.icon('plus', 2.4) + 'Nuevo producto</button>' : '') +
-        '</div></div>' +
+        '</div>';
+      el.innerHTML =
+        (opts && opts.embebido
+          ? '<div class="btn-row" style="justify-content:space-between;margin-bottom:12px;"><p class="muted" style="margin:0;font-size:13px;">Edita nombre, edición, idioma, tipo, precio y foto de cada producto. Con "Unir" juntas dos productos que son el mismo.</p>' + botones + '</div>'
+          : '<div class="page-head"><div><h1>Productos</h1><p>Catálogo: cada producto es nombre + edición + idioma.</p></div>' + botones + '</div>') +
         '<div class="filters-bar">' +
+        '<div class="select-input"><select data-filter="productos.rapido" aria-label="Filtro rápido">' + GS.options(RAPIDOS, f.rapido) + '</select></div>' +
         '<div class="search-box">' + GS.icon('search') + '<input type="text" data-filter="productos.q" value="' + esc(f.q) + '" placeholder="Buscar por nombre, SKU o código..."></div>' +
         '<div class="select-input"><select data-filter="productos.edicion">' + GS.options([{ value: '', label: 'Todas las ediciones' }].concat(ediciones), f.edicion) + '</select></div>' +
         '<div class="select-input"><select data-filter="productos.idioma">' + GS.options([{ value: '', label: 'Todos los idiomas' }].concat(d.catalogos.idiomas), f.idioma) + '</select></div>' +
@@ -131,9 +164,9 @@
         '<span class="count" id="prod-count"></span></div>' +
         '<div class="table-wrap"><table class="data-table"><thead><tr>' +
         '<th></th><th>SKU</th><th class="col-prod">Producto</th><th>Idioma</th><th class="right">PVP</th><th class="right">Precio venta</th>' +
-        '<th class="right">Último costo neto</th><th class="right">Ganancia u.</th><th class="right">Margen</th><th class="right">Acciones</th>' +
+        '<th class="right">Stock</th><th class="right">Último costo neto</th><th class="right">Acciones</th>' +
         '</tr></thead><tbody id="prod-tbody"></tbody></table></div>' +
-        '<p class="table-note">Ganancia real por unidad = precio de venta sin IVA − último costo neto (sin despacho). El stock aparecerá con el módulo de Inventario.</p>';
+        '<p class="table-note">Stock = unidades disponibles en Inventario. Último costo neto = el de su preventa más reciente.</p>';
       this.update();
     },
     update() {
@@ -141,7 +174,7 @@
       document.getElementById('prod-count').textContent = rows.length + ' productos';
       document.getElementById('prod-tbody').innerHTML = rows.length
         ? rows.map(filaProducto).join('')
-        : '<tr><td colspan="10">' + GS.empty('No hay productos para mostrar', 'Crea un producto o ajusta los filtros.', 'productos') + '</td></tr>';
+        : '<tr><td colspan="9">' + GS.empty('No hay productos para mostrar', 'Crea un producto o ajusta los filtros.', 'productos') + '</td></tr>';
     },
   };
 
@@ -223,6 +256,30 @@
         const saved = await GS.mutate('guardarProducto', Object.assign({ id: prod ? prod.id : '' }, v),
           (r) => (prod ? 'Producto actualizado' : 'Producto ' + r.id + ' creado'));
         if (onSaved) onSaved(saved);
+      },
+    });
+  };
+
+  /** Une un producto duplicado con otro: el stock y el historial pasan al que se conserva. */
+  GS.actions.unirProducto = (id) => {
+    const origen = findProd(id);
+    const n = (x) => GS.norm(x.nombre);
+    const otros = data().productos.filter((p) => p.id !== id).sort((a, b) => a.nombreCompleto.localeCompare(b.nombreCompleto));
+    const parecidos = otros.filter((p) => n(p) === n(origen) || (p.edicion === origen.edicion && (n(p).includes(n(origen)) || n(origen).includes(n(p)))));
+    const opcion = (p) => '<option value="' + esc(p.id) + '">' + esc(p.nombreCompleto + ' (' + p.id + ')') + '</option>';
+    GS.formModal({
+      title: 'Unir producto duplicado',
+      submitLabel: 'Unir productos',
+      danger: true,
+      fields: () =>
+        '<p class="confirm-text" style="padding:0 0 12px;"><strong>' + esc(origen.nombreCompleto) + '</strong> (' + esc(origen.id) + ') se elimina y todo lo suyo pasa al producto que elijas: ' +
+        'stock, preventas, ventas, premios y conteos. Si al elegido le falta foto o precio sugerido, toma los de este. Queda en la auditoría.</p>' +
+        '<div class="form-field"><label>Conservar este producto *</label><select name="destinoId"><option value="">Elige el producto…</option>' +
+        (parecidos.length ? '<optgroup label="Parecidos">' + parecidos.map(opcion).join('') + '</optgroup>' : '') +
+        '<optgroup label="Todos">' + otros.map(opcion).join('') + '</optgroup></select></div>',
+      onSubmit: async (v) => {
+        if (!v.destinoId) throw new Error('Elige el producto que se conserva.');
+        await GS.mutate('unirProductos', { origenId: id, destinoId: v.destinoId }, 'Productos unidos');
       },
     });
   };

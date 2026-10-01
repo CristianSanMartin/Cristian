@@ -132,8 +132,12 @@ const Compras = {
       return c;
     });
 
+    // Lotes de ajuste: unidades de más encontradas en una toma de inventario.
+    const tomaPorId = {};
+    Db.all('Tomas').forEach((t) => { tomaPorId[t.id] = t; });
     const lotes = Db.all('Compras_Lineas').map((l) => {
-      const c = compraPorId[l.compraId];
+      const toma = tomaPorId[l.compraId];
+      const c = compraPorId[l.compraId] || (toma ? { factura: 'Ajuste ' + toma.id, fecha: toma.fecha, proveedorId: '', proveedor: 'Toma de inventario', ajuste: true } : null);
       const prod = prodPorId[l.productoId] || { nombre: '(producto eliminado)', edicion: '', idioma: '', tipo: '', pvp: 0 };
       const precio = Productos.precio(prod);
       const costo = l.cantidad ? l.costoNeto + l.despacho / l.cantidad : l.costoNeto;
@@ -174,7 +178,7 @@ const Compras = {
         gananciaProyectada: disponible * e.ganancia,
         ventaProyectada: disponible * precio,
       });
-      if (c) c.lineas.push(lote);
+      if (c && !c.ajuste) c.lineas.push(lote);
       return lote;
     });
 

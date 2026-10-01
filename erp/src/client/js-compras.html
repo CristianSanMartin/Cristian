@@ -11,7 +11,7 @@
   const data = () => GS.state.data;
   const abiertas = new Set();   // facturas con el detalle desplegado
   const DEF_C = { q: '' };
-  const DEF_I = { q: '', agotados: false };
+  const DEF_I = { q: '', agotados: false, tab: 'stock' };
   const signo = (n) => (n < 0 ? 'text-danger' : 'text-success');
   const kpi = (l, v, sub) => '<div class="kpi-card"><div class="kpi-label">' + l + '</div><div class="kpi-value small">' + v + '</div><div class="kpi-sub">' + sub + '</div></div>';
   const buscar = (lista, q, texto) => { const n = GS.norm(q.trim()); return lista.filter((x) => !n || GS.norm(texto(x)).includes(n)); };
@@ -239,11 +239,24 @@
 
   GS.views.inventario = {
     title: 'Inventario',
-    render(el) {
+    render(el, d) {
       const f = GS.filters('inventario', DEF_I);
+      const abierta = (d.tomas || []).some((t) => t.estado === 'abierta');
+      const tab = (id, label) => '<button class="tab' + (f.tab === id ? ' active' : '') + '" data-action="tab" data-id="inventario.' + id + '">' + label + '</button>';
+      const tabs = '<div class="tabs">' + tab('stock', 'Stock') + tab('productos', 'Productos') +
+        tab('toma', 'Toma de inventario' + (abierta ? ' <span class="pill soon">en curso</span>' : '')) + '</div>';
+      if (f.tab === 'productos' || f.tab === 'toma') {
+        el.innerHTML = '<div class="page-head"><div><h1>Inventario</h1><p>' + (f.tab === 'productos'
+          ? 'Todos los productos: corrige sus datos, agrega fotos y une los duplicados.'
+          : 'Inventario físico: compara lo que debería haber con lo que hay, unidad por unidad.') + '</p></div></div>' + tabs + '<div id="inv-sub"></div>';
+        const sub = document.getElementById('inv-sub');
+        if (f.tab === 'productos') GS.views.productos.render(sub, d, { embebido: true });
+        else GS.toma.render(sub);
+        return;
+      }
       el.innerHTML =
         '<div class="page-head"><div><h1>Inventario</h1><p>El stock de cada producto, venga de la compra que venga. Despliega un producto para ver sus unidades una por una y marca las que vas a vender.</p></div>' +
-        '<button class="btn ghost" data-action="exportarInventario">' + GS.icon('download') + 'Exportar</button></div>' +
+        '<button class="btn ghost" data-action="exportarInventario">' + GS.icon('download') + 'Exportar</button></div>' + tabs +
         '<div class="filters-bar"><div class="search-box">' + GS.icon('search') + '<input type="text" data-filter="inventario.q" value="' + esc(f.q) + '" placeholder="Buscar producto..."></div>' +
         '<label class="check"><input type="checkbox" data-filter="inventario.agotados"' + (f.agotados ? ' checked' : '') + '> Mostrar agotados</label></div>' +
         '<div id="inv-resumen"></div>' +
@@ -256,6 +269,8 @@
     },
     update() {
       const f = GS.filters('inventario', DEF_I);
+      if (f.tab === 'toma') return GS.toma.update();
+      if (!document.getElementById('inv-tbody')) return;
       const rows = GS.tablaAplicar('inventario', buscadasInv(), colsInv).filter((r) => f.agotados || r.disponible > 0);
       const op = GS.puede('operador');
       const n = colsInv.length + 2;

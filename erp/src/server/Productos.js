@@ -56,8 +56,43 @@ const Productos = {
     if (Db.all('Preventas').some((l) => l.productoId === prod.id)) {
       throw new AppError('El producto está en una preventa; archívalo en lugar de eliminarlo.');
     }
+    if (Db.all('Compras_Lineas').some((l) => l.productoId === prod.id)) {
+      throw new AppError('El producto tiene stock o historial en el inventario; archívalo o únelo con otro.');
+    }
     Db.remove('Productos', prod.id);
     Audit.log(user, 'eliminar', 'Producto', prod.id, prod);
+  },
+
+  /** Tablas que apuntan a un producto: al unir dos productos se traspasan todas. */
+  TABLAS_CON_PRODUCTO: ['Preventas', 'Compras_Lineas', 'Ventas_Lineas', 'Salidas', 'Tomas_Lineas'],
+
+  /**
+   * Une un producto duplicado (origen) con el que se conserva (destino): su stock, preventas,
+   * ventas, salidas y conteos pasan al destino y el origen se elimina. Si al destino le falta
+   * imagen o precio sugerido, toma los del origen.
+   */
+  unir(p, user) {
+    const origen = Productos.requerir(p.origenId);
+    const destino = Productos.requerir(p.destinoId);
+    if (origen.id === destino.id) throw new AppError('Elige dos productos distintos.');
+    const sello = Util.sello(user);
+    const movidos = {};
+    Productos.TABLAS_CON_PRODUCTO.forEach((t) => {
+      const filas = Db.all(t).filter((r) => r.productoId === origen.id);
+      movidos[t] = filas.length;
+      if (!filas.length) return;
+      const k = Db.schema(t).key;
+      const conSello = 'actualizadoEn' in Db.schema(t).cols;
+      Db.actualizarVarios(t, filas.reduce((o, r) => { o[r[k]] = Object.assign({ productoId: destino.id }, conSello ? sello : {}); return o; }, {}));
+    });
+    const completar = {};
+    if (!destino.imagen && origen.imagen) completar.imagen = origen.imagen;
+    if (!destino.pvp && origen.pvp) completar.pvp = origen.pvp;
+    if (!destino.precioManual && origen.precioManual) Object.assign(completar, { precioManual: true, precioVenta: origen.precioVenta });
+    if (Object.keys(completar).length) Db.update('Productos', destino.id, Object.assign(completar, sello));
+    Db.remove('Productos', origen.id);
+    Audit.log(user, 'unir', 'Producto', destino.id, { origen: origen.id, nombreOrigen: Productos.nombreCompleto(origen), movidos: movidos });
+    return Db.get('Productos', destino.id);
   },
 
   /**
