@@ -29,9 +29,11 @@
     { id: 'iva', label: 'IVA', right: true, valor: (c) => c.iva, texto: (c) => fmt.money(c.iva), celda: (c) => fmt.money(c.iva) },
     { id: 'total', label: 'Total', right: true, valor: (c) => c.total, texto: (c) => fmt.money(c.total), celda: (c) => '<strong>' + fmt.money(c.total) + '</strong>' },
     // Resultado de la factura: se acumula con cada venta de sus productos (Ventas, etapa 3).
-    { id: 'vendidas', label: 'Vendidas', right: true, clase: 'col-res', valor: (c) => c.vendidas / (c.unidades || 1), texto: (c) => c.vendidas + ' / ' + c.unidades,
-      celda: (c) => fmt.num(c.vendidas) + '<span class="cell-dim"> / ' + fmt.num(c.unidades) + '</span>' +
-        '<div class="barra-venta"><span style="width:' + Math.round(100 * c.vendidas / (c.unidades || 1)) + '%"></span></div>' },
+    // Unidades que ya salieron de la factura: vendidas + premios, cajas abiertas y otras salidas.
+    { id: 'vendidas', label: 'Entregadas', right: true, clase: 'col-res', valor: (c) => (c.vendidas + c.salidas) / (c.unidades || 1), texto: (c) => (c.vendidas + c.salidas) + ' / ' + c.unidades,
+      celda: (c) => fmt.num(c.vendidas + c.salidas) + '<span class="cell-dim"> / ' + fmt.num(c.unidades) + '</span>' +
+        '<div class="barra-venta"><span style="width:' + Math.round(100 * (c.vendidas + c.salidas) / (c.unidades || 1)) + '%"></span></div>' +
+        (c.salidas ? '<div class="cell-dim">' + fmt.num(c.vendidas) + ' vendidas · ' + fmt.num(c.salidas) + ' premio/salida</div>' : '') },
     { id: 'ventas', label: 'Ventas acumuladas', right: true, valor: (c) => c.ventasAcumuladas, texto: (c) => fmt.money(c.ventasAcumuladas), celda: (c) => fmt.money(c.ventasAcumuladas) },
     { id: 'ganancia', label: 'Ganancia acumulada', right: true, valor: (c) => c.gananciaAcumulada, texto: (c) => fmt.money(c.gananciaAcumulada),
       celda: (c) => '<strong class="' + (c.gananciaAcumulada < 0 ? 'text-danger' : c.gananciaAcumulada > 0 ? 'text-success' : '') + '">' + fmt.money(c.gananciaAcumulada) + '</strong>' +
@@ -101,7 +103,7 @@
       document.querySelectorAll('.detalle-compra').forEach((d) => { d.style.width = Math.max(320, wrap.clientWidth - 36) + 'px'; });
       const sum = (k) => rows.reduce((t, c) => t + c[k], 0);
       document.getElementById('cp-resumen').innerHTML = '<div class="kpi-grid">' +
-        kpi('Facturas', rows.length, fmt.num(sum('vendidas')) + ' de ' + fmt.num(sum('unidades')) + ' unidades vendidas') +
+        kpi('Facturas', rows.length, fmt.num(sum('vendidas') + sum('salidas')) + ' de ' + fmt.num(sum('unidades')) + ' unidades entregadas') +
         kpi('Total facturado', fmt.money(sum('total')), fmt.money(sum('neto')) + ' neto + ' + fmt.money(sum('iva')) + ' IVA') +
         kpi('Ventas acumuladas', fmt.money(sum('ventasAcumuladas')), 'De los productos de estas facturas') +
         kpi('Ganancia acumulada', '<span class="text-success">' + fmt.money(sum('gananciaAcumulada')) + '</span>', 'de ' + fmt.money(sum('gananciaProyectada')) + ' proyectada vendiendo todo') + '</div>';
