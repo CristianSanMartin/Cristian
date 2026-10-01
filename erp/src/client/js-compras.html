@@ -43,19 +43,22 @@
   GS.tablaRegistrar('compras', { filas: buscadasCompras, columnas: colsCompras, alCambiar: () => GS.views.compras.update() });
 
   function detalleCompra(c) {
+    const admin = GS.puede('admin');
     const fila = (l) => '<tr><td>' + GS.thumb(l.imagen) + '</td><td class="cell-strong">' + esc(l.productoNombre) + ' ' + GS.langPill(l.idioma) +
       '<div class="cell-dim">' + esc(l.preventaId) + (l.edicion ? ' · ' + esc(l.edicion) : '') + '</div></td>' +
       '<td class="cell-num right">' + fmt.num(l.cantidad) + '</td><td class="cell-num right">' + fmt.cost(l.costoNeto) + '</td>' +
       '<td class="cell-num right">' + fmt.money(l.netoLinea) + '</td><td class="cell-num right col-inv">' + fmt.money(l.despacho) + '</td>' +
-      '<td class="cell-num right cell-strong">' + fmt.cost(l.costo) + '</td></tr>';
-    const total = (l, v, cls) => '<tr class="' + (cls || '') + '"><td colspan="4" class="right">' + l + '</td><td class="cell-num right">' + v + '</td><td class="col-inv" colspan="2"></td></tr>';
+      '<td class="cell-num right cell-strong">' + fmt.cost(l.costo) + '</td>' +
+      (admin ? '<td><div class="row-actions">' + GS.iconBtn('quitarLineaCompra', l.id, 'trash', 'Quitar este producto de la factura', 'danger') + '</div></td>' : '') + '</tr>';
+    const extra = admin ? 1 : 0;
+    const total = (l, v, cls) => '<tr class="' + (cls || '') + '"><td colspan="4" class="right">' + l + '</td><td class="cell-num right">' + v + '</td><td class="col-inv" colspan="' + (2 + extra) + '"></td></tr>';
     // Como la factura de Asmodee: el despacho es una fila más cuando se cobra.
     const filaDespacho = c.despacho
       ? '<tr class="item-despacho"><td></td><td class="cell-strong">Despacho</td><td class="cell-num right">1</td><td class="cell-num right">' + fmt.money(c.despacho) + '</td>' +
-        '<td class="cell-num right">' + fmt.money(c.despacho) + '</td><td class="cell-dim right col-inv" colspan="2">prorrateado en los productos ↑</td></tr>'
+        '<td class="cell-num right">' + fmt.money(c.despacho) + '</td><td class="cell-dim right col-inv" colspan="2">prorrateado en los productos ↑</td>' + (admin ? '<td></td>' : '') + '</tr>'
       : '';
     return '<div class="detalle-compra"><table class="data-table"><thead><tr><th></th><th>Ítem</th><th class="right">Cant.</th><th class="right">Precio unidad</th><th class="right">Total neto</th>' +
-      '<th class="right col-inv">Despacho prorrateado</th><th class="right">Costo unidad en inventario</th></tr></thead><tbody>' +
+      '<th class="right col-inv">Despacho prorrateado</th><th class="right">Costo unidad en inventario</th>' + (admin ? '<th></th>' : '') + '</tr></thead><tbody>' +
       c.lineas.map(fila).join('') + filaDespacho +
       '</tbody><tfoot>' +
       total('Neto', fmt.money(c.neto)) + total('IVA 19%', fmt.money(c.iva)) + total('<strong>Total factura</strong>', '<strong>' + fmt.money(c.total) + '</strong>', 'total-row') +
@@ -119,6 +122,21 @@
       confirmLabel: 'Sí, anular',
       danger: true,
       onConfirm: () => GS.mutate('anularCompra', { id: id }, 'Factura ' + c.factura + ' anulada'),
+    });
+  };
+
+  GS.actions.quitarLineaCompra = (id) => {
+    const c = data().compras.find((x) => x.lineas.some((l) => l.id === id));
+    const l = c.lineas.find((x) => x.id === id);
+    const ultima = c.lineas.length === 1;
+    GS.confirm({
+      title: 'Quitar producto de la factura ' + c.factura,
+      message: 'Se quitan <strong>' + fmt.num(l.cantidad) + ' u. de ' + esc(l.producto) + '</strong> de la factura ' + esc(c.factura) + ' y salen del inventario' +
+        (ultima ? '. Es el único producto, así que <strong>la factura se borra</strong>' : '') +
+        '. Úsalo para corregir una línea que no debía estar. Si tiene ventas, primero hay que anularlas. Queda registrado en la auditoría.',
+      confirmLabel: 'Sí, quitar',
+      danger: true,
+      onConfirm: () => GS.mutate('quitarLineaCompra', { id: id }, 'Producto quitado de la factura ' + c.factura),
     });
   };
 

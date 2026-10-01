@@ -38,6 +38,7 @@ function rutas_() {
 
     crearCompra: { rol: 'operador', write: true, fn: Compras.crear },
     anularCompra: { rol: 'admin', write: true, fn: Compras.anular },
+    quitarLineaCompra: { rol: 'admin', write: true, fn: Compras.quitarLinea },
 
     crearVenta: { rol: 'operador', write: true, fn: Ventas.crear },
     registrarCobro: { rol: 'operador', write: true, fn: Ventas.registrarCobro },

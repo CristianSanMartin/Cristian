@@ -72,6 +72,43 @@ const Compras = {
     Audit.log(user, 'anular', 'Compra', compra.id, { factura: compra.factura, lineas: lineas.map((l) => l.preventaId).join(', ') });
   },
 
+  /**
+   * Quita un producto (lote) de una factura: para corregir una línea que no debía estar
+   * (por ejemplo, una fila de totales que se coló en la migración). Sus salidas se anulan,
+   * su preventa vuelve a "asignada" y el despacho se reparte entre las líneas que quedan.
+   * Si era la única línea, se borra la factura completa.
+   */
+  quitarLinea(p, user) {
+    const lote = Db.get('Compras_Lineas', String(p.id || ''));
+    if (!lote) throw new AppError('Ese producto ya no está en la factura.', 'NO_ENCONTRADO');
+    const compra = Compras.requerir(lote.compraId);
+    const anuladas = {};
+    Db.all('Ventas').forEach((v) => { if (v.anulada) anuladas[v.id] = true; });
+    const ocs = Array.from(new Set(Db.all('Ventas_Lineas').filter((l) => l.loteId === lote.id && !anuladas[l.ventaId]).map((l) => l.ventaId)));
+    if (ocs.length) throw new AppError('Este producto tiene ventas (' + ocs.join(', ') + '): anula primero esas ventas en Ventas.');
+    const sello = Util.sello(user);
+    const salidas = Db.all('Salidas').filter((x) => x.loteId === lote.id && !x.anulada);
+    if (salidas.length) Db.actualizarVarios('Salidas', salidas.reduce((o, x) => { o[x.id] = Object.assign({ anulada: true }, sello); return o; }, {}));
+    if (lote.preventaId) {
+      const pv = Db.get('Preventas', lote.preventaId);
+      if (pv) Db.update('Preventas', pv.id, Object.assign({ estado: 'asignada' }, sello));
+    }
+    Db.remove('Compras_Lineas', lote.id);
+    const resto = Db.all('Compras_Lineas').filter((l) => l.compraId === compra.id);
+    if (!resto.length) {
+      Db.remove('Compras', compra.id);
+    } else if (compra.despacho) {
+      const neto = resto.reduce((t, l) => t + l.cantidad * l.costoNeto, 0);
+      Db.actualizarVarios('Compras_Lineas', resto.reduce((o, l) => {
+        o[l.id] = Object.assign({ despacho: neto ? compra.despacho * l.cantidad * l.costoNeto / neto : 0 }, sello);
+        return o;
+      }, {}));
+    }
+    Audit.log(user, 'quitar producto', 'Compra', compra.id, {
+      factura: compra.factura, lote: lote.id, productoId: lote.productoId, cantidad: lote.cantidad, salidasAnuladas: salidas.length, facturaBorrada: !resto.length,
+    });
+  },
+
   requerir(id) {
     const c = Db.get('Compras', String(id || ''));
     if (!c) throw new AppError('La compra no existe.', 'NO_ENCONTRADO');

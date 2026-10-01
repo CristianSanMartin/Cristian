@@ -500,6 +500,33 @@ test("venta: sale del inventario, calcula ganancia real y comisión TUU, y acumu
   assert.equal(s.ok("bootstrap").data.compras[0].estadoVenta, "vendiendo");
 });
 
+test("quitar un producto de una factura: sale del inventario, reparte el despacho y si era el último borra la factura", () => {
+  const s = createServer();
+  const { prods } = conInventario(s);
+  const compra = s.ok("bootstrap").data.compras[0];
+  const despacho = compra.despacho;
+  const tin = lote(s, prods.miniTin.id)[0];
+  s.ok("guardarUsuario", { email: "socio@gsprime.cl", nombre: "Socio", rol: "operador" });
+  assert.equal(s.as("socio@gsprime.cl").call("quitarLineaCompra", { id: tin.id }).code, "SIN_PERMISO");
+  s.as("admin@gsprime.cl");
+
+  // Con ventas no se puede: primero se anulan
+  const v = s.ok("crearVenta", { fecha: "2026-10-05", lineas: [{ productoId: prods.miniTin.id, cantidad: 1 }] }).result;
+  assert.match(errorDe(s.call("quitarLineaCompra", { id: tin.id })), /tiene ventas \(OC-0001\)/);
+  s.ok("anularVenta", { id: v.id });
+  s.ok("quitarLineaCompra", { id: tin.id });
+  let data = s.ok("bootstrap").data;
+  assert.equal(data.lotes.filter(l => l.productoId === prods.miniTin.id).length, 0);
+  const c = data.compras[0];
+  assert.equal(c.lineas.length, 2);
+  assert.equal(Math.round(c.lineas.reduce((t, l) => t + l.despacho, 0)), despacho, "el despacho completo queda en las líneas que quedan");
+
+  // Quitar las otras dos borra la factura
+  c.lineas.forEach(l => s.ok("quitarLineaCompra", { id: l.id }));
+  data = s.ok("bootstrap").data;
+  assert.deepEqual([data.compras.length, data.lotes.length], [0, 0]);
+});
+
 test("venta en varios lotes (FIFO) y cuenta por cobrar con abonos", () => {
   const s = createServer();
   const { prods } = conInventario(s);
