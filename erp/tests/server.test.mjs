@@ -149,9 +149,9 @@ test("asignación: diferencia, nuevos totales, 'sin asignación' y volver a soli
     { id: p.binderEng.id, asignado: 24 }, { id: p.binderEsp.id, asignado: 6 }, { id: p.miniTin.id, asignado: 10 },
   ] });
   const be = pv(s, p.binderEng.id);
-  assert.deepEqual([be.estado, be.diferencia, be.netoAsignado, Math.round(be.netoAsignado * 1.19)], ["asignada", 36, 621288, 739333]);
+  assert.deepEqual([be.estado, be.diferencia, be.netoAsignado, Math.round(be.netoAsignado * 1.19)], ["asignada", -36, 621288, 739333]);
   const esp = pv(s, p.binderEsp.id);
-  assert.deepEqual([esp.diferencia, esp.netoAsignado, Math.round(esp.netoAsignado * 1.19)], [-6, 155322, 184833]);
+  assert.deepEqual([esp.diferencia, esp.netoAsignado, Math.round(esp.netoAsignado * 1.19)], [6, 155322, 184833]);
   assert.equal(pv(s, p.deck.id).estado, "solicitada");
 
   s.ok("registrarAsignacion", { lineas: [{ id: p.deck.id, asignado: 0 }] });

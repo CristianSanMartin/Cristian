@@ -112,7 +112,7 @@ const Preventas = {
         precioVenta: precio,
         precioManual: !!prod.precioManual,
         costoIva: Economia.conIva(pv.costoNeto),
-        diferencia: asignada ? pv.solicitado - pv.asignado : null,
+        diferencia: asignada ? pv.asignado - pv.solicitado : null,   // negativo: nos asignaron menos de lo pedido
         netoSolicitado: pv.solicitado * pv.costoNeto,
         netoAsignado: asignada ? pv.asignado * pv.costoNeto : null,
         cantidadVigente: cantidad,

@@ -189,8 +189,8 @@
     { id: 'cant', label: 'Cant.', right: true, valor: (p) => p.solicitado, texto: (p) => fmt.num(p.solicitado), celda: (p) => fmt.num(p.solicitado) },
     { id: 'nuevo', label: 'Nuevo cant.', right: true, valor: (p) => (asignada(p) ? p.asignado : null), texto: (p) => (asignada(p) ? fmt.num(p.asignado) : ''),
       celda: (p, op) => celdaAsignado(p, op) },
-    { id: 'dif', label: 'Dif.', right: true, valor: (p) => (asignada(p) ? p.diferencia : null), texto: (p) => (asignada(p) ? fmt.num(p.diferencia) : ''),
-      celda: (p) => '<span class="' + (p.diferencia < 0 ? 'text-gold' : '') + '">' + vig(p, fmt.num(p.diferencia)) + '</span>' },
+    { id: 'dif', label: 'Dif.', right: true, valor: (p) => (asignada(p) ? p.diferencia : null), texto: (p) => (asignada(p) ? (p.diferencia > 0 ? '+' : '') + fmt.num(p.diferencia) : ''),
+      celda: (p) => '<span class="' + (p.diferencia < 0 ? 'text-danger' : p.diferencia > 0 ? 'text-gold' : '') + '">' + vig(p, (p.diferencia > 0 ? '+' : '') + fmt.num(p.diferencia)) + '</span>' },
     // Neto arriba y con IVA debajo, en la misma celda, para que la tabla quepa en la pantalla.
     { id: 'costo', label: 'Precio unidad', right: true, valor: (p) => p.costoNeto, texto: (p) => fmt.cost(p.costoNeto),
       celda: (p) => fmt.cost(p.costoNeto) + '<div class="cell-dim">' + fmt.money(p.costoIva) + ' c/IVA</div>' },
