@@ -11,16 +11,36 @@
   const ROL_LABEL = { admin: 'Administrador', operador: 'Operador', lectura: 'Solo lectura' };
   let auditoria = null;
 
+  const colsUsuarios = [
+    { id: 'email', label: 'Correo', valor: (u) => u.email, celda: (u) => '<span class="cell-strong">' + esc(u.email) + '</span>' + (u.email === data().user.email ? ' <span class="pill">tú</span>' : '') },
+    { id: 'nombre', label: 'Nombre', valor: (u) => u.nombre, celda: (u) => esc(u.nombre) },
+    { id: 'rol', label: 'Rol', valor: (u) => ROL_LABEL[u.rol] || u.rol, celda: (u) => '<span class="badge rol-' + esc(u.rol) + '">' + esc(ROL_LABEL[u.rol] || u.rol) + '</span>' },
+    { id: 'estado', label: 'Estado', valor: (u) => (u.activo ? 'Activo' : 'Inactivo'), celda: (u) => (u.activo ? '<span class="badge st-ok">Activo</span>' : '<span class="badge st-cancelada">Inactivo</span>') },
+    { id: 'alta', label: 'Alta', valor: (u) => String(u.creadoEn || '').slice(0, 10), celda: (u) => '<span class="cell-dim">' + esc(String(u.creadoEn || '').slice(0, 10)) + '</span>' },
+  ];
+  const usuariosOrdenados = () => data().usuarios.slice().sort((a, b) => (b.activo - a.activo) || a.email.localeCompare(b.email));
+  GS.tablaRegistrar('usuarios', { filas: usuariosOrdenados, columnas: colsUsuarios, alCambiar: () => GS.render() });
+
+  const prettyJson = (s) => {
+    if (!s) return '';
+    try { return JSON.stringify(JSON.parse(s), null, 1).replace(/^\{\n|\n\}$/g, '').replace(/^ /gm, ''); } catch (e) { return s; }
+  };
+  const colsAuditoria = [
+    { id: 'fecha', label: 'Fecha', clase: 'nowrap', valor: (a) => a.fecha, texto: (a) => String(a.fecha).slice(0, 10), celda: (a) => '<span class="cell-dim">' + esc(a.fecha) + '</span>' },
+    { id: 'usuario', label: 'Usuario', valor: (a) => a.usuario, celda: (a) => esc(a.usuario) },
+    { id: 'accion', label: 'Acción', valor: (a) => a.accion, celda: (a) => '<span class="cell-strong">' + esc(a.accion) + '</span>' },
+    { id: 'entidad', label: 'Entidad', valor: (a) => a.entidad, celda: (a) => esc(a.entidad) },
+    { id: 'detalle', label: 'Detalle', sinMenu: true, valor: () => '', celda: (a) => '<pre class="json">' + esc(prettyJson(a.detalle)) + '</pre>' },
+  ];
+  GS.tablaRegistrar('auditoria', { filas: () => auditoria || [], columnas: colsAuditoria, alCambiar: () => GS.render() });
+
   function tabUsuarios() {
-    const users = data().usuarios.slice().sort((a, b) => (b.activo - a.activo) || a.email.localeCompare(b.email));
+    const users = GS.tablaAplicar('usuarios', usuariosOrdenados(), colsUsuarios);
     return '<div class="notice">Para entrar, cada persona necesita <strong>dos cosas</strong>: estar en esta lista (activa) y tener acceso de <strong>edición</strong> a la planilla del ERP en Google Drive. ' +
       'Roles: <strong>Solo lectura</strong> consulta; <strong>Operador</strong> crea y edita preventas, productos y proveedores; <strong>Administrador</strong> además elimina y gestiona usuarios.</div>' +
       '<div class="btn-row" style="justify-content:flex-end;margin-bottom:12px;"><button class="btn" data-action="nuevoUsuario">' + GS.icon('plus', 2.4) + 'Agregar usuario</button></div>' +
-      '<div class="table-wrap"><table class="data-table" style="min-width:680px;"><thead><tr><th>Correo</th><th>Nombre</th><th>Rol</th><th>Estado</th><th>Alta</th><th class="right">Acciones</th></tr></thead><tbody>' +
-      users.map((u) => '<tr class="' + (u.activo ? '' : 'row-muted') + '"><td class="cell-strong">' + esc(u.email) + (u.email === data().user.email ? ' <span class="pill">tú</span>' : '') + '</td>' +
-        '<td>' + esc(u.nombre) + '</td><td><span class="badge rol-' + esc(u.rol) + '">' + esc(ROL_LABEL[u.rol] || u.rol) + '</span></td>' +
-        '<td>' + (u.activo ? '<span class="badge st-ok">Activo</span>' : '<span class="badge st-cancelada">Inactivo</span>') + '</td>' +
-        '<td class="cell-dim">' + esc(u.creadoEn.slice(0, 10)) + '</td>' +
+      '<div class="table-wrap"><table class="data-table" style="min-width:680px;"><thead><tr>' + GS.tablaEncabezado('usuarios', colsUsuarios) + '<th class="right">Acciones</th></tr></thead><tbody>' +
+      users.map((u) => '<tr class="' + (u.activo ? '' : 'row-muted') + '">' + colsUsuarios.map((c) => '<td>' + c.celda(u) + '</td>').join('') +
         '<td><div class="row-actions">' + GS.iconBtn('editarUsuario', u.email, 'edit', 'Editar') + '</div></td></tr>').join('') +
       '</tbody></table></div>';
   }
@@ -30,16 +50,12 @@
       GS.api('auditoria').then((r) => { auditoria = r.data; GS.render(); }).catch((e) => GS.toast(e.message, true));
       return '<div class="empty-state"><div class="spinner"></div>Cargando registro…</div>';
     }
-    const pretty = (s) => {
-      if (!s) return '';
-      try { return JSON.stringify(JSON.parse(s), null, 1).replace(/^\{\n|\n\}$/g, '').replace(/^ /gm, ''); } catch (e) { return s; }
-    };
+    const filasAud = GS.tablaAplicar('auditoria', auditoria, colsAuditoria);
     return '<div class="btn-row" style="justify-content:space-between;margin-bottom:12px;"><span class="muted" style="font-size:12px;">Últimos 300 cambios, del más reciente al más antiguo.</span>' +
       '<button class="btn ghost" data-action="recargarAuditoria">Actualizar</button></div>' +
-      '<div class="table-wrap"><table class="data-table"><thead><tr><th>Fecha</th><th>Usuario</th><th>Acción</th><th>Entidad</th><th>Detalle</th></tr></thead><tbody>' +
-      (auditoria.length
-        ? auditoria.map((a) => '<tr><td class="nowrap cell-dim">' + esc(a.fecha) + '</td><td>' + esc(a.usuario) + '</td><td class="cell-strong">' + esc(a.accion) + '</td>' +
-          '<td>' + esc(a.entidad) + '</td><td><pre class="json">' + esc(pretty(a.detalle)) + '</pre></td></tr>').join('')
+      '<div class="table-wrap"><table class="data-table"><thead><tr>' + GS.tablaEncabezado('auditoria', colsAuditoria) + '</tr></thead><tbody>' +
+      (filasAud.length
+        ? filasAud.map((a) => '<tr>' + colsAuditoria.map((c) => '<td class="' + (c.clase || '') + '">' + c.celda(a) + '</td>').join('') + '</tr>').join('')
         : '<tr><td colspan="5">' + GS.empty('Sin registros', '') + '</td></tr>') +
       '</tbody></table></div>';
   }

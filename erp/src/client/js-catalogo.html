@@ -122,17 +122,29 @@
     });
   };
 
+  const colsProd = [
+    { id: 'img', label: '', sinMenu: true, valor: () => '', celda: (p) => GS.thumb(p.imagen) },
+    { id: 'sku', label: 'SKU', clase: 'nowrap', valor: (p) => p.id, celda: (p) => '<span class="cell-dim">' + esc(p.id) + '</span>' },
+    { id: 'producto', label: 'Producto', clase: 'col-prod', valor: (p) => p.nombre, celda: (p) => {
+      const extra = [p.factor > 1 ? p.factor + ' u. proveedor' : '', p.activo ? '' : 'archivado', p.migrado ? 'migración' : ''].filter(Boolean).join(' · ');
+      return '<span class="cell-strong">' + esc(p.nombre) + '</span>' + (extra ? '<div class="cell-dim">' + esc(extra) + '</div>' : '');
+    } },
+    { id: 'edicion', label: 'Edición', valor: (p) => p.edicion || '', texto: (p) => p.edicion || 'Sin edición', celda: (p) => esc(p.edicion || '—') },
+    { id: 'idioma', label: 'Idioma', valor: (p) => p.idioma || '', texto: (p) => p.idioma || 'Sin idioma', celda: (p) => GS.langPill(p.idioma) },
+    { id: 'tipo', label: 'Tipo', valor: (p) => p.tipo, celda: (p) => esc(p.tipo) },
+    { id: 'foto', label: 'Foto', valor: (p) => (p.imagen ? 'Con foto' : 'Sin foto'), celda: (p) => (p.imagen ? '<span class="text-success">✓</span>' : '<span class="muted">—</span>') },
+    { id: 'pvp', label: 'PVP', right: true, valor: (p) => p.pvp, texto: (p) => fmt.money(p.pvp), celda: (p) => (p.pvp ? fmt.money(p.pvp) : '—') },
+    { id: 'precio', label: 'Precio venta', right: true, valor: (p) => p.precio, texto: (p) => fmt.money(p.precio),
+      celda: (p) => '<strong>' + (p.precio ? fmt.money(p.precio) : '—') + '</strong>' + (p.precioManual ? '<div><span class="pill soon">manual</span></div>' : '') },
+    { id: 'stock', label: 'Stock', right: true, valor: (p) => p.stock, celda: (p) => (p.stock ? '<strong>' + fmt.num(p.stock) + '</strong>' : '—') },
+    { id: 'costo', label: 'Último costo neto', right: true, valor: (p) => p.ultimoCosto, texto: (p) => fmt.money(p.ultimoCosto), celda: (p) => (p.ultimoCosto ? fmt.cost(p.ultimoCosto) : '—') },
+  ];
+  GS.tablaRegistrar('productos', { filas: productosFiltrados, columnas: colsProd, alCambiar: () => GS.views.productos.update() });
+
   function filaProducto(p) {
     const operador = GS.puede('operador');
     return '<tr class="' + (p.activo ? '' : 'row-muted') + '">' +
-      '<td>' + GS.thumb(p.imagen) + '</td>' +
-      '<td class="nowrap cell-dim">' + esc(p.id) + '</td>' +
-      '<td class="cell-strong">' + esc(p.nombre) + '<div class="cell-dim">' + esc(p.edicion || 'Sin edición') + ' · ' + esc(p.tipo) + (p.factor > 1 ? ' · ' + p.factor + ' u. proveedor' : '') + (p.activo ? '' : ' · archivado') + (p.migrado ? ' · migración' : '') + '</div></td>' +
-      '<td>' + GS.langPill(p.idioma) + '</td>' +
-      '<td class="cell-num right">' + (p.pvp ? fmt.money(p.pvp) : '—') + '</td>' +
-      '<td class="cell-num right cell-strong">' + (p.precio ? fmt.money(p.precio) : '—') + (p.precioManual ? '<div><span class="pill soon">manual</span></div>' : '') + '</td>' +
-      '<td class="cell-num right">' + (p.stock ? '<strong>' + fmt.num(p.stock) + '</strong>' : '—') + '</td>' +
-      '<td class="cell-num right">' + (p.ultimoCosto ? fmt.cost(p.ultimoCosto) : '—') + '</td>' +
+      colsProd.map((c) => '<td class="' + (c.right ? 'cell-num right ' : '') + (c.clase || '') + '">' + c.celda(p) + '</td>').join('') +
       '<td><div class="row-actions">' +
       (operador ? GS.iconBtn('editarProducto', p.id, 'edit', 'Editar') : '') +
       (GS.puede('admin') ? GS.iconBtn('unirProducto', p.id, 'move', 'Unir con otro producto (duplicado)') : '') +
@@ -145,7 +157,6 @@
     /** opts.embebido: dentro de Inventario (sin encabezado de página). */
     render(el, d, opts) {
       const f = GS.filters('productos', DEF_PROD);
-      const ediciones = Array.from(new Set(d.productos.map((p) => p.edicion).filter(Boolean))).sort();
       const botones = '<div class="btn-row">' +
         '<button class="btn ghost" data-action="exportarProductos">' + GS.icon('download') + 'Exportar</button>' +
         (GS.puede('operador') ? '<button class="btn" data-action="nuevoProducto">' + GS.icon('plus', 2.4) + 'Nuevo producto</button>' : '') +
@@ -157,24 +168,19 @@
         '<div class="filters-bar">' +
         '<div class="select-input"><select data-filter="productos.rapido" aria-label="Filtro rápido">' + GS.options(RAPIDOS, f.rapido) + '</select></div>' +
         '<div class="search-box">' + GS.icon('search') + '<input type="text" data-filter="productos.q" value="' + esc(f.q) + '" placeholder="Buscar por nombre, SKU o código..."></div>' +
-        '<div class="select-input"><select data-filter="productos.edicion">' + GS.options([{ value: '', label: 'Todas las ediciones' }].concat(ediciones), f.edicion) + '</select></div>' +
-        '<div class="select-input"><select data-filter="productos.idioma">' + GS.options([{ value: '', label: 'Todos los idiomas' }].concat(d.catalogos.idiomas), f.idioma) + '</select></div>' +
-        '<div class="select-input"><select data-filter="productos.tipo">' + GS.options([{ value: '', label: 'Todos los tipos' }].concat(Object.keys(d.catalogos.tipos)), f.tipo) + '</select></div>' +
         '<div class="select-input"><select data-filter="productos.estado">' + GS.options([{ value: 'activos', label: 'Activos' }, { value: 'archivados', label: 'Archivados' }, { value: '', label: 'Todos' }], f.estado) + '</select></div>' +
         '<span class="count" id="prod-count"></span></div>' +
-        '<div class="table-wrap"><table class="data-table"><thead><tr>' +
-        '<th></th><th>SKU</th><th class="col-prod">Producto</th><th>Idioma</th><th class="right">PVP</th><th class="right">Precio venta</th>' +
-        '<th class="right">Stock</th><th class="right">Último costo neto</th><th class="right">Acciones</th>' +
-        '</tr></thead><tbody id="prod-tbody"></tbody></table></div>' +
+        '<div class="table-wrap"><table class="data-table compacta"><thead><tr id="prod-thead"></tr></thead><tbody id="prod-tbody"></tbody></table></div>' +
         '<p class="table-note">Stock = unidades disponibles en Inventario. Último costo neto = el de su preventa más reciente.</p>';
       this.update();
     },
     update() {
-      const rows = productosFiltrados();
+      const rows = GS.tablaAplicar('productos', productosFiltrados(), colsProd);
       document.getElementById('prod-count').textContent = rows.length + ' productos';
+      document.getElementById('prod-thead').innerHTML = GS.tablaEncabezado('productos', colsProd) + '<th class="right">Acciones</th>';
       document.getElementById('prod-tbody').innerHTML = rows.length
         ? rows.map(filaProducto).join('')
-        : '<tr><td colspan="9">' + GS.empty('No hay productos para mostrar', 'Crea un producto o ajusta los filtros.', 'productos') + '</td></tr>';
+        : '<tr><td colspan="' + (colsProd.length + 1) + '">' + GS.empty('No hay productos para mostrar', 'Crea un producto o ajusta los filtros.', 'productos') + '</td></tr>';
     },
   };
 
@@ -313,21 +319,30 @@
   GS.reglaDespacho = (p) => (!p.despachoMonto ? 'Sin cobro de despacho'
     : fmt.money(p.despachoMonto) + ' neto' + (p.despachoUmbral ? ' · gratis desde ' + fmt.money(p.despachoUmbral) + ' neto' : ''));
 
+  const colsProv = [
+    { id: 'id', label: 'ID', valor: (p) => p.id, celda: (p) => '<span class="cell-dim">' + esc(p.id) + '</span>' },
+    { id: 'nombre', label: 'Proveedor', valor: (p) => p.nombre, celda: (p) => '<span class="cell-strong">' + esc(p.nombre) + '</span>' + (p.activo ? '' : ' <span class="pill">archivado</span>') },
+    { id: 'rut', label: 'RUT', valor: (p) => p.rut || '', celda: (p) => esc(p.rut || '—') },
+    { id: 'contacto', label: 'Contacto', valor: (p) => p.contacto || '', celda: (p) => esc(p.contacto || '—') },
+    { id: 'despacho', label: 'Despacho', valor: (p) => GS.reglaDespacho(p), celda: (p) => esc(GS.reglaDespacho(p)) },
+    { id: 'estado', label: 'Estado', valor: (p) => (p.activo ? 'Activo' : 'Archivado'), celda: (p) => (p.activo ? '<span class="badge st-ok">Activo</span>' : '<span class="badge st-cancelada">Archivado</span>') },
+  ];
+  const proveedoresOrdenados = () => data().proveedores.slice().sort((a, b) => (b.activo - a.activo) || a.nombre.localeCompare(b.nombre));
+  GS.tablaRegistrar('proveedores', { filas: proveedoresOrdenados, columnas: colsProv, alCambiar: () => GS.render() });
+
   GS.views.proveedores = {
     title: 'Proveedores',
-    render(el, d) {
+    render(el) {
       const operador = GS.puede('operador');
-      const rows = d.proveedores.slice().sort((a, b) => (b.activo - a.activo) || a.nombre.localeCompare(b.nombre));
+      const rows = GS.tablaAplicar('proveedores', proveedoresOrdenados(), colsProv);
       el.innerHTML =
         '<div class="page-head"><div><h1>Proveedores</h1><p>Datos de contacto y regla de despacho de cada proveedor.</p></div>' +
         (operador ? '<button class="btn" data-action="nuevoProveedor">' + GS.icon('plus', 2.4) + 'Nuevo proveedor</button>' : '') + '</div>' +
-        '<div class="table-wrap"><table class="data-table" style="min-width:760px;"><thead><tr>' +
-        '<th>ID</th><th>Proveedor</th><th>RUT</th><th>Contacto</th><th>Despacho</th><th class="right">Acciones</th></tr></thead><tbody>' +
+        '<div class="table-wrap"><table class="data-table" style="min-width:760px;"><thead><tr>' + GS.tablaEncabezado('proveedores', colsProv) + '<th class="right">Acciones</th></tr></thead><tbody>' +
         (rows.length ? rows.map((p) => '<tr class="' + (p.activo ? '' : 'row-muted') + '">' +
-          '<td class="cell-dim">' + esc(p.id) + '</td><td class="cell-strong">' + esc(p.nombre) + (p.activo ? '' : ' <span class="pill">archivado</span>') + '</td>' +
-          '<td>' + esc(p.rut || '—') + '</td><td>' + esc(p.contacto || '—') + '</td><td>' + esc(GS.reglaDespacho(p)) + '</td>' +
+          colsProv.map((c) => '<td>' + c.celda(p) + '</td>').join('') +
           '<td><div class="row-actions">' + (operador ? GS.iconBtn('editarProveedor', p.id, 'edit', 'Editar') + GS.iconBtn('archivarProveedor', p.id, 'archive', p.activo ? 'Archivar' : 'Reactivar') : '') + '</div></td></tr>').join('')
-          : '<tr><td colspan="6">' + GS.empty('Sin proveedores', '', 'proveedores') + '</td></tr>') +
+          : '<tr><td colspan="' + (colsProv.length + 1) + '">' + GS.empty('Sin proveedores', '', 'proveedores') + '</td></tr>') +
         '</tbody></table></div>';
     },
   };

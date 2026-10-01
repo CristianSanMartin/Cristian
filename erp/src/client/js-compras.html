@@ -108,7 +108,7 @@
           : GS.empty('Aún no hay facturas', 'En Preventas, selecciona las preventas asignadas que vienen en la factura y presiona "Crear factura de compra".', 'compras')) + '</td></tr>';
       document.getElementById('cp-completas-bloque').hidden = !completas.length;
       document.getElementById('cp-completas-n').textContent = '(' + completas.length + ')';
-      document.getElementById('cp-thead-comp').innerHTML = '<th></th>' + colsCompras.map((col) => '<th' + (col.right ? ' class="right"' : '') + '>' + esc(col.label) + '</th>').join('') + '<th></th>';
+      document.getElementById('cp-thead-comp').innerHTML = '<th></th>' + GS.tablaEncabezado('compras', colsCompras) + '<th></th>';
       document.getElementById('cp-tbody-comp').innerHTML = completas.map(fila).join('');
       // El detalle queda fijo al ancho visible aunque la lista de facturas se desplace hacia el lado.
       document.querySelectorAll('.detalle-compra').forEach((d) => { d.style.width = Math.max(320, d.closest('.table-wrap').clientWidth - 36) + 'px'; });

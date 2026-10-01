@@ -180,8 +180,25 @@
       kpi('Unidades de más', fmt.num(sum('sobrante')), 'entran al inventario al cerrar') + '</div>';
   }
 
+  const uds = (arr) => (arr || []).reduce((s, x) => s + x.cantidad, 0);
+  const colsHist = [
+    { id: 'id', label: 'Toma', valor: (t) => t.id, celda: (t) => '<span class="cell-strong">' + esc(t.id) + '</span>' + (t.notas ? '<div class="cell-dim">' + esc(t.notas) + '</div>' : '') },
+    { id: 'fecha', label: 'Fecha', clase: 'nowrap', valor: (t) => t.fecha, celda: (t) => esc(t.fecha) },
+    { id: 'estado', label: 'Estado', valor: (t) => (t.estado === 'cerrada' ? 'Cerrada' : 'Anulada'),
+      celda: (t) => '<span class="badge ' + (t.estado === 'cerrada' ? 'st-ok' : 'st-cancelada') + '">' + (t.estado === 'cerrada' ? 'Cerrada' : 'Anulada') + '</span>' },
+    { id: 'esperado', label: 'Esperado', right: true, valor: (t) => (t.resumen ? t.resumen.esperado : ''), celda: (t) => (t.resumen ? fmt.num(t.resumen.esperado) : '—') },
+    { id: 'encontrado', label: 'Encontrado', right: true, valor: (t) => (t.resumen ? t.resumen.encontrado : ''), celda: (t) => (t.resumen ? fmt.num(t.resumen.encontrado) : '—') },
+    { id: 'faltantes', label: 'Faltantes', right: true, valor: (t) => (t.resumen ? uds(t.resumen.faltantes) : ''),
+      celda: (t) => (t.resumen ? fmt.num(uds(t.resumen.faltantes)) + '<div class="cell-dim">' + fmt.money(t.resumen.valorFaltante) + '</div>' : '—') },
+    { id: 'sobrantes', label: 'De más', right: true, valor: (t) => (t.resumen ? uds(t.resumen.sobrantes) : ''),
+      celda: (t) => (t.resumen ? fmt.num(uds(t.resumen.sobrantes)) + '<div class="cell-dim">' + fmt.money(t.resumen.valorSobrante) + '</div>' : '—') },
+    { id: 'cerradaPor', label: 'Cerrada por', valor: (t) => t.cerradaPor || '', celda: (t) => esc(t.cerradaPor || '') + '<div class="cell-dim">' + esc(t.cerradaEn || '') + '</div>' },
+  ];
+  const historial = () => (data().tomas || []).filter((t) => t.estado !== 'abierta');
+  GS.tablaRegistrar('tomas', { filas: historial, columnas: colsHist, alCambiar: () => GS.render() });
+
   function vistaSinToma(el) {
-    const tomas = (data().tomas || []).filter((t) => t.estado !== 'abierta');
+    const tomas = GS.tablaAplicar('tomas', historial(), colsHist);
     const total = data().lotes.reduce((s, l) => s + l.disponible, 0);
     el.innerHTML =
       '<div class="panel inline-panel"><div class="inline-panel-head"><h3>Nueva toma de inventario</h3>' +
@@ -189,26 +206,19 @@
       'Puedes imprimir la hoja para contar en papel. Al cerrar, un administrador decide si los faltantes se registran como pérdida y si las unidades de más entran al inventario.</span></div>' +
       (GS.puede('operador') ? '<button class="btn" data-action="tomaIniciar">' + GS.icon('check') + 'Iniciar toma de inventario</button>' : '<p class="muted">Solo un operador o administrador puede iniciar una toma.</p>') + '</div>' +
       '<h3 class="sub-titulo" style="margin-top:22px;">Tomas anteriores</h3>' +
-      '<div class="table-wrap"><table class="data-table" style="min-width:760px;"><thead><tr><th></th><th>Toma</th><th>Fecha</th><th>Estado</th><th class="right">Esperado</th><th class="right">Encontrado</th>' +
-      '<th class="right">Faltantes</th><th class="right">De más</th><th>Cerrada por</th></tr></thead><tbody>' +
+      '<div class="table-wrap"><table class="data-table" style="min-width:760px;"><thead><tr><th></th>' + GS.tablaEncabezado('tomas', colsHist) + '</tr></thead><tbody>' +
       (tomas.length ? tomas.map(filaHistorial).join('') : '<tr><td colspan="9" class="muted center">Todavía no hay tomas de inventario.</td></tr>') +
       '</tbody></table></div>';
   }
 
   function filaHistorial(t) {
     const r = t.resumen;
-    const u = (arr) => (arr || []).reduce((s, x) => s + x.cantidad, 0);
     const open = verHistorial.has(t.id);
     const lista = (titulo, arr) => (arr && arr.length ? '<div><strong>' + titulo + '</strong><ul class="toma-detalle">' +
       arr.map((x) => '<li>' + esc(prodDe(x.productoId).nombreCompleto || x.productoId) + ' · ' + fmt.num(x.cantidad) + ' u. · ' + fmt.money(x.cantidad * x.costo) + '</li>').join('') + '</ul></div>' : '');
     return '<tr class="fila-compra' + (open ? ' abierta' : '') + '"' + (r ? ' data-action="tomaVer" data-id="' + esc(t.id) + '"' : '') + '>' +
-      '<td>' + (r ? '<span class="chev">' + (open ? '▾' : '▸') + '</span>' : '') + '</td><td class="cell-strong">' + esc(t.id) + (t.notas ? '<div class="cell-dim">' + esc(t.notas) + '</div>' : '') + '</td>' +
-      '<td class="nowrap">' + esc(t.fecha) + '</td>' +
-      '<td><span class="badge ' + (t.estado === 'cerrada' ? 'st-ok' : 'st-cancelada') + '">' + (t.estado === 'cerrada' ? 'Cerrada' : 'Anulada') + '</span></td>' +
-      '<td class="cell-num right">' + (r ? fmt.num(r.esperado) : '—') + '</td><td class="cell-num right">' + (r ? fmt.num(r.encontrado) : '—') + '</td>' +
-      '<td class="cell-num right">' + (r ? fmt.num(u(r.faltantes)) + '<div class="cell-dim">' + fmt.money(r.valorFaltante) + '</div>' : '—') + '</td>' +
-      '<td class="cell-num right">' + (r ? fmt.num(u(r.sobrantes)) + '<div class="cell-dim">' + fmt.money(r.valorSobrante) + '</div>' : '—') + '</td>' +
-      '<td>' + esc(t.cerradaPor || '') + '<div class="cell-dim">' + esc(t.cerradaEn || '') + '</div></td></tr>' +
+      '<td>' + (r ? '<span class="chev">' + (open ? '▾' : '▸') + '</span>' : '') + '</td>' +
+      colsHist.map((c) => '<td class="' + (c.right ? 'cell-num right ' : '') + (c.clase || '') + '">' + c.celda(t) + '</td>').join('') + '</tr>' +
       (open && r ? '<tr class="detalle-row"><td colspan="9"><div class="toma-resumen-det">' +
         (lista('Faltantes', r.faltantes) + lista('Unidades de más', r.sobrantes) || '<span class="muted">Todo calzó.</span>') +
         '<p class="table-note">Ajustes aplicados: ' + fmt.num(r.aplicado.faltantes) + ' u. como pérdida · ' + fmt.num(r.aplicado.sobrantes) + ' u. ingresadas' +
