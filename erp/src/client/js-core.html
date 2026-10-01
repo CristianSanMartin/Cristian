@@ -328,7 +328,7 @@
     { id: 'compras', label: 'Compras' },
     { id: 'inventario', label: 'Inventario' },
     { id: 'ventas', label: 'Ventas' },
-    { id: 'finanzas', label: 'Finanzas', soon: true },
+    { id: 'finanzas', label: 'Finanzas' },
     { group: 'Catálogos' },
     { id: 'clientes', label: 'Clientes' },
     { id: 'proveedores', label: 'Proveedores' },
@@ -532,9 +532,11 @@
     m.querySelector('.col-menu-buscar').focus();
   };
 
+  /** data-id="vista.pestaña" o "vista.campo.valor" (cuando una vista tiene más de una fila de pestañas). */
   GS.actions.tab = (id, el) => {
-    const [view, tab] = id.split('.');
-    GS.filters(view).tab = tab;
+    const p = id.split('.');
+    if (p.length === 3) GS.filters(p[0])[p[1]] = p[2];
+    else GS.filters(p[0]).tab = p[1];
     GS.render();
   };
 

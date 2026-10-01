@@ -28,6 +28,13 @@ const Ventas = {
     const lineas = [];
     // Las unidades elegidas de un lote específico (desde Inventario) se reservan primero; el resto sale por FIFO.
     entrada.slice().sort((a, b) => (b.loteId ? 1 : 0) - (a.loteId ? 1 : 0)).forEach((x) => {
+      // Línea por monto (singles, torneo, bazar…): no descuenta unidades del inventario.
+      if (!x.productoId && x.categoria) {
+        const categoria = Util.opcion(x.categoria, 'La categoría', CATEGORIAS_VENTA);
+        const monto = Util.entero(x.monto, 'El monto de ' + categoria, { requerido: true, min: 1 });
+        lineas.push({ loteId: '', productoId: '', cantidad: 1, precioLista: monto, precio: monto, costo: 0, categoria: categoria, descripcion: Util.texto(x.descripcion, 'La descripción', { max: 120 }) });
+        return;
+      }
       const prod = Productos.requerir(x.productoId);
       const nombre = Productos.nombreCompleto(prod);
       const cantidad = Util.entero(x.cantidad, 'La cantidad de ' + nombre, { requerido: true, min: 1 });
@@ -64,9 +71,21 @@ const Ventas = {
     Db.insertMany('Ventas_Lineas', lineas.map((l) => Object.assign({ id: Util.siguienteId('VL', 6), ventaId: venta.id }, l, sello)));
     Audit.log(user, 'crear', 'Venta', venta.id, {
       cliente: clienteId || Clientes.GENERAL, total: total, medioPago: medioPago, abono: abono,
-      productos: lineas.map((l) => l.productoId + ' ×' + l.cantidad + ' (' + l.loteId + ')').join(', '),
+      productos: lineas.map((l) => (l.productoId ? l.productoId + ' ×' + l.cantidad + ' (' + l.loteId + ')' : l.categoria + ' ' + l.precio)).join(', '),
     });
     return Object.assign({ total: total }, venta);
+  },
+
+  /** Corrige la fecha, el N° de boleta o las notas de una venta (administrador). */
+  editar(p, user) {
+    const v = Ventas.requerir(p.id);
+    const datos = {
+      fecha: Util.fecha(p.fecha, 'La fecha de la venta', { requerido: true }),
+      boleta: Util.texto(p.boleta, 'El N° de boleta', { max: 40 }),
+      notas: Util.texto(p.notas, 'Las notas', { max: 500 }),
+    };
+    Audit.log(user, 'editar', 'Venta', v.id, Audit.diff(v, Object.assign({}, v, datos)));
+    Db.update('Ventas', v.id, Object.assign(datos, Util.sello(user)));
   },
 
   /** Anula una venta (administrador): sus unidades vuelven a su lote. La OC no se reutiliza. */
@@ -158,10 +177,13 @@ const Ventas = {
     const porLote = {};
     Db.all('Ventas_Lineas').forEach((l) => {
       const v = ventaPorId[l.ventaId];
-      const prod = prodPorId[l.productoId] || { nombre: '(producto eliminado)', edicion: '', idioma: '', imagen: '' };
+      const porMonto = !l.productoId;
+      const prod = porMonto ? { nombre: l.descripcion || l.categoria, edicion: l.categoria, idioma: '', imagen: '' }
+        : prodPorId[l.productoId] || { nombre: '(producto eliminado)', edicion: '', idioma: '', imagen: '' };
       const e = Economia.unidad(l.costo, l.precio);
       const linea = Object.assign(l, {
-        producto: Productos.nombreCompleto(prod), productoNombre: prod.nombre, edicion: prod.edicion, idioma: prod.idioma, imagen: prod.imagen || '',
+        producto: porMonto ? [l.categoria, l.descripcion].filter(Boolean).join(' · ') : Productos.nombreCompleto(prod),
+        productoNombre: prod.nombre, edicion: prod.edicion, idioma: prod.idioma, imagen: prod.imagen || '', porMonto: porMonto,
         subtotal: l.precio * l.cantidad,
         descuento: (l.precioLista - l.precio) * l.cantidad,
         gananciaUnidad: e.ganancia,
@@ -169,7 +191,7 @@ const Ventas = {
         debito: e.debito * l.cantidad,
       });
       if (v) v.lineas.push(linea);
-      if (v && !v.anulada) {
+      if (v && !v.anulada && l.loteId) {
         const r = porLote[l.loteId] = porLote[l.loteId] || { vendidas: 0, ventas: 0, ganancia: 0, unidades: [] };
         r.vendidas += l.cantidad;
         r.ventas += linea.subtotal;

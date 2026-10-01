@@ -1,0 +1,294 @@
+<script>
+/* =========================================================
+   Migración → Caja diaria. Se carga el Excel de caja, se
+   homologa cada grupo (glosa + observación): venta con OC,
+   venta por monto, movimiento de Finanzas o no importar.
+   Al importar, las OC ya migradas toman su fecha real y el
+   monto de la caja (la diferencia queda como línea "Ajuste").
+========================================================= */
+(function () {
+  'use strict';
+  const { fmt, esc } = GS;
+  const data = () => GS.state.data;
+  let est = null;
+  let cargando = false;
+  const cambios = {};       // clave -> { accion?, destino?, extra?, confirmado? }
+  const cambiosFilas = {};  // id -> { descartada }
+  const ui = { seccion: 'grupos', soloPendientes: false, q: '' };
+  const SECCIONES = [['grupos', 'Grupos'], ['oc', 'OC'], ['filas', 'Filas'], ['importar', 'Importar']];
+  const kpi = (l, v, sub) => '<div class="kpi-card"><div class="kpi-label">' + l + '</div><div class="kpi-value small">' + v + '</div><div class="kpi-sub">' + sub + '</div></div>';
+
+  function cargar() {
+    if (cargando) return;
+    cargando = true;
+    GS.api('cajaEstado').then((r) => { est = r.data; cargando = false; GS.render(); }).catch((e) => { cargando = false; GS.toast(e.message, true); });
+  }
+  async function enviar(accion, datos, mensaje) {
+    const r = await GS.api(accion, datos);
+    GS.state.data = r.data;
+    est = r.result && r.result.filas ? r.result : est;
+    if (mensaje) GS.toast(typeof mensaje === 'function' ? mensaje(r.result) : mensaje);
+    return r.result;
+  }
+
+  /* ---------- lectura ---------- */
+
+  const COLUMNAS = { fecha: /^fecha$/, glosa: /^glosa$/, entradas: /^entradas?$/, salidas: /^salidas?$/, obs: /^obs/ };
+  function aObjetos(tabla) {
+    const norm = (v) => GS.norm(String(v == null ? '' : v).trim());
+    const iTit = tabla.slice(0, 15).findIndex((r) => r.some((v) => norm(v) === 'glosa') && r.some((v) => norm(v) === 'fecha'));
+    if (iTit === -1) throw new Error('No encontré la fila de títulos (debe tener "Fecha" y "Glosa").');
+    const titulos = tabla[iTit].map(norm);
+    const pos = {};
+    Object.keys(COLUMNAS).forEach((k) => { pos[k] = titulos.findIndex((t) => COLUMNAS[k].test(t)); });
+    return tabla.slice(iTit + 1).map((r, i) => {
+      const o = { fila: iTit + 2 + i };
+      Object.keys(pos).forEach((k) => { o[k] = pos[k] === -1 ? '' : (r[pos[k]] == null ? '' : r[pos[k]]); });
+      return o;
+    }).filter((o) => Object.keys(COLUMNAS).some((k) => String(o[k]).trim() !== ''));
+  }
+  async function leerArchivo(file) {
+    await GS.cargarSheetJS();
+    const wb = window.XLSX.read(await file.arrayBuffer(), { type: 'array' });
+    const nombre = wb.SheetNames.find((n) => /caja/i.test(n)) || wb.SheetNames[0];
+    return aObjetos(window.XLSX.utils.sheet_to_json(wb.Sheets[nombre], { header: 1, raw: true, defval: '' }));
+  }
+  const leerPegado = (texto) => aObjetos(texto.replace(/\r/g, '').split('\n').filter((l) => l.trim()).map((l) => l.split('\t')));
+
+  /* ---------- tablas ---------- */
+
+  const valor = (m, k) => (m.clave in cambios && k in cambios[m.clave] ? cambios[m.clave][k] : m[k]);
+  const labelMov = (k) => {
+    const c = data().catalogos.categoriasMovimiento;
+    return c.ingreso[k] || c.egreso[k] || '';
+  };
+  function opcionesDestino(accion, sel) {
+    const c = data().catalogos;
+    if (accion === 'venta') return GS.options(c.categoriasVenta, sel);
+    if (accion === 'movimiento') {
+      return ['ingreso', 'egreso'].map((t) => '<optgroup label="' + (t === 'ingreso' ? 'Ingresos' : 'Egresos') + '">' +
+        GS.options(Object.keys(c.categoriasMovimiento[t]).map((k) => ({ value: k, label: c.categoriasMovimiento[t][k] })), sel) + '</optgroup>').join('');
+    }
+    return '';
+  }
+  const destinoTexto = (m) => {
+    const a = valor(m, 'accion');
+    return a === 'venta' ? valor(m, 'destino') : a === 'movimiento' ? labelMov(valor(m, 'destino')) : a === 'oc' ? 'Fecha y ajuste de la OC' : 'No se importa';
+  };
+
+  const colsGrupos = [
+    { id: 'original', label: 'Glosa · observación', valor: (m) => m.original, celda: (m) => '<span class="cell-strong">' + esc(m.original) + '</span>' },
+    { id: 'filas', label: 'Filas', right: true, valor: (m) => m.filas, celda: (m) => fmt.num(m.filas) },
+    { id: 'entradas', label: 'Entradas', right: true, valor: (m) => m.entradas, texto: (m) => fmt.money(m.entradas), celda: (m) => (m.entradas ? fmt.money(m.entradas) : '—') },
+    { id: 'salidas', label: 'Salidas', right: true, valor: (m) => m.salidas, texto: (m) => fmt.money(m.salidas), celda: (m) => (m.salidas ? fmt.money(m.salidas) : '—') },
+    { id: 'accion', label: 'Acción', valor: (m) => est.acciones[valor(m, 'accion')] || '', celda: (m) => {
+      const lista = m.clave === 'caja|oc' ? ['oc', 'omitir'] : ['venta', 'movimiento', 'omitir'];
+      return '<select data-caja="' + esc(m.clave) + '" data-campo="accion">' + GS.options(lista.map((k) => ({ value: k, label: est.acciones[k] })), valor(m, 'accion')) + '</select>';
+    } },
+    { id: 'destino', label: 'Categoría', valor: destinoTexto, celda: (m) => {
+      const a = valor(m, 'accion');
+      if (a !== 'venta' && a !== 'movimiento') return '<span class="cell-dim">' + esc(destinoTexto(m)) + '</span>';
+      return '<select data-caja="' + esc(m.clave) + '" data-campo="destino"><option value="">Elige…</option>' + opcionesDestino(a, valor(m, 'destino')) + '</select>';
+    } },
+    { id: 'extra', label: 'Detalle', valor: (m) => valor(m, 'extra') || '', celda: (m) => (valor(m, 'accion') === 'oc' ? ''
+      : '<input class="ancho" data-caja="' + esc(m.clave) + '" data-campo="extra" value="' + esc(valor(m, 'extra')) + '" placeholder="Detalle / socio / subcategoría">') },
+    { id: 'confirmado', label: 'Confirmado', valor: (m) => (valor(m, 'confirmado') ? 'Sí' : 'No'),
+      celda: (m) => '<input type="checkbox" class="row-check" data-caja="' + esc(m.clave) + '" data-campo="confirmado"' + (valor(m, 'confirmado') ? ' checked' : '') + ' aria-label="Confirmado">' },
+  ];
+  const grupos = () => {
+    const q = GS.norm(ui.q);
+    return est.mapeos.filter((m) => (!ui.soloPendientes || !valor(m, 'confirmado')) && (!q || GS.norm(m.original + ' ' + destinoTexto(m)).includes(q)))
+      .sort((a, b) => b.filas - a.filas);
+  };
+  GS.tablaRegistrar('cajaGrupos', { filas: grupos, columnas: colsGrupos, alCambiar: () => GS.render() });
+
+  const colsOc = [
+    { id: 'oc', label: 'OC', valor: (o) => Number(o.oc.slice(2)), texto: (o) => o.oc, celda: (o) => '<span class="cell-strong">' + esc(o.oc) + '</span>' },
+    { id: 'fecha', label: 'Fecha (caja)', clase: 'nowrap', valor: (o) => o.fecha, texto: (o) => fmt.date(o.fecha), celda: (o) => fmt.date(o.fecha) + (o.filas > 1 ? '<div class="cell-dim">' + o.filas + ' pagos</div>' : '') },
+    { id: 'monto', label: 'Caja', right: true, valor: (o) => o.monto, texto: (o) => fmt.money(o.monto), celda: (o) => fmt.money(o.monto) },
+    { id: 'erp', label: 'En el ERP', right: true, valor: (o) => o.montoErp, texto: (o) => fmt.money(o.montoErp), celda: (o) => (o.ventas.length ? fmt.money(o.montoErp) : '—') },
+    { id: 'dif', label: 'Ajuste', right: true, valor: (o) => (o.diferencia == null ? '' : o.diferencia), texto: (o) => (o.diferencia == null ? 'Nueva' : o.diferencia ? 'Con ajuste' : 'Calza'),
+      celda: (o) => (o.diferencia == null ? '<span class="pill soon">venta nueva</span>' : o.diferencia ? '<span class="text-gold">' + (o.diferencia > 0 ? '+' : '') + fmt.money(o.diferencia) + '</span>' : '<span class="text-success">✓</span>') },
+    { id: 'ventas', label: 'Ventas del ERP', valor: (o) => o.ventas.join(', '), celda: (o) => '<span class="cell-dim">' + esc(o.ventas.join(', ') || '—') + '</span>' },
+  ];
+  GS.tablaRegistrar('cajaOc', { filas: () => est.ocs, columnas: colsOc, alCambiar: () => GS.render() });
+
+  const accionFila = (f) => {
+    const m = est.mapeos.find((x) => x.clave === f.clave);
+    return m ? destinoTexto(m) : '';
+  };
+  const colsFilas = [
+    { id: 'fila', label: 'Fila', right: true, valor: (f) => f.fila, celda: (f) => '<span class="cell-dim">' + f.fila + '</span>' },
+    { id: 'fecha', label: 'Fecha', clase: 'nowrap', valor: (f) => f.fecha, texto: (f) => (f.fecha ? fmt.date(f.fecha) : 'Sin fecha'), celda: (f) => (f.fecha ? fmt.date(f.fecha) : '<span class="text-gold">sin fecha</span>') },
+    { id: 'glosa', label: 'Glosa', valor: (f) => f.glosa || '(sin glosa)', celda: (f) => esc(f.glosa || '—') },
+    { id: 'obs', label: 'Obs', valor: (f) => f.obs, celda: (f) => esc(f.obs) + (f.detalle ? '<div class="cell-dim">' + esc(f.detalle) + '</div>' : '') },
+    { id: 'entradas', label: 'Entradas', right: true, valor: (f) => f.entradas, texto: (f) => fmt.money(f.entradas), celda: (f) => (f.entradas ? fmt.money(f.entradas) : '') },
+    { id: 'salidas', label: 'Salidas', right: true, valor: (f) => f.salidas, texto: (f) => fmt.money(f.salidas), celda: (f) => (f.salidas ? fmt.money(f.salidas) : '') },
+    { id: 'destino', label: 'Va a', valor: accionFila, celda: (f) => '<span class="cell-dim">' + esc(f.descartada ? 'Descartada' + (f.nota ? ' · ' + f.nota : '') : accionFila(f)) + '</span>' },
+    { id: 'descartar', label: 'Descartar', valor: (f) => (f.id in cambiosFilas ? cambiosFilas[f.id].descartada : f.descartada) ? 'Sí' : 'No',
+      celda: (f) => '<input type="checkbox" class="row-check" data-caja-fila="' + esc(f.id) + '"' + ((f.id in cambiosFilas ? cambiosFilas[f.id].descartada : f.descartada) ? ' checked' : '') + ' aria-label="Descartar fila">' },
+  ];
+  const filasBuscadas = () => {
+    const q = GS.norm(ui.q);
+    return est.filas.filter((f) => !q || GS.norm(f.fila + ' ' + f.glosa + ' ' + f.obs + ' ' + f.detalle + ' ' + f.fecha).includes(q));
+  };
+  GS.tablaRegistrar('cajaFilas', { filas: filasBuscadas, columnas: colsFilas, alCambiar: () => GS.render() });
+
+  const tabla = (id, cols, rows, extra) => '<div class="table-wrap"><table class="data-table mig-tabla"><thead><tr>' + GS.tablaEncabezado(id, cols) + '</tr></thead><tbody>' +
+    (rows.length ? rows.map((r) => '<tr' + (extra ? extra(r) : '') + '>' + cols.map((c) => '<td class="' + (c.right ? 'cell-num right ' : '') + (c.clase || '') + '">' + c.celda(r) + '</td>').join('') + '</tr>').join('')
+      : '<tr><td colspan="' + cols.length + '" class="muted center">Sin datos.</td></tr>') + '</tbody></table></div>';
+
+  /* ---------- pantalla ---------- */
+
+  function panelCarga() {
+    return '<div class="panel inline-panel"><div class="inline-panel-head"><h3>Cargar la caja diaria</h3><span class="muted">Sube el Excel (columnas Periodo, Fecha, Glosa, Entradas, Salidas, Obs) o pega las filas copiadas, con la fila de títulos.</span></div>' +
+      '<div class="mig-carga"><label class="btn secondary" for="caja-archivo">' + GS.icon('download') + 'Subir Excel (.xlsx)</label><input id="caja-archivo" type="file" accept=".xlsx,.xls" class="visually-hidden" data-caja-archivo>' +
+      '<span class="muted">o</span><textarea data-caja-pegar rows="2" placeholder="Pega aquí las filas copiadas desde Excel (Ctrl+V)"></textarea>' +
+      '<button class="btn small" data-action="cajaPegar">Cargar lo pegado</button></div>' +
+      (est.resumen.filas ? '<p class="hint">Volver a cargar reemplaza las filas, pero conserva lo que ya homologaste.</p>' : '') + '</div>';
+  }
+
+  function resumen() {
+    const r = est.resumen;
+    return '<div class="kpi-grid">' +
+      kpi('Filas de caja', fmt.num(r.filas - r.descartadas), (r.desde ? fmt.date(r.desde) + ' a ' + fmt.date(r.hasta) : '') + ' · ' + fmt.num(r.descartadas) + ' descartadas') +
+      kpi('OC', fmt.num(r.ocEnErp) + ' / ' + fmt.num(r.ocCaja), 'ya migradas: toman su fecha · ' + fmt.num(r.ocConDiferencia) + ' con ajuste') +
+      kpi('Ventas por monto', fmt.money(r.ventasMonto), fmt.num(r.movimientos) + ' movimientos · ' + fmt.num(r.omitidas) + ' no se importan') +
+      kpi('Por resolver', est.errores.length ? '<span class="text-gold">' + est.errores.length + '</span>' : '<span class="text-success">Listo</span>', est.errores.length ? est.errores.slice(0, 3).join(' · ') : 'Se puede importar') + '</div>';
+  }
+
+  function panelImportar() {
+    const listo = !est.errores.length && !Object.keys(cambios).length && !Object.keys(cambiosFilas).length;
+    return '<div class="panel inline-panel"><div class="inline-panel-head"><h3>Importar la caja</h3><span class="muted">Se hace una sola vez, después de un respaldo automático.</span></div>' +
+      (est.errores.length ? '<div class="notice warn">Falta resolver: <strong>' + esc(est.errores.join(' · ')) + '</strong>.</div>' : '<div class="notice">' + GS.icon('check') + ' Todo homologado y sin errores.</div>') +
+      '<ul class="mig-lista"><li><strong>OC ya migradas (' + fmt.num(est.resumen.ocEnErp) + '):</strong> toman la fecha de la caja. Si el monto es distinto, manda la caja: se agrega una línea "Ajuste" por la diferencia.</li>' +
+      '<li><strong>OC que no estaban en el stock:</strong> se crean como venta por monto (categoría Otro) con su OC original en las notas.</li>' +
+      '<li><strong>Ventas por monto:</strong> una venta por fila (Singles, Sobres sueltos, Bazar…), sin tocar el inventario.</li>' +
+      '<li><strong>Finanzas:</strong> aportes, compras por monto, GAV, GOPM, SII y comisiones quedan como movimientos.</li>' +
+      (est.ocSoloErp.length ? '<li><strong>' + est.ocSoloErp.length + ' OC del stock no están en la caja</strong> (' + esc(est.ocSoloErp.join(', ')) + '): conservan su fecha actual; puedes corregirla en Ventas.</li>' : '') + '</ul>' +
+      '<label class="check" style="margin-bottom:12px;"><input type="checkbox" id="caja-torneos" checked> Consolidar los torneos de un mismo día en una sola venta</label>' +
+      '<div class="btn-row"><button class="btn" data-action="cajaImportar"' + (listo ? '' : ' disabled') + '>' + GS.icon('check') + 'Importar la caja</button></div></div>';
+  }
+
+  GS.migCaja = {
+    render(el, tabs) {
+      const cab = '<div class="page-head"><div><h1>Migración</h1><p>Caja diaria: da la fecha real a las ventas ya migradas y trae las ventas por monto, aportes, gastos y pagos al SII.</p></div>' +
+        (est && est.resumen.filas && !est.importada ? '<button class="btn ghost" data-action="cajaLimpiar">Limpiar caja</button>' : '') + '</div>' + tabs;
+      if (!est) { cargar(); el.innerHTML = cab + '<div class="empty-state"><div class="spinner"></div>Cargando…</div>'; return; }
+      if (est.importada) {
+        el.innerHTML = cab + '<div class="notice">' + GS.icon('check') + ' <strong>Caja importada</strong> (' + esc(est.importada) + '). Las correcciones se hacen en Ventas y Finanzas.</div>';
+        return;
+      }
+      if (!est.resumen.filas) { el.innerHTML = cab + panelCarga(); conectar(el); return; }
+      const sec = ui.seccion;
+      const pend = { grupos: est.mapeos.filter((m) => !valor(m, 'confirmado')).length, oc: 0, filas: est.filas.filter((f) => !f.fecha && !f.descartada).length, importar: 0 };
+      let cuerpo;
+      if (sec === 'importar') cuerpo = panelImportar();
+      else {
+        const barra = '<div class="filters-bar"><div class="search-box">' + GS.icon('search') + '<input type="text" data-caja-buscar value="' + esc(ui.q) + '" placeholder="Buscar..."></div>' +
+          (sec === 'grupos' ? '<label class="check"><input type="checkbox" data-caja-pendientes' + (ui.soloPendientes ? ' checked' : '') + '> Solo pendientes</label>' : '') +
+          '<div class="btn-row" style="margin-left:auto;">' + (sec === 'grupos' ? '<button class="btn secondary small" data-action="cajaConfirmarTodo">Confirmar todo lo visible</button>' : '') +
+          (sec !== 'oc' ? '<button class="btn small" data-action="cajaGuardar"' + (Object.keys(cambios).length || Object.keys(cambiosFilas).length ? '' : ' disabled') + '>Guardar cambios</button>' : '') + '</div></div>';
+        if (sec === 'grupos') {
+          cuerpo = '<p class="table-note">Cada grupo es una glosa con su observación. Elige qué es: venta con OC, venta por monto (con su categoría), movimiento de Finanzas, o no importar. Las compras de proveedores que ya están como factura (Asmodee, Ludi, Rancagua, Panteón) vienen como "No importar".</p>' +
+            barra + tabla('cajaGrupos', colsGrupos, GS.tablaAplicar('cajaGrupos', grupos(), colsGrupos), (m) => (m.clave in cambios ? ' class="mig-sucio"' : ''));
+        } else if (sec === 'oc') {
+          cuerpo = '<p class="table-note">Ventas con OC en la caja cruzadas con las ventas migradas del stock (por su OC original). Manda el monto de la caja.</p>' +
+            barra + tabla('cajaOc', colsOc, GS.tablaAplicar('cajaOc', est.ocs.filter((o) => !ui.q || GS.norm(o.oc).includes(GS.norm(ui.q))), colsOc)) +
+            (est.ocSoloErp.length ? '<p class="table-note">En el stock pero no en la caja: ' + esc(est.ocSoloErp.join(', ')) + '.</p>' : '');
+        } else {
+          cuerpo = '<p class="table-note">Todas las filas de la caja. Marca "Descartar" en las que no deben migrarse.</p>' +
+            barra + tabla('cajaFilas', colsFilas, GS.tablaAplicar('cajaFilas', filasBuscadas(), colsFilas), (f) => (f.descartada ? ' class="row-muted"' : ''));
+        }
+      }
+      el.innerHTML = cab + resumen() + panelCarga() +
+        '<div class="tabs">' + SECCIONES.map(([id, label]) => '<button class="tab' + (sec === id ? ' active' : '') + '" data-action="cajaSeccion" data-id="' + id + '">' + label +
+          (pend[id] ? ' <span class="pill soon">' + pend[id] + '</span>' : '') + '</button>').join('') + '</div>' + cuerpo;
+      conectar(el);
+    },
+  };
+
+  function conectar(el) {
+    const input = el.querySelector('[data-caja-archivo]');
+    if (input) input.addEventListener('change', async () => {
+      if (!input.files[0]) return;
+      try {
+        const filas = await leerArchivo(input.files[0]);
+        await enviar('cajaCargar', { filas: filas }, (r) => fmt.num(r.resumen.filas) + ' filas cargadas');
+        GS.render();
+      } catch (e) { GS.toast(e.message, true); }
+    });
+  }
+
+  document.addEventListener('input', (e) => {
+    const t = e.target;
+    if (!t.dataset) return;
+    if (t.dataset.cajaBuscar !== undefined) { ui.q = t.value; const pos = t.selectionStart; GS.render(); const n = document.querySelector('[data-caja-buscar]'); if (n) { n.focus(); n.setSelectionRange(pos, pos); } return; }
+    if (t.dataset.caja) {
+      const c = cambios[t.dataset.caja] = cambios[t.dataset.caja] || {};
+      c[t.dataset.campo] = t.type === 'checkbox' ? t.checked : t.value;
+      if (t.dataset.campo === 'accion') c.destino = '';
+      t.closest('tr').classList.add('mig-sucio');
+      const g = document.querySelector('[data-action="cajaGuardar"]'); if (g) g.disabled = false;
+    }
+    if (t.dataset.cajaFila) {
+      cambiosFilas[t.dataset.cajaFila] = { descartada: t.checked };
+      t.closest('tr').classList.add('mig-sucio');
+      const g = document.querySelector('[data-action="cajaGuardar"]'); if (g) g.disabled = false;
+    }
+  });
+  document.addEventListener('change', (e) => {
+    const t = e.target;
+    if (t.dataset && t.dataset.caja && t.dataset.campo === 'accion') GS.render();
+    if (t.dataset && t.dataset.cajaPendientes !== undefined) { ui.soloPendientes = t.checked; GS.render(); }
+  });
+
+  GS.actions.cajaSeccion = (id) => { ui.seccion = id; ui.q = ''; GS.render(); };
+  GS.actions.cajaConfirmarTodo = () => {
+    grupos().forEach((m) => { (cambios[m.clave] = cambios[m.clave] || {}).confirmado = true; });
+    GS.actions.cajaGuardar();
+  };
+  GS.actions.cajaGuardar = async () => {
+    try {
+      const m = Object.keys(cambios).map((k) => Object.assign({ clave: k }, cambios[k]));
+      const f = Object.keys(cambiosFilas).map((k) => Object.assign({ id: k }, cambiosFilas[k]));
+      if (m.length) await enviar('cajaMapeos', { mapeos: m });
+      if (f.length) await enviar('cajaFilas', { filas: f });
+      Object.keys(cambios).forEach((k) => delete cambios[k]);
+      Object.keys(cambiosFilas).forEach((k) => delete cambiosFilas[k]);
+      GS.toast('Cambios guardados');
+      GS.render();
+    } catch (e) { GS.toast(e.message, true); }
+  };
+  GS.actions.cajaPegar = async () => {
+    try {
+      const filas = leerPegado(document.querySelector('[data-caja-pegar]').value);
+      await enviar('cajaCargar', { filas: filas }, (r) => fmt.num(r.resumen.filas) + ' filas cargadas');
+      GS.render();
+    } catch (e) { GS.toast(e.message, true); }
+  };
+  GS.actions.cajaImportar = () => {
+    const consolidar = document.getElementById('caja-torneos').checked;
+    GS.confirm({
+      title: 'Importar la caja diaria',
+      message: 'Se fecharán <strong>' + fmt.num(est.resumen.ocEnErp) + ' ventas</strong> con su OC, se crearán las ventas por monto y los movimientos de Finanzas. Antes se hace un respaldo automático. Esto se hace una sola vez.',
+      confirmLabel: 'Sí, importar',
+      onConfirm: async () => {
+        const r = await enviar('cajaImportar', { consolidarTorneos: consolidar });
+        est = null;
+        GS.toast('Caja importada: ' + r.ventasFechadas + ' ventas fechadas, ' + r.ventasNuevas + ' ventas nuevas, ' + r.movimientos + ' movimientos');
+        GS.render();
+      },
+    });
+  };
+  GS.actions.cajaLimpiar = () => {
+    GS.confirm({
+      title: 'Limpiar la caja',
+      message: 'Se borran las filas cargadas y la homologación de la caja. No toca nada del ERP.',
+      confirmLabel: 'Sí, limpiar',
+      danger: true,
+      onConfirm: async () => { await enviar('cajaLimpiar', {}, 'Caja limpiada'); GS.render(); },
+    });
+  };
+})();
+</script>

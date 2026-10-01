@@ -1,0 +1,213 @@
+<script>
+/* =========================================================
+   Finanzas: resumen mensual (ventas, compras, gastos, aportes
+   y flujo) y libro de movimientos (aportes, GAV, GOPM, SII,
+   comisiones, compras por monto como singles o bazar…).
+========================================================= */
+(function () {
+  'use strict';
+  const { fmt, esc } = GS;
+  const data = () => GS.state.data;
+  const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+  const kpi = (l, v, sub) => '<div class="kpi-card"><div class="kpi-label">' + l + '</div><div class="kpi-value small">' + v + '</div><div class="kpi-sub">' + sub + '</div></div>';
+  const DEF = { tab: 'resumen', anio: '', q: '' };
+
+  const movsVivos = () => (data().movimientos || []).filter((m) => !m.anulado);
+  const anios = () => {
+    const s = new Set([data().hoy.slice(0, 4)]);
+    data().ventas.forEach((v) => s.add(v.fecha.slice(0, 4)));
+    (data().movimientos || []).forEach((m) => s.add(m.fecha.slice(0, 4)));
+    data().compras.forEach((c) => s.add(String(c.fecha).slice(0, 4)));
+    return Array.from(s).filter((a) => /^\d{4}$/.test(a)).sort().reverse();
+  };
+
+  /** Filas del resumen: { label, valores[12], tipo: 'ingreso'|'egreso'|'total'|'sub' }. */
+  function resumen(anio) {
+    const mes = (f) => (String(f).slice(0, 4) === anio ? Number(String(f).slice(5, 7)) - 1 : -1);
+    const fila = (label, clase) => ({ label: label, clase: clase || '', valores: new Array(12).fill(0) });
+    const porCat = {};
+    const prodVentas = fila('Ventas de productos');
+    let iva = new Array(12).fill(0);
+    data().ventas.filter((v) => !v.anulada).forEach((v) => {
+      const i = mes(v.fecha);
+      if (i < 0) return;
+      iva[i] += v.iva;
+      v.lineas.forEach((l) => {
+        if (l.porMonto) (porCat[l.categoria] = porCat[l.categoria] || fila('Ventas · ' + l.categoria)).valores[i] += l.subtotal;
+        else prodVentas.valores[i] += l.subtotal;
+      });
+    });
+    const ventas = [prodVentas].concat(data().catalogos.categoriasVenta.filter((c) => porCat[c]).map((c) => porCat[c]));
+    const totalVentas = fila('Total ventas', 'subtotal');
+    ventas.forEach((f) => f.valores.forEach((x, i) => { totalVentas.valores[i] += x; }));
+
+    const cats = data().catalogos.categoriasMovimiento;
+    const porMov = {};
+    movsVivos().forEach((m) => {
+      const i = mes(m.fecha);
+      if (i < 0) return;
+      const k = m.tipo + '|' + m.categoria;
+      (porMov[k] = porMov[k] || fila(cats[m.tipo][m.categoria] || m.categoria)).valores[i] += m.monto;
+    });
+    const ingresos = Object.keys(cats.ingreso).map((c) => porMov['ingreso|' + c]).filter(Boolean);
+
+    const facturas = fila('Compras con factura');
+    const credito = new Array(12).fill(0);
+    data().compras.forEach((c) => {
+      const i = mes(c.fecha);
+      if (i < 0) return;
+      facturas.valores[i] += c.total;
+      credito[i] += c.iva;
+    });
+    const egresos = [facturas].concat(Object.keys(cats.egreso).map((c) => porMov['egreso|' + c]).filter(Boolean));
+    const comisionesTuu = fila('Comisiones TUU (ventas)');
+    data().ventas.filter((v) => !v.anulada).forEach((v) => { const i = mes(v.fecha); if (i >= 0) comisionesTuu.valores[i] += v.comision || 0; });
+    if (comisionesTuu.valores.some(Boolean)) egresos.push(comisionesTuu);
+    const totalEgresos = fila('Total egresos', 'subtotal');
+    egresos.forEach((f) => f.valores.forEach((x, i) => { totalEgresos.valores[i] += x; }));
+
+    const flujo = fila('Flujo del mes', 'total');
+    for (let i = 0; i < 12; i++) flujo.valores[i] = totalVentas.valores[i] + ingresos.reduce((t, f) => t + f.valores[i], 0) - totalEgresos.valores[i];
+    const acumulado = fila('Flujo acumulado del año', 'sub');
+    flujo.valores.reduce((t, x, i) => { acumulado.valores[i] = t + x; return t + x; }, 0);
+
+    // Singles: ventas de singles contra compras de singles (por lote).
+    const singlesV = fila('Ventas de singles');
+    singlesV.valores = (porCat.Singles || fila('')).valores.slice();
+    const singlesC = fila('Compras de singles');
+    movsVivos().filter((m) => m.categoria === 'compra' && /single/i.test(m.subcategoria)).forEach((m) => { const i = mes(m.fecha); if (i >= 0) singlesC.valores[i] += m.monto; });
+    const singlesR = fila('Resultado singles', 'subtotal');
+    singlesR.valores = singlesV.valores.map((x, i) => x - singlesC.valores[i]);
+
+    const ivaF = fila('IVA estimado (débito − crédito)', 'sub');
+    ivaF.valores = iva.map((x, i) => x - credito[i]);
+
+    return { ventas, totalVentas, ingresos, egresos, totalEgresos, flujo, acumulado, singles: [singlesV, singlesC, singlesR], iva: ivaF };
+  }
+
+  function tablaResumen(r) {
+    const total = (f) => f.valores.reduce((t, x) => t + x, 0);
+    const fila = (f, signo) => '<tr class="' + f.clase + '"><td class="cell-strong nowrap">' + esc(f.label) + '</td>' +
+      f.valores.map((x) => '<td class="cell-num right' + (signo && x < 0 ? ' text-danger' : '') + '">' + (x ? fmt.money(x) : '—') + '</td>').join('') +
+      '<td class="cell-num right"><strong' + (signo && total(f) < 0 ? ' class="text-danger"' : '') + '>' + fmt.money(f.clase === 'sub' && f.label.indexOf('acumulado') !== -1 ? f.valores[11] : total(f)) + '</strong></td></tr>';
+    const grupo = (t) => '<tr class="fin-grupo"><td colspan="14">' + t + '</td></tr>';
+    return '<div class="table-wrap"><table class="data-table resumen-mensual fin-resumen"><thead><tr><th></th>' + MESES.map((m) => '<th class="right">' + m + '</th>').join('') + '<th class="right">Total</th></tr></thead><tbody>' +
+      grupo('Ventas') + r.ventas.map((f) => fila(f)).join('') + fila(r.totalVentas) +
+      (r.ingresos.length ? grupo('Otros ingresos') + r.ingresos.map((f) => fila(f)).join('') : '') +
+      grupo('Egresos') + r.egresos.map((f) => fila(f)).join('') + fila(r.totalEgresos) +
+      grupo('Resultado de caja') + fila(r.flujo, true) + fila(r.acumulado, true) +
+      grupo('Singles (por lote)') + r.singles.map((f, i) => fila(f, i === 2)).join('') +
+      grupo('Impuestos') + fila(r.iva, true) +
+      '</tbody></table></div>' +
+      '<p class="table-note">Ventas y compras con factura incluyen IVA. Flujo del mes = ventas + otros ingresos − egresos. ' +
+      'IVA estimado = IVA de las ventas − IVA de las facturas de compra (las compras por monto no tienen IVA registrado).</p>';
+  }
+
+  /* ---------- movimientos ---------- */
+
+  const tipoLabel = { ingreso: 'Ingreso', egreso: 'Egreso' };
+  const colsMov = [
+    { id: 'fecha', label: 'Fecha', clase: 'nowrap', valor: (m) => m.fecha, texto: (m) => fmt.date(m.fecha), celda: (m) => fmt.date(m.fecha) },
+    { id: 'tipo', label: 'Tipo', valor: (m) => tipoLabel[m.tipo], celda: (m) => '<span class="badge ' + (m.tipo === 'ingreso' ? 'st-ok' : 'st-pedido') + '">' + tipoLabel[m.tipo] + '</span>' },
+    { id: 'categoria', label: 'Categoría', valor: (m) => m.categoriaLabel, celda: (m) => '<span class="cell-strong">' + esc(m.categoriaLabel) + '</span>' },
+    { id: 'detalle', label: 'Detalle', valor: (m) => m.subcategoria || '', celda: (m) => esc(m.subcategoria || '—') + (m.notas ? '<div class="cell-dim">' + esc(m.notas) + '</div>' : '') },
+    { id: 'cuenta', label: 'Cuenta', valor: (m) => m.cuentaLabel || 'Sin cuenta', celda: (m) => esc(m.cuentaLabel || '—') },
+    { id: 'ref', label: 'Referencia', valor: (m) => m.referencia || '', celda: (m) => '<span class="cell-dim">' + esc(m.referencia || '') + '</span>' },
+    { id: 'monto', label: 'Monto', right: true, valor: (m) => (m.tipo === 'ingreso' ? m.monto : -m.monto), texto: (m) => fmt.money(m.monto),
+      celda: (m) => '<strong class="' + (m.anulado ? 'muted' : m.tipo === 'ingreso' ? 'text-success' : '') + '">' + (m.tipo === 'ingreso' ? '+' : '−') + fmt.money(m.monto) + '</strong>' + (m.anulado ? '<div class="cell-dim">anulado</div>' : '') },
+  ];
+  const movsBuscados = () => {
+    const f = GS.filters('finanzas', DEF);
+    const q = GS.norm((f.q || '').trim());
+    const anio = f.anio || data().hoy.slice(0, 4);
+    return (data().movimientos || []).filter((m) => m.fecha.slice(0, 4) === anio && (!q || GS.norm(m.categoriaLabel + ' ' + m.subcategoria + ' ' + m.notas + ' ' + m.referencia + ' ' + m.id).includes(q)));
+  };
+  GS.tablaRegistrar('movimientos', { filas: movsBuscados, columnas: colsMov, alCambiar: () => GS.views.finanzas.update() });
+
+  GS.views.finanzas = {
+    title: 'Finanzas',
+    render(el) {
+      const f = GS.filters('finanzas', DEF);
+      if (!f.anio) f.anio = data().hoy.slice(0, 4);
+      const tab = (id, label) => '<button class="tab' + (f.tab === id ? ' active' : '') + '" data-action="tab" data-id="finanzas.' + id + '">' + label + '</button>';
+      el.innerHTML =
+        '<div class="page-head"><div><h1>Finanzas</h1><p>Resumen mensual del negocio y libro de movimientos: aportes, gastos, pagos al SII y compras por monto.</p></div>' +
+        '<div class="btn-row"><div class="select-input"><select data-filter="finanzas.anio" aria-label="Año">' + GS.options(anios(), f.anio) + '</select></div>' +
+        (GS.puede('operador') ? '<button class="btn" data-action="nuevoMovimiento">' + GS.icon('plus', 2.4) + 'Nuevo movimiento</button>' : '') + '</div></div>' +
+        '<div class="tabs">' + tab('resumen', 'Resumen mensual') + tab('movimientos', 'Movimientos') + '</div>' +
+        '<div id="fin-cuerpo"></div>';
+      this.update();
+    },
+    update() {
+      const f = GS.filters('finanzas', DEF);
+      const anio = f.anio || data().hoy.slice(0, 4);
+      const cuerpo = document.getElementById('fin-cuerpo');
+      if (!cuerpo) return;
+      if (f.tab === 'movimientos') {
+        if (!document.getElementById('mov-tbody')) {
+          cuerpo.innerHTML = '<div class="filters-bar"><div class="search-box">' + GS.icon('search') + '<input type="text" data-filter="finanzas.q" value="' + esc(f.q || '') + '" placeholder="Buscar categoría, detalle o referencia..."></div><span class="count" id="mov-count"></span></div>' +
+            '<div class="table-wrap"><table class="data-table"><thead><tr id="mov-thead"></tr></thead><tbody id="mov-tbody"></tbody></table></div>';
+        }
+        const rows = GS.tablaAplicar('movimientos', movsBuscados(), colsMov);
+        const op = GS.puede('operador');
+        const admin = GS.puede('admin');
+        document.getElementById('mov-count').textContent = rows.length + ' movimientos';
+        document.getElementById('mov-thead').innerHTML = GS.tablaEncabezado('movimientos', colsMov) + '<th></th>';
+        document.getElementById('mov-tbody').innerHTML = rows.length ? rows.map((m) => '<tr class="' + (m.anulado ? 'row-muted' : '') + '">' +
+          colsMov.map((c) => '<td class="' + (c.right ? 'cell-num right ' : '') + (c.clase || '') + '">' + c.celda(m) + '</td>').join('') +
+          '<td><div class="row-actions">' + (op && !m.anulado ? GS.iconBtn('editarMovimiento', m.id, 'edit', 'Editar') : '') +
+          (admin && !m.anulado ? GS.iconBtn('anularMovimiento', m.id, 'trash', 'Anular', 'danger') : '') + '</div></td></tr>').join('')
+          : '<tr><td colspan="' + (colsMov.length + 1) + '">' + GS.empty('Sin movimientos en ' + anio, 'Registra aportes, gastos, pagos al SII o compras por monto con "Nuevo movimiento".', 'finanzas') + '</td></tr>';
+        return;
+      }
+      const r = resumen(anio);
+      const total = (fila) => fila.valores.reduce((t, x) => t + x, 0);
+      const aportes = movsVivos().filter((m) => m.categoria === 'aporte').reduce((t, m) => t + m.monto, 0);
+      cuerpo.innerHTML = '<div class="kpi-grid">' +
+        kpi('Ventas ' + anio, fmt.money(total(r.totalVentas)), 'productos y ventas por monto') +
+        kpi('Egresos ' + anio, fmt.money(total(r.totalEgresos)), 'compras, gastos, SII y comisiones') +
+        kpi('Flujo ' + anio, '<span class="' + (total(r.flujo) < 0 ? 'text-danger' : 'text-success') + '">' + fmt.money(total(r.flujo)) + '</span>', 'ventas + otros ingresos − egresos') +
+        kpi('Aportes de capital', fmt.money(aportes), 'acumulado de todos los años') + '</div>' +
+        tablaResumen(r);
+    },
+  };
+
+  /* ---------- formulario ---------- */
+
+  function formMovimiento(m) {
+    const c = data().catalogos;
+    const x = m || { fecha: data().hoy, tipo: 'egreso', categoria: 'gav', subcategoria: '', monto: '', cuenta: '', referencia: '', notas: '' };
+    const opcionesCat = (tipo, sel) => GS.options(Object.keys(c.categoriasMovimiento[tipo]).map((k) => ({ value: k, label: c.categoriasMovimiento[tipo][k] })), sel);
+    GS.formModal({
+      title: m ? 'Editar movimiento ' + m.id : 'Nuevo movimiento',
+      submitLabel: 'Guardar movimiento',
+      fields: () => '<div class="form-grid">' +
+        '<div class="form-field"><label>Fecha *</label><input type="date" name="fecha" value="' + esc(x.fecha) + '"></div>' +
+        '<div class="form-field"><label>Tipo *</label><select name="tipo">' + GS.options([{ value: 'egreso', label: 'Egreso' }, { value: 'ingreso', label: 'Ingreso' }], x.tipo) + '</select></div>' +
+        '<div class="form-field"><label>Categoría *</label><select name="categoria">' + opcionesCat(x.tipo, x.categoria) + '</select></div>' +
+        '<div class="form-field"><label>Monto *</label><input type="number" name="monto" min="1" step="1" value="' + esc(x.monto) + '" placeholder="Ej: 25000"></div>' +
+        '<div class="form-field"><label>Detalle</label><input name="subcategoria" value="' + esc(x.subcategoria) + '" placeholder="Ej: Sueldo Alex, Singles lote 12, socio Jaime"></div>' +
+        '<div class="form-field"><label>Cuenta</label><select name="cuenta">' + GS.options([{ value: '', label: 'Sin cuenta' }].concat(Object.keys(c.cuentas).map((k) => ({ value: k, label: c.cuentas[k] }))), x.cuenta) + '</select></div>' +
+        '<div class="form-field"><label>Referencia</label><input name="referencia" value="' + esc(x.referencia) + '" placeholder="N° de documento, boleta…"></div>' +
+        '<div class="form-field full"><label>Notas</label><textarea name="notas" rows="2">' + esc(x.notas) + '</textarea></div></div>' +
+        '<p class="hint">Las ventas y las facturas de compra se registran en sus módulos; aquí va todo lo demás. Compra de singles: categoría "Compra por monto" con detalle "Singles …".</p>',
+      onMount: (form) => {
+        form.elements.tipo.addEventListener('change', () => { form.elements.categoria.innerHTML = opcionesCat(form.elements.tipo.value, ''); });
+      },
+      onSubmit: (v) => GS.mutate('guardarMovimiento', Object.assign({ id: m ? m.id : '' }, v), m ? 'Movimiento actualizado' : (r) => 'Movimiento ' + r.id + ' registrado'),
+    });
+  }
+  GS.actions.nuevoMovimiento = () => formMovimiento(null);
+  GS.actions.editarMovimiento = (id) => formMovimiento(data().movimientos.find((m) => m.id === id));
+  GS.actions.anularMovimiento = (id) => {
+    const m = data().movimientos.find((x) => x.id === id);
+    GS.confirm({
+      title: 'Anular ' + m.id,
+      message: '<strong>' + esc(m.categoriaLabel) + '</strong> por ' + fmt.money(m.monto) + ' deja de contar en el resumen. Queda en la lista como anulado y en la auditoría.',
+      confirmLabel: 'Sí, anular',
+      danger: true,
+      onConfirm: () => GS.mutate('anularMovimiento', { id: id }, 'Movimiento anulado'),
+    });
+  };
+})();
+</script>

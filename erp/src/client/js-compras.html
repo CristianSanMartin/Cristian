@@ -256,7 +256,8 @@
       }
       el.innerHTML =
         '<div class="page-head"><div><h1>Inventario</h1><p>El stock de cada producto, venga de la compra que venga. Despliega un producto para ver sus unidades una por una y marca las que vas a vender.</p></div>' +
-        '<button class="btn ghost" data-action="exportarInventario">' + GS.icon('download') + 'Exportar</button></div>' + tabs +
+        '<div class="btn-row">' + (GS.puede('operador') ? '<button class="btn secondary" data-action="agregarMontoVenta" title="Singles, torneo, bazar…: ventas que no descuentan unidades del inventario">' + GS.icon('plus', 2.4) + 'Venta por monto</button>' : '') +
+        '<button class="btn ghost" data-action="exportarInventario">' + GS.icon('download') + 'Exportar</button></div></div>' + tabs +
         '<div class="filters-bar"><div class="search-box">' + GS.icon('search') + '<input type="text" data-filter="inventario.q" value="' + esc(f.q) + '" placeholder="Buscar producto..."></div>' +
         '<label class="check"><input type="checkbox" data-filter="inventario.agotados"' + (f.agotados ? ' checked' : '') + '> Mostrar agotados</label></div>' +
         '<div id="inv-resumen"></div>' +

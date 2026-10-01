@@ -22,6 +22,7 @@
   /* ---------- nueva venta (carrito) ---------- */
 
   const carrito = [];   // { productoId, cantidad, precio, loteId? } — loteId: unidades elegidas en Inventario
+                        // o { porMonto: true, categoria, descripcion, monto } — singles, torneo, bazar… (sin inventario)
   const borrador = { fecha: '', cliente: '', canal: 'Tienda', evento: '', medioPago: 'debito', boleta: '', pagada: true, abono: '', notas: '' };
   const abiertas = new Set();   // OC con el detalle desplegado en el tablero
 
@@ -80,6 +81,7 @@
       '<div class="venta-totales" data-nv-totales></div>' +
       '<div class="form-error"></div>' +
       '<div class="btn-row"><button type="submit" class="btn">' + GS.icon('check') + 'Registrar venta</button>' +
+      '<button type="button" class="btn secondary" data-action="agregarMontoVenta">' + GS.icon('plus', 2.4) + 'Línea por monto</button>' +
       '<button type="button" class="btn ghost" data-action="vaciarCarrito">Cancelar venta</button></div>' +
       '</form></div>';
   }
@@ -90,6 +92,19 @@
     let ganancia = 0;
     let descuento = 0;
     form.querySelector('[data-carrito]').innerHTML = carrito.length ? carrito.map((x, i) => {
+      if (x.porMonto) {
+        const monto = Number(x.monto) || 0;
+        const g = monto / (1 + iva());
+        total += monto;
+        ganancia += g;
+        return '<tr><td><div class="field-row"><select data-carrito-campo="' + i + '|categoria" aria-label="Categoría">' + GS.options(data().catalogos.categoriasVenta.filter((c) => c !== 'Ajuste'), x.categoria) + '</select>' +
+          '<input data-carrito-campo="' + i + '|descripcion" value="' + esc(x.descripcion) + '" placeholder="Detalle (opcional)" aria-label="Detalle"></div></td>' +
+          '<td class="right cell-dim">—</td><td class="right cell-dim">por monto</td>' +
+          '<td class="right"><input class="qty-input price-input" type="number" min="1" step="1" data-carrito-campo="' + i + '|monto" value="' + esc(x.monto) + '" placeholder="Monto" aria-label="Monto"></td>' +
+          '<td class="cell-num right">' + fmt.money(monto) + '</td>' +
+          '<td class="cell-num right ' + signo(g) + '">' + fmt.money(g) + '<div class="cell-dim">sin costo de inventario</div></td>' +
+          '<td><div class="row-actions">' + GS.iconBtn('quitarDelCarrito', String(i), 'trash', 'Quitar', 'danger') + '</div></td></tr>';
+      }
       const pr = prod(x.productoId);
       const n = Number(x.cantidad) || 0;
       const precio = x.precio === '' ? pr.precio : Number(x.precio) || 0;
@@ -131,6 +146,15 @@
     if (!form) return;
     form.addEventListener('input', (e) => {
       const t = e.target;
+      if (t.dataset.carritoCampo) {
+        const [i, campo] = t.dataset.carritoCampo.split('|');
+        carrito[i][campo] = t.value;
+        const pos = t.selectionStart;
+        calcVenta(form);
+        const again = form.querySelector('[data-carrito-campo="' + t.dataset.carritoCampo + '"]');
+        if (again) { again.focus(); try { again.setSelectionRange(pos, pos); } catch (err) { /* select / number */ } }
+        return;
+      }
       if (t.dataset.carritoCant) carrito[t.dataset.carritoCant].cantidad = t.value;
       else if (t.dataset.carritoPrecio) carrito[t.dataset.carritoPrecio].precio = t.value;
       else if (t.name && t.name in borrador) borrador[t.name] = t.type === 'checkbox' ? t.checked : t.value;
@@ -150,7 +174,9 @@
       const r = await GS.api('crearVenta', {
         fecha: v.fecha, cliente: v.cliente, canal: v.canal, evento: v.evento, medioPago: v.medioPago, boleta: v.boleta,
         pagada: v.pagada, abono: v.abono,
-        lineas: carrito.map((x) => ({ productoId: x.productoId, cantidad: x.cantidad, precio: x.precio, loteId: x.loteId || '' })),
+        lineas: carrito.map((x) => (x.porMonto
+          ? { categoria: x.categoria, descripcion: x.descripcion, monto: x.monto }
+          : { productoId: x.productoId, cantidad: x.cantidad, precio: x.precio, loteId: x.loteId || '' })),
       });
       GS.state.data = r.data;
       carrito.length = 0;
@@ -183,6 +209,13 @@
     if (mismo) mismo.cantidad = String((Number(mismo.cantidad) || 0) + Math.min(n, disp));
     else carrito.push({ productoId: productoId, cantidad: String(Math.min(n, disp)), precio: '', loteId: loteId || '' });
     return Math.min(n, disp);
+  };
+  /** Línea por monto (singles, torneo, bazar…): no descuenta inventario. Abre el panel si estaba cerrado. */
+  GS.actions.agregarMontoVenta = (categoria) => {
+    carrito.push({ porMonto: true, categoria: categoria || 'Singles', descripcion: '', monto: '' });
+    remontar();
+    const inputs = document.querySelectorAll('[data-carrito-campo$="|monto"]');
+    if (inputs.length) { inputs[inputs.length - 1].focus(); inputs[inputs.length - 1].scrollIntoView({ block: 'center' }); }
   };
   GS.actions.quitarDelCarrito = (i) => {
     carrito.splice(Number(i), 1);
@@ -250,7 +283,7 @@
     let m = hasta;
     for (let i = 0; i < 12; i++) { meses.unshift(m); m = mesAnterior(m); }
     const suma = (lista, k, ym) => lista.filter((x) => x.fecha.slice(0, 7) === ym).reduce((t, x) => t + x[k], 0);
-    return meses.map((ym) => ({ ym: ym, ventas: suma(vivas(), 'total', ym), ganancia: suma(vivas(), 'gananciaNeta', ym), compras: suma(data().compras, 'total', ym) }));
+    return meses.map((ym) => ({ ym: ym, ventas: suma(vivas(), 'total', ym), ganancia: suma(vivas(), 'gananciaNeta', ym), compras: suma(data().compras, 'total', ym) + suma((data().movimientos || []).filter((m) => !m.anulado && m.categoria === 'compra'), 'monto', ym) }));
   }
 
   function tablero(ym) {
@@ -313,7 +346,9 @@
     };
     const prods = {};
     delMes.forEach((v) => v.lineas.forEach((l) => {
-      const r = prods[l.productoId] = prods[l.productoId] || { etiqueta: esc(l.productoNombre) + ' ' + GS.langPill(l.idioma), valor: 0, u: 0, g: 0 };
+      // Las líneas por monto se agrupan por su categoría (Singles, Torneo…).
+      const k = l.porMonto ? 'cat|' + l.categoria : l.productoId;
+      const r = prods[k] = prods[k] || { etiqueta: l.porMonto ? esc(l.categoria) + ' <span class="pill">por monto</span>' : esc(l.productoNombre) + ' ' + GS.langPill(l.idioma), valor: 0, u: 0, g: 0 };
       r.valor += l.subtotal; r.u += l.cantidad; r.g += l.ganancia;
     }));
     const topProd = Object.values(prods).sort((a, b) => b.valor - a.valor).slice(0, 8).map((x) => Object.assign(x, { extra: fmt.num(x.u) + ' u. · ganancia ' + fmt.money(x.g) }));
@@ -376,7 +411,7 @@
         return '<tr class="fila-compra' + (open ? ' abierta' : '') + (v.anulada ? ' row-muted' : '') + '" data-action="verVenta" data-id="' + esc(v.id) + '">' +
           '<td><span class="chev">' + (open ? '▾' : '▸') + '</span></td>' +
           colsVentas.map((c) => '<td class="' + (c.right ? 'cell-num right' : '') + '">' + c.celda(v) + '</td>').join('') +
-          '<td><div class="row-actions">' + (admin && !v.anulada ? GS.iconBtn('anularVenta', v.id, 'trash', 'Anular venta', 'danger') : '') + '</div></td></tr>' +
+          '<td><div class="row-actions">' + (admin && !v.anulada ? GS.iconBtn('editarVenta', v.id, 'edit', 'Editar fecha, boleta o notas') + GS.iconBtn('anularVenta', v.id, 'trash', 'Anular venta', 'danger') : '') + '</div></td></tr>' +
           (open ? '<tr class="detalle-row"><td colspan="' + n + '">' + detalleVenta(v) + '</td></tr>' : '');
       }).join('') : '<tr><td colspan="' + n + '">' + GS.empty('Aún no hay ventas', 'Se registran desde Inventario: marca los productos y completa la venta.', 'ventas') + '</td></tr>';
       const wrap = document.getElementById('vt-tbody').closest('.table-wrap');
@@ -387,6 +422,20 @@
   GS.actions.verVenta = (id) => {
     if (abiertas.has(id)) abiertas.delete(id); else abiertas.add(id);
     GS.views.ventas.update();
+  };
+
+  GS.actions.editarVenta = (id) => {
+    const v = data().ventas.find((x) => x.id === id);
+    GS.formModal({
+      title: 'Editar ' + v.id,
+      submitLabel: 'Guardar',
+      fields: () => '<div class="form-grid">' +
+        '<div class="form-field"><label>Fecha *</label><input type="date" name="fecha" value="' + esc(v.fecha) + '"></div>' +
+        '<div class="form-field"><label>N° boleta</label><input name="boleta" value="' + esc(v.boleta) + '"></div>' +
+        '<div class="form-field full"><label>Notas</label><textarea name="notas" rows="3">' + esc(v.notas) + '</textarea></div></div>' +
+        '<p class="hint">Los productos y montos no se editan: si algo está mal, anula la venta y regístrala de nuevo.</p>',
+      onSubmit: (val) => GS.mutate('editarVenta', Object.assign({ id: id }, val), v.id + ' actualizada'),
+    });
   };
 
   GS.actions.anularVenta = (id) => {

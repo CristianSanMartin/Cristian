@@ -375,6 +375,58 @@ test("inventario: productos (filtros, editar, unir) y toma de inventario unidad 
   }
 });
 
+test("venta por monto, Finanzas y migración de la caja diaria", { skip }, async () => {
+  const browser = await chromium.launch();
+  try {
+    const { page, errores } = await abrir(browser);
+    // Venta por monto desde Inventario: no toca el stock
+    await page.click('[data-nav="inventario"]');
+    const antes = await page.locator(".kpi-card").first().textContent();
+    await page.click('[data-action="agregarMontoVenta"]');
+    const panel = page.locator("#nueva-venta");
+    await panel.locator('[data-carrito-campo$="|categoria"]').selectOption("Torneo");
+    await panel.locator('[data-carrito-campo$="|descripcion"]').fill("Torneo martes");
+    await panel.locator('[data-carrito-campo$="|monto"]').fill("12000");
+    assert.match(await panel.locator("[data-nv-totales]").textContent(), /\$12\.000/);
+    await panel.locator('select[name="medioPago"]').selectOption("efectivo");
+    await panel.locator('button[type="submit"]').click();
+    await toast(page, /registrada · \$12\.000/);
+    assert.equal(await page.locator(".kpi-card").first().textContent(), antes);
+
+    // Finanzas: movimiento nuevo y resumen
+    await page.click('[data-nav="finanzas"]');
+    await page.click('[data-action="nuevoMovimiento"]');
+    await modal(page).locator('[name="categoria"]').selectOption("gav");
+    await modal(page).locator('[name="monto"]').fill("25000");
+    await modal(page).locator('[name="subcategoria"]').fill("Sueldo Alex");
+    await modal(page).locator('button[type="submit"]').click();
+    await toast(page, /Movimiento MOV-00001 registrado/);
+    assert.match(await page.locator(".fin-resumen").textContent(), /Ventas · Torneo/);
+    assert.match(await page.locator(".fin-resumen").textContent(), /GAV/);
+    await page.click('[data-action="tab"][data-id="finanzas.movimientos"]');
+    await page.waitForSelector("td:has-text('Sueldo Alex')");
+
+    // Migración de caja: pegar, homologar e importar
+    await page.click('[data-nav="migracion"]');
+    await page.click('[data-action="tab"][data-id="migracion.fuente.caja"]');
+    const tsv = ["Periodo\tFecha\tGlosa\tEntradas\tSalidas\tObs", "01-06-2025\t10-06-2025\tPatrimonio\t335000\t\tIgnacio",
+      "01-06-2025\t13-06-2025\tCompras\t\t100000\tStock | Singles", "01-06-2025\t22-06-2025\tVentas\t24500\t\tSingles",
+      "01-06-2025\t23-06-2025\tSaldo\t\t435532\ta.Saldo 2025"].join("\n");
+    await page.fill("[data-caja-pegar]", tsv);
+    await page.click('[data-action="cajaPegar"]');
+    await toast(page, /4 filas cargadas/);
+    await page.click('[data-action="cajaConfirmarTodo"]');
+    await toast(page, /Cambios guardados/);
+    await page.click('[data-action="cajaSeccion"][data-id="importar"]');
+    await page.click('[data-action="cajaImportar"]');
+    await modal(page).locator('button[type="submit"]').click();
+    await toast(page, /Caja importada: 0 ventas fechadas, 1 ventas nuevas, 2 movimientos/);
+    assert.deepEqual(errores, []);
+  } finally {
+    await browser.close();
+  }
+});
+
 test("administración: respaldos automáticos y manuales", { skip }, async () => {
   const browser = await chromium.launch();
   try {

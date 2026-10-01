@@ -57,6 +57,7 @@
       document.head.appendChild(s);
     });
   }
+  GS.cargarSheetJS = cargarSheetJS;
   async function leerArchivo(file) {
     await cargarSheetJS();
     const wb = window.XLSX.read(await file.arrayBuffer(), { type: 'array' });
@@ -183,9 +184,14 @@
     title: 'Migración',
     rol: 'admin',
     render(el) {
+      // Dos migraciones: el stock (unidad por unidad) y la caja diaria (movimientos de dinero).
+      const fuente = GS.filters('migracion', { fuente: 'stock' }).fuente;
+      const tabs = '<div class="tabs">' + [['stock', 'Stock (unidades)'], ['caja', 'Caja diaria']].map(([id, l]) =>
+        '<button class="tab' + (fuente === id ? ' active' : '') + '" data-action="tab" data-id="migracion.fuente.' + id + '">' + l + '</button>').join('') + '</div>';
+      if (fuente === 'caja') return GS.migCaja.render(el, tabs);
       if (!est) { cargar(); el.innerHTML = '<div class="empty-state"><div class="spinner"></div>Cargando migración…</div>'; return; }
       const cab = '<div class="page-head"><div><h1>Migración</h1><p>Prepara el histórico del Excel antes de pasarlo al ERP: revisa, homologa y confirma. Nada entra al ERP hasta que presiones "Importar".</p></div>' +
-        (est.resumen.filas && !est.importada ? '<button class="btn ghost" data-action="migLimpiar">Limpiar migración</button>' : '') + '</div>';
+        (est.resumen.filas && !est.importada ? '<button class="btn ghost" data-action="migLimpiar">Limpiar migración</button>' : '') + '</div>' + tabs;
       if (est.importada) {
         el.innerHTML = cab + '<div class="notice">' + GS.icon('check') + ' <strong>Migración importada</strong> (' + esc(est.importada) + '). Ahora los datos se corrigen directamente en el ERP y cada cambio queda en la auditoría.</div>' + resumen();
         return;

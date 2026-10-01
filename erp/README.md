@@ -202,6 +202,22 @@ y la recuerda en `erp/.implementacion`. Después solo queda el paso 2 cuando cor
   para imprimir. Al cerrar (administrador): faltantes → salida "Pérdida" de su lote; unidades de más →
   lote de ajuste ("Ajuste TOM-0001") al último costo conocido. Hojas `Tomas` y `Tomas_Lineas`.
 
+## Finanzas, ventas por monto y migración de la caja diaria
+
+- **Ventas por monto:** en Inventario, "Venta por monto" (o "Línea por monto" dentro de la venta en
+  curso) agrega Singles, Torneo, Sobres sueltos, Bazar, Accesorios u Otro sin descontar inventario. Una
+  venta puede mezclar productos y líneas por monto.
+- **Finanzas:** resumen mensual por año (ventas por categoría, otros ingresos, compras con factura,
+  compras por monto, GAV, GOPM, SII, comisiones, flujo del mes y acumulado, resultado de singles e IVA
+  estimado) y libro de movimientos (hoja `Finanzas`). Singles: las compras se registran como "Compra
+  por monto" con detalle "Singles…" y se comparan con las ventas de singles.
+- **Migración → Caja diaria:** carga el Excel de caja (Fecha, Glosa, Entradas, Salidas, Obs), agrupa
+  por glosa + observación y propone qué es cada grupo: venta con OC, venta por monto, movimiento de
+  Finanzas o no importar (compras ya facturadas, saldos arrastrados). Al importar, las OC ya migradas
+  toman la fecha real de la caja y, si el monto difiere, se agrega una línea "Ajuste" (manda la caja);
+  los torneos del mismo día se pueden consolidar. Hoja `Migracion_Caja`.
+- **Editar venta** (administrador): fecha, boleta y notas desde la lista de Ventas.
+
 ## Demo con los datos reales
 
 La vista previa (demo) corre el mismo código que la web, pero con sus propios datos guardados en el
