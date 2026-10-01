@@ -51,13 +51,20 @@
     });
     const ingresos = Object.keys(cats.ingreso).map((c) => porMov['ingreso|' + c]).filter(Boolean);
 
-    const facturas = fila('Compras con factura');
+    // Compras con factura: en el flujo cuentan en el mes en que se pagaron (pagos conciliados desde la
+    // caja); lo no pagado, en el mes de la factura. El crédito fiscal (IVA) va siempre por la factura.
+    const facturas = fila('Compras con factura (según pago)');
     const credito = new Array(12).fill(0);
+    const pagos = {};
+    (data().pagosFacturas || []).forEach((p) => { (pagos[p.compraId] = pagos[p.compraId] || []).push(p); });
     data().compras.forEach((c) => {
-      const i = mes(c.fecha);
-      if (i < 0) return;
-      facturas.valores[i] += c.total;
-      credito[i] += c.iva;
+      const iFac = mes(c.fecha);
+      if (iFac >= 0) credito[iFac] += c.iva;
+      const suyos = pagos[c.id] || [];
+      let pagado = 0;
+      suyos.forEach((p) => { pagado += p.monto; const i = mes(p.fecha); if (i >= 0) facturas.valores[i] += p.monto; });
+      const resto = c.total - pagado;
+      if (iFac >= 0 && (!suyos.length || resto > 2000)) facturas.valores[iFac] += suyos.length ? resto : c.total;
     });
     const egresos = [facturas].concat(Object.keys(cats.egreso).map((c) => porMov['egreso|' + c]).filter(Boolean));
     const comisionesTuu = fila('Comisiones TUU (ventas)');
@@ -99,7 +106,7 @@
       grupo('Singles (por lote)') + r.singles.map((f, i) => fila(f, i === 2)).join('') +
       grupo('Impuestos') + fila(r.iva, true) +
       '</tbody></table></div>' +
-      '<p class="table-note">Ventas y compras con factura incluyen IVA. Flujo del mes = ventas + otros ingresos − egresos. ' +
+      '<p class="table-note">Ventas y compras con factura incluyen IVA. Las compras con factura cuentan en el mes en que se pagaron (pagos conciliados desde la caja); si no hay pago registrado, en el mes de la factura. Flujo del mes = ventas + otros ingresos − egresos. ' +
       'IVA estimado = IVA de las ventas − IVA de las facturas de compra (las compras por monto no tienen IVA registrado).</p>';
   }
 

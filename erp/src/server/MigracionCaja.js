@@ -426,6 +426,16 @@ const MigracionCaja = {
     return resumen;
   },
 
+  /** Pagos de facturas conciliados desde la caja: [{ compraId, fecha, monto }] (para el flujo de caja). */
+  pagosFacturas() {
+    const res = [];
+    Db.all('Migracion_Caja').forEach((f) => {
+      const m = /^Pago (\S+)/.exec(f.migrada || '');
+      if (m) res.push({ compraId: m[1], fecha: f.fecha, monto: f.salidas });
+    });
+    return res;
+  },
+
   /** Quita las filas pendientes y descartadas; las ya migradas se conservan como registro. */
   limpiar(p, user) {
     const quedan = Db.all('Migracion_Caja').filter((f) => f.migrada);

@@ -239,6 +239,7 @@ const Snapshot = {
       lotes: compras.lotes,
       tomas: Tomas.vista(),
       movimientos: Finanzas.vista(),
+      pagosFacturas: MigracionCaja.pagosFacturas(),
       ventas: ventas.ventas,
       clientes: clis,
       usuarios: Auth.puede(user, 'admin') ? Db.all('Usuarios') : [],

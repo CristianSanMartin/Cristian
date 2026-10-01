@@ -898,6 +898,7 @@ test("migración de la caja por partes: seleccionar, migrar, pago de factura, to
   assert.deepEqual([r.facturas, r.movimientos], [1, 0], "no crea gasto: la factura ya está en el ERP");
   d = s.ok("bootstrap").data;
   assert.match(d.compras.find(c => c.id === fac.id).notas, /Pago caja .*fila 4.*Pago caja .*fila 5/);
+  assert.deepEqual(d.pagosFacturas.filter(p => p.compraId === fac.id).map(p => p.monto).sort((a, b) => a - b), [123456, Math.round(fac.total)].sort((a, b) => a - b), "pagos para el flujo de caja");
   e = s.ok("cajaEstado").data;
   assert.equal(e.compras.find(c => c.id === fac.id).pagado, Math.round(fac.total) + 123456);
 
