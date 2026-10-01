@@ -41,7 +41,6 @@ const preview = `
     del: function (k) { try { localStorage.removeItem(k); } catch (e) {} }
   };
   var user = params.get('user') || store.get(KEY + '_user') || 'admin@gsprime.cl';
-  // Si cambió la estructura de datos desde la última visita, la demo parte de cero.
   var ESQUEMA = ${js(esquemaHash)};
   var ROLES = { 'admin@gsprime.cl': 'admin', 'socio@gsprime.cl': 'operador', 'contador@gsprime.cl': 'lectura' };
   // Datos reales incluidos al generar la demo (DEMO_DATOS), o null para usar los de ejemplo.
@@ -61,8 +60,10 @@ const preview = `
     }
     return { sheets: hojas, props: datos.props || {} };
   }
-  var saved = store.get(KEY_ESQUEMA()) === ESQUEMA || store.get(KEY + '_instalar') ? store.get(KEY) : null;
-  var reiniciada = !saved && !!store.get(KEY);
+  // Si cambió la estructura de datos, se conservan los datos y se ejecuta instalar (agrega hojas y columnas).
+  var saved = store.get(KEY);
+  if (saved && store.get(KEY_ESQUEMA()) !== ESQUEMA) store.set(KEY + '_instalar', '1');
+  var reiniciada = false;
   var origen = saved ? (store.get(KEY + '_origen') || 'ejemplo') : (BASE ? 'reales|' + BASE.exportadoEn : 'ejemplo');
   var fake = createGasFake({ user: 'admin@gsprime.cl', state: saved ? JSON.parse(saved) : BASE ? aEstado(BASE) : undefined });
   var g = fake.globals;
