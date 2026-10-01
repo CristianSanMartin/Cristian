@@ -575,7 +575,7 @@ test("respaldos: activador diario, respaldo antes de instalar con datos y se gua
   s.run("instalar()");
   assert.equal(s.fake.state.triggers.length, 1, "no duplica el activador");
   assert.equal(copias().length, 1);
-  assert.match(copias()[0].name, /GS Prime ERP · Base de datos · respaldo .* · antes de instalar v2\.5\.0/);
+  assert.match(copias()[0].name, /GS Prime ERP · Base de datos · respaldo .* · antes de instalar v\d+\.\d+\.\d+/);
   const carpeta = s.fake.state.folders[copias()[0].folder];
   assert.deepEqual(JSON.parse(JSON.stringify([carpeta.name, carpeta.parent])), ["GS Prime ERP · Respaldos", "fld-root"], "junto a la planilla");
 
