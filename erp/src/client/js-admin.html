@@ -45,6 +45,7 @@
   }
 
   let respaldos = null;
+  let exportDemo = null;   // { cargando } o el último archivo exportado
   function tabRespaldos() {
     if (!respaldos) {
       GS.api('respaldos').then((r) => { respaldos = r.data; GS.render(); }).catch((e) => GS.toast(e.message, true));
@@ -64,6 +65,15 @@
         ? r.respaldos.map((x) => '<tr><td class="nowrap">' + esc(x.fecha) + '</td><td>' + esc(x.nombre) + '</td><td class="right"><a class="btn small ghost" href="' + esc(x.url) + '" target="_blank" rel="noopener">Abrir</a></td></tr>').join('')
         : '<tr><td colspan="3" class="muted center">Aún no hay respaldos.</td></tr>') +
       '</tbody></table></div>' +
+      '<h3 class="sub-titulo" style="margin-top:22px;">Datos para la demo</h3>' +
+      '<div class="notice">Genera un archivo con todos los datos actuales (sin las carpetas de Drive) para cargarlo en la vista previa con <strong>Cargar datos reales</strong>, ' +
+      'o para enviárselo a Claude y dejar la demo como un reflejo de esta web. Contiene datos de clientes: compártelo solo con quien corresponda.</div>' +
+      '<div class="btn-row" style="margin-bottom:12px;">' +
+      (exportDemo && exportDemo.cargando
+        ? '<span class="muted"><span class="spinner"></span> Exportando…</span>'
+        : '<button class="btn secondary" data-action="exportarDemo">' + GS.icon('download') + 'Exportar datos para la demo</button>') +
+      (exportDemo && exportDemo.url ? '<a class="btn" href="' + esc(exportDemo.url) + '" target="_blank" rel="noopener">' + GS.icon('download') + 'Descargar ' + esc(exportDemo.kb) + ' KB</a><span class="muted" style="font-size:12px;">' + esc(exportDemo.nombre) + '</span>' : '') +
+      '</div>' +
       '<h3 class="sub-titulo" style="margin-top:22px;">Migraciones de datos</h3>' +
       (r.pendientes.length ? '<div class="notice warn">Hay ' + r.pendientes.length + ' migración(es) pendiente(s): ' + r.pendientes.map((m) => esc(m.id)).join(', ') + '. Se aplican al ejecutar <strong>instalar</strong>, después de un respaldo.</div>' : '') +
       '<div class="table-wrap"><table class="data-table" style="min-width:640px;"><thead><tr><th>Aplicada</th><th>Migración</th><th>Qué cambió</th><th>Por</th></tr></thead><tbody>' +
@@ -78,6 +88,19 @@
       respaldos = null;
       GS.render();
     } catch (e) { GS.toast(e.message, true); }
+  };
+
+  GS.actions.exportarDemo = async () => {
+    exportDemo = { cargando: true };
+    GS.render();
+    try {
+      exportDemo = (await GS.api('exportarDemo')).data;
+      GS.toast('Archivo listo: presiona Descargar');
+    } catch (e) {
+      exportDemo = null;
+      GS.toast(e.message, true);
+    }
+    GS.render();
   };
 
   GS.views.admin = {

@@ -47,6 +47,7 @@ function rutas_() {
 
     respaldos: { rol: 'admin', fn: () => Respaldos.estado() },
     crearRespaldo: { rol: 'admin', write: true, fn: (p, u) => Respaldos.crear('manual', u) },
+    exportarDemo: { rol: 'admin', fn: Respaldos.exportarDemo },
 
     migracion: { rol: 'admin', fn: () => Migracion.estado() },
     migracionCargar: { rol: 'admin', write: true, fn: Migracion.cargar },

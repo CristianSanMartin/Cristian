@@ -68,6 +68,15 @@ var createGasFake = function (opts) {
     for (var j = 0; j < this._nc; j++) this._s.data.formats[this._c - 1 + j] = f;
     return this;
   };
+  Range.prototype.getNumberFormats = function () {
+    var out = [];
+    for (var i = 0; i < this._nr; i++) {
+      var row = [];
+      for (var j = 0; j < this._nc; j++) row.push(this._s.data.formats[this._c - 1 + j] || 'General');
+      out.push(row);
+    }
+    return out;
+  };
   Range.prototype.clearContent = function () {
     for (var i = 0; i < this._nr; i++) {
       var row = this._s.data.values[this._r - 1 + i];
@@ -148,6 +157,7 @@ var createGasFake = function (opts) {
         return {
           getProperty: function (k) { return state.props[k] || null; },
           setProperty: function (k, v) { state.props[k] = String(v); },
+          getProperties: function () { return JSON.parse(JSON.stringify(state.props)); },
         };
       },
     },
@@ -224,12 +234,18 @@ var createGasFake = function (opts) {
               next: function () {
                 var k = ids[i++];
                 var x = state.files[k];
-                return { getId: function () { return k; }, getName: function () { return x.name; },
+                return { getId: function () { return k; }, getName: function () { return x.name; }, getMimeType: function () { return x.mime || 'application/vnd.google-apps.spreadsheet'; },
                   getDateCreated: function () { return new Date(x.created || 0); }, setTrashed: function (v) { x.trashed = v; } };
               },
             };
           },
-          createFile: function (blob) {
+          createFile: function (blob, contenido, mime) {
+            if (typeof blob === 'string') {
+              // Archivo de texto: createFile(nombre, contenido, tipo)
+              var tid = 'txt-' + (Object.keys(state.files).length + 1);
+              state.files[tid] = { folder: id, name: blob, mime: mime, content: contenido, created: new Date().toISOString() };
+              return { getId: function () { return tid; }, getSize: function () { return contenido.length; } };
+            }
             var fid = 'img-' + (Object.keys(state.files).length + 1);
             state.files[fid] = { folder: id, name: blob.name, mime: blob.mime, base64: blob.bytes, shared: false };
             return {

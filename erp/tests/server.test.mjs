@@ -598,6 +598,38 @@ test("respaldos: activador diario, respaldo antes de instalar con datos y se gua
   assert.match(estado.respaldos[0].url, /^https:\/\/docs\.google\.com\/spreadsheets\/d\//);
 });
 
+test("exportar datos para la demo: un JSON con todas las hojas que se puede volver a cargar igual", () => {
+  const s = createServer();
+  const { prods } = conInventario(s);
+  s.ok("crearVenta", { fecha: "2026-10-05", cliente: "Ana Rojas", medioPago: "debito", lineas: [{ productoId: prods.miniTin.id, cantidad: 2 }] });
+  s.ok("guardarUsuario", { email: "socio@gsprime.cl", nombre: "Socio", rol: "operador" });
+  assert.equal(s.as("socio@gsprime.cl").call("exportarDemo").code, "SIN_PERMISO");
+  s.as("admin@gsprime.cl");
+  s.run("PropertiesService.getScriptProperties().setProperty('CARPETA_IMAGENES', 'abc')");
+
+  s.ok("exportarDemo");
+  const r = s.ok("exportarDemo").data;
+  assert.match(r.url, /^https:\/\/drive\.google\.com\/uc\?export=download&id=/);
+  const archivos = Object.values(s.fake.state.files).filter(f => /datos para demo/.test(f.name));
+  assert.equal(archivos.filter(f => !f.trashed).length, 1, "solo queda la exportación más reciente");
+  assert.ok(!s.ok("respaldos").data.respaldos.some(x => /\.json$/.test(x.nombre)), "no aparece en la lista de respaldos");
+
+  const datos = JSON.parse(archivos.find(f => !f.trashed).content);
+  const hoja = (n) => datos.hojas.find(h => h.nombre === n);
+  assert.equal(hoja("Ventas").values.length, 2);
+  const fecha = hoja("Compras").values[0].indexOf("fecha");
+  assert.equal(hoja("Compras").values[1][fecha], "2026-10-02", "las fechas salen como texto");
+  assert.equal(datos.props.CARPETA_IMAGENES, undefined, "sin las carpetas de Drive");
+
+  // Cargado en otro simulador queda igual
+  const s2 = createServer({ state: { sheets: datos.hojas.map(h => ({ name: h.nombre, values: h.values, formats: h.formatos, maxRows: 1000 })), props: datos.props } });
+  const a = s.ok("bootstrap").data;
+  const b = s2.ok("bootstrap").data;
+  for (const k of ["compras", "lotes", "ventas", "clientes", "preventas"]) assert.deepEqual(b[k], a[k], k);
+  const venta = s2.ok("crearVenta", { fecha: "2026-10-06", lineas: [{ productoId: prods.miniTin.id, cantidad: 1 }] }).result;
+  assert.equal(venta.id, "OC-0002", "los correlativos siguen donde iban");
+});
+
 test("migraciones: corren una sola vez, después de un respaldo, y quedan registradas", () => {
   const s = createServer();
   const { prods } = preventa30th(s);

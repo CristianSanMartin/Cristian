@@ -3,3 +3,4 @@ node_modules/
 erp/dist/
 erp/.clasp.json
 erp/.implementacion
+*datos para demo*.json

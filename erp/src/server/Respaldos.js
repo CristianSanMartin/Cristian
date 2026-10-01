@@ -48,10 +48,50 @@ const Respaldos = {
     const it = Respaldos.carpeta().getFiles();
     while (it.hasNext()) {
       const f = it.next();
+      if (/\.json$/.test(f.getName())) continue;   // archivos de datos para la demo
       const d = f.getDateCreated();
       res.push({ id: f.getId(), nombre: f.getName(), fecha: Util.fechaHora(d), ts: d.getTime(), url: 'https://docs.google.com/spreadsheets/d/' + f.getId() });
     }
     return res.sort((a, b) => b.ts - a.ts);
+  },
+
+  /**
+   * Exporta todas las hojas a un archivo JSON en la carpeta de respaldos, para cargar los
+   * datos reales en la vista previa (demo). Las fechas salen como texto; la Auditoría
+   * solo con sus últimos 500 registros. Se conserva solo la exportación más reciente.
+   */
+  exportarDemo(p, user) {
+    const ss = Db.ss();
+    const tz = ss.getSpreadsheetTimeZone();
+    const texto = (v) => {
+      if (!(v instanceof Date)) return v;
+      const hora = Utilities.formatDate(v, tz, 'HH:mm:ss');
+      return Utilities.formatDate(v, tz, 'yyyy-MM-dd') + (hora === '00:00:00' ? '' : ' ' + hora);
+    };
+    const hojas = ss.getSheets().map((sh) => {
+      const filas = sh.getLastRow();
+      const cols = sh.getLastColumn();
+      let values = filas && cols ? sh.getRange(1, 1, filas, cols).getValues() : [];
+      if (sh.getName() === 'Auditoria' && values.length > 501) values = [values[0]].concat(values.slice(-500));
+      const formatos = {};
+      if (filas > 1 && cols) sh.getRange(2, 1, 1, cols).getNumberFormats()[0].forEach((f, i) => { if (f === '@') formatos[i] = '@'; });
+      return { nombre: sh.getName(), values: values.map((r) => r.map(texto)), formatos: formatos };
+    });
+    const props = PropertiesService.getScriptProperties().getProperties();
+    Object.keys(props).forEach((k) => { if (/^CARPETA_/.test(k)) delete props[k]; });   // carpetas de Drive: no aplican en la demo
+    const ahora = Util.ahora();
+    const datos = { app: 'GS Prime ERP', version: APP.version, exportadoEn: ahora, exportadoPor: user.email, hojas: hojas, props: props };
+    const carpeta = Respaldos.carpeta();
+    const it = carpeta.getFiles();
+    while (it.hasNext()) {
+      const f = it.next();
+      if (/· datos para demo .*\.json$/.test(f.getName())) f.setTrashed(true);
+    }
+    const nombre = ss.getName() + ' · datos para demo ' + ahora.slice(0, 16).replace(':', '.') + '.json';
+    const contenido = JSON.stringify(datos);
+    const archivo = carpeta.createFile(nombre, contenido, 'application/json');
+    Audit.log(user, 'exportar demo', 'Sistema', archivo.getId(), { nombre: nombre, hojas: hojas.length });
+    return { nombre: nombre, kb: Math.round(contenido.length / 1024), url: 'https://drive.google.com/uc?export=download&id=' + archivo.getId() };
   },
 
   /** Respaldo nocturno (lo llama el activador): uno por día y se conservan los últimos 30 automáticos. */

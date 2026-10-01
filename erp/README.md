@@ -191,6 +191,20 @@ y la recuerda en `erp/.implementacion`. Después solo queda el paso 2 cuando cor
    Si se te olvida, el ERP no guarda nada y muestra "ERP sin instalar" indicando qué columnas faltan.
 3. **Implementar → Administrar implementaciones → ✏️ → Nueva versión → Implementar.**
 
+## Demo con los datos reales
+
+La vista previa (demo) corre el mismo código que la web, pero con sus propios datos guardados en el
+navegador. Para que refleje la web actual:
+
+1. En la web: **Administración → Respaldos → Exportar datos para la demo → Descargar**. Se genera un
+   archivo `.json` con todas las hojas en la carpeta de respaldos; se conserva solo el más reciente.
+2. En la demo: botón **Cargar datos reales** (barra inferior) y elige ese archivo. Los usuarios se
+   reemplazan por los de la demo (Administrador, Operador, Solo lectura) y lo que hagas ahí no toca la web.
+   **Reiniciar demo** vuelve al punto de partida.
+
+También se puede generar la demo ya cargada: `DEMO_DATOS=archivo.json node erp/dev/build-preview.mjs`.
+El archivo tiene datos de clientes: **nunca lo subas al repositorio** (está en `.gitignore`).
+
 ## Migración del histórico (Excel)
 
 **Migración** (menú Sistema, solo administrador) es una zona de preparación: nada entra al ERP

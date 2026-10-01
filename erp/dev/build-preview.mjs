@@ -3,12 +3,20 @@
 // simulador de Apps Script, con datos de ejemplo guardados en localStorage.
 //
 // Uso: npm run erp:preview   (y abre erp/dist/preview.html en el navegador)
+//
+// Con datos reales: DEMO_DATOS=ruta/al/archivo.json node erp/dev/build-preview.mjs
+// (el archivo sale de Administración → Respaldos → "Exportar datos para la demo").
+// La vista previa parte de esos datos en vez de los de ejemplo. Nunca subas ese
+// archivo al repositorio: tiene datos de clientes.
 import fs from "node:fs";
 import crypto from "node:crypto";
 import path from "node:path";
 import { ERP, serverSource, fakeSource, clientHtml } from "./sources.mjs";
 
 const js = (s) => JSON.stringify(s).replace(/<\/script/gi, "<\\/script");
+
+const DATOS = process.env.DEMO_DATOS ? JSON.parse(fs.readFileSync(process.env.DEMO_DATOS, "utf8")) : null;
+if (DATOS && !Array.isArray(DATOS.hojas)) throw new Error("DEMO_DATOS no es una exportación del ERP (falta 'hojas').");
 
 // Huella del esquema de datos: si cambia, la vista previa descarta los datos guardados del navegador.
 const config = fs.readFileSync(path.join(ERP, "src", "server", "00_Config.js"), "utf8");
@@ -35,9 +43,28 @@ const preview = `
   var user = params.get('user') || store.get(KEY + '_user') || 'admin@gsprime.cl';
   // Si cambió la estructura de datos desde la última visita, la demo parte de cero.
   var ESQUEMA = ${js(esquemaHash)};
-  var saved = store.get(KEY_ESQUEMA()) === ESQUEMA ? store.get(KEY) : null;
+  var ROLES = { 'admin@gsprime.cl': 'admin', 'socio@gsprime.cl': 'operador', 'contador@gsprime.cl': 'lectura' };
+  // Datos reales incluidos al generar la demo (DEMO_DATOS), o null para usar los de ejemplo.
+  var BASE = ${js(DATOS)};
+  /** Exportación del ERP → estado del simulador. Los usuarios se cambian por los de la demo. */
+  function aEstado(datos) {
+    var hojas = datos.hojas.map(function (h) {
+      return { name: h.nombre, values: h.values, formats: h.formatos || {}, maxRows: Math.max(1000, h.values.length + 500) };
+    });
+    var u = hojas.find(function (h) { return h.name === 'Usuarios'; });
+    if (u) {
+      var cab = u.values[0] && u.values[0].length ? u.values[0] : ['email', 'nombre', 'rol', 'activo', 'creadoEn', 'creadoPor'];
+      u.values = [cab].concat(Object.keys(USERS).map(function (e) {
+        var o = { email: e, nombre: USERS[e], rol: ROLES[e], activo: true, creadoEn: '', creadoPor: 'demo' };
+        return cab.map(function (c) { return o[c] !== undefined ? o[c] : ''; });
+      }));
+    }
+    return { sheets: hojas, props: datos.props || {} };
+  }
+  var saved = store.get(KEY_ESQUEMA()) === ESQUEMA || store.get(KEY + '_instalar') ? store.get(KEY) : null;
   var reiniciada = !saved && !!store.get(KEY);
-  var fake = createGasFake({ user: 'admin@gsprime.cl', state: saved ? JSON.parse(saved) : undefined });
+  var origen = saved ? (store.get(KEY + '_origen') || 'ejemplo') : (BASE ? 'reales|' + BASE.exportadoEn : 'ejemplo');
+  var fake = createGasFake({ user: 'admin@gsprime.cl', state: saved ? JSON.parse(saved) : BASE ? aEstado(BASE) : undefined });
   var g = fake.globals;
   var server = new Function('SpreadsheetApp', 'Session', 'LockService', 'PropertiesService', 'Utilities', 'HtmlService', 'DriveApp', 'ScriptApp',
     ${js(serverSource())} + '\\nreturn { api: api, instalar: instalar };')(
@@ -45,14 +72,17 @@ const preview = `
   // Las imágenes "subidas a Drive" en la vista previa quedan en el navegador.
   window.previewImagen = function (id) {
     var f = fake.state.files[id];
-    return f ? 'data:' + f.mime + ';base64,' + f.base64 : '';
+    // Imágenes de los datos reales: siguen en el Drive de la tienda.
+    return f && f.base64 ? 'data:' + f.mime + ';base64,' + f.base64 : 'https://drive.google.com/thumbnail?sz=w400&id=' + id;
   };
   function KEY_ESQUEMA() { return KEY + '_esquema'; }
-  var persist = function () { store.set(KEY, JSON.stringify(fake.dump())); store.set(KEY_ESQUEMA(), ESQUEMA); };
+  var persist = function () { store.set(KEY, JSON.stringify(fake.dump())); store.set(KEY_ESQUEMA(), ESQUEMA); store.set(KEY + '_origen', origen); };
 
-  if (!saved) {
+  if (!saved || store.get(KEY + '_instalar')) {
+    // Datos recién cargados (o de ejemplo): instalar agrega las hojas/columnas que falten.
     server.instalar();
-    seed();
+    if (!saved && !BASE) seed();
+    store.del(KEY + '_instalar');
     persist();
   }
   fake.setUser(user);
@@ -160,11 +190,17 @@ const preview = `
   document.addEventListener('DOMContentLoaded', function () {
     var bar = document.createElement('div');
     bar.id = 'preview-bar';
-    bar.innerHTML = '<strong>Vista previa</strong> <span title="Datos de ejemplo guardados solo en este navegador">(datos de ejemplo)</span> · ' +
+    var reales = origen.indexOf('reales|') === 0;
+    bar.innerHTML = '<strong>Vista previa</strong> ' +
+      (reales
+        ? '<span title="Copia de los datos reales; los cambios quedan solo en este navegador">(datos reales al ' + origen.slice(7, 17) + ')</span> · '
+        : '<span title="Datos de ejemplo guardados solo en este navegador">(datos de ejemplo)</span> · ') +
       (reiniciada ? '<span style="color:#f6b400">Se reinició por una actualización</span> · ' : '') + 'Ver como ' +
       '<select id="preview-user">' + Object.keys(USERS).map(function (e) {
         return '<option value="' + e + '"' + (e === user ? ' selected' : '') + '>' + USERS[e] + '</option>';
-      }).join('') + '</select> <button id="preview-reset" type="button">Reiniciar demo</button>';
+      }).join('') + '</select> <button id="preview-reset" type="button">Reiniciar demo</button>' +
+      ' <button id="preview-cargar" type="button" title="Archivo de Administración → Respaldos → Exportar datos para la demo">Cargar datos reales</button>' +
+      '<input id="preview-archivo" type="file" accept=".json,application/json" hidden>';
     document.body.appendChild(bar);
     document.getElementById('preview-user').addEventListener('change', function (e) {
       store.set(KEY + '_user', e.target.value);
@@ -173,6 +209,27 @@ const preview = `
     document.getElementById('preview-reset').addEventListener('click', function () {
       store.del(KEY);
       location.reload();
+    });
+    var archivo = document.getElementById('preview-archivo');
+    document.getElementById('preview-cargar').addEventListener('click', function () { archivo.click(); });
+    archivo.addEventListener('change', function () {
+      var file = archivo.files[0];
+      if (!file) return;
+      var lector = new FileReader();
+      lector.onload = function () {
+        try {
+          var datos = JSON.parse(lector.result);
+          if (!datos || !Array.isArray(datos.hojas)) throw new Error('El archivo no es una exportación del ERP.');
+          localStorage.setItem(KEY, JSON.stringify(aEstado(datos)));
+          store.set(KEY_ESQUEMA(), ESQUEMA);
+          store.set(KEY + '_origen', 'reales|' + (datos.exportadoEn || ''));
+          store.set(KEY + '_instalar', '1');
+          location.reload();
+        } catch (e) {
+          alert('No se pudieron cargar los datos: ' + (e && e.name === 'QuotaExceededError' ? 'el navegador no tiene espacio para guardarlos.' : e.message));
+        }
+      };
+      lector.readAsText(file);
     });
   });
 })();

@@ -342,6 +342,45 @@ test("administración: respaldos automáticos y manuales", { skip }, async () =>
   }
 });
 
+test("demo con datos reales: exportar desde Respaldos y cargar el archivo en la vista previa", { skip }, async () => {
+  const browser = await chromium.launch();
+  try {
+    const { page, errores } = await abrir(browser);
+    await page.click('[data-nav="admin"]');
+    await page.click('[data-action="tab"][data-id="admin.respaldos"]');
+    await page.click('[data-action="exportarDemo"]');
+    await toast(page, /Archivo listo/);
+    await page.waitForSelector("a:has-text('Descargar')");
+
+    // El archivo exportado (en el Drive simulado), con un cliente agregado para distinguirlo
+    const datos = await page.evaluate(() => {
+      const st = JSON.parse(localStorage.getItem("gsprime_erp_preview_v2"));
+      return JSON.parse(Object.values(st.files).find((f) => /datos para demo/.test(f.name) && !f.trashed).content);
+    });
+    const cli = datos.hojas.find((h) => h.nombre === "Clientes");
+    const fila = cli.values[0].map((c) => ({ id: "CLI-9999", nombre: "Cliente Real Exportado", activo: true }[c] ?? ""));
+    cli.values.push(fila);
+    datos.hojas.find((h) => h.nombre === "Usuarios").values.push(["dueno@gmail.com", "Dueño", "admin", true, "", ""]);
+    const archivo = path.join(ERP, "dist", "datos-demo-prueba.json");
+    fs.writeFileSync(archivo, JSON.stringify(datos));
+
+    assert.match(await page.locator("#preview-bar").textContent(), /datos de ejemplo/);
+    await page.setInputFiles("#preview-archivo", archivo);
+    await page.waitForFunction(() => /datos reales al/.test(document.getElementById("preview-bar")?.textContent || ""));
+    await page.waitForSelector("#app:not(.hidden)");
+    await page.click('[data-nav="clientes"]');
+    await page.waitForSelector("text=Cliente Real Exportado");
+    // Usuarios de la demo en vez de los reales: se puede cambiar de rol
+    await page.click('[data-nav="admin"]');
+    await page.click('[data-action="tab"][data-id="admin.usuarios"]');
+    assert.equal(await page.locator("text=dueno@gmail.com").count(), 0);
+    fs.unlinkSync(archivo);
+    assert.deepEqual(errores, []);
+  } finally {
+    await browser.close();
+  }
+});
+
 test("migración: pegar el Excel, homologar por secciones e importar", { skip }, async () => {
   const browser = await chromium.launch();
   try {

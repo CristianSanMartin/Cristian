@@ -5,10 +5,10 @@ const SERVER = serverSource();
 const FAKE = fakeSource();
 
 /** Levanta el servidor del ERP sobre el simulador de Apps Script, ya instalado con `admin` como administrador. */
-export function createServer({ admin = "admin@gsprime.cl" } = {}) {
+export function createServer({ admin = "admin@gsprime.cl", state } = {}) {
   const ctx = vm.createContext({});
   vm.runInContext(FAKE, ctx, { filename: "gas-fake.js" });
-  const fake = vm.runInContext("createGasFake", ctx)({ user: admin });
+  const fake = vm.runInContext("createGasFake", ctx)({ user: admin, state });
   Object.assign(ctx, fake.globals);
   vm.runInContext(SERVER, ctx, { filename: "server.js" });
   vm.runInContext("instalar()", ctx);
