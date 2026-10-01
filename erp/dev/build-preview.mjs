@@ -66,7 +66,6 @@ const preview = `
   // Si cambió la estructura de datos, se conservan los datos y se ejecuta instalar (agrega hojas y columnas).
   var saved = store.get(KEY);
   if (saved && store.get(KEY_ESQUEMA()) !== ESQUEMA) store.set(KEY + '_instalar', '1');
-  var reiniciada = false;
   var origen = saved ? (store.get(KEY + '_origen') || 'ejemplo') : (BASE ? 'reales|' + BASE.exportadoEn : 'ejemplo');
   var fake = createGasFake({ user: 'admin@gsprime.cl', state: saved ? JSON.parse(saved) : BASE ? aEstado(BASE) : undefined });
   var g = fake.globals;
@@ -195,17 +194,24 @@ const preview = `
     var bar = document.createElement('div');
     bar.id = 'preview-bar';
     var reales = origen.indexOf('reales|') === 0;
-    bar.innerHTML = '<strong>Vista previa</strong> ' +
-      (reales
-        ? '<span title="Copia de los datos reales; los cambios quedan solo en este navegador">(datos reales al ' + origen.slice(7, 17) + ')</span> · '
-        : '<span title="Datos de ejemplo guardados solo en este navegador">(datos de ejemplo)</span> · ') +
-      (reiniciada ? '<span style="color:#f6b400">Se reinició por una actualización</span> · ' : '') + 'Ver como ' +
-      '<select id="preview-user">' + Object.keys(USERS).map(function (e) {
+    // Compacta: una etiqueta en la esquina; al tocarla se despliegan las opciones de la demo.
+    var abierta = store.get(KEY + '_bar') === '1';
+    bar.className = abierta ? 'abierta' : '';
+    bar.innerHTML = '<button id="preview-toggle" type="button" title="Opciones de la demo">Demo · ' +
+      (reales ? 'datos reales al ' + origen.slice(7, 17) : 'datos de ejemplo') + ' · ' + USERS[user] + ' <span>' + (abierta ? '▾' : '▴') + '</span></button>' +
+      '<div class="pv-opciones">' +
+      '<label>Ver como <select id="preview-user">' + Object.keys(USERS).map(function (e) {
         return '<option value="' + e + '"' + (e === user ? ' selected' : '') + '>' + USERS[e] + '</option>';
-      }).join('') + '</select> <button id="preview-reset" type="button">Reiniciar demo</button>' +
-      ' <button id="preview-cargar" type="button" title="Archivo de Administración → Respaldos → Exportar datos para la demo">Cargar datos reales</button>' +
+      }).join('') + '</select></label>' +
+      '<button id="preview-cargar" type="button" title="Archivo de Administración → Respaldos → Exportar datos para la demo">Cargar datos reales</button>' +
+      '<button id="preview-reset" type="button">Reiniciar demo</button>' +
+      '<span class="pv-nota">Lo que hagas aquí queda solo en este navegador.</span></div>' +
       '<input id="preview-archivo" type="file" accept=".json,application/json" hidden>';
     document.body.appendChild(bar);
+    document.getElementById('preview-toggle').addEventListener('click', function () {
+      store.set(KEY + '_bar', bar.classList.toggle('abierta') ? '1' : '0');
+      this.querySelector('span').textContent = bar.classList.contains('abierta') ? '▾' : '▴';
+    });
     document.getElementById('preview-user').addEventListener('change', function (e) {
       store.set(KEY + '_user', e.target.value);
       location.reload();
@@ -239,11 +245,15 @@ const preview = `
 })();
 </script>
 <style>
-#preview-bar{position:fixed;left:50%;transform:translateX(-50%);bottom:12px;z-index:300;background:#1f1f23;border:1px solid #f6b400;color:#f3f2ef;
-  font:12px Inter,system-ui,sans-serif;padding:7px 12px;border-radius:30px;box-shadow:0 8px 24px rgba(0,0,0,.5);display:flex;gap:8px;align-items:center;
-  flex-wrap:wrap;justify-content:center;max-width:calc(100vw - 24px);}
-#preview-bar select,#preview-bar button{background:#17171a;color:#f3f2ef;border:1px solid #2b2b30;border-radius:6px;padding:3px 6px;font:inherit;cursor:pointer;}
-.content{padding-bottom:90px;}
+#preview-bar{position:fixed;right:12px;bottom:12px;z-index:300;font:11px Inter,system-ui,sans-serif;color:#f3f2ef;display:flex;flex-direction:column-reverse;align-items:flex-end;gap:6px;max-width:calc(100vw - 24px);}
+#preview-toggle{background:#1f1f23;border:1px solid #f6b400;color:#f3f2ef;border-radius:20px;padding:5px 10px;font:inherit;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.5);white-space:nowrap;}
+#preview-toggle span{color:#f6b400;}
+#preview-bar .pv-opciones{display:none;background:#1f1f23;border:1px solid #2b2b30;border-radius:10px;padding:10px;box-shadow:0 8px 24px rgba(0,0,0,.5);flex-direction:column;gap:8px;min-width:200px;}
+#preview-bar.abierta .pv-opciones{display:flex;}
+#preview-bar .pv-opciones label{display:flex;gap:6px;align-items:center;justify-content:space-between;}
+#preview-bar .pv-nota{color:#a3a3a8;font-size:10px;}
+#preview-bar select,#preview-bar .pv-opciones button{background:#17171a;color:#f3f2ef;border:1px solid #2b2b30;border-radius:6px;padding:4px 8px;font:inherit;cursor:pointer;}
+.content{padding-bottom:50px;}
 </style>
 `;
 
