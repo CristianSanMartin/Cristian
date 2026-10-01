@@ -80,27 +80,38 @@
         '<div class="filters-bar"><div class="search-box">' + GS.icon('search') + '<input type="text" data-filter="compras.q" value="' + esc(f.q) + '" placeholder="Buscar factura, producto o PVI..."></div></div>' +
         '<div id="cp-resumen"></div>' +
         '<div class="table-wrap"><table class="data-table wide"><thead><tr id="cp-thead"></tr></thead><tbody id="cp-tbody"></tbody></table></div>' +
+        // Facturas con todas sus unidades vendidas o entregadas: aparte, abajo.
+        '<div id="cp-completas-bloque"><h3 class="sub-titulo" style="margin-top:22px;">Facturas completas <span class="muted" id="cp-completas-n"></span></h3>' +
+        '<div class="table-wrap"><table class="data-table wide"><thead><tr id="cp-thead-comp"></tr></thead><tbody id="cp-tbody-comp"></tbody></table></div></div>' +
         '<p class="table-note">El despacho se reparte entre los productos según su participación en $ del neto de la factura, y queda incluido en el costo de cada unidad del inventario.</p>';
       this.update();
     },
     update() {
       const rows = GS.tablaAplicar('compras', buscadasCompras(), colsCompras);
       const admin = GS.puede('admin');
-      document.getElementById('cp-thead').innerHTML = '<th></th>' + GS.tablaEncabezado('compras', colsCompras) + '<th></th>';
       const n = colsCompras.length + 2;
-      document.getElementById('cp-tbody').innerHTML = rows.length
-        ? rows.map((c) => {
-          const open = abiertas.has(c.id);
-          return '<tr class="fila-compra' + (open ? ' abierta' : '') + '" data-action="verCompra" data-id="' + esc(c.id) + '">' +
-            '<td><span class="chev">' + (open ? '▾' : '▸') + '</span></td>' +
-            colsCompras.map((col) => '<td class="' + (col.right ? 'cell-num right ' : '') + (col.clase || '') + '">' + col.celda(c) + '</td>').join('') +
-            '<td><div class="row-actions">' + (admin ? GS.iconBtn('anularCompra', c.id, 'trash', 'Anular factura', 'danger') : '') + '</div></td></tr>' +
-            (open ? '<tr class="detalle-row"><td colspan="' + n + '">' + detalleCompra(c) + '</td></tr>' : '');
-        }).join('')
-        : '<tr><td colspan="' + n + '">' + GS.empty('Aún no hay facturas', 'En Preventas, selecciona las preventas asignadas que vienen en la factura y presiona "Crear factura de compra".', 'compras') + '</td></tr>';
+      const fila = (c) => {
+        const open = abiertas.has(c.id);
+        return '<tr class="fila-compra' + (open ? ' abierta' : '') + '" data-action="verCompra" data-id="' + esc(c.id) + '">' +
+          '<td><span class="chev">' + (open ? '▾' : '▸') + '</span></td>' +
+          colsCompras.map((col) => '<td class="' + (col.right ? 'cell-num right ' : '') + (col.clase || '') + '">' + col.celda(c) + '</td>').join('') +
+          '<td><div class="row-actions">' + (admin ? GS.iconBtn('anularCompra', c.id, 'trash', 'Anular factura', 'danger') : '') + '</div></td></tr>' +
+          (open ? '<tr class="detalle-row"><td colspan="' + n + '">' + detalleCompra(c) + '</td></tr>' : '');
+      };
+      const enCurso = rows.filter((c) => c.estadoVenta !== 'vendida');
+      const completas = rows.filter((c) => c.estadoVenta === 'vendida');
+      document.getElementById('cp-thead').innerHTML = '<th></th>' + GS.tablaEncabezado('compras', colsCompras) + '<th></th>';
+      document.getElementById('cp-tbody').innerHTML = enCurso.length
+        ? enCurso.map(fila).join('')
+        : '<tr><td colspan="' + n + '">' + (rows.length
+          ? '<div class="muted center" style="padding:14px;">Todas las facturas están completas.</div>'
+          : GS.empty('Aún no hay facturas', 'En Preventas, selecciona las preventas asignadas que vienen en la factura y presiona "Crear factura de compra".', 'compras')) + '</td></tr>';
+      document.getElementById('cp-completas-bloque').hidden = !completas.length;
+      document.getElementById('cp-completas-n').textContent = '(' + completas.length + ')';
+      document.getElementById('cp-thead-comp').innerHTML = '<th></th>' + colsCompras.map((col) => '<th' + (col.right ? ' class="right"' : '') + '>' + esc(col.label) + '</th>').join('') + '<th></th>';
+      document.getElementById('cp-tbody-comp').innerHTML = completas.map(fila).join('');
       // El detalle queda fijo al ancho visible aunque la lista de facturas se desplace hacia el lado.
-      const wrap = document.getElementById('cp-tbody').closest('.table-wrap');
-      document.querySelectorAll('.detalle-compra').forEach((d) => { d.style.width = Math.max(320, wrap.clientWidth - 36) + 'px'; });
+      document.querySelectorAll('.detalle-compra').forEach((d) => { d.style.width = Math.max(320, d.closest('.table-wrap').clientWidth - 36) + 'px'; });
       const sum = (k) => rows.reduce((t, c) => t + c[k], 0);
       document.getElementById('cp-resumen').innerHTML = '<div class="kpi-grid">' +
         kpi('Facturas', rows.length, fmt.num(sum('vendidas') + sum('salidas')) + ' de ' + fmt.num(sum('unidades')) + ' unidades entregadas') +
