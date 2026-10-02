@@ -49,18 +49,18 @@
     const fila = (l) => '<tr><td>' + GS.thumb(l.imagen) + '</td><td class="cell-strong">' + esc(l.productoNombre) + ' ' + GS.langPill(l.idioma) +
       '<div class="cell-dim">' + esc(l.preventaId) + (l.edicion ? ' · ' + esc(l.edicion) : '') + '</div></td>' +
       '<td class="cell-num right">' + fmt.num(l.cantidad) + '</td><td class="cell-num right">' + fmt.cost(l.costoNeto) + '</td>' +
-      '<td class="cell-num right">' + fmt.money(l.netoLinea) + '</td><td class="cell-num right col-inv">' + fmt.money(l.despacho) + '</td>' +
+      '<td class="cell-num right">' + fmt.money(l.netoLinea) + '</td>' +
       '<td class="cell-num right cell-strong">' + fmt.cost(l.costo) + '</td>' +
       (admin ? '<td><div class="row-actions">' + GS.iconBtn('quitarLineaCompra', l.id, 'trash', 'Quitar este producto de la factura', 'danger') + '</div></td>' : '') + '</tr>';
     const extra = admin ? 1 : 0;
-    const total = (l, v, cls) => '<tr class="' + (cls || '') + '"><td colspan="4" class="right">' + l + '</td><td class="cell-num right">' + v + '</td><td class="col-inv" colspan="' + (2 + extra) + '"></td></tr>';
+    const total = (l, v, cls) => '<tr class="' + (cls || '') + '"><td colspan="4" class="right">' + l + '</td><td class="cell-num right">' + v + '</td><td class="col-inv" colspan="' + (1 + extra) + '"></td></tr>';
     // Como la factura de Asmodee: el despacho es una fila más cuando se cobra.
     const filaDespacho = c.despacho
       ? '<tr class="item-despacho"><td></td><td class="cell-strong">Despacho</td><td class="cell-num right">1</td><td class="cell-num right">' + fmt.money(c.despacho) + '</td>' +
-        '<td class="cell-num right">' + fmt.money(c.despacho) + '</td><td class="cell-dim right col-inv" colspan="2">prorrateado en los productos ↑</td>' + (admin ? '<td></td>' : '') + '</tr>'
+        '<td class="cell-num right">' + fmt.money(c.despacho) + '</td><td class="cell-dim right col-inv">incluido en el costo ↑</td>' + (admin ? '<td></td>' : '') + '</tr>'
       : '';
     return '<div class="detalle-compra"><table class="data-table"><thead><tr><th></th><th>Ítem</th><th class="right">Cant.</th><th class="right">Precio unidad</th><th class="right">Total neto</th>' +
-      '<th class="right col-inv">Despacho prorrateado</th><th class="right">Costo unidad en inventario</th>' + (admin ? '<th></th>' : '') + '</tr></thead><tbody>' +
+      '<th class="right">Costo unidad en inventario</th>' + (admin ? '<th></th>' : '') + '</tr></thead><tbody>' +
       c.lineas.map(fila).join('') + filaDespacho +
       '</tbody><tfoot>' +
       total('Neto', fmt.money(c.neto)) + total('IVA 19%', fmt.money(c.iva)) + total('<strong>Total factura</strong>', '<strong>' + fmt.money(c.total) + '</strong>', 'total-row') +

@@ -190,8 +190,9 @@ test("factura de compra: las preventas seleccionadas pasan a Compras e Inventari
     assert.doesNotMatch(await page.locator("#cp-tbody").textContent(), /CP-000/, "no se muestra el correlativo interno CP");
     const detalle = page.locator(".detalle-compra");
     assert.match(await detalle.textContent(), /Binder Collection.*Mini Tin.*Despacho.*\$15\.000.*Total factura\$1\.039\.953/s);
-    // El despacho se reparte por participación en $ (Mini Tin: $82.300 de $858.910 → $1.437)
-    assert.match(await detalle.locator("tbody tr", { hasText: "Mini Tin" }).textContent(), /\$1\.437/);
+    // El despacho prorrateado no se muestra como columna: queda incluido en el costo unidad
+    assert.doesNotMatch(await detalle.textContent(), /Despacho prorrateado/);
+    assert.match(await detalle.textContent(), /incluido en el costo/);
     assert.match(await page.locator("#cp-tbody tr.fila-compra", { hasText: "30th2" }).textContent(), /Asmodee.*30th2.*3.*40.*\$873\.910.*\$166\.043.*\$1\.039\.953.*0 \/ 40.*\$0.*Sin ventas/s);
     // Sin columnas de neto productos ni despacho; primero fecha, proveedor y factura
     const titulosCp = (await page.locator("#cp-thead th").allTextContents()).map((t) => t.replace(/[▾▲▼⧩]/g, "").trim());
