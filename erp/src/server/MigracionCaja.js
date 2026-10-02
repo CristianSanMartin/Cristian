@@ -235,6 +235,8 @@ const MigracionCaja = {
     const compraPorId = {};
     compras.forEach((c) => { compraPorId[c.id] = c; });
     filas.forEach((f) => {
+      // Filas cargadas con una versión anterior: la OC se vuelve a normalizar (OC001, PR001…).
+      if (f.oc) f.oc = MigracionCaja.normalizarOc(f.obs) || f.oc;
       const ef = MigracionCaja._efectivo(f, mapa, compraPorId);
       Object.assign(f, {
         estado: f.migrada ? 'migrada' : f.descartada ? 'descartada' : 'pendiente',
