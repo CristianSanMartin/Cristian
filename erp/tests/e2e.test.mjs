@@ -397,6 +397,8 @@ test("venta por monto, Finanzas y migración de la caja diaria", { skip }, async
     // Finanzas: movimiento nuevo y resumen
     await page.click('[data-nav="finanzas"]');
     await page.click('[data-action="nuevoMovimiento"]');
+    // El formulario enfoca su primer campo a los 30 ms: se espera para no escribir en medio de ese cambio de foco.
+    await page.waitForFunction(() => document.activeElement && document.activeElement.name === "fecha");
     await modal(page).locator('[name="categoria"]').selectOption("gav");
     await modal(page).locator('[name="monto"]').fill("25000");
     await modal(page).locator('[name="subcategoria"]').fill("Sueldo Alex");
