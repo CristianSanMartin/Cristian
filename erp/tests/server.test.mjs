@@ -597,6 +597,34 @@ test("unir productos duplicados: el stock y el historial pasan al que se conserv
   assert.match(errorDe(s.call("unirProductos", { origenId: prods.binderEng.id, destinoId: prods.binderEng.id })), /distintos/);
 });
 
+test("editar factura: separar el despacho que venía incluido en los precios (como la 46056) y corregir costos vendidos", () => {
+  const s = createServer();
+  const { pv: p } = preventa30th(s);
+  // Como quedó tras la migración: precios con el despacho ya prorrateado y despacho 0
+  s.ok("guardarPreventa", { id: p.binderEng.id, proveedorId: asmodee(s).id, productoId: p.binderEng.productoId, lanzamiento: "2026-10-30", solicitado: 12, costoNeto: 12592.5 });
+  s.ok("guardarPreventa", { id: p.binderEsp.id, proveedorId: asmodee(s).id, productoId: p.binderEsp.productoId, lanzamiento: "2026-10-30", solicitado: 6, costoNeto: 12592.5 });
+  s.ok("registrarAsignacion", { lineas: [{ id: p.binderEng.id, asignado: 12 }, { id: p.binderEsp.id, asignado: 6 }] });
+  const c = s.ok("crearCompra", { preventas: [p.binderEng.id, p.binderEsp.id], factura: "46056", fecha: "2026-06-16", despacho: 0 }).result;
+  let d = s.ok("bootstrap").data;
+  const lotes = d.lotes.filter(l => l.compraId === c.id);
+  s.ok("crearVenta", { fecha: "2026-06-20", lineas: [{ productoId: p.binderEng.productoId, cantidad: 2 }] });
+  const totalAntes = d.compras[0].total;
+
+  s.ok("guardarUsuario", { email: "socio@gsprime.cl", nombre: "Socio", rol: "operador" });
+  assert.equal(s.as("socio@gsprime.cl").call("editarCompra", { id: c.id, despacho: 15000, lineas: [] }).code, "SIN_PERMISO");
+  s.as("admin@gsprime.cl");
+  s.ok("editarCompra", { id: c.id, despacho: 15000, lineas: lotes.map(l => ({ id: l.id, costoNeto: 11759 })) });
+  d = s.ok("bootstrap").data;
+  const cp = d.compras.find(x => x.id === c.id);
+  assert.deepEqual([cp.despacho, Math.round(cp.neto), Math.round(cp.iva), Math.round(cp.total)], [15000, 226662, 43066, 269728], "igual que el PDF");
+  assert.ok(Math.abs(cp.total - totalAntes) < 5, "el total prácticamente no cambia (redondeo de los precios migrados)");
+  const eng = d.lotes.find(l => l.id === lotes[0].id);
+  assert.deepEqual([eng.costoNeto, Math.round(eng.despacho)], [11759, 10000], "despacho prorrateado por $: 12 de 18 unidades");
+  const venta = d.ventas[0];
+  assert.equal(Math.round(venta.lineas[0].costo * 100) / 100, Math.round(eng.costo * 100) / 100, "la venta ya hecha toma el costo corregido");
+  assert.match(errorDe(s.call("editarCompra", { id: c.id, despacho: -1, lineas: [] })), /despacho/);
+});
+
 test("venta en varios lotes (FIFO) y cuenta por cobrar con abonos", () => {
   const s = createServer();
   const { prods } = conInventario(s);

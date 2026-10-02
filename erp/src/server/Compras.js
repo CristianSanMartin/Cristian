@@ -55,6 +55,51 @@ const Compras = {
     return compra;
   },
 
+  /**
+   * Corrige una factura (administrador): N°, fecha, despacho y precio unitario neto de cada
+   * línea. El despacho se vuelve a repartir por participación en $, y el costo de lo ya vendido
+   * o entregado de esos lotes se actualiza (es una corrección, no un cambio de precio).
+   * p: { id, factura?, fecha?, despacho, lineas: [{ id, costoNeto }] }
+   */
+  editar(p, user) {
+    const compra = Compras.requerir(p.id);
+    const lineas = Db.all('Compras_Lineas').filter((l) => l.compraId === compra.id);
+    const nuevos = {};
+    (Array.isArray(p.lineas) ? p.lineas : []).forEach((x) => {
+      const l = lineas.find((y) => y.id === String(x.id));
+      if (!l) throw new AppError('La línea ' + x.id + ' no es de la factura ' + compra.factura + '.');
+      nuevos[l.id] = Util.monto(x.costoNeto, 'El precio unitario', { requerido: true });
+    });
+    const factura = p.factura == null ? compra.factura : Util.texto(p.factura, 'El N° de factura', { requerido: true, max: 40 });
+    const repetida = Db.all('Compras').find((c) => c.id !== compra.id && c.proveedorId === compra.proveedorId && Util.normalizar(c.factura) === Util.normalizar(factura));
+    if (repetida) throw new AppError('La factura ' + factura + ' de ese proveedor ya está registrada (' + repetida.id + ').');
+    const fecha = p.fecha == null ? compra.fecha : Util.fecha(p.fecha, 'La fecha de la factura', { requerido: true });
+    const despacho = Util.monto(p.despacho, 'El despacho');
+    const costoNeto = (l) => (l.id in nuevos ? nuevos[l.id] : l.costoNeto);
+    const neto = lineas.reduce((t, l) => t + l.cantidad * costoNeto(l), 0);
+    const sello = Util.sello(user);
+    const cambios = {};
+    const costoUnidad = {};
+    lineas.forEach((l) => {
+      const desp = neto ? despacho * l.cantidad * costoNeto(l) / neto : 0;
+      cambios[l.id] = Object.assign({ costoNeto: costoNeto(l), despacho: desp }, sello);
+      costoUnidad[l.id] = l.cantidad ? costoNeto(l) + desp / l.cantidad : costoNeto(l);
+    });
+    Db.update('Compras', compra.id, Object.assign({ factura: factura, fecha: fecha, despacho: despacho }, sello));
+    if (lineas.length) Db.actualizarVarios('Compras_Lineas', cambios);
+    // Lo ya vendido o entregado de estos lotes pasa a tener el costo corregido.
+    const vl = {};
+    Db.all('Ventas_Lineas').forEach((l) => { if (l.loteId in costoUnidad && Math.abs(l.costo - costoUnidad[l.loteId]) > 0.001) vl[l.id] = { costo: costoUnidad[l.loteId] }; });
+    if (Object.keys(vl).length) Db.actualizarVarios('Ventas_Lineas', vl);
+    const sal = {};
+    Db.all('Salidas').forEach((x) => { if (x.loteId in costoUnidad && Math.abs(x.costo - costoUnidad[x.loteId]) > 0.001) sal[x.id] = { costo: costoUnidad[x.loteId] }; });
+    if (Object.keys(sal).length) Db.actualizarVarios('Salidas', sal);
+    Audit.log(user, 'editar', 'Compra', compra.id, {
+      factura: factura, fecha: fecha, despachoAntes: compra.despacho, despacho: despacho,
+      lineas: lineas.map((l) => l.id + ' ' + l.costoNeto + '→' + costoNeto(l)).join(', '), ventasCorregidas: Object.keys(vl).length,
+    });
+  },
+
   /** Deshace una factura mal ingresada: sus preventas vuelven a "asignada" y los lotes salen del inventario. */
   anular(p, user) {
     const compra = Compras.requerir(p.id);

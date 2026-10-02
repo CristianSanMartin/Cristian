@@ -95,7 +95,7 @@
         return '<tr class="fila-compra' + (open ? ' abierta' : '') + '" data-action="verCompra" data-id="' + esc(c.id) + '">' +
           '<td><span class="chev">' + (open ? '▾' : '▸') + '</span></td>' +
           colsCompras.map((col) => '<td class="' + (col.right ? 'cell-num right ' : '') + (col.clase || '') + '">' + col.celda(c) + '</td>').join('') +
-          '<td><div class="row-actions">' + (admin ? GS.iconBtn('anularCompra', c.id, 'trash', 'Anular factura', 'danger') : '') + '</div></td></tr>' +
+          '<td><div class="row-actions">' + (admin ? GS.iconBtn('editarCompra', c.id, 'edit', 'Editar factura: N°, fecha, precios y despacho') + GS.iconBtn('anularCompra', c.id, 'trash', 'Anular factura', 'danger') : '') + '</div></td></tr>' +
           (open ? '<tr class="detalle-row"><td colspan="' + n + '">' + detalleCompra(c) + '</td></tr>' : '');
       };
       const enCurso = rows.filter((c) => c.estadoVenta !== 'vendida');
@@ -125,6 +125,68 @@
     if (el && el.closest('.row-actions')) return;
     if (abiertas.has(id)) abiertas.delete(id); else abiertas.add(id);
     GS.views.compras.update();
+  };
+
+  /** Corrige N°, fecha, despacho y precios unitarios de una factura (ej. precios migrados con el despacho ya incluido). */
+  GS.actions.editarCompra = (id) => {
+    const c = data().compras.find((x) => x.id === id);
+    const iva = data().app.iva;
+    const netoOrig = c.lineas.reduce((t, l) => t + l.cantidad * l.costoNeto, 0);
+    GS.formModal({
+      title: 'Editar factura ' + c.factura,
+      submitLabel: 'Guardar factura',
+      size: 'wide',
+      fields: () => '<div class="form-grid">' +
+        '<div class="form-field"><label>N° de factura *</label><input name="factura" value="' + esc(c.factura) + '"></div>' +
+        '<div class="form-field"><label>Fecha *</label><input type="date" name="fecha" value="' + esc(c.fecha) + '"></div>' +
+        '<div class="form-field"><label>Despacho (neto)</label><input type="number" name="despacho" min="0" step="1" value="' + esc(c.despacho || 0) + '"></div>' +
+        '<div class="form-field"><label class="check" style="margin-top:22px;"><input type="checkbox" name="descontar"' + (c.despacho ? '' : ' checked') + '> Descontar el despacho de los precios (mantener el total)</label></div></div>' +
+        '<p class="hint">Úsalo cuando los precios traen el despacho incluido (como en la migración): escribe el despacho de la factura y los precios se recalculan para que el total no cambie. Después puedes ajustar cada precio a mano para que calce con la factura.</p>' +
+        '<div class="table-wrap"><table class="data-table"><thead><tr><th>Producto</th><th class="right">Cant.</th><th class="right">Antes</th><th class="right">Precio unidad neto</th><th class="right">Total neto</th></tr></thead><tbody>' +
+        c.lineas.map((l) => '<tr><td class="cell-strong">' + esc(l.productoNombre) + ' ' + GS.langPill(l.idioma) + '</td><td class="cell-num right">' + fmt.num(l.cantidad) + '</td>' +
+          '<td class="cell-num right cell-dim">' + fmt.cost(l.costoNeto) + '</td>' +
+          '<td class="right"><input class="qty-input price-input" type="number" min="0" step="0.01" data-ec-linea="' + esc(l.id) + '" value="' + esc(l.costoNeto) + '"></td>' +
+          '<td class="cell-num right" data-ec-total="' + esc(l.id) + '"></td></tr>').join('') + '</tbody></table></div>' +
+        '<div class="venta-totales" data-ec-totales></div>',
+      onMount: (form) => {
+        const inputs = Array.from(form.querySelectorAll('[data-ec-linea]'));
+        const lineaDe = (inp) => c.lineas.find((l) => l.id === inp.dataset.ecLinea);
+        const recalc = () => {
+          let neto = 0;
+          inputs.forEach((inp) => {
+            const l = lineaDe(inp);
+            const t = l.cantidad * (Number(inp.value) || 0);
+            neto += t;
+            form.querySelector('[data-ec-total="' + CSS.escape(l.id) + '"]').textContent = fmt.money(t);
+          });
+          const desp = Number(form.elements.despacho.value) || 0;
+          const total = Math.round((neto + desp) * (1 + iva));
+          const fila = (l, v, cls) => '<div class="' + (cls || '') + '"><span>' + l + '</span><strong>' + v + '</strong></div>';
+          form.querySelector('[data-ec-totales]').innerHTML =
+            fila('Neto productos', fmt.money(neto)) + fila('Despacho', fmt.money(desp)) + fila('Neto', fmt.money(neto + desp)) +
+            fila('IVA', fmt.money((neto + desp) * iva)) + fila('Total factura', fmt.money(total), 'grande') +
+            fila('Antes', fmt.money(c.total) + (Math.abs(total - c.total) > 1 ? ' <span class="text-gold">(' + (total > c.total ? '+' : '') + fmt.money(total - c.total) + ')</span>' : ' <span class="text-success">✓ mismo total</span>'));
+        };
+        // Descontar: cada precio baja en proporción para que neto productos + despacho = neto original.
+        const descontar = () => {
+          if (!form.elements.descontar.checked || !netoOrig) return;
+          const desp = Number(form.elements.despacho.value) || 0;
+          const factor = Math.max(0, netoOrig + (c.despacho || 0) - desp) / netoOrig;
+          inputs.forEach((inp) => { inp.value = Math.round(lineaDe(inp).costoNeto * factor); });
+        };
+        form.elements.despacho.addEventListener('input', () => { descontar(); recalc(); });
+        form.elements.descontar.addEventListener('change', () => {
+          if (form.elements.descontar.checked) descontar(); else inputs.forEach((inp) => { inp.value = lineaDe(inp).costoNeto; });
+          recalc();
+        });
+        inputs.forEach((inp) => inp.addEventListener('input', recalc));
+        recalc();
+      },
+      onSubmit: (v, form) => GS.mutate('editarCompra', {
+        id: id, factura: v.factura, fecha: v.fecha, despacho: v.despacho,
+        lineas: Array.from(form.querySelectorAll('[data-ec-linea]')).map((inp) => ({ id: inp.dataset.ecLinea, costoNeto: inp.value })),
+      }, 'Factura ' + v.factura + ' actualizada'),
+    });
   };
 
   GS.actions.anularCompra = (id) => {

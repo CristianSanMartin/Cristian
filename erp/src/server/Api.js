@@ -39,6 +39,7 @@ function rutas_() {
     crearCompra: { rol: 'operador', write: true, fn: Compras.crear },
     anularCompra: { rol: 'admin', write: true, fn: Compras.anular },
     quitarLineaCompra: { rol: 'admin', write: true, fn: Compras.quitarLinea },
+    editarCompra: { rol: 'admin', write: true, fn: Compras.editar },
     unirProductos: { rol: 'admin', write: true, fn: Productos.unir },
     cajaEstado: { rol: 'admin', fn: () => MigracionCaja.estado() },
     cajaCargar: { rol: 'admin', write: true, fn: MigracionCaja.cargar },

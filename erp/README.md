@@ -201,6 +201,11 @@ y la recuerda en `erp/.implementacion`. Después solo queda el paso 2 cuando cor
   marca cada unidad encontrada y se suman las "unidades de más"; el avance se guarda solo. Hay hoja
   para imprimir. Al cerrar (administrador): faltantes → salida "Pérdida" de su lote; unidades de más →
   lote de ajuste ("Ajuste TOM-0001") al último costo conocido. Hojas `Tomas` y `Tomas_Lineas`.
+- **Editar factura** (administrador, lápiz junto a la factura en Compras): corrige N° de factura,
+  fecha, despacho (neto) y precio neto de cada línea. La casilla "Descontar el despacho de los
+  precios" sirve para facturas migradas cuyos precios ya traían el envío prorrateado: baja los
+  precios manteniendo el total. Se re-prorratea el despacho y se corrige el costo de las unidades
+  ya vendidas o entregadas.
 
 ## Finanzas, ventas por monto y migración de la caja diaria
 
