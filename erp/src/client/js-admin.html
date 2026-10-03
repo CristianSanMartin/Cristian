@@ -1,0 +1,170 @@
+<script>
+/* =========================================================
+   Administración (solo admin): usuarios, auditoría e
+   importación desde el ERP anterior. Además, las vistas
+   "Pronto" de Finanzas.
+========================================================= */
+(function () {
+  'use strict';
+  const { fmt, esc } = GS;
+  const data = () => GS.state.data;
+  const ROL_LABEL = { admin: 'Administrador', operador: 'Operador', lectura: 'Solo lectura' };
+  let auditoria = null;
+
+  const colsUsuarios = [
+    { id: 'email', label: 'Correo', valor: (u) => u.email, celda: (u) => '<span class="cell-strong">' + esc(u.email) + '</span>' + (u.email === data().user.email ? ' <span class="pill">tú</span>' : '') },
+    { id: 'nombre', label: 'Nombre', valor: (u) => u.nombre, celda: (u) => esc(u.nombre) },
+    { id: 'rol', label: 'Rol', valor: (u) => ROL_LABEL[u.rol] || u.rol, celda: (u) => '<span class="badge rol-' + esc(u.rol) + '">' + esc(ROL_LABEL[u.rol] || u.rol) + '</span>' },
+    { id: 'estado', label: 'Estado', valor: (u) => (u.activo ? 'Activo' : 'Inactivo'), celda: (u) => (u.activo ? '<span class="badge st-ok">Activo</span>' : '<span class="badge st-cancelada">Inactivo</span>') },
+    { id: 'alta', label: 'Alta', valor: (u) => String(u.creadoEn || '').slice(0, 10), celda: (u) => '<span class="cell-dim">' + esc(String(u.creadoEn || '').slice(0, 10)) + '</span>' },
+  ];
+  const usuariosOrdenados = () => data().usuarios.slice().sort((a, b) => (b.activo - a.activo) || a.email.localeCompare(b.email));
+  GS.tablaRegistrar('usuarios', { filas: usuariosOrdenados, columnas: colsUsuarios, alCambiar: () => GS.render() });
+
+  const prettyJson = (s) => {
+    if (!s) return '';
+    try { return JSON.stringify(JSON.parse(s), null, 1).replace(/^\{\n|\n\}$/g, '').replace(/^ /gm, ''); } catch (e) { return s; }
+  };
+  const colsAuditoria = [
+    { id: 'fecha', label: 'Fecha', clase: 'nowrap', valor: (a) => a.fecha, texto: (a) => String(a.fecha).slice(0, 10), celda: (a) => '<span class="cell-dim">' + esc(a.fecha) + '</span>' },
+    { id: 'usuario', label: 'Usuario', valor: (a) => a.usuario, celda: (a) => esc(a.usuario) },
+    { id: 'accion', label: 'Acción', valor: (a) => a.accion, celda: (a) => '<span class="cell-strong">' + esc(a.accion) + '</span>' },
+    { id: 'entidad', label: 'Entidad', valor: (a) => a.entidad, celda: (a) => esc(a.entidad) },
+    { id: 'detalle', label: 'Detalle', sinMenu: true, valor: () => '', celda: (a) => '<pre class="json">' + esc(prettyJson(a.detalle)) + '</pre>' },
+  ];
+  GS.tablaRegistrar('auditoria', { filas: () => auditoria || [], columnas: colsAuditoria, alCambiar: () => GS.render() });
+
+  function tabUsuarios() {
+    const users = GS.tablaAplicar('usuarios', usuariosOrdenados(), colsUsuarios);
+    return '<div class="notice">Para entrar, cada persona necesita <strong>dos cosas</strong>: estar en esta lista (activa) y tener acceso de <strong>edición</strong> a la planilla del ERP en Google Drive. ' +
+      'Roles: <strong>Solo lectura</strong> consulta; <strong>Operador</strong> crea y edita preventas, productos y proveedores; <strong>Administrador</strong> además elimina y gestiona usuarios.</div>' +
+      '<div class="btn-row" style="justify-content:flex-end;margin-bottom:12px;"><button class="btn" data-action="nuevoUsuario">' + GS.icon('plus', 2.4) + 'Agregar usuario</button></div>' +
+      '<div class="table-wrap"><table class="data-table" style="min-width:680px;"><thead><tr>' + GS.tablaEncabezado('usuarios', colsUsuarios) + '<th class="right">Acciones</th></tr></thead><tbody>' +
+      users.map((u) => '<tr class="' + (u.activo ? '' : 'row-muted') + '">' + colsUsuarios.map((c) => '<td>' + c.celda(u) + '</td>').join('') +
+        '<td><div class="row-actions">' + GS.iconBtn('editarUsuario', u.email, 'edit', 'Editar') + '</div></td></tr>').join('') +
+      '</tbody></table></div>';
+  }
+
+  function tabAuditoria() {
+    if (!auditoria) {
+      GS.api('auditoria').then((r) => { auditoria = r.data; GS.render(); }).catch((e) => GS.toast(e.message, true));
+      return '<div class="empty-state"><div class="spinner"></div>Cargando registro…</div>';
+    }
+    const filasAud = GS.tablaAplicar('auditoria', auditoria, colsAuditoria);
+    return '<div class="btn-row" style="justify-content:space-between;margin-bottom:12px;"><span class="muted" style="font-size:12px;">Últimos 300 cambios, del más reciente al más antiguo.</span>' +
+      '<button class="btn ghost" data-action="recargarAuditoria">Actualizar</button></div>' +
+      '<div class="table-wrap"><table class="data-table"><thead><tr>' + GS.tablaEncabezado('auditoria', colsAuditoria) + '</tr></thead><tbody>' +
+      (filasAud.length
+        ? filasAud.map((a) => '<tr>' + colsAuditoria.map((c) => '<td class="' + (c.clase || '') + '">' + c.celda(a) + '</td>').join('') + '</tr>').join('')
+        : '<tr><td colspan="5">' + GS.empty('Sin registros', '') + '</td></tr>') +
+      '</tbody></table></div>';
+  }
+
+  let respaldos = null;
+  let exportDemo = null;   // { cargando } o el último archivo exportado
+  function tabRespaldos() {
+    if (!respaldos) {
+      GS.api('respaldos').then((r) => { respaldos = r.data; GS.render(); }).catch((e) => GS.toast(e.message, true));
+      return '<div class="empty-state"><div class="spinner"></div>Cargando respaldos…</div>';
+    }
+    const r = respaldos;
+    const estado = r.programado
+      ? '<span class="badge st-ok">Activo</span> Respaldo automático todas las noches (3 a. m.). Se guardan los últimos ' + r.conservar + '.'
+      : '<span class="badge st-cancelada">Sin programar</span> Ejecuta <strong>instalar</strong> para activar el respaldo nocturno.';
+    return '<div class="notice">' + estado + ' Además se crea uno automáticamente <strong>antes de cada instalar o migración</strong>. ' +
+      'Cada respaldo es una copia completa de la planilla en la carpeta "GS Prime ERP · Respaldos", junto a la planilla. ' +
+      'Para volver atrás, abre la copia y reemplaza las hojas, o avísanos y lo hacemos juntos.</div>' +
+      '<div class="btn-row" style="justify-content:space-between;margin-bottom:12px;"><span class="muted" style="font-size:12px;">' + r.respaldos.length + ' respaldos guardados.</span>' +
+      '<button class="btn" data-action="crearRespaldo">' + GS.icon('download') + 'Crear respaldo ahora</button></div>' +
+      '<div class="table-wrap"><table class="data-table" style="min-width:640px;"><thead><tr><th>Fecha</th><th>Respaldo</th><th></th></tr></thead><tbody>' +
+      (r.respaldos.length
+        ? r.respaldos.map((x) => '<tr><td class="nowrap">' + esc(x.fecha) + '</td><td>' + esc(x.nombre) + '</td><td class="right"><a class="btn small ghost" href="' + esc(x.url) + '" target="_blank" rel="noopener">Abrir</a></td></tr>').join('')
+        : '<tr><td colspan="3" class="muted center">Aún no hay respaldos.</td></tr>') +
+      '</tbody></table></div>' +
+      '<h3 class="sub-titulo" style="margin-top:22px;">Datos para la demo</h3>' +
+      '<div class="notice">Genera un archivo con todos los datos actuales (sin las carpetas de Drive) para cargarlo en la vista previa con <strong>Cargar datos reales</strong>, ' +
+      'o para enviárselo a Claude y dejar la demo como un reflejo de esta web. Contiene datos de clientes: compártelo solo con quien corresponda.</div>' +
+      '<div class="btn-row" style="margin-bottom:12px;">' +
+      (exportDemo && exportDemo.cargando
+        ? '<span class="muted"><span class="spinner"></span> Exportando…</span>'
+        : '<button class="btn secondary" data-action="exportarDemo">' + GS.icon('download') + 'Exportar datos para la demo</button>') +
+      (exportDemo && exportDemo.url ? '<a class="btn" href="' + esc(exportDemo.url) + '" target="_blank" rel="noopener">' + GS.icon('download') + 'Descargar ' + esc(exportDemo.kb) + ' KB</a><span class="muted" style="font-size:12px;">' + esc(exportDemo.nombre) + '</span>' : '') +
+      '</div>' +
+      '<h3 class="sub-titulo" style="margin-top:22px;">Migraciones de datos</h3>' +
+      (r.pendientes.length ? '<div class="notice warn">Hay ' + r.pendientes.length + ' migración(es) pendiente(s): ' + r.pendientes.map((m) => esc(m.id)).join(', ') + '. Se aplican al ejecutar <strong>instalar</strong>, después de un respaldo.</div>' : '') +
+      '<div class="table-wrap"><table class="data-table" style="min-width:640px;"><thead><tr><th>Aplicada</th><th>Migración</th><th>Qué cambió</th><th>Por</th></tr></thead><tbody>' +
+      (r.migraciones.length
+        ? r.migraciones.map((m) => '<tr><td class="nowrap">' + esc(m.aplicadaEn) + '</td><td class="cell-strong">' + esc(m.id) + '</td><td>' + esc(m.descripcion) + '</td><td>' + esc(m.aplicadaPor) + '</td></tr>').join('')
+        : '<tr><td colspan="4" class="muted center">Todavía no se ha aplicado ninguna migración.</td></tr>') +
+      '</tbody></table></div>';
+  }
+  GS.actions.crearRespaldo = async () => {
+    try {
+      await GS.mutate('crearRespaldo', {}, 'Respaldo creado en Google Drive');
+      respaldos = null;
+      GS.render();
+    } catch (e) { GS.toast(e.message, true); }
+  };
+
+  GS.actions.exportarDemo = async () => {
+    exportDemo = { cargando: true };
+    GS.render();
+    try {
+      exportDemo = (await GS.api('exportarDemo')).data;
+      GS.toast('Archivo listo: presiona Descargar');
+    } catch (e) {
+      exportDemo = null;
+      GS.toast(e.message, true);
+    }
+    GS.render();
+  };
+
+  GS.views.admin = {
+    title: 'Administración',
+    rol: 'admin',
+    render(el) {
+      const f = GS.filters('admin', { tab: 'usuarios' });
+      const tab = (id, label) => '<button class="tab' + (f.tab === id ? ' active' : '') + '" data-action="tab" data-id="admin.' + id + '">' + label + '</button>';
+      el.innerHTML =
+        '<div class="page-head"><div><h1>Administración</h1><p>Usuarios y permisos, registro de cambios y respaldos.</p></div></div>' +
+        '<div class="tabs">' + tab('usuarios', 'Usuarios') + tab('auditoria', 'Auditoría') + tab('respaldos', 'Respaldos') + '</div>' +
+        (f.tab === 'auditoria' ? tabAuditoria() : f.tab === 'respaldos' ? tabRespaldos() : tabUsuarios());
+    },
+  };
+
+  GS.actions.recargarAuditoria = () => { auditoria = null; GS.render(); };
+
+  function usuarioForm(u) {
+    const nuevo = !u;
+    u = u || { email: '', nombre: '', rol: 'operador', activo: true };
+    GS.formModal({
+      title: nuevo ? 'Agregar usuario' : 'Editar usuario',
+      submitLabel: 'Guardar usuario',
+      fields: () =>
+        '<div class="form-grid">' +
+        '<div class="form-field full"><label>Correo de Google *</label><input name="email" type="email" value="' + esc(u.email) + '"' + (nuevo ? '' : ' readonly') + ' placeholder="nombre@gmail.com"></div>' +
+        '<div class="form-field"><label>Nombre *</label><input name="nombre" value="' + esc(u.nombre) + '"></div>' +
+        '<div class="form-field"><label>Rol</label><select name="rol">' + GS.options(Object.keys(ROL_LABEL), u.rol, ROL_LABEL) + '</select></div>' +
+        '<div class="form-field full"><label class="check"><input type="checkbox" name="activo"' + (u.activo ? ' checked' : '') + '> Usuario activo</label></div>' +
+        '</div>' +
+        (nuevo ? '<div class="notice">Recuerda compartir la planilla del ERP con este correo (permiso de edición).</div>' : ''),
+      onSubmit: (v) => GS.mutate('guardarUsuario', v, 'Usuario guardado').then(() => { auditoria = null; }),
+    });
+  }
+
+  GS.actions.nuevoUsuario = () => usuarioForm(null);
+  GS.actions.editarUsuario = (email) => usuarioForm(data().usuarios.find((u) => u.email === email));
+
+  /* ---------- módulos próximos ---------- */
+
+  function proximamente(id, titulo, sub, texto) {
+    GS.views[id] = {
+      title: titulo,
+      render(el) {
+        el.innerHTML = '<div class="page-head"><div><h1>' + titulo + '</h1><p>' + sub + '</p></div></div>' +
+          '<div class="placeholder-panel"><div class="ph-icon">' + GS.icon(id) + '</div><h2>Módulo en construcción</h2><p>' + texto + '</p></div>';
+      },
+    };
+  }
+})();
+</script>

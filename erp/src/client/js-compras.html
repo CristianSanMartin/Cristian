@@ -1,0 +1,455 @@
+<script>
+/* =========================================================
+   Compras (facturas de proveedores) e Inventario (un lote por
+   línea de factura, con vista unidad por unidad como la planilla).
+   Las facturas se crean desde Preventas: se seleccionan las
+   preventas asignadas y se registra el N° de factura.
+========================================================= */
+(function () {
+  'use strict';
+  const { fmt, esc } = GS;
+  const data = () => GS.state.data;
+  const abiertas = new Set();   // facturas con el detalle desplegado
+  const DEF_C = { q: '' };
+  const DEF_I = { q: '', tab: 'stock' };
+  const signo = (n) => (n < 0 ? 'text-danger' : 'text-success');
+  const kpi = (l, v, sub) => '<div class="kpi-card"><div class="kpi-label">' + l + '</div><div class="kpi-value small">' + v + '</div><div class="kpi-sub">' + sub + '</div></div>';
+  const buscar = (lista, q, texto) => { const n = GS.norm(q.trim()); return lista.filter((x) => !n || GS.norm(texto(x)).includes(n)); };
+
+  /* ---------- Compras ---------- */
+
+  const ESTADO_VENTA = { sin_ventas: 'Sin ventas', vendiendo: 'Vendiendo', vendida: 'Vendida completa' };
+  const colsCompras = [
+    { id: 'fecha', label: 'Fecha', valor: (c) => c.fecha, texto: (c) => fmt.date(c.fecha), celda: (c) => '<span class="nowrap">' + fmt.date(c.fecha) + '</span>' },
+    { id: 'proveedor', label: 'Proveedor', valor: (c) => c.proveedor, celda: (c) => esc(c.proveedor) },
+    { id: 'factura', label: 'Factura', valor: (c) => c.factura, celda: (c) => '<span class="cell-strong">' + esc(c.factura) + '</span>' },
+    { id: 'productos', label: 'Productos', right: true, valor: (c) => c.lineas.length, celda: (c) => fmt.num(c.lineas.length) },
+    { id: 'unidades', label: 'Unidades', right: true, valor: (c) => c.unidades, celda: (c) => fmt.num(c.unidades) },
+    { id: 'neto', label: 'Neto', right: true, valor: (c) => c.neto, texto: (c) => fmt.money(c.neto), celda: (c) => fmt.money(c.neto) },
+    { id: 'iva', label: 'IVA', right: true, valor: (c) => c.iva, texto: (c) => fmt.money(c.iva), celda: (c) => fmt.money(c.iva) },
+    { id: 'total', label: 'Total', right: true, valor: (c) => c.total, texto: (c) => fmt.money(c.total), celda: (c) => '<strong>' + fmt.money(c.total) + '</strong>' },
+    // Resultado de la factura: se acumula con cada venta de sus productos (Ventas, etapa 3).
+    // Unidades que ya salieron de la factura: vendidas + premios, cajas abiertas y otras salidas.
+    { id: 'vendidas', label: 'Entregadas', right: true, clase: 'col-res', valor: (c) => (c.vendidas + c.salidas) / (c.unidades || 1), texto: (c) => (c.vendidas + c.salidas) + ' / ' + c.unidades,
+      celda: (c) => fmt.num(c.vendidas + c.salidas) + '<span class="cell-dim"> / ' + fmt.num(c.unidades) + '</span>' +
+        '<div class="barra-venta"><span style="width:' + Math.round(100 * (c.vendidas + c.salidas) / (c.unidades || 1)) + '%"></span></div>' +
+        (c.salidas ? '<div class="cell-dim">' + fmt.num(c.vendidas) + ' vendidas · ' + fmt.num(c.salidas) + ' premio/salida</div>' : '') },
+    { id: 'ventas', label: 'Ventas acumuladas', right: true, valor: (c) => c.ventasAcumuladas, texto: (c) => fmt.money(c.ventasAcumuladas), celda: (c) => fmt.money(c.ventasAcumuladas) },
+    { id: 'ganancia', label: 'Ganancia acumulada', right: true, valor: (c) => c.gananciaAcumulada, texto: (c) => fmt.money(c.gananciaAcumulada),
+      celda: (c) => '<strong class="' + (c.gananciaAcumulada < 0 ? 'text-danger' : c.gananciaAcumulada > 0 ? 'text-success' : '') + '">' + fmt.money(c.gananciaAcumulada) + '</strong>' +
+        '<div class="cell-dim">de ' + fmt.money(c.gananciaProyectada) + ' proyectada</div>' },
+    { id: 'estadoVenta', label: 'Estado', valor: (c) => ESTADO_VENTA[c.estadoVenta], celda: (c) =>
+      '<span class="badge ' + { sin_ventas: 'st-pedido', vendiendo: 'st-parcial', vendida: 'st-ok' }[c.estadoVenta] + '">' + ESTADO_VENTA[c.estadoVenta] + '</span>' },
+  ];
+  const buscadasCompras = () => buscar(data().compras, GS.filters('compras', DEF_C).q, (c) => c.id + ' ' + c.factura + ' ' + c.proveedor + ' ' + c.lineas.map((l) => l.producto + ' ' + l.preventaId).join(' '));
+  GS.tablaRegistrar('compras', { filas: buscadasCompras, columnas: colsCompras, alCambiar: () => GS.views.compras.update() });
+
+  function detalleCompra(c) {
+    const admin = GS.puede('admin');
+    const fila = (l) => '<tr><td>' + GS.thumb(l.imagen) + '</td><td class="cell-strong">' + esc(l.productoNombre) + ' ' + GS.langPill(l.idioma) +
+      '<div class="cell-dim">' + esc(l.preventaId) + (l.edicion ? ' · ' + esc(l.edicion) : '') + '</div></td>' +
+      '<td class="cell-num right">' + fmt.num(l.cantidad) + '</td><td class="cell-num right">' + fmt.cost(l.costoNeto) + '</td>' +
+      '<td class="cell-num right">' + fmt.money(l.netoLinea) + '</td>' +
+      '<td class="cell-num right cell-strong">' + fmt.cost(l.costo) + '</td>' +
+      (admin ? '<td><div class="row-actions">' + GS.iconBtn('quitarLineaCompra', l.id, 'trash', 'Quitar este producto de la factura', 'danger') + '</div></td>' : '') + '</tr>';
+    const extra = admin ? 1 : 0;
+    const total = (l, v, cls) => '<tr class="' + (cls || '') + '"><td colspan="4" class="right">' + l + '</td><td class="cell-num right">' + v + '</td><td class="col-inv" colspan="' + (1 + extra) + '"></td></tr>';
+    // Como la factura de Asmodee: el despacho es una fila más cuando se cobra.
+    const filaDespacho = c.despacho
+      ? '<tr class="item-despacho"><td><span class="thumb thumb-icon" aria-hidden="true">🚚</span></td><td class="cell-strong">Despacho</td><td class="cell-num right">1</td><td class="cell-num right">' + fmt.money(c.despacho) + '</td>' +
+        '<td class="cell-num right">' + fmt.money(c.despacho) + '</td><td class="cell-dim right col-inv">incluido en el costo ↑</td>' + (admin ? '<td></td>' : '') + '</tr>'
+      : '';
+    return '<div class="detalle-compra"><table class="data-table"><thead><tr><th></th><th>Ítem</th><th class="right">Cant.</th><th class="right">Precio unidad</th><th class="right">Total neto</th>' +
+      '<th class="right">Costo unidad en inventario</th>' + (admin ? '<th></th>' : '') + '</tr></thead><tbody>' +
+      c.lineas.map(fila).join('') + filaDespacho +
+      '</tbody><tfoot>' +
+      total('Neto', fmt.money(c.neto)) + total('IVA 19%', fmt.money(c.iva)) + total('<strong>Total factura</strong>', '<strong>' + fmt.money(c.total) + '</strong>', 'total-row') +
+      '</tfoot></table>' +
+      (c.despacho ? '' : '<p class="table-note text-success">✓ Sin cobro de despacho' + (c.despachoGratisDesde ? ' (neto ≥ ' + fmt.money(c.despachoGratisDesde) + ')' : '') + '</p>') +
+      (c.notas ? '<p class="table-note">Notas: ' + esc(c.notas) + '</p>' : '') + '</div>';
+  }
+
+  GS.views.compras = {
+    title: 'Compras',
+    render(el) {
+      const f = GS.filters('compras', DEF_C);
+      if (GS.state.param) { abiertas.add(GS.state.param); GS.state.param = null; }
+      el.innerHTML =
+        '<div class="page-head"><div><h1>Compras</h1><p>Facturas de proveedores. Se crean desde Preventas seleccionando las preventas asignadas que vienen en la factura.</p></div>' +
+        (GS.puede('operador') ? '<button class="btn" data-nav="preventas">' + GS.icon('plus', 2.4) + 'Nueva factura desde Preventas</button>' : '') + '</div>' +
+        '<div class="filters-bar"><div class="search-box">' + GS.icon('search') + '<input type="text" data-filter="compras.q" value="' + esc(f.q) + '" placeholder="Buscar factura, producto o PVI..."></div></div>' +
+        '<div id="cp-resumen"></div>' +
+        '<div class="table-wrap"><table class="data-table wide"><thead><tr id="cp-thead"></tr></thead><tbody id="cp-tbody"></tbody></table></div>' +
+        // Facturas con todas sus unidades vendidas o entregadas: aparte, abajo.
+        '<div id="cp-completas-bloque"><h3 class="sub-titulo" style="margin-top:22px;">Facturas completas <span class="muted" id="cp-completas-n"></span></h3>' +
+        '<div class="table-wrap"><table class="data-table wide"><thead><tr id="cp-thead-comp"></tr></thead><tbody id="cp-tbody-comp"></tbody></table></div></div>' +
+        '<p class="table-note">El despacho se reparte entre los productos según su participación en $ del neto de la factura, y queda incluido en el costo de cada unidad del inventario.</p>';
+      this.update();
+    },
+    update() {
+      const rows = GS.tablaAplicar('compras', buscadasCompras(), colsCompras);
+      const admin = GS.puede('admin');
+      const n = colsCompras.length + 2;
+      const fila = (c) => {
+        const open = abiertas.has(c.id);
+        return '<tr class="fila-compra' + (open ? ' abierta' : '') + '" data-action="verCompra" data-id="' + esc(c.id) + '">' +
+          '<td><span class="chev">' + (open ? '▾' : '▸') + '</span></td>' +
+          colsCompras.map((col) => '<td class="' + (col.right ? 'cell-num right ' : '') + (col.clase || '') + '">' + col.celda(c) + '</td>').join('') +
+          '<td><div class="row-actions">' + (admin ? GS.iconBtn('editarCompra', c.id, 'edit', 'Editar factura: N°, fecha, precios y despacho') + GS.iconBtn('anularCompra', c.id, 'trash', 'Anular factura', 'danger') : '') + '</div></td></tr>' +
+          (open ? '<tr class="detalle-row"><td colspan="' + n + '">' + detalleCompra(c) + '</td></tr>' : '');
+      };
+      const enCurso = rows.filter((c) => c.estadoVenta !== 'vendida');
+      const completas = rows.filter((c) => c.estadoVenta === 'vendida');
+      document.getElementById('cp-thead').innerHTML = '<th></th>' + GS.tablaEncabezado('compras', colsCompras) + '<th></th>';
+      document.getElementById('cp-tbody').innerHTML = enCurso.length
+        ? enCurso.map(fila).join('')
+        : '<tr><td colspan="' + n + '">' + (rows.length
+          ? '<div class="muted center" style="padding:14px;">Todas las facturas están completas.</div>'
+          : GS.empty('Aún no hay facturas', 'En Preventas, selecciona las preventas asignadas que vienen en la factura y presiona "Crear factura de compra".', 'compras')) + '</td></tr>';
+      document.getElementById('cp-completas-bloque').hidden = !completas.length;
+      document.getElementById('cp-completas-n').textContent = '(' + completas.length + ')';
+      document.getElementById('cp-thead-comp').innerHTML = '<th></th>' + GS.tablaEncabezado('compras', colsCompras) + '<th></th>';
+      document.getElementById('cp-tbody-comp').innerHTML = completas.map(fila).join('');
+      // El detalle queda fijo al ancho visible aunque la lista de facturas se desplace hacia el lado.
+      document.querySelectorAll('.detalle-compra').forEach((d) => { d.style.width = Math.max(320, d.closest('.table-wrap').clientWidth - 36) + 'px'; });
+      const sum = (k) => rows.reduce((t, c) => t + c[k], 0);
+      document.getElementById('cp-resumen').innerHTML = '<div class="kpi-grid">' +
+        kpi('Facturas', rows.length, fmt.num(sum('vendidas') + sum('salidas')) + ' de ' + fmt.num(sum('unidades')) + ' unidades entregadas') +
+        kpi('Total facturado', fmt.money(sum('total')), fmt.money(sum('neto')) + ' neto + ' + fmt.money(sum('iva')) + ' IVA') +
+        kpi('Ventas acumuladas', fmt.money(sum('ventasAcumuladas')), 'De los productos de estas facturas') +
+        kpi('Ganancia acumulada', '<span class="text-success">' + fmt.money(sum('gananciaAcumulada')) + '</span>', 'de ' + fmt.money(sum('gananciaProyectada')) + ' proyectada vendiendo todo') + '</div>';
+    },
+  };
+
+  GS.actions.verCompra = (id, el) => {
+    if (el && el.closest('.row-actions')) return;
+    if (abiertas.has(id)) abiertas.delete(id); else abiertas.add(id);
+    GS.views.compras.update();
+  };
+
+  /** Corrige N°, fecha, despacho y precios unitarios de una factura (ej. precios migrados con el despacho ya incluido). */
+  GS.actions.editarCompra = (id) => {
+    const c = data().compras.find((x) => x.id === id);
+    const iva = data().app.iva;
+    const netoOrig = c.lineas.reduce((t, l) => t + l.cantidad * l.costoNeto, 0);
+    GS.formModal({
+      title: 'Editar factura ' + c.factura,
+      submitLabel: 'Guardar factura',
+      size: 'wide',
+      fields: () => '<div class="form-grid">' +
+        '<div class="form-field"><label>N° de factura *</label><input name="factura" value="' + esc(c.factura) + '"></div>' +
+        '<div class="form-field"><label>Fecha *</label><input type="date" name="fecha" value="' + esc(c.fecha) + '"></div>' +
+        '<div class="form-field"><label>Despacho (neto)</label><input type="number" name="despacho" min="0" step="1" value="' + esc(c.despacho || 0) + '"></div>' +
+        '<div class="form-field"><label class="check" style="margin-top:22px;"><input type="checkbox" name="descontar"' + (c.despacho ? '' : ' checked') + '> Descontar el despacho de los precios (mantener el total)</label></div></div>' +
+        '<p class="hint">Úsalo cuando los precios traen el despacho incluido (como en la migración): escribe el despacho de la factura y los precios se recalculan para que el total no cambie. Después puedes ajustar cada precio a mano para que calce con la factura.</p>' +
+        '<div class="table-wrap"><table class="data-table"><thead><tr><th>Producto</th><th class="right">Cant.</th><th class="right">Antes</th><th class="right">Precio unidad neto</th><th class="right">Total neto</th></tr></thead><tbody>' +
+        c.lineas.map((l) => '<tr><td class="cell-strong">' + esc(l.productoNombre) + ' ' + GS.langPill(l.idioma) + '</td><td class="cell-num right">' + fmt.num(l.cantidad) + '</td>' +
+          '<td class="cell-num right cell-dim">' + fmt.cost(l.costoNeto) + '</td>' +
+          '<td class="right"><input class="qty-input price-input" type="number" min="0" step="0.01" data-ec-linea="' + esc(l.id) + '" value="' + esc(l.costoNeto) + '"></td>' +
+          '<td class="cell-num right" data-ec-total="' + esc(l.id) + '"></td></tr>').join('') + '</tbody></table></div>' +
+        '<div class="venta-totales" data-ec-totales></div>',
+      onMount: (form) => {
+        const inputs = Array.from(form.querySelectorAll('[data-ec-linea]'));
+        const lineaDe = (inp) => c.lineas.find((l) => l.id === inp.dataset.ecLinea);
+        const recalc = () => {
+          let neto = 0;
+          inputs.forEach((inp) => {
+            const l = lineaDe(inp);
+            const t = l.cantidad * (Number(inp.value) || 0);
+            neto += t;
+            form.querySelector('[data-ec-total="' + CSS.escape(l.id) + '"]').textContent = fmt.money(t);
+          });
+          const desp = Number(form.elements.despacho.value) || 0;
+          const total = Math.round((neto + desp) * (1 + iva));
+          const fila = (l, v, cls) => '<div class="' + (cls || '') + '"><span>' + l + '</span><strong>' + v + '</strong></div>';
+          form.querySelector('[data-ec-totales]').innerHTML =
+            fila('Neto productos', fmt.money(neto)) + fila('Despacho', fmt.money(desp)) + fila('Neto', fmt.money(neto + desp)) +
+            fila('IVA', fmt.money((neto + desp) * iva)) + fila('Total factura', fmt.money(total), 'grande') +
+            fila('Antes', fmt.money(c.total) + (Math.abs(total - c.total) > 1 ? ' <span class="text-gold">(' + (total > c.total ? '+' : '') + fmt.money(total - c.total) + ')</span>' : ' <span class="text-success">✓ mismo total</span>'));
+        };
+        // Descontar: cada precio baja en proporción para que neto productos + despacho = neto original.
+        const descontar = () => {
+          if (!form.elements.descontar.checked || !netoOrig) return;
+          const desp = Number(form.elements.despacho.value) || 0;
+          const factor = Math.max(0, netoOrig + (c.despacho || 0) - desp) / netoOrig;
+          inputs.forEach((inp) => { inp.value = Math.round(lineaDe(inp).costoNeto * factor); });
+        };
+        form.elements.despacho.addEventListener('input', () => { descontar(); recalc(); });
+        form.elements.descontar.addEventListener('change', () => {
+          if (form.elements.descontar.checked) descontar(); else inputs.forEach((inp) => { inp.value = lineaDe(inp).costoNeto; });
+          recalc();
+        });
+        inputs.forEach((inp) => inp.addEventListener('input', recalc));
+        recalc();
+      },
+      onSubmit: (v, form) => GS.mutate('editarCompra', {
+        id: id, factura: v.factura, fecha: v.fecha, despacho: v.despacho,
+        lineas: Array.from(form.querySelectorAll('[data-ec-linea]')).map((inp) => ({ id: inp.dataset.ecLinea, costoNeto: inp.value })),
+      }, 'Factura ' + v.factura + ' actualizada'),
+    });
+  };
+
+  GS.actions.anularCompra = (id) => {
+    const c = data().compras.find((x) => x.id === id);
+    GS.confirm({
+      title: 'Anular factura ' + c.factura,
+      message: 'Se borra la factura <strong>' + esc(c.factura) + '</strong> de ' + esc(c.proveedor) + ', sus ' + c.lineas.length + ' productos salen del inventario y sus preventas vuelven a <strong>Asignada</strong>. Úsalo solo para corregir una factura mal ingresada. Queda registrado en la auditoría.',
+      confirmLabel: 'Sí, anular',
+      danger: true,
+      onConfirm: () => GS.mutate('anularCompra', { id: id }, 'Factura ' + c.factura + ' anulada'),
+    });
+  };
+
+  GS.actions.quitarLineaCompra = (id) => {
+    const c = data().compras.find((x) => x.lineas.some((l) => l.id === id));
+    const l = c.lineas.find((x) => x.id === id);
+    const ultima = c.lineas.length === 1;
+    GS.confirm({
+      title: 'Quitar producto de la factura ' + c.factura,
+      message: 'Se quitan <strong>' + fmt.num(l.cantidad) + ' u. de ' + esc(l.producto) + '</strong> de la factura ' + esc(c.factura) + ' y salen del inventario' +
+        (ultima ? '. Es el único producto, así que <strong>la factura se borra</strong>' : '') +
+        '. Úsalo para corregir una línea que no debía estar. Si tiene ventas, primero hay que anularlas. Queda registrado en la auditoría.',
+      confirmLabel: 'Sí, quitar',
+      danger: true,
+      onConfirm: () => GS.mutate('quitarLineaCompra', { id: id }, 'Producto quitado de la factura ' + c.factura),
+    });
+  };
+
+  /* ---------- Inventario ----------
+     Un pool por producto: todo su stock junto, venga de la factura o proveedor que venga.
+     La flecha despliega sus unidades una por una (como la planilla), con la OC y el cliente
+     de las vendidas; se marcan las disponibles para venderlas. */
+
+  const abiertosInv = new Set();
+  const selUnidades = new Set();   // unidades disponibles marcadas para vender: "loteId|serie"
+
+  /** Stock agrupado por producto (suma de todos sus lotes). */
+  function pools() {
+    const porProd = {};
+    data().lotes.forEach((l) => {
+      const r = porProd[l.productoId] = porProd[l.productoId] || { productoId: l.productoId, ref: l, lotes: [], cantidad: 0, vendidas: 0, disponible: 0,
+        valorInventario: 0, gananciaProyectada: 0, ventaProyectada: 0, creditoDisp: 0, gananciaAcumulada: 0 };
+      r.lotes.push(l);
+      r.cantidad += l.cantidad;
+      r.vendidas += l.vendidas;
+      r.salidas = (r.salidas || 0) + (l.salidas || 0);
+      r.disponible += l.disponible;
+      r.valorInventario += l.valorInventario;
+      r.gananciaProyectada += l.gananciaProyectada;
+      r.gananciaAcumulada += l.gananciaAcumulada || 0;
+      r.ventaProyectada += l.ventaProyectada;
+      r.creditoDisp += l.credito * l.disponible;
+    });
+    return Object.keys(porProd).map((k) => {
+      const r = porProd[k];
+      r.lotes.sort((a, b) => (a.fecha + a.id).localeCompare(b.fecha + b.id));
+      const base = r.disponible ? r.disponible : r.cantidad;
+      const tot = (f) => r.lotes.reduce((t, l) => t + f(l) * (r.disponible ? l.disponible : l.cantidad), 0);
+      r.costo = base ? tot((l) => l.costo) / base : 0;
+      r.gananciaUnidad = base ? tot((l) => l.gananciaUnidad) / base : 0;
+      r.precioVenta = r.ref.precioVenta;
+      r.unCosto = new Set(r.lotes.map((l) => Math.round(l.costo))).size === 1;
+      return r;
+    });
+  }
+
+  const producto = (l) => '<div class="prod-cell">' + GS.thumb(l.imagen) + '<div><span class="cell-strong">' + esc(l.productoNombre) + '</span> ' + GS.langPill(l.idioma) +
+    '<div class="cell-dim">' + esc(l.edicion || '') + '</div></div></div>';
+  const colsInv = [
+    { id: 'producto', label: 'Producto', clase: 'col-prod', valor: (r) => r.ref.productoNombre, texto: (r) => r.ref.productoNombre + ' ' + r.ref.idioma, celda: (r) => producto(r.ref) },
+    { id: 'cantidad', label: 'Comprado', right: true, valor: (r) => r.cantidad, celda: (r) => fmt.num(r.cantidad) },
+    { id: 'vendidas', label: 'Vendidas', right: true, valor: (r) => r.vendidas, celda: (r) => (r.vendidas ? fmt.num(r.vendidas) : '—') + (r.salidas ? '<div class="cell-dim">+' + fmt.num(r.salidas) + ' salidas</div>' : '') },
+    { id: 'disponible', label: 'Disponible', right: true, valor: (r) => r.disponible, celda: (r) => '<strong class="stock-num">' + fmt.num(r.disponible) + '</strong>' },
+    // Costo con IVA (comparable con el precio de venta) y su desglose: neto + despacho + IVA.
+    { id: 'costo', label: 'Costo u. c/IVA', right: true, valor: (r) => r.costo, texto: (r) => fmt.money(r.costo * (1 + data().app.iva)),
+      celda: (r) => {
+        const ivaU = r.costo * data().app.iva;
+        return '<strong>' + fmt.money(r.costo + ivaU) + '</strong><div class="cell-dim">' + (r.unCosto
+          ? fmt.cost(r.lotes[0].costoNeto) + ' + ' + fmt.money(r.lotes[0].despachoUnidad) + ' desp.'
+          : fmt.money(r.costo) + ' neto (prom. ' + r.lotes.length + ' compras)') + ' + ' + fmt.money(ivaU) + ' IVA</div>';
+      } },
+    { id: 'precio', label: 'Precio venta', right: true, valor: (r) => r.precioVenta, texto: (r) => fmt.money(r.precioVenta), celda: (r) => (r.precioVenta ? fmt.money(r.precioVenta) : '—') },
+    // Sin unidades disponibles no hay ganancia por proyectar: se muestra la ya obtenida.
+    { id: 'ganT', label: 'Ganancia', right: true, valor: (r) => r.disponible ? r.gananciaProyectada : r.gananciaAcumulada,
+      texto: (r) => fmt.money(r.disponible ? r.gananciaProyectada : r.gananciaAcumulada),
+      celda: (r) => r.disponible
+        ? (r.precioVenta ? '<span class="' + signo(r.gananciaProyectada) + '">' + fmt.money(r.gananciaProyectada) + '</span>' : '—') + '<div class="cell-dim">' + fmt.money(r.gananciaUnidad) + ' c/u</div>'
+        : '<span class="' + signo(r.gananciaAcumulada) + '">' + fmt.money(r.gananciaAcumulada) + '</span><div class="cell-dim">obtenida</div>' },
+  ];
+
+  const buscadasInv = () => buscar(pools(), GS.filters('inventario', DEF_I).q, (r) => r.ref.producto + ' ' + r.productoId);
+  GS.tablaRegistrar('inventario', { filas: buscadasInv, columnas: colsInv, alCambiar: () => GS.views.inventario.update() });
+
+  /** Unidades del producto, una por fila: primero las más antiguas; en cada compra, las vendidas primero. */
+  function detalleProducto(r) {
+    const iva = 1 + data().app.iva;
+    const m = (v) => '<td class="cell-num right">' + fmt.money(v) + '</td>';
+    const filas = [];
+    let n = 0;
+    r.lotes.forEach((l) => {
+      for (let i = 1; i <= l.cantidad; i++) {
+        n++;
+        const u = l.unidadesVendidas[i - 1];
+        const clave = l.id + '|' + i;
+        const marcable = !u && GS.puede('operador');
+        const precio = u ? u.precio : l.precioVenta;
+        filas.push('<tr' + (u ? '' : ' class="unidad-libre' + (selUnidades.has(clave) ? ' row-selected' : '') + '"') + '>' +
+          '<td>' + (marcable ? '<input type="checkbox" class="row-check" data-sel-unidad="' + esc(clave) + '"' + (selUnidades.has(clave) ? ' checked' : '') + ' aria-label="Seleccionar unidad ' + n + '">' : '') + '</td>' +
+          '<td class="cell-num right">' + n + '<span class="cell-dim"> / ' + r.cantidad + '</span></td>' +
+          '<td>' + (u ? (u.salida ? '<span class="badge st-pedido">' + esc(u.oc) + '</span>' : '<span class="badge st-parcial">Vendida</span>') : '<span class="badge st-ok">Disponible</span>') + '</td>' +
+          '<td>' + (u && !u.salida ? '<span class="cell-strong">' + esc(u.oc) + '</span>' : '—') + '</td><td>' + (u ? esc(u.cliente) : '—') + '</td>' +
+          m(l.valorUnitario) + m(l.costo) + m(l.credito) + m(precio) + m(precio / iva) + m(precio - precio / iva) + m(precio - precio / iva - l.credito) +
+          '<td class="cell-num right ' + signo(precio / iva - l.costo) + '">' + fmt.money(precio / iva - l.costo) + '</td></tr>');
+      }
+    });
+    return '<div class="detalle-compra"><table class="data-table"><thead><tr><th></th><th class="right">N°</th><th>Estado</th><th>OC</th><th>Cliente</th>' +
+      '<th class="right">Valor unitario</th><th class="right">Costo</th><th class="right">Crédito fiscal</th><th class="right">$ Venta</th><th class="right">Neto</th>' +
+      '<th class="right">Débito fiscal</th><th class="right">Pago SII</th><th class="right">Ganancia</th></tr></thead><tbody>' + filas.join('') + '</tbody></table>' +
+      '<p class="table-note">Marca las unidades disponibles que vas a vender y presiona "Agregar a la venta". Las vendidas muestran el precio real de su venta; las disponibles, el precio de venta actual.</p></div>';
+  }
+
+  GS.views.inventario = {
+    title: 'Inventario',
+    render(el, d) {
+      const f = GS.filters('inventario', DEF_I);
+      const abierta = (d.tomas || []).some((t) => t.estado === 'abierta');
+      const tab = (id, label) => '<button class="tab' + (f.tab === id ? ' active' : '') + '" data-action="tab" data-id="inventario.' + id + '">' + label + '</button>';
+      const tabs = '<div class="tabs">' + tab('stock', 'Stock') + tab('productos', 'Productos') +
+        tab('toma', 'Toma de inventario' + (abierta ? ' <span class="pill soon">en curso</span>' : '')) + '</div>';
+      if (f.tab === 'productos' || f.tab === 'toma') {
+        el.innerHTML = '<div class="page-head"><div><h1>Inventario</h1><p>' + (f.tab === 'productos'
+          ? 'Todos los productos: corrige sus datos, agrega fotos y une los duplicados.'
+          : 'Inventario físico: compara lo que debería haber con lo que hay, unidad por unidad.') + '</p></div></div>' + tabs + '<div id="inv-sub"></div>';
+        const sub = document.getElementById('inv-sub');
+        if (f.tab === 'productos') GS.views.productos.render(sub, d, { embebido: true });
+        else GS.toma.render(sub);
+        return;
+      }
+      el.innerHTML =
+        '<div class="page-head"><div><h1>Inventario</h1><p>El stock de cada producto, venga de la compra que venga. Despliega un producto para ver sus unidades una por una y marca las que vas a vender.</p></div>' +
+        '<div class="btn-row">' + (GS.puede('operador') ? '<button class="btn secondary" data-action="agregarMontoVenta" title="Singles, torneo, bazar…: ventas que no descuentan unidades del inventario">' + GS.icon('plus', 2.4) + 'Venta por monto</button>' : '') +
+        '<button class="btn ghost" data-action="exportarInventario">' + GS.icon('download') + 'Exportar</button></div></div>' + tabs +
+        '<div class="filters-bar"><div class="search-box">' + GS.icon('search') + '<input type="text" data-filter="inventario.q" value="' + esc(f.q) + '" placeholder="Buscar producto..."></div>' +
+        '</div>' +
+        '<div id="inv-resumen"></div>' +
+        '<div id="inv-venta"></div>' +
+        '<div id="inv-acciones"></div>' +
+        '<div class="table-wrap"><table class="data-table compacta"><thead><tr id="inv-thead"></tr></thead><tbody id="inv-tbody"></tbody></table></div>' +
+        // Productos sin unidades disponibles (todo vendido o entregado): aparte, abajo.
+        '<div id="inv-agotados-bloque"><h3 class="sub-titulo" style="margin-top:22px;">Productos vendidos en su totalidad <span class="muted" id="inv-agotados-n"></span></h3>' +
+        '<div class="table-wrap"><table class="data-table compacta"><thead><tr id="inv-thead-ago"></tr></thead><tbody id="inv-tbody-ago"></tbody></table></div></div>' +
+        '<p class="table-note">Para vender: escribe la cantidad en la fila y presiona "+ Venta", o despliega el producto y marca unidades. Costo c/IVA = (precio unidad neto + despacho prorrateado) + IVA, para compararlo con el precio de venta (si el producto llegó en varias compras, el promedio de lo disponible). Ganancia = precio de venta sin IVA − costo neto (el IVA de la compra se recupera como crédito fiscal). El precio de venta es el del producto (el propio o el sugerido).</p>';
+      GS.montarVenta(document.getElementById('inv-venta'));
+      this.update();
+    },
+    update() {
+      const f = GS.filters('inventario', DEF_I);
+      if (f.tab === 'toma') return GS.toma.update();
+      if (!document.getElementById('inv-tbody')) return;
+      const rows = GS.tablaAplicar('inventario', buscadasInv(), colsInv);
+      const conDisp = rows.filter((r) => r.disponible > 0);
+      const agotados = rows.filter((r) => !r.disponible);
+      const op = GS.puede('operador');
+      const n = colsInv.length + 2;
+      document.getElementById('inv-thead').innerHTML = '<th></th>' + GS.tablaEncabezado('inventario', colsInv) + '<th></th>';
+      const fila = (r) => {
+        const open = abiertosInv.has(r.productoId);
+        const vendible = op && r.disponible > 0;
+        return '<tr class="fila-compra' + (open ? ' abierta' : '') + (r.disponible ? '' : ' row-muted') + '" data-action="verInventario" data-id="' + esc(r.productoId) + '" data-producto="' + esc(r.productoId) + '">' +
+          '<td><span class="chev">' + (open ? '▾' : '▸') + '</span></td>' +
+          colsInv.map((c) => '<td class="' + (c.right ? 'cell-num right ' : '') + (c.clase || '') + '">' + c.celda(r) + '</td>').join('') +
+          '<td><div class="row-actions">' + (vendible
+            ? '<input class="qty-input cant-venta" type="number" min="1" max="' + r.disponible + '" step="1" placeholder="Cant." data-cant-prod="' + esc(r.productoId) + '" aria-label="Cantidad a vender">' +
+              '<button class="btn small secondary" data-action="agregarProductoVenta" data-id="' + esc(r.productoId) + '">' + GS.icon('plus', 2.4) + 'Venta</button>'
+            : '') +
+          (op ? GS.iconBtn('editarProducto', r.productoId, 'edit', 'Editar nombre, foto o precio') : '') + '</div></td></tr>' +
+          (open ? '<tr class="detalle-row"><td colspan="' + n + '">' + detalleProducto(r) + '</td></tr>' : '');
+      };
+      document.getElementById('inv-tbody').innerHTML = conDisp.length ? conDisp.map(fila).join('') : '<tr><td colspan="' + n + '">' + (rows.length
+        ? '<div class="muted center" style="padding:14px;">No quedan unidades disponibles.</div>'
+        : GS.empty('No hay stock disponible', 'Los productos entran al registrar su factura de compra desde Preventas.', 'inventario')) + '</td></tr>';
+      document.getElementById('inv-agotados-bloque').hidden = !agotados.length;
+      document.getElementById('inv-agotados-n').textContent = '(' + agotados.length + ')';
+      document.getElementById('inv-thead-ago').innerHTML = '<th></th>' + GS.tablaEncabezado('inventario', colsInv) + '<th></th>';
+      document.getElementById('inv-tbody-ago').innerHTML = agotados.map(fila).join('');
+      document.querySelectorAll('#inv-tbody .detalle-compra, #inv-tbody-ago .detalle-compra').forEach((d) => { d.style.width = Math.max(320, d.closest('.table-wrap').clientWidth - 36) + 'px'; });
+      barraStock();
+
+      const sum = (k) => rows.reduce((t, r) => t + r[k], 0);
+      const conStock = rows.filter((r) => r.disponible > 0).length;
+      document.getElementById('inv-resumen').innerHTML = '<div class="kpi-grid">' +
+        kpi('Unidades disponibles', fmt.num(sum('disponible')), conStock + (conStock === 1 ? ' producto' : ' productos')) +
+        kpi('Valor a costo', fmt.money(sum('valorInventario')), fmt.money(sum('creditoDisp')) + ' de crédito fiscal') +
+        kpi('Venta proyectada', fmt.money(sum('ventaProyectada')), 'Vendiendo todo al precio de venta') +
+        kpi('Ganancia proyectada', '<span class="text-success">' + fmt.money(sum('gananciaProyectada')) + '</span>', 'Real neta') + '</div>';
+    },
+  };
+
+  GS.actions.verInventario = (id) => {
+    if (abiertosInv.has(id)) abiertosInv.delete(id); else abiertosInv.add(id);
+    GS.views.inventario.update();
+  };
+
+  function barraStock() {
+    const el = document.getElementById('inv-acciones');
+    if (!selUnidades.size) { el.innerHTML = ''; return; }
+    el.innerHTML = '<div class="action-bar">' + GS.icon('check') + '<span><strong>' + selUnidades.size + '</strong> ' + (selUnidades.size === 1 ? 'unidad seleccionada' : 'unidades seleccionadas') + '</span>' +
+      '<button class="btn small" data-action="agregarSeleccionVenta">' + GS.icon('plus', 2.4) + 'Agregar a la venta</button>' +
+      '<button class="btn ghost small" data-action="limpiarStock">Quitar selección</button></div>';
+  }
+  document.addEventListener('change', (e) => {
+    const clave = e.target.dataset && e.target.dataset.selUnidad;
+    if (!clave) return;
+    if (e.target.checked) selUnidades.add(clave); else selUnidades.delete(clave);
+    e.target.closest('tr').classList.toggle('row-selected', e.target.checked);
+    barraStock();
+  });
+  // La cantidad en la fila no despliega el producto; Enter la agrega.
+  document.addEventListener('click', (e) => { if (e.target.dataset && e.target.dataset.cantProd) e.stopPropagation(); }, true);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target.dataset && e.target.dataset.cantProd) { e.preventDefault(); GS.actions.agregarProductoVenta(e.target.dataset.cantProd); }
+  });
+
+  /** Abre (o actualiza) el panel "Venta en curso" arriba de la lista. */
+  function mostrarVenta(n) {
+    GS.montarVenta(document.getElementById('inv-venta'));
+    GS.views.inventario.update();
+    const panel = document.getElementById('nueva-venta');
+    if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (n) GS.toast(n === 1 ? '1 unidad agregada a la venta' : n + ' unidades agregadas a la venta');
+    else GS.toast('No quedan más unidades disponibles de ese producto', true);
+  }
+  /** Unidades marcadas: salen de su lote. */
+  GS.actions.agregarSeleccionVenta = () => {
+    const porLote = {};
+    selUnidades.forEach((k) => { const id = k.split('|')[0]; porLote[id] = (porLote[id] || 0) + 1; });
+    let n = 0;
+    Object.keys(porLote).forEach((id) => {
+      const l = data().lotes.find((x) => x.id === id);
+      if (l) n += GS.agregarAVenta(l.productoId, porLote[id], l.id) || 0;
+    });
+    selUnidades.clear();
+    mostrarVenta(n);
+  };
+  /** Cantidad escrita en la fila del producto (o 1): sale de la compra más antigua. */
+  GS.actions.agregarProductoVenta = (productoId) => {
+    const input = document.querySelector('[data-cant-prod="' + CSS.escape(productoId) + '"]');
+    const cant = Math.max(1, Number(input && input.value) || 1);
+    mostrarVenta(GS.agregarAVenta(productoId, cant) || 0);
+  };
+  GS.actions.limpiarStock = () => { selUnidades.clear(); GS.views.inventario.update(); };
+
+  GS.actions.exportarInventario = () => {
+    const filas = [];
+    data().lotes.forEach((l) => {
+      for (let i = 1; i <= l.cantidad; i++) {
+        const u = l.unidadesVendidas[i - 1];
+        filas.push([l.proveedor, l.factura, l.id, i, l.productoId, l.producto, u ? 'Vendida' : 'Disponible', u ? u.oc : '', u ? u.cliente : '', Math.round(l.valorUnitario), Math.round(l.costo),
+          Math.round(l.credito), l.precioVenta, Math.round(l.ventaNeta), Math.round(l.debito), Math.round(l.pagoSii), Math.round(l.gananciaUnidad)]);
+      }
+    });
+    GS.downloadCsv('inventario-' + data().hoy + '.csv',
+      ['Proveedor', 'Factura', 'Lote', 'Serie', 'SKU', 'Producto', 'Estado', 'OC', 'Cliente', 'Valor unitario', 'Costo', 'Crédito fiscal', '$ Venta', 'Neto', 'Débito fiscal', 'Pago SII', 'Ganancia'], filas);
+  };
+})();
+</script>
