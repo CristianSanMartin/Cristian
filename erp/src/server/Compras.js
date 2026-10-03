@@ -59,16 +59,24 @@ const Compras = {
    * Corrige una factura (administrador): N°, fecha, despacho y precio unitario neto de cada
    * línea. El despacho se vuelve a repartir por participación en $, y el costo de lo ya vendido
    * o entregado de esos lotes se actualiza (es una corrección, no un cambio de precio).
-   * p: { id, factura?, fecha?, despacho, lineas: [{ id, costoNeto }] }
+   * p: { id, factura?, fecha?, despacho, lineas: [{ id, costoNeto, cantidad? }] }
    */
   editar(p, user) {
     const compra = Compras.requerir(p.id);
     const lineas = Db.all('Compras_Lineas').filter((l) => l.compraId === compra.id);
     const nuevos = {};
+    const cantidades = {};
+    const usadas = Ventas.vendidasPorLote();
     (Array.isArray(p.lineas) ? p.lineas : []).forEach((x) => {
       const l = lineas.find((y) => y.id === String(x.id));
       if (!l) throw new AppError('La línea ' + x.id + ' no es de la factura ' + compra.factura + '.');
       nuevos[l.id] = Util.monto(x.costoNeto, 'El precio unitario', { requerido: true });
+      if (x.cantidad != null && x.cantidad !== '') {
+        // La cantidad se puede corregir, pero nunca por debajo de lo ya vendido o entregado.
+        const cant = Util.entero(x.cantidad, 'La cantidad', { min: 1 });
+        if (cant < (usadas[l.id] || 0)) throw new AppError('No puedes dejar ' + cant + ' unidades en la línea ' + l.id + ': ya salieron ' + usadas[l.id] + ' (ventas y entregas).');
+        cantidades[l.id] = cant;
+      }
     });
     const factura = p.factura == null ? compra.factura : Util.texto(p.factura, 'El N° de factura', { requerido: true, max: 40 });
     const repetida = Db.all('Compras').find((c) => c.id !== compra.id && c.proveedorId === compra.proveedorId && Util.normalizar(c.factura) === Util.normalizar(factura));
@@ -76,14 +84,15 @@ const Compras = {
     const fecha = p.fecha == null ? compra.fecha : Util.fecha(p.fecha, 'La fecha de la factura', { requerido: true });
     const despacho = Util.monto(p.despacho, 'El despacho');
     const costoNeto = (l) => (l.id in nuevos ? nuevos[l.id] : l.costoNeto);
-    const neto = lineas.reduce((t, l) => t + l.cantidad * costoNeto(l), 0);
+    const cantidad = (l) => (l.id in cantidades ? cantidades[l.id] : l.cantidad);
+    const neto = lineas.reduce((t, l) => t + cantidad(l) * costoNeto(l), 0);
     const sello = Util.sello(user);
     const cambios = {};
     const costoUnidad = {};
     lineas.forEach((l) => {
-      const desp = neto ? despacho * l.cantidad * costoNeto(l) / neto : 0;
-      cambios[l.id] = Object.assign({ costoNeto: costoNeto(l), despacho: desp }, sello);
-      costoUnidad[l.id] = l.cantidad ? costoNeto(l) + desp / l.cantidad : costoNeto(l);
+      const desp = neto ? despacho * cantidad(l) * costoNeto(l) / neto : 0;
+      cambios[l.id] = Object.assign({ cantidad: cantidad(l), costoNeto: costoNeto(l), despacho: desp }, sello);
+      costoUnidad[l.id] = cantidad(l) ? costoNeto(l) + desp / cantidad(l) : costoNeto(l);
     });
     Db.update('Compras', compra.id, Object.assign({ factura: factura, fecha: fecha, despacho: despacho }, sello));
     if (lineas.length) Db.actualizarVarios('Compras_Lineas', cambios);
@@ -96,7 +105,7 @@ const Compras = {
     if (Object.keys(sal).length) Db.actualizarVarios('Salidas', sal);
     Audit.log(user, 'editar', 'Compra', compra.id, {
       factura: factura, fecha: fecha, despachoAntes: compra.despacho, despacho: despacho,
-      lineas: lineas.map((l) => l.id + ' ' + l.costoNeto + '→' + costoNeto(l)).join(', '), ventasCorregidas: Object.keys(vl).length,
+      lineas: lineas.map((l) => l.id + ' ' + l.costoNeto + '→' + costoNeto(l) + (cantidad(l) !== l.cantidad ? ' · ' + l.cantidad + '→' + cantidad(l) + ' u.' : '')).join(', '), ventasCorregidas: Object.keys(vl).length,
     });
   },
 

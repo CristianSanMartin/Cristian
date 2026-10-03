@@ -625,6 +625,26 @@ test("editar factura: separar el despacho que venía incluido en los precios (co
   assert.match(errorDe(s.call("editarCompra", { id: c.id, despacho: -1, lineas: [] })), /despacho/);
 });
 
+test("editar factura: corregir la cantidad de un producto (23 → 25) deja las unidades de más disponibles", () => {
+  const s = createServer();
+  const { prods } = conInventario(s);   // Binder ENG 24, Binder ESP 6, Mini Tin 10 (despacho $15.000)
+  s.ok("crearVenta", { fecha: "2026-10-05", lineas: [{ productoId: prods.binderEsp.id, cantidad: 4 }] });
+  let d = s.ok("bootstrap").data;
+  const compra = d.compras[0];
+  const esp = d.lotes.find(l => l.productoId === prods.binderEsp.id);
+  const lineas = (cant) => compra.lineas.map(l => ({ id: l.id, costoNeto: l.costoNeto, cantidad: l.id === esp.id ? cant : l.cantidad }));
+  assert.match(errorDe(s.call("editarCompra", { id: compra.id, despacho: compra.despacho, lineas: lineas(3) })), /ya salieron 4/);
+  s.ok("editarCompra", { id: compra.id, despacho: compra.despacho, lineas: lineas(8) });
+  d = s.ok("bootstrap").data;
+  const lote = d.lotes.find(l => l.id === esp.id);
+  assert.deepEqual([lote.cantidad, lote.vendidas, lote.disponible], [8, 4, 4]);
+  const cp = d.compras[0];
+  assert.equal(Math.round(cp.neto - cp.despacho), Math.round(compra.neto - compra.despacho + 2 * esp.costoNeto), "el neto suma las 2 unidades");
+  const totalDesp = d.lotes.filter(l => l.compraId === compra.id).reduce((t, l) => t + l.despacho, 0);
+  assert.ok(Math.abs(totalDesp - 15000) < 0.01, "el despacho se vuelve a repartir completo");
+  assert.equal(Math.round(d.ventas[0].lineas[0].costo * 100) / 100, Math.round(lote.costo * 100) / 100, "la venta toma el costo nuevo");
+});
+
 test("venta en varios lotes (FIFO) y cuenta por cobrar con abonos", () => {
   const s = createServer();
   const { prods } = conInventario(s);

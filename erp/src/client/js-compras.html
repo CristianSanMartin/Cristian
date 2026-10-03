@@ -127,7 +127,7 @@
     GS.views.compras.update();
   };
 
-  /** Corrige N°, fecha, despacho y precios unitarios de una factura (ej. precios migrados con el despacho ya incluido). */
+  /** Corrige N°, fecha, despacho, cantidades y precios unitarios de una factura (ej. precios migrados con el despacho ya incluido). */
   GS.actions.editarCompra = (id) => {
     const c = data().compras.find((x) => x.id === id);
     const iva = data().app.iva;
@@ -142,20 +142,24 @@
         '<div class="form-field"><label>Despacho (neto)</label><input type="number" name="despacho" min="0" step="1" value="' + esc(c.despacho || 0) + '"></div>' +
         '<div class="form-field"><label class="check" style="margin-top:22px;"><input type="checkbox" name="descontar"' + (c.despacho ? '' : ' checked') + '> Descontar el despacho de los precios (mantener el total)</label></div></div>' +
         '<p class="hint">Úsalo cuando los precios traen el despacho incluido (como en la migración): escribe el despacho de la factura y los precios se recalculan para que el total no cambie. Después puedes ajustar cada precio a mano para que calce con la factura.</p>' +
-        '<div class="table-wrap"><table class="data-table"><thead><tr><th>Producto</th><th class="right">Cant.</th><th class="right">Antes</th><th class="right">Precio unidad neto</th><th class="right">Total neto</th></tr></thead><tbody>' +
-        c.lineas.map((l) => '<tr><td class="cell-strong">' + esc(l.productoNombre) + ' ' + GS.langPill(l.idioma) + '</td><td class="cell-num right">' + fmt.num(l.cantidad) + '</td>' +
+        '<p class="hint">Si la cantidad de un producto no calza con la factura, corrígela: las unidades de más quedan disponibles en el inventario. No puede quedar por debajo de lo ya vendido o entregado.</p>' +
+        '<div class="table-wrap"><table class="data-table" style="min-width:0"><thead><tr><th>Producto</th><th class="right">Cant.</th><th class="right">Antes</th><th class="right">Precio unidad neto</th><th class="right">Total neto</th></tr></thead><tbody>' +
+        c.lineas.map((l) => '<tr><td class="cell-strong">' + esc(l.productoNombre) + ' ' + GS.langPill(l.idioma) + '</td>' +
+          '<td class="right"><input class="qty-input" style="width:70px" type="number" step="1" min="' + Math.max(1, (l.vendidas || 0) + (l.salidas || 0)) + '" data-ec-cant="' + esc(l.id) + '" value="' + esc(l.cantidad) + '"' +
+          ' title="Mínimo ' + ((l.vendidas || 0) + (l.salidas || 0)) + ': unidades ya vendidas o entregadas"></td>' +
           '<td class="cell-num right cell-dim">' + fmt.cost(l.costoNeto) + '</td>' +
-          '<td class="right"><input class="qty-input price-input" type="number" min="0" step="0.01" data-ec-linea="' + esc(l.id) + '" value="' + esc(l.costoNeto) + '"></td>' +
+          '<td class="right"><input class="qty-input price-input" style="width:110px" type="number" min="0" step="0.01" data-ec-linea="' + esc(l.id) + '" value="' + esc(l.costoNeto) + '"></td>' +
           '<td class="cell-num right" data-ec-total="' + esc(l.id) + '"></td></tr>').join('') + '</tbody></table></div>' +
         '<div class="venta-totales" data-ec-totales></div>',
       onMount: (form) => {
         const inputs = Array.from(form.querySelectorAll('[data-ec-linea]'));
         const lineaDe = (inp) => c.lineas.find((l) => l.id === inp.dataset.ecLinea);
+        const cantDe = (l) => Number(form.querySelector('[data-ec-cant="' + CSS.escape(l.id) + '"]').value) || 0;
         const recalc = () => {
           let neto = 0;
           inputs.forEach((inp) => {
             const l = lineaDe(inp);
-            const t = l.cantidad * (Number(inp.value) || 0);
+            const t = cantDe(l) * (Number(inp.value) || 0);
             neto += t;
             form.querySelector('[data-ec-total="' + CSS.escape(l.id) + '"]').textContent = fmt.money(t);
           });
@@ -179,12 +183,13 @@
           if (form.elements.descontar.checked) descontar(); else inputs.forEach((inp) => { inp.value = lineaDe(inp).costoNeto; });
           recalc();
         });
-        inputs.forEach((inp) => inp.addEventListener('input', recalc));
+        form.querySelectorAll('[data-ec-linea], [data-ec-cant]').forEach((inp) => inp.addEventListener('input', recalc));
         recalc();
       },
       onSubmit: (v, form) => GS.mutate('editarCompra', {
         id: id, factura: v.factura, fecha: v.fecha, despacho: v.despacho,
-        lineas: Array.from(form.querySelectorAll('[data-ec-linea]')).map((inp) => ({ id: inp.dataset.ecLinea, costoNeto: inp.value })),
+        lineas: Array.from(form.querySelectorAll('[data-ec-linea]')).map((inp) => ({ id: inp.dataset.ecLinea, costoNeto: inp.value,
+          cantidad: form.querySelector('[data-ec-cant="' + CSS.escape(inp.dataset.ecLinea) + '"]').value })),
       }, 'Factura ' + v.factura + ' actualizada'),
     });
   };
