@@ -305,6 +305,12 @@ test("inventario: se marcan unidades de un producto y se venden desde su lote", 
     const deckEng = page.locator('#inv-tbody tr[data-producto]', { hasText: "Battle Deck" }).filter({ has: page.locator(".lang-ENG") });
     assert.match(await deckEng.textContent(), /12.*3.*9.*\$26\.990/s);
     assert.equal(await deckEng.locator("input[type=checkbox]").count(), 0);
+    // Lo vendido en su totalidad va en su propia tabla, abajo, con la ganancia obtenida.
+    assert.equal(await page.locator("#inv-tbody tr[data-producto]", { hasText: "Stellar Crown" }).filter({ hasText: "Booster Bundle" }).count(), 0);
+    const agotado = page.locator("#inv-tbody-ago tr[data-producto]", { hasText: "Stellar Crown" }).filter({ hasText: "Booster Bundle" });
+    assert.match(await agotado.textContent(), /19.*19.*0.*obtenida/s);
+    assert.equal(await agotado.locator("[data-cant-prod]").count(), 0);
+    assert.match(await page.locator("#inv-agotados-n").textContent(), /\(\d+\)/);
     await deckEng.click();
     const libres = page.locator("#inv-tbody .detalle-compra [data-sel-unidad]");
     assert.equal(await libres.count(), 9, "solo las 9 disponibles se pueden marcar");

@@ -11,7 +11,7 @@
   const data = () => GS.state.data;
   const abiertas = new Set();   // facturas con el detalle desplegado
   const DEF_C = { q: '' };
-  const DEF_I = { q: '', agotados: false, tab: 'stock' };
+  const DEF_I = { q: '', tab: 'stock' };
   const signo = (n) => (n < 0 ? 'text-danger' : 'text-success');
   const kpi = (l, v, sub) => '<div class="kpi-card"><div class="kpi-label">' + l + '</div><div class="kpi-value small">' + v + '</div><div class="kpi-sub">' + sub + '</div></div>';
   const buscar = (lista, q, texto) => { const n = GS.norm(q.trim()); return lista.filter((x) => !n || GS.norm(texto(x)).includes(n)); };
@@ -228,7 +228,7 @@
     const porProd = {};
     data().lotes.forEach((l) => {
       const r = porProd[l.productoId] = porProd[l.productoId] || { productoId: l.productoId, ref: l, lotes: [], cantidad: 0, vendidas: 0, disponible: 0,
-        valorInventario: 0, gananciaProyectada: 0, ventaProyectada: 0, creditoDisp: 0 };
+        valorInventario: 0, gananciaProyectada: 0, ventaProyectada: 0, creditoDisp: 0, gananciaAcumulada: 0 };
       r.lotes.push(l);
       r.cantidad += l.cantidad;
       r.vendidas += l.vendidas;
@@ -236,6 +236,7 @@
       r.disponible += l.disponible;
       r.valorInventario += l.valorInventario;
       r.gananciaProyectada += l.gananciaProyectada;
+      r.gananciaAcumulada += l.gananciaAcumulada || 0;
       r.ventaProyectada += l.ventaProyectada;
       r.creditoDisp += l.credito * l.disponible;
     });
@@ -268,8 +269,12 @@
           : fmt.money(r.costo) + ' neto (prom. ' + r.lotes.length + ' compras)') + ' + ' + fmt.money(ivaU) + ' IVA</div>';
       } },
     { id: 'precio', label: 'Precio venta', right: true, valor: (r) => r.precioVenta, texto: (r) => fmt.money(r.precioVenta), celda: (r) => (r.precioVenta ? fmt.money(r.precioVenta) : '—') },
-    { id: 'ganT', label: 'Ganancia', right: true, valor: (r) => r.gananciaProyectada, texto: (r) => fmt.money(r.gananciaProyectada),
-      celda: (r) => (r.precioVenta ? '<span class="' + signo(r.gananciaProyectada) + '">' + fmt.money(r.gananciaProyectada) + '</span>' : '—') + '<div class="cell-dim">' + fmt.money(r.gananciaUnidad) + ' c/u</div>' },
+    // Sin unidades disponibles no hay ganancia por proyectar: se muestra la ya obtenida.
+    { id: 'ganT', label: 'Ganancia', right: true, valor: (r) => r.disponible ? r.gananciaProyectada : r.gananciaAcumulada,
+      texto: (r) => fmt.money(r.disponible ? r.gananciaProyectada : r.gananciaAcumulada),
+      celda: (r) => r.disponible
+        ? (r.precioVenta ? '<span class="' + signo(r.gananciaProyectada) + '">' + fmt.money(r.gananciaProyectada) + '</span>' : '—') + '<div class="cell-dim">' + fmt.money(r.gananciaUnidad) + ' c/u</div>'
+        : '<span class="' + signo(r.gananciaAcumulada) + '">' + fmt.money(r.gananciaAcumulada) + '</span><div class="cell-dim">obtenida</div>' },
   ];
 
   const buscadasInv = () => buscar(pools(), GS.filters('inventario', DEF_I).q, (r) => r.ref.producto + ' ' + r.productoId);
@@ -325,11 +330,14 @@
         '<div class="btn-row">' + (GS.puede('operador') ? '<button class="btn secondary" data-action="agregarMontoVenta" title="Singles, torneo, bazar…: ventas que no descuentan unidades del inventario">' + GS.icon('plus', 2.4) + 'Venta por monto</button>' : '') +
         '<button class="btn ghost" data-action="exportarInventario">' + GS.icon('download') + 'Exportar</button></div></div>' + tabs +
         '<div class="filters-bar"><div class="search-box">' + GS.icon('search') + '<input type="text" data-filter="inventario.q" value="' + esc(f.q) + '" placeholder="Buscar producto..."></div>' +
-        '<label class="check"><input type="checkbox" data-filter="inventario.agotados"' + (f.agotados ? ' checked' : '') + '> Mostrar agotados</label></div>' +
+        '</div>' +
         '<div id="inv-resumen"></div>' +
         '<div id="inv-venta"></div>' +
         '<div id="inv-acciones"></div>' +
         '<div class="table-wrap"><table class="data-table compacta"><thead><tr id="inv-thead"></tr></thead><tbody id="inv-tbody"></tbody></table></div>' +
+        // Productos sin unidades disponibles (todo vendido o entregado): aparte, abajo.
+        '<div id="inv-agotados-bloque"><h3 class="sub-titulo" style="margin-top:22px;">Productos vendidos en su totalidad <span class="muted" id="inv-agotados-n"></span></h3>' +
+        '<div class="table-wrap"><table class="data-table compacta"><thead><tr id="inv-thead-ago"></tr></thead><tbody id="inv-tbody-ago"></tbody></table></div></div>' +
         '<p class="table-note">Para vender: escribe la cantidad en la fila y presiona "+ Venta", o despliega el producto y marca unidades. Costo c/IVA = (precio unidad neto + despacho prorrateado) + IVA, para compararlo con el precio de venta (si el producto llegó en varias compras, el promedio de lo disponible). Ganancia = precio de venta sin IVA − costo neto (el IVA de la compra se recupera como crédito fiscal). El precio de venta es el del producto (el propio o el sugerido).</p>';
       GS.montarVenta(document.getElementById('inv-venta'));
       this.update();
@@ -338,11 +346,13 @@
       const f = GS.filters('inventario', DEF_I);
       if (f.tab === 'toma') return GS.toma.update();
       if (!document.getElementById('inv-tbody')) return;
-      const rows = GS.tablaAplicar('inventario', buscadasInv(), colsInv).filter((r) => f.agotados || r.disponible > 0);
+      const rows = GS.tablaAplicar('inventario', buscadasInv(), colsInv);
+      const conDisp = rows.filter((r) => r.disponible > 0);
+      const agotados = rows.filter((r) => !r.disponible);
       const op = GS.puede('operador');
       const n = colsInv.length + 2;
       document.getElementById('inv-thead').innerHTML = '<th></th>' + GS.tablaEncabezado('inventario', colsInv) + '<th></th>';
-      document.getElementById('inv-tbody').innerHTML = rows.length ? rows.map((r) => {
+      const fila = (r) => {
         const open = abiertosInv.has(r.productoId);
         const vendible = op && r.disponible > 0;
         return '<tr class="fila-compra' + (open ? ' abierta' : '') + (r.disponible ? '' : ' row-muted') + '" data-action="verInventario" data-id="' + esc(r.productoId) + '" data-producto="' + esc(r.productoId) + '">' +
@@ -354,9 +364,15 @@
             : '') +
           (op ? GS.iconBtn('editarProducto', r.productoId, 'edit', 'Editar nombre, foto o precio') : '') + '</div></td></tr>' +
           (open ? '<tr class="detalle-row"><td colspan="' + n + '">' + detalleProducto(r) + '</td></tr>' : '');
-      }).join('') : '<tr><td colspan="' + n + '">' + GS.empty('No hay stock disponible', 'Los productos entran al registrar su factura de compra desde Preventas.', 'inventario') + '</td></tr>';
-      const wrap = document.getElementById('inv-tbody').closest('.table-wrap');
-      document.querySelectorAll('#inv-tbody .detalle-compra').forEach((d) => { d.style.width = Math.max(320, wrap.clientWidth - 36) + 'px'; });
+      };
+      document.getElementById('inv-tbody').innerHTML = conDisp.length ? conDisp.map(fila).join('') : '<tr><td colspan="' + n + '">' + (rows.length
+        ? '<div class="muted center" style="padding:14px;">No quedan unidades disponibles.</div>'
+        : GS.empty('No hay stock disponible', 'Los productos entran al registrar su factura de compra desde Preventas.', 'inventario')) + '</td></tr>';
+      document.getElementById('inv-agotados-bloque').hidden = !agotados.length;
+      document.getElementById('inv-agotados-n').textContent = '(' + agotados.length + ')';
+      document.getElementById('inv-thead-ago').innerHTML = '<th></th>' + GS.tablaEncabezado('inventario', colsInv) + '<th></th>';
+      document.getElementById('inv-tbody-ago').innerHTML = agotados.map(fila).join('');
+      document.querySelectorAll('#inv-tbody .detalle-compra, #inv-tbody-ago .detalle-compra').forEach((d) => { d.style.width = Math.max(320, d.closest('.table-wrap').clientWidth - 36) + 'px'; });
       barraStock();
 
       const sum = (k) => rows.reduce((t, r) => t + r[k], 0);
