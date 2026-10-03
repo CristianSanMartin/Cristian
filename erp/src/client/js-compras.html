@@ -259,10 +259,14 @@
     { id: 'cantidad', label: 'Comprado', right: true, valor: (r) => r.cantidad, celda: (r) => fmt.num(r.cantidad) },
     { id: 'vendidas', label: 'Vendidas', right: true, valor: (r) => r.vendidas, celda: (r) => (r.vendidas ? fmt.num(r.vendidas) : '—') + (r.salidas ? '<div class="cell-dim">+' + fmt.num(r.salidas) + ' salidas</div>' : '') },
     { id: 'disponible', label: 'Disponible', right: true, valor: (r) => r.disponible, celda: (r) => '<strong class="stock-num">' + fmt.num(r.disponible) + '</strong>' },
-    { id: 'costo', label: 'Costo u.', right: true, valor: (r) => r.costo, texto: (r) => fmt.money(r.costo),
-      celda: (r) => '<strong>' + fmt.money(r.costo) + '</strong><div class="cell-dim">' + (r.unCosto
-        ? fmt.cost(r.lotes[0].costoNeto) + ' + ' + fmt.money(r.lotes[0].despachoUnidad) + ' desp.'
-        : 'promedio de ' + r.lotes.length + ' compras') + '</div>' },
+    // Costo con IVA (comparable con el precio de venta) y su desglose: neto + despacho + IVA.
+    { id: 'costo', label: 'Costo u. c/IVA', right: true, valor: (r) => r.costo, texto: (r) => fmt.money(r.costo * (1 + data().app.iva)),
+      celda: (r) => {
+        const ivaU = r.costo * data().app.iva;
+        return '<strong>' + fmt.money(r.costo + ivaU) + '</strong><div class="cell-dim">' + (r.unCosto
+          ? fmt.cost(r.lotes[0].costoNeto) + ' + ' + fmt.money(r.lotes[0].despachoUnidad) + ' desp.'
+          : fmt.money(r.costo) + ' neto (prom. ' + r.lotes.length + ' compras)') + ' + ' + fmt.money(ivaU) + ' IVA</div>';
+      } },
     { id: 'precio', label: 'Precio venta', right: true, valor: (r) => r.precioVenta, texto: (r) => fmt.money(r.precioVenta), celda: (r) => (r.precioVenta ? fmt.money(r.precioVenta) : '—') },
     { id: 'ganT', label: 'Ganancia', right: true, valor: (r) => r.gananciaProyectada, texto: (r) => fmt.money(r.gananciaProyectada),
       celda: (r) => (r.precioVenta ? '<span class="' + signo(r.gananciaProyectada) + '">' + fmt.money(r.gananciaProyectada) + '</span>' : '—') + '<div class="cell-dim">' + fmt.money(r.gananciaUnidad) + ' c/u</div>' },
@@ -326,7 +330,7 @@
         '<div id="inv-venta"></div>' +
         '<div id="inv-acciones"></div>' +
         '<div class="table-wrap"><table class="data-table compacta"><thead><tr id="inv-thead"></tr></thead><tbody id="inv-tbody"></tbody></table></div>' +
-        '<p class="table-note">Para vender: escribe la cantidad en la fila y presiona "+ Venta", o despliega el producto y marca unidades. Costo = precio unidad neto + despacho prorrateado (si el producto llegó en varias compras, el promedio de lo disponible). Ganancia = precio de venta sin IVA − costo. El precio de venta es el del producto (el propio o el sugerido).</p>';
+        '<p class="table-note">Para vender: escribe la cantidad en la fila y presiona "+ Venta", o despliega el producto y marca unidades. Costo c/IVA = (precio unidad neto + despacho prorrateado) + IVA, para compararlo con el precio de venta (si el producto llegó en varias compras, el promedio de lo disponible). Ganancia = precio de venta sin IVA − costo neto (el IVA de la compra se recupera como crédito fiscal). El precio de venta es el del producto (el propio o el sugerido).</p>';
       GS.montarVenta(document.getElementById('inv-venta'));
       this.update();
     },

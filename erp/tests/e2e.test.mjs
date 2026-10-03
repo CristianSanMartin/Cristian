@@ -207,7 +207,8 @@ test("factura de compra: las preventas seleccionadas pasan a Compras e Inventari
     // Un pool por producto (sin factura ni fecha); costo = $8.230 + $144 de despacho = $8.374
     assert.equal(await page.locator('[data-action="modoInventario"]').count(), 0);
     const tin = page.locator("#inv-tbody tr.fila-compra", { hasText: "Mini Tin" });
-    assert.match(await tin.textContent(), /10.*\$8\.374.*\$8\.230 \+ \$144 desp\./s);
+    // Costo c/IVA = (8.230 + 144) × 1,19 = 9.965, con el desglose neto + despacho + IVA.
+    assert.match(await tin.textContent(), /10.*\$9\.965\$8\.230 \+ \$144 desp\. \+ \$1\.591 IVA/s);
     assert.doesNotMatch(await page.locator("#inv-thead").textContent(), /Factura|Fecha/);
     // La flecha despliega el lote unidad por unidad, como la planilla
     await tin.click();
