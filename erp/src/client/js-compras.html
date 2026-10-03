@@ -56,7 +56,7 @@
     const total = (l, v, cls) => '<tr class="' + (cls || '') + '"><td colspan="4" class="right">' + l + '</td><td class="cell-num right">' + v + '</td><td class="col-inv" colspan="' + (1 + extra) + '"></td></tr>';
     // Como la factura de Asmodee: el despacho es una fila más cuando se cobra.
     const filaDespacho = c.despacho
-      ? '<tr class="item-despacho"><td></td><td class="cell-strong">Despacho</td><td class="cell-num right">1</td><td class="cell-num right">' + fmt.money(c.despacho) + '</td>' +
+      ? '<tr class="item-despacho"><td><span class="thumb thumb-icon" aria-hidden="true">🚚</span></td><td class="cell-strong">Despacho</td><td class="cell-num right">1</td><td class="cell-num right">' + fmt.money(c.despacho) + '</td>' +
         '<td class="cell-num right">' + fmt.money(c.despacho) + '</td><td class="cell-dim right col-inv">incluido en el costo ↑</td>' + (admin ? '<td></td>' : '') + '</tr>'
       : '';
     return '<div class="detalle-compra"><table class="data-table"><thead><tr><th></th><th>Ítem</th><th class="right">Cant.</th><th class="right">Precio unidad</th><th class="right">Total neto</th>' +
