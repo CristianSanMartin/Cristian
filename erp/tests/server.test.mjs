@@ -753,6 +753,9 @@ test("migración: 'Accesorio' pasa a 'Accesorios' y 'Tin'/'Mini Tin' se unen en 
   assert.deepEqual(tipos.slice(0, -1), [...tipos.slice(0, -1)].sort((a, b) => a.localeCompare(b)));
   assert.equal(s.run("interpretarNombre_('POKEMON TCG 30TH CELEBRATION MINI TIN ENG').tipo"), "Tin / Mini Tin");
   assert.equal(s.run("interpretarNombre_('POKEMON TCG MEGA EVOLUTION BOX ESP').tipo"), "Box");
+  assert.equal(s.run("interpretarNombre_('POKEMON TCG MEWTWO ULTRA PREMIUM COLLECTION ENG').tipo"), "UPC");
+  assert.equal(s.run("interpretarNombre_('POKEMON TCG PRISMATIC EVOLUTIONS POSTER COLLECTION ENG').tipo"), "Poster Collection");
+  assert.equal(s.run("interpretarNombre_('POKEMON TCG PRISMATIC EVOLUTIONS TECH STICKER COLLECTION ESP').tipo"), "Tech Sticker");
 });
 
 test("migraciones: corren una sola vez, después de un respaldo, y quedan registradas", () => {
