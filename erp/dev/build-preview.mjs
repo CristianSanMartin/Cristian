@@ -104,7 +104,7 @@ const preview = `
     var p = {
       binderEng: prod('Binder Collection', 'ENG', 'Binder Colección', 43990),
       binderEsp: prod('Binder Collection', 'ESP', 'Binder Colección', 43990),
-      tinEng: prod('Mini Tin', 'ENG', 'Mini Tin', 13990, { precioManual: true, precioVenta: 18000 }),
+      tinEng: prod('Mini Tin', 'ENG', 'Tin / Mini Tin', 13990, { precioManual: true, precioVenta: 18000 }),
       deckEng: prod('Battle Deck', 'ENG', 'Battle Deck', 26990),
       deckEsp: prod('Battle Deck', 'ESP', 'Battle Deck', 26990),
       dittoEng: prod('Ditto Premium Collection', 'ENG', 'Premium Collection', 53990),

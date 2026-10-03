@@ -15,7 +15,7 @@
 
 const APP = {
   nombre: 'GS Prime ERP',
-  version: '2.7.2',
+  version: '2.7.3',
   tz: 'America/Santiago',
   iva: 0.19,
 };
@@ -201,17 +201,18 @@ const COMISIONES_PAGO = {
 
 /** Tipos de producto y su factor de conversión por defecto (unidades del proveedor por unidad comercial). */
 const TIPOS_PRODUCTO = {
-  'Booster Box': 36,
-  'Elite Trainer Box': 1,
-  'Booster Bundle': 1,
+  // En orden alfabético, con "Otro" al final (así aparecen en las listas).
+  'Accesorios': 1,
   'Battle Deck': 1,
-  'Mini Tin': 1,
-  'Tin': 1,
   'Binder Colección': 1,
-  'Premium Collection': 1,
   'Blister': 1,
+  'Booster Box': 36,
+  'Booster Bundle': 1,
+  'Box': 1,
+  'Elite Trainer Box': 1,
+  'Premium Collection': 1,
   'Sobre': 1,
-  'Accesorio': 1,
+  'Tin / Mini Tin': 1,
   'Otro': 1,
 };
 

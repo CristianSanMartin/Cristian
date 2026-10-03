@@ -23,6 +23,16 @@ const MIGRACIONES = [
       if (Object.keys(cambios).length) Db.actualizarVarios('Productos', cambios);
     },
   },
+  {
+    id: '2026-10-03-tipos-producto',
+    descripcion: 'Tipos de producto: "Accesorio" pasa a "Accesorios" y "Tin" y "Mini Tin" se unen en "Tin / Mini Tin"',
+    fn: () => {
+      const nuevo = { 'Accesorio': 'Accesorios', 'Tin': 'Tin / Mini Tin', 'Mini Tin': 'Tin / Mini Tin' };
+      const cambios = {};
+      Db.all('Productos').forEach((p) => { if (nuevo[p.tipo]) cambios[p.id] = { tipo: nuevo[p.tipo] }; });
+      if (Object.keys(cambios).length) Db.actualizarVarios('Productos', cambios);
+    },
+  },
 ];
 
 const Respaldos = {

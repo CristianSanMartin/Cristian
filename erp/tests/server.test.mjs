@@ -16,7 +16,7 @@ function preventa30th(s) {
   const prov = asmodee(s).id;
   const binderEng = producto(s);
   const binderEsp = producto(s, { idioma: "ESP" });
-  const miniTin = producto(s, { nombre: "Mini Tin", tipo: "Mini Tin", pvp: 13990, precioManual: true, precioVenta: 18000 });
+  const miniTin = producto(s, { nombre: "Mini Tin", tipo: "Tin / Mini Tin", pvp: 13990, precioManual: true, precioVenta: 18000 });
   const deck = producto(s, { nombre: "Battle Deck", tipo: "Battle Deck", pvp: 26990 });
   const pedir = (prod, lanzamiento, solicitado, costoNeto) =>
     s.ok("guardarPreventa", { proveedorId: prov, productoId: prod.id, lanzamiento, solicitado, costoNeto }).result;
@@ -735,6 +735,24 @@ test("migración: el tipo 'Binder / Colección' pasa a 'Binder Colección' en lo
     Db.vaciar("Migraciones");`);
   s.run("instalar()");
   assert.equal(s.ok("bootstrap").data.productos.find(p => p.id === prods.binderEng.id).tipo, "Binder Colección");
+});
+
+test("migración: 'Accesorio' pasa a 'Accesorios' y 'Tin'/'Mini Tin' se unen en 'Tin / Mini Tin'", () => {
+  const s = createServer();
+  const { prods } = preventa30th(s);
+  s.run(`Db.update("Productos", "${prods.miniTin.id}", { tipo: "Mini Tin" });
+    Db.update("Productos", "${prods.binderEng.id}", { tipo: "Tin" });
+    Db.update("Productos", "${prods.binderEsp.id}", { tipo: "Accesorio" });
+    Db.vaciar("Migraciones");`);
+  s.run("instalar()");
+  const tipo = (id) => s.ok("bootstrap").data.productos.find(p => p.id === id).tipo;
+  assert.deepEqual([tipo(prods.miniTin.id), tipo(prods.binderEng.id), tipo(prods.binderEsp.id)], ["Tin / Mini Tin", "Tin / Mini Tin", "Accesorios"]);
+  // Orden alfabético con "Otro" al final, e interpretación de nombres nuevos
+  const tipos = Object.keys(s.ok("bootstrap").data.catalogos.tipos);
+  assert.equal(tipos.at(-1), "Otro");
+  assert.deepEqual(tipos.slice(0, -1), [...tipos.slice(0, -1)].sort((a, b) => a.localeCompare(b)));
+  assert.equal(s.run("interpretarNombre_('POKEMON TCG 30TH CELEBRATION MINI TIN ENG').tipo"), "Tin / Mini Tin");
+  assert.equal(s.run("interpretarNombre_('POKEMON TCG MEGA EVOLUTION BOX ESP').tipo"), "Box");
 });
 
 test("migraciones: corren una sola vez, después de un respaldo, y quedan registradas", () => {

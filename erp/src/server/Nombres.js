@@ -16,13 +16,13 @@ function interpretarNombre_(raw, modo) {
     [/ELITE\s+TRAINER|\bETB\b/, 'Elite Trainer Box'],
     [/BOOSTER\s+BUNDLE/, 'Booster Bundle'],
     [/BATTLE\s+DECK/, 'Battle Deck'],
-    [/MINI\s+TIN/, 'Mini Tin'],
-    [/\bTIN\b/, 'Tin'],
+    [/\bTIN\b/, 'Tin / Mini Tin'],
     [/PREMIUM\s+COLLECTION/, 'Premium Collection'],
     [/BINDER|COLLECTION|COLECCI[OÓ]N/, 'Binder Colección'],
     [/BLISTER/, 'Blister'],
     [/SLEEVED\s+BOOSTER|BOOSTER\s+PACK|\bSOBRE\b/, 'Sobre'],
-    [/SLEEVES|DECK\s+BOX|PLAYMAT|TAPETE|PORTACARTAS/, 'Accesorio'],
+    [/SLEEVES|DECK\s+BOX|PLAYMAT|TAPETE|PORTACARTAS/, 'Accesorios'],
+    [/\bBOX\b/, 'Box'],
   ];
   var IDIOMAS = [
     [/\b(ENGLISH|INGL[EÉ]S|ENG|ING)\b/i, 'ENG'],
