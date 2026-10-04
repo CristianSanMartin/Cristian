@@ -10,7 +10,7 @@
   const data = () => GS.state.data;
   const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
   const kpi = (l, v, sub) => '<div class="kpi-card"><div class="kpi-label">' + l + '</div><div class="kpi-value small">' + v + '</div><div class="kpi-sub">' + sub + '</div></div>';
-  const DEF = { tab: 'resumen', anio: '', q: '' };
+  const DEF = { tab: 'resumen', anio: '', q: '', ventas: true };
 
   const movsVivos = () => (data().movimientos || []).filter((m) => !m.anulado);
   const anios = () => {
@@ -123,14 +123,29 @@
     { id: 'monto', label: 'Monto', right: true, valor: (m) => (m.tipo === 'ingreso' ? m.monto : -m.monto), texto: (m) => fmt.money(m.monto),
       celda: (m) => '<strong class="' + (m.anulado ? 'muted' : m.tipo === 'ingreso' ? 'text-success' : '') + '">' + (m.tipo === 'ingreso' ? '+' : '−') + fmt.money(m.monto) + '</strong>' + (m.anulado ? '<div class="cell-dim">anulado</div>' : '') },
   ];
+  /** Ingresos de ventas como filas del libro (solo lectura): lo pagado al vender, los abonos y la comisión del medio de pago. */
+  const CUENTA_MEDIO = { efectivo: 'Caja (efectivo)', transferencia: 'Banco', debito: 'TUU', credito: 'TUU' };
+  function movsVentas() {
+    const res = [];
+    data().ventas.filter((v) => !v.anulada).forEach((v) => {
+      const base = { tipo: 'ingreso', referencia: v.id, venta: v.id, cuentaLabel: CUENTA_MEDIO[v.medioPago] || '', notas: '' };
+      if (v.abono) res.push(Object.assign({}, base, { id: v.id + '·v', fecha: v.fecha, categoriaLabel: 'Venta', subcategoria: v.cliente + ' · ' + v.medioPagoLabel, monto: v.abono }));
+      v.cobros.forEach((c) => res.push(Object.assign({}, base, { id: c.id, fecha: c.fecha, categoriaLabel: 'Abono de venta', subcategoria: v.cliente + ' · ' + (data().catalogos.mediosPago[c.medioPago] || c.medioPago), monto: c.monto,
+        cuentaLabel: CUENTA_MEDIO[c.medioPago] || '' })));
+      if (v.comision) res.push(Object.assign({}, base, { id: v.id + '·c', tipo: 'egreso', fecha: v.fecha, categoriaLabel: 'Comisión ' + v.medioPagoLabel, subcategoria: v.cliente, monto: v.comision }));
+    });
+    return res;
+  }
   const movsBuscados = () => {
     const f = GS.filters('finanzas', DEF);
     const q = GS.norm((f.q || '').trim());
     // Todos los movimientos, de todos los años (el año elegido solo cambia el resumen), los más recientes primero.
-    return (data().movimientos || []).filter((m) => !q || GS.norm(m.categoriaLabel + ' ' + m.subcategoria + ' ' + m.notas + ' ' + m.referencia + ' ' + m.id + ' ' + m.fecha).includes(q))
+    return (data().movimientos || []).concat(f.ventas ? movsVentas() : []).filter((m) => !q || GS.norm(m.categoriaLabel + ' ' + m.subcategoria + ' ' + m.notas + ' ' + m.referencia + ' ' + m.id + ' ' + m.fecha).includes(q))
       .sort((a, b) => (b.fecha + b.id).localeCompare(a.fecha + a.id));
   };
   GS.tablaRegistrar('movimientos', { filas: movsBuscados, columnas: colsMov, alCambiar: () => GS.views.finanzas.update() });
+
+  GS.actions.finVerVenta = (id) => { GS.filters('ventas', { q: '' }).q = id; GS.go('ventas', id); };
 
   GS.views.finanzas = {
     title: 'Finanzas',
@@ -153,18 +168,22 @@
       if (!cuerpo) return;
       if (f.tab === 'movimientos') {
         if (!document.getElementById('mov-tbody')) {
-          cuerpo.innerHTML = '<div class="filters-bar"><div class="search-box">' + GS.icon('search') + '<input type="text" data-filter="finanzas.q" value="' + esc(f.q || '') + '" placeholder="Buscar categoría, detalle o referencia..."></div><span class="count" id="mov-count"></span></div>' +
+          cuerpo.innerHTML = '<div class="filters-bar"><div class="search-box">' + GS.icon('search') + '<input type="text" data-filter="finanzas.q" value="' + esc(f.q || '') + '" placeholder="Buscar categoría, detalle o referencia..."></div>' +
+            '<label class="check"><input type="checkbox" data-filter="finanzas.ventas"' + (f.ventas ? ' checked' : '') + '> Incluir ventas</label><span class="count" id="mov-count"></span></div>' +
             '<div class="table-wrap"><table class="data-table"><thead><tr id="mov-thead"></tr></thead><tbody id="mov-tbody"></tbody></table></div>';
         }
         const rows = GS.tablaAplicar('movimientos', movsBuscados(), colsMov);
         const op = GS.puede('operador');
         const admin = GS.puede('admin');
-        document.getElementById('mov-count').textContent = rows.length + ' movimientos';
+        const nv = rows.filter((m) => m.venta).length;
+        document.getElementById('mov-count').textContent = rows.length + ' movimientos' + (nv ? ' · ' + nv + ' de ventas' : '');
         document.getElementById('mov-thead').innerHTML = GS.tablaEncabezado('movimientos', colsMov) + '<th></th>';
         document.getElementById('mov-tbody').innerHTML = rows.length ? rows.map((m) => '<tr class="' + (m.anulado ? 'row-muted' : '') + '">' +
           colsMov.map((c) => '<td class="' + (c.right ? 'cell-num right ' : '') + (c.clase || '') + '">' + c.celda(m) + '</td>').join('') +
-          '<td><div class="row-actions">' + (op && !m.anulado ? GS.iconBtn('editarMovimiento', m.id, 'edit', 'Editar') : '') +
-          (admin && !m.anulado ? GS.iconBtn('anularMovimiento', m.id, 'trash', 'Anular', 'danger') : '') + '</div></td></tr>').join('')
+          '<td><div class="row-actions">' + (m.venta
+            ? '<button class="btn small ghost" data-action="finVerVenta" data-id="' + esc(m.venta) + '" title="Las ventas se editan en Ventas">Ver ' + esc(m.venta) + '</button>'
+            : (op && !m.anulado ? GS.iconBtn('editarMovimiento', m.id, 'edit', 'Editar') : '') +
+              (admin && !m.anulado ? GS.iconBtn('anularMovimiento', m.id, 'trash', 'Anular', 'danger') : '')) + '</div></td></tr>').join('')
           : '<tr><td colspan="' + (colsMov.length + 1) + '">' + GS.empty('Sin movimientos', 'Registra aportes, gastos, pagos al SII o compras por monto con "Nuevo movimiento".', 'finanzas') + '</td></tr>';
         return;
       }
