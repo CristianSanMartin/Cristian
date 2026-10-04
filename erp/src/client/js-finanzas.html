@@ -126,8 +126,9 @@
   const movsBuscados = () => {
     const f = GS.filters('finanzas', DEF);
     const q = GS.norm((f.q || '').trim());
-    const anio = f.anio || data().hoy.slice(0, 4);
-    return (data().movimientos || []).filter((m) => m.fecha.slice(0, 4) === anio && (!q || GS.norm(m.categoriaLabel + ' ' + m.subcategoria + ' ' + m.notas + ' ' + m.referencia + ' ' + m.id).includes(q)));
+    // Todos los movimientos, de todos los años (el año elegido solo cambia el resumen), los más recientes primero.
+    return (data().movimientos || []).filter((m) => !q || GS.norm(m.categoriaLabel + ' ' + m.subcategoria + ' ' + m.notas + ' ' + m.referencia + ' ' + m.id + ' ' + m.fecha).includes(q))
+      .sort((a, b) => (b.fecha + b.id).localeCompare(a.fecha + a.id));
   };
   GS.tablaRegistrar('movimientos', { filas: movsBuscados, columnas: colsMov, alCambiar: () => GS.views.finanzas.update() });
 
@@ -164,7 +165,7 @@
           colsMov.map((c) => '<td class="' + (c.right ? 'cell-num right ' : '') + (c.clase || '') + '">' + c.celda(m) + '</td>').join('') +
           '<td><div class="row-actions">' + (op && !m.anulado ? GS.iconBtn('editarMovimiento', m.id, 'edit', 'Editar') : '') +
           (admin && !m.anulado ? GS.iconBtn('anularMovimiento', m.id, 'trash', 'Anular', 'danger') : '') + '</div></td></tr>').join('')
-          : '<tr><td colspan="' + (colsMov.length + 1) + '">' + GS.empty('Sin movimientos en ' + anio, 'Registra aportes, gastos, pagos al SII o compras por monto con "Nuevo movimiento".', 'finanzas') + '</td></tr>';
+          : '<tr><td colspan="' + (colsMov.length + 1) + '">' + GS.empty('Sin movimientos', 'Registra aportes, gastos, pagos al SII o compras por monto con "Nuevo movimiento".', 'finanzas') + '</td></tr>';
         return;
       }
       const r = resumen(anio);
