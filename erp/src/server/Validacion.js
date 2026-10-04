@@ -32,6 +32,7 @@ const Validacion = {
     invVentaAntes: { area: 'Inventario', nivel: 'aviso', titulo: 'Factura con unidades vendidas antes de su fecha', ayuda: 'Normalmente la fecha de la factura quedó con la de la migración: corrígela en Editar factura.' },
 
     vtSinLineas: { area: 'Ventas', nivel: 'error', titulo: 'Venta sin productos o con total $0', ayuda: '' },
+    vtOcSinProducto: { area: 'Ventas', nivel: 'aviso', titulo: 'OC sin producto del inventario', ayuda: 'Probablemente un sellado vendido que no se rebajó del stock (o quedó como abierto o premio). Cuádralo con la toma de inventario o valídalo con una nota.' },
     vtSinCosto: { area: 'Ventas', nivel: 'error', titulo: 'Producto vendido con costo $0', ayuda: 'La ganancia de esa venta queda inflada.' },
     vtPerdida: { area: 'Ventas', nivel: 'aviso', titulo: 'Producto vendido bajo el costo', ayuda: '' },
     vtDescuentoAlto: { area: 'Ventas', nivel: 'aviso', titulo: 'Descuento mayor al 30%', ayuda: '' },
@@ -152,6 +153,9 @@ const Validacion = {
       const editar = { tipo: 'editarVenta', id: v.id };
       const quien = v.id + ' · ' + v.cliente;
       if (!v.lineas.length || !v.total) add('vtSinLineas', v.id, quien + ' · ' + v.fecha, v.lineas.length + '/' + v.total, editar);
+      else if (Ventas.esOc(v.id) && v.lineas.every((l) => l.porMonto)) {
+        add('vtOcSinProducto', v.id, quien + ' · ' + v.fecha + ' · ' + $(v.total) + ' · ' + v.lineas.map((l) => l.producto).join(', '), v.total + '/' + v.lineas.length, { tipo: 'verVenta', id: v.id });
+      }
       v.lineas.forEach((l) => {
         if (l.porMonto) return;
         const nombre = l.productoNombre + (l.idioma ? ' ' + l.idioma : '');

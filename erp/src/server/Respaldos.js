@@ -33,6 +33,11 @@ const MIGRACIONES = [
       if (Object.keys(cambios).length) Db.actualizarVarios('Productos', cambios);
     },
   },
+  {
+    id: '2026-10-05-ventas-sin-oc',
+    descripcion: 'Singles, torneos, sobres sueltos, bazar y accesorios dejan de usar N° de OC: pasan a SGL-, TOR-, SOB-, BAZ- y ACC-',
+    fn: (user) => { Ventas.separarSinOc(user); },
+  },
 ];
 
 const Respaldos = {

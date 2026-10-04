@@ -247,7 +247,17 @@
     const q = GS.norm((GS.filters('ventas', { q: '' }).q || '').trim());
     return data().ventas.filter((v) => !q || GS.norm(v.id + ' ' + v.cliente + ' ' + v.evento + ' ' + v.boleta + ' ' + v.lineas.map((l) => l.producto).join(' ')).includes(q));
   };
-  GS.tablaRegistrar('ventas', { filas: buscadas, columnas: colsVentas, alCambiar: () => GS.views.ventas.update() });
+  // OC = ventas de sellados; singles, torneos, sobres, bazar y accesorios llevan su propio correlativo (SGL-, TOR-…).
+  const esOc = (v) => /^(OC|PR)-/.test(v.id);
+  GS.tablaRegistrar('ventas', { filas: () => buscadas().filter(esOc), columnas: colsVentas, alCambiar: () => GS.views.ventas.update() });
+  const conceptos = (v) => Array.from(new Set(v.lineas.map((l) => l.categoria || 'Producto'))).join(', ');
+  const colsMonto = [colsVentas[0],
+    { id: 'n', label: 'N°', valor: (v) => v.id, celda: (v) => '<span class="cell-strong nowrap">' + esc(v.id) + '</span>' + (v.boleta ? '<div class="cell-dim">Boleta ' + esc(v.boleta) + '</div>' : '') },
+    { id: 'concepto', label: 'Concepto', valor: (v) => conceptos(v), celda: (v) => '<span class="cell-strong">' + esc(conceptos(v)) + '</span>' },
+    { id: 'detalle', label: 'Detalle', valor: (v) => v.lineas.map((l) => l.descripcion).filter(Boolean).join(' · '),
+      celda: (v) => '<span class="cell-dim">' + esc(v.lineas.map((l) => l.descripcion).filter(Boolean).join(' · ') || '—') + '</span>' }]
+    .concat(colsVentas.filter((c) => ['cliente', 'medio', 'total', 'comision', 'ganancia', 'pago'].indexOf(c.id) !== -1));
+  GS.tablaRegistrar('ventasMonto', { filas: () => buscadas().filter((v) => !esOc(v)), columnas: colsMonto, alCambiar: () => GS.views.ventas.update() });
 
   function detalleVenta(v) {
     const loteDe = {};
@@ -427,7 +437,9 @@
         '<div class="panel dash-card"><div class="dash-card-head"><h3>Órdenes de compra (OC)</h3><span class="muted">Todas las ventas' +
           (GS.puede('admin') ? ' · <a href="#" data-action="ocOriginales">Usar los N° y fechas de las OC originales</a>' : '') + '</span></div>' +
         '<div class="filters-bar"><div class="search-box">' + GS.icon('search') + '<input type="text" data-filter="ventas.q" value="' + esc(f.q) + '" placeholder="Buscar OC, cliente, evento, boleta o producto..."></div></div>' +
-        '<div class="table-wrap"><table class="data-table wide"><thead><tr id="vt-thead"></tr></thead><tbody id="vt-tbody"></tbody></table></div></div>';
+        '<div class="table-wrap"><table class="data-table wide"><thead><tr id="vt-thead"></tr></thead><tbody id="vt-tbody"></tbody></table></div></div>' +
+        '<div class="panel dash-card"><div class="dash-card-head"><h3>Singles, torneos y otros</h3><span class="muted">Ventas sin OC: SGL singles · TOR torneos · SOB sobres sueltos · BAZ bazar · ACC accesorios</span></div>' +
+        '<div class="table-wrap"><table class="data-table wide"><thead><tr id="vm-thead"></tr></thead><tbody id="vm-tbody"></tbody></table></div></div>';
       this.update();
     },
     update() {
@@ -435,20 +447,24 @@
       document.getElementById('vt-tablero').innerHTML = tablero(f.mes || data().hoy.slice(0, 7));
       // La lista muestra todas las OC (el mes elegido solo cambia el tablero), las más recientes primero.
       const recientes = buscadas().sort((a, b) => (b.fecha + b.id).localeCompare(a.fecha + a.id));
-      const rows = GS.tablaAplicar('ventas', recientes, colsVentas);
       const admin = GS.puede('admin');
-      const n = colsVentas.length + 2;
-      document.getElementById('vt-thead').innerHTML = '<th></th>' + GS.tablaEncabezado('ventas', colsVentas) + '<th></th>';
-      document.getElementById('vt-tbody').innerHTML = rows.length ? rows.map((v) => {
-        const open = abiertas.has(v.id);
-        return '<tr class="fila-compra' + (open ? ' abierta' : '') + (v.anulada ? ' row-muted' : '') + '" data-action="verVenta" data-id="' + esc(v.id) + '">' +
-          '<td><span class="chev">' + (open ? '▾' : '▸') + '</span></td>' +
-          colsVentas.map((c) => '<td class="' + (c.right ? 'cell-num right' : '') + '">' + c.celda(v) + '</td>').join('') +
-          '<td><div class="row-actions">' + (admin && !v.anulada ? GS.iconBtn('editarVenta', v.id, 'edit', 'Editar fecha, boleta o notas') + GS.iconBtn('anularVenta', v.id, 'trash', 'Anular venta', 'danger') : '') + '</div></td></tr>' +
-          (open ? '<tr class="detalle-row"><td colspan="' + n + '">' + detalleVenta(v) + '</td></tr>' : '');
-      }).join('') : '<tr><td colspan="' + n + '">' + GS.empty('Aún no hay ventas', 'Se registran desde Inventario: marca los productos y completa la venta.', 'ventas') + '</td></tr>';
-      const wrap = document.getElementById('vt-tbody').closest('.table-wrap');
-      document.querySelectorAll('#vt-tbody .detalle-compra').forEach((d) => { d.style.width = Math.max(320, wrap.clientWidth - 36) + 'px'; });
+      const tabla = (tbody, thead, id, cols, filas, vacio) => {
+        const rows = GS.tablaAplicar(id, filas, cols);
+        const n = cols.length + 2;
+        document.getElementById(thead).innerHTML = '<th></th>' + GS.tablaEncabezado(id, cols) + '<th></th>';
+        document.getElementById(tbody).innerHTML = rows.length ? rows.map((v) => {
+          const open = abiertas.has(v.id);
+          return '<tr class="fila-compra' + (open ? ' abierta' : '') + (v.anulada ? ' row-muted' : '') + '" data-action="verVenta" data-id="' + esc(v.id) + '">' +
+            '<td><span class="chev">' + (open ? '▾' : '▸') + '</span></td>' +
+            cols.map((c) => '<td class="' + (c.right ? 'cell-num right' : '') + '">' + c.celda(v) + '</td>').join('') +
+            '<td><div class="row-actions">' + (admin && !v.anulada ? GS.iconBtn('editarVenta', v.id, 'edit', 'Editar fecha, boleta, total o notas') + GS.iconBtn('anularVenta', v.id, 'trash', 'Anular venta', 'danger') : '') + '</div></td></tr>' +
+            (open ? '<tr class="detalle-row"><td colspan="' + n + '">' + detalleVenta(v) + '</td></tr>' : '');
+        }).join('') : '<tr><td colspan="' + n + '">' + vacio + '</td></tr>';
+        const wrap = document.getElementById(tbody).closest('.table-wrap');
+        document.querySelectorAll('#' + tbody + ' .detalle-compra').forEach((d) => { d.style.width = Math.max(320, wrap.clientWidth - 36) + 'px'; });
+      };
+      tabla('vt-tbody', 'vt-thead', 'ventas', colsVentas, recientes.filter(esOc), GS.empty('Aún no hay OC', 'Se registran desde Inventario: marca los productos y completa la venta.', 'ventas'));
+      tabla('vm-tbody', 'vm-thead', 'ventasMonto', colsMonto, recientes.filter((v) => !esOc(v)), '<div class="muted center" style="padding:14px;">Sin ventas de singles, torneos u otros. Se registran con "Venta por monto" en Inventario.</div>');
     },
   };
 

@@ -64,7 +64,7 @@ const Ventas = {
     if (abono < total && !clienteId) throw new AppError('Una venta con saldo por cobrar necesita un cliente (no puede ser "Cliente general").');
     const sello = Util.sello(user, true);
     const venta = Object.assign({
-      id: Util.siguienteId('OC', 4), fecha: fecha, clienteId: clienteId, canal: canal, evento: evento, medioPago: medioPago,
+      id: Util.siguienteId(Ventas.prefijo(lineas), 4), fecha: fecha, clienteId: clienteId, canal: canal, evento: evento, medioPago: medioPago,
       boleta: boleta, abono: abono, comision: comision, anulada: false, notas: notas,
     }, sello);
     Db.insert('Ventas', venta);
@@ -74,6 +74,78 @@ const Ventas = {
       productos: lineas.map((l) => (l.productoId ? l.productoId + ' ×' + l.cantidad + ' (' + l.loteId + ')' : l.categoria + ' ' + l.precio)).join(', '),
     });
     return Object.assign({ total: total }, venta);
+  },
+
+  /**
+   * Correlativo de una venta según sus líneas: OC si lleva algún producto del inventario (o
+   * conceptos sin prefijo propio); si es solo por monto, el prefijo de su categoría (la de mayor monto).
+   */
+  prefijo(lineas) {
+    if (!lineas.length || lineas.some((l) => l.productoId)) return 'OC';
+    const porCat = {};
+    lineas.forEach((l) => { porCat[l.categoria] = (porCat[l.categoria] || 0) + l.precio * l.cantidad; });
+    const cat = Object.keys(porCat).sort((a, b) => porCat[b] - porCat[a])[0];
+    return PREFIJOS_VENTA[cat] || 'OC';
+  },
+
+  /** true si el id es de una OC (venta de sellados). */
+  esOc(id) {
+    return /^(OC|PR)-/.test(String(id || ''));
+  },
+
+  /**
+   * Cambia ids (y opcionalmente fechas) de ventas y actualiza sus líneas, abonos y referencias en
+   * texto (caja y Finanzas), con una escritura por hoja. mapa: { idViejo: idNuevo }; fechas: { idViejo: fecha }.
+   */
+  _renombrar(mapa, fechas, user) {
+    const fs = fechas || {};
+    const cambiosV = {};
+    Object.keys(mapa).concat(Object.keys(fs)).forEach((id) => {
+      const c = cambiosV[id] = cambiosV[id] || Util.sello(user);
+      if (mapa[id] && mapa[id] !== id) c.id = mapa[id];
+      if (fs[id]) c.fecha = fs[id];
+    });
+    if (Object.keys(cambiosV).length) Db.actualizarVarios('Ventas', cambiosV);
+    const cambia = (id) => mapa[id] && mapa[id] !== id;
+    if (!Object.keys(mapa).some(cambia)) return;
+    const re = /\b(?:OC|PR|SGL|TOR|SOB|BAZ|ACC)-\d{4,}(?:-\d+)?\b/g;
+    const reemplazar = (t) => String(t || '').replace(re, (id) => (cambia(id) ? mapa[id] : id));
+    [['Ventas_Lineas', 'ventaId'], ['Cobros', 'ventaId']].forEach(([tabla, campo]) => {
+      const cambios = {};
+      Db.all(tabla).forEach((r) => { if (cambia(r[campo])) cambios[r.id] = { [campo]: mapa[r[campo]] }; });
+      if (Object.keys(cambios).length) Db.actualizarVarios(tabla, cambios);
+    });
+    // Referencias en texto: lo que creó la migración de la caja y las notas de Finanzas.
+    [['Migracion_Caja', ['migrada']], ['Finanzas', ['referencia', 'notas']]].forEach(([tabla, campos]) => {
+      const cambios = {};
+      Db.all(tabla).forEach((r) => {
+        const c = {};
+        campos.forEach((k) => { const t = reemplazar(r[k]); if (t !== String(r[k] || '')) c[k] = t; });
+        if (Object.keys(c).length) cambios[r.id] = c;
+      });
+      if (Object.keys(cambios).length) Db.actualizarVarios(tabla, cambios);
+    });
+  },
+
+  /**
+   * Ventas solo por monto de categorías con prefijo propio (singles, torneos…) que aún tienen
+   * número de OC: pasan a SGL-/TOR-/… en orden de fecha. Las OC originales de la caja no se tocan.
+   */
+  separarSinOc(user) {
+    const lineas = {};
+    Db.all('Ventas_Lineas').forEach((l) => { (lineas[l.ventaId] = lineas[l.ventaId] || []).push(l); });
+    const mover = Db.all('Ventas')
+      .filter((v) => Ventas.esOc(v.id) && !/OC original/.test(v.notas || '') && Ventas.prefijo(lineas[v.id] || []) !== 'OC')
+      .sort((a, b) => (a.fecha + a.id).localeCompare(b.fecha + b.id));
+    const porPrefijo = {};
+    mover.forEach((v) => { const pre = Ventas.prefijo(lineas[v.id]); (porPrefijo[pre] = porPrefijo[pre] || []).push(v); });
+    const mapa = {};
+    Object.keys(porPrefijo).forEach((pre) => {
+      const ids = Util.reservarIds(pre, 4, porPrefijo[pre].length);
+      porPrefijo[pre].forEach((v, i) => { mapa[v.id] = ids[i]; });
+    });
+    if (mover.length) Ventas._renombrar(mapa, null, user);
+    return mapa;
   },
 
   /**
@@ -127,7 +199,8 @@ const Ventas = {
    * Devuelve { cambios: [{ de, a, fecha, fechaNueva, oc, anulada }], siguiente, ultimo }.
    */
   _planOriginales() {
-    const ventas = Db.all('Ventas').sort((a, b) => a.id.localeCompare(b.id));
+    // Solo las OC (sellados): singles, torneos y demás tienen su propio correlativo.
+    const ventas = Db.all('Ventas').filter((v) => Ventas.esOc(v.id)).sort((a, b) => a.id.localeCompare(b.id));
     const num = (id) => { const m = /^OC-(\d+)$/.exec(id); return m ? Number(m[1]) : null; };
     const destino = {};
     const usados = {};
@@ -177,26 +250,9 @@ const Ventas = {
     if (!plan.cambios.length) return plan;
     Respaldos.crear('antes de renumerar las OC', user);
     const mapa = {};
-    plan.cambios.forEach((c) => { if (c.a !== c.de) mapa[c.de] = c.a; });
-    const re = /\bOC-\d{4,}(?:-\d+)?\b/g;
-    const reemplazar = (t) => String(t || '').replace(re, (id) => (id in mapa ? mapa[id] : id));
-    // Todo en una escritura por hoja: los cambios de id se aplican a la vez (sin choques intermedios).
-    Db.actualizarVarios('Ventas', plan.cambios.reduce((o, c) => { o[c.de] = Object.assign({ id: c.a, fecha: c.fechaNueva }, Util.sello(user)); return o; }, {}));
-    [['Ventas_Lineas', 'ventaId'], ['Cobros', 'ventaId']].forEach(([tabla, campo]) => {
-      const cambios = {};
-      Db.all(tabla).forEach((r) => { if (r[campo] in mapa) cambios[r.id] = { [campo]: mapa[r[campo]] }; });
-      if (Object.keys(cambios).length) Db.actualizarVarios(tabla, cambios);
-    });
-    // Referencias en texto: lo que creó la migración de la caja y las notas de Finanzas.
-    [['Migracion_Caja', ['migrada']], ['Finanzas', ['referencia', 'notas']]].forEach(([tabla, campos]) => {
-      const cambios = {};
-      Db.all(tabla).forEach((r) => {
-        const c = {};
-        campos.forEach((k) => { const t = reemplazar(r[k]); if (t !== String(r[k] || '')) c[k] = t; });
-        if (Object.keys(c).length) cambios[r.id] = c;
-      });
-      if (Object.keys(cambios).length) Db.actualizarVarios(tabla, cambios);
-    });
+    const fechas = {};
+    plan.cambios.forEach((c) => { mapa[c.de] = c.a; if (c.fechaNueva !== c.fecha) fechas[c.de] = c.fechaNueva; });
+    Ventas._renombrar(mapa, fechas, user);
     const sec = Db.get('Secuencias', 'OC');
     if (sec) Db.update('Secuencias', 'OC', { valor: Math.max(sec.valor, plan.ultimo) });
     else Db.insert('Secuencias', { clave: 'OC', valor: plan.ultimo });

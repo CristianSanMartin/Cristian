@@ -228,6 +228,12 @@ y la recuerda en `erp/.implementacion`. Después solo queda el paso 2 cuando cor
   `Migracion_Caja`.
 - **Editar venta** (administrador): fecha, boleta y notas desde la lista de Ventas.
 
+**OC solo para sellados:** una venta que lleva productos del inventario es una OC (OC-0001…). Las
+ventas por monto de singles, torneos, sobres sueltos, bazar y accesorios llevan su propio
+correlativo (SGL-, TOR-, SOB-, BAZ-, ACC-) y se ven en Ventas → "Singles, torneos y otros"; "Otro"
+y "Ajuste" siguen como OC. La migración `2026-10-05-ventas-sin-oc` (al ejecutar instalar) pasa las
+ventas existentes de esos conceptos a su correlativo, con sus abonos y referencias.
+
 **N° de OC originales:** en Ventas → Órdenes de compra, el administrador tiene "Usar los N° de OC
 originales". Muestra la vista previa y renumera las ventas migradas a su OC original (la nota
 "OC original OC223" pasa a ser OC-0223; si una OC tenía varias ventas, OC-0223-2…). Las ventas sin OC

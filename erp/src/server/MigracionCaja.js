@@ -406,8 +406,12 @@ const MigracionCaja = {
       existentes[id] = true;
       return id;
     });
-    const correlativos = Util.reservarIds('OC', 4, propio.filter((x) => !x).length);
-    const idsVenta = propio.map((id) => id || correlativos.shift());
+    // El resto: OC si es venta de sellados u "Otro"; singles, torneos, bazar… con su propio correlativo.
+    const prefijos = ventasNuevas.map((v, i) => (propio[i] ? '' : v.oc ? 'OC' : Ventas.prefijo(v.lineas.map((l) => ({ categoria: l.categoria, precio: l.monto, cantidad: 1 })))));
+    const correlativos = {};
+    prefijos.forEach((pre) => { if (pre) correlativos[pre] = (correlativos[pre] || 0) + 1; });
+    Object.keys(correlativos).forEach((pre) => { correlativos[pre] = Util.reservarIds(pre, 4, correlativos[pre]); });
+    const idsVenta = propio.map((id, i) => id || correlativos[prefijos[i]].shift());
     // El correlativo queda sobre el número más alto usado, para que una venta nueva no lo repita.
     const altoOc = propio.reduce((m, id) => Math.max(m, /^OC-\d+$/.test(id) ? Number(id.slice(3)) : 0), 0);
     const secOc = Db.get('Secuencias', 'OC');

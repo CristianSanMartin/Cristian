@@ -15,7 +15,7 @@
 
 const APP = {
   nombre: 'GS Prime ERP',
-  version: '2.8.4',
+  version: '2.9.0',
   tz: 'America/Santiago',
   iva: 0.19,
 };
@@ -182,6 +182,11 @@ const MOTIVOS_SALIDA = { premio: 'Premio', apertura: 'Caja abierta', interno: 'U
 
 /** Ventas por monto (sin unidades del inventario). Torneo = ingreso por servicio. */
 const CATEGORIAS_VENTA = ['Singles', 'Torneo', 'Sobres sueltos', 'Bazar', 'Accesorios', 'Ajuste', 'Otro'];
+/**
+ * Las OC son solo para productos sellados del inventario. Una venta solo por monto de estas
+ * categorías lleva su propio correlativo (SGL-0001, TOR-0001…). Ajuste y Otro siguen como OC.
+ */
+const PREFIJOS_VENTA = { 'Singles': 'SGL', 'Torneo': 'TOR', 'Sobres sueltos': 'SOB', 'Bazar': 'BAZ', 'Accesorios': 'ACC' };
 
 /** Finanzas: categorías de movimientos (la subcategoría es texto libre: socio, proveedor, concepto). */
 const CATEGORIAS_MOVIMIENTO = {

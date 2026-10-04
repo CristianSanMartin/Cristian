@@ -693,6 +693,31 @@ test("OC migradas: toman su N° original (OC223 → OC-0223), con sus líneas, a
   assert.equal(s.as("vista@gsprime.cl").call("renumerarOc", {}).code, "SIN_PERMISO");
 });
 
+test("ventas sin OC: singles, torneos, bazar… con su propio correlativo; las existentes se separan", () => {
+  const s = createServer();
+  const { prods } = conInventario(s);
+  const monto = (categoria, m) => s.ok("crearVenta", { fecha: "2026-10-05", lineas: [{ categoria: categoria, descripcion: "x", monto: m }] }).result.id;
+  assert.equal(monto("Singles", 5000), "SGL-0001");
+  assert.equal(monto("Torneo", 3000), "TOR-0001");
+  assert.equal(monto("Singles", 2000), "SGL-0002");
+  assert.equal(monto("Otro", 1000), "OC-0001", "Otro sigue como OC");
+  assert.equal(s.ok("crearVenta", { fecha: "2026-10-05", lineas: [{ productoId: prods.miniTin.id, cantidad: 1 }] }).result.id, "OC-0002");
+  // Ventas antiguas de singles/torneos con N° de OC (y sus abonos y referencias) pasan a su correlativo
+  const v = s.ok("crearVenta", { fecha: "2026-09-01", cliente: "Ana", pagada: false, abono: 0, lineas: [{ categoria: "Bazar", descripcion: "y", monto: 4000 }] }).result;
+  s.run(`Db.update("Ventas", "${v.id}", { id: "OC-0090" });
+    Db.all("Ventas_Lineas").filter(l => l.ventaId === "${v.id}").forEach(l => Db.update("Ventas_Lineas", l.id, { ventaId: "OC-0090" }));
+    Db.insert("Migracion_Caja", { id: "MC-1", fila: 2, fecha: "2026-09-01", glosa: "Ventas", entradas: 4000, salidas: 0, migrada: "OC-0090" });`);
+  s.ok("registrarCobro", { ventaId: "OC-0090", fecha: "2026-09-02", monto: 1000, medioPago: "efectivo" });
+  const mig = JSON.parse(s.run(`JSON.stringify(Ventas.separarSinOc({ email: "admin@gsprime.cl" }))`));
+  assert.deepEqual(mig, { "OC-0090": "BAZ-0002" });   // BAZ-0001 lo usó al crearse
+  const venta = s.ok("bootstrap").data.ventas.find(x => x.id === "BAZ-0002");
+  assert.deepEqual([venta.total, venta.cobros.length, venta.saldo], [4000, 1, 3000]);
+  assert.equal(s.run(`Db.get("Migracion_Caja", "MC-1").migrada`), "BAZ-0002");
+  // La OC "Otro" queda como OC y la Validación la marca como OC sin producto
+  assert.ok(s.ok("bootstrap").data.ventas.some(x => x.id === "OC-0001"));
+  assert.ok(s.ok("validacion").data.hallazgos.some(h => h.regla === "vtOcSinProducto" && h.ref === "OC-0001"));
+});
+
 test("validación de datos: encuentra inconsistencias, se validan y reaparecen si los datos cambian", () => {
   const s = createServer();
   const { prods } = conInventario(s);   // Binder ENG 24, Binder ESP 6, Mini Tin 10
@@ -1022,7 +1047,7 @@ test("migración de la caja por partes: seleccionar, migrar, pago de factura, to
   e = s.ok("cajaEstado").data;
   assert.equal(e.resumen.migradas, 2);
   assert.match(fila(17).migrada, /^MOV-/);
-  assert.match(fila(18).migrada, /^OC-/);
+  assert.match(fila(18).migrada, /^BAZ-0001/, "el bazar no usa N° de OC");
 
   // 2) Torneos: los del mismo día quedan en una venta; una tanda posterior se suma a esa venta
   r = s.ok("cajaMigrar", { ids: [fila(7).id, fila(8).id, fila(9).id] }).result;
@@ -1033,6 +1058,7 @@ test("migración de la caja por partes: seleccionar, migrar, pago de factura, to
   let d = s.ok("bootstrap").data;
   const t5 = d.ventas.find(v => v.fecha === "2025-07-05" && v.lineas.some(l => l.categoria === "Torneo"));
   assert.deepEqual([t5.total, t5.lineas.length, t5.estadoPago], [21000, 3, "pagada"]);
+  assert.match(t5.id, /^TOR-/, "los torneos llevan su propio correlativo");
 
   // 3) Una fila de la OC171 arrastra a la otra; fecha real y ajuste
   e = s.ok("cajaEstado").data;
