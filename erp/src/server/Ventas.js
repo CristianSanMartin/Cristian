@@ -88,6 +88,82 @@ const Ventas = {
     Db.update('Ventas', v.id, Object.assign(datos, Util.sello(user)));
   },
 
+  /**
+   * Ventas migradas con su número de OC original (la nota "OC original OC223" → OC-0223).
+   * Si varias ventas venían de la misma OC, las siguientes llevan "-2", "-3"…
+   * Las ventas sin OC original conservan su número si no choca y queda sobre el último
+   * original; si no, pasan a continuación. El correlativo sigue desde el número más alto.
+   * Devuelve { cambios: [{ de, a, fecha, oc, anulada }], siguiente, ultimo }.
+   */
+  _planOriginales() {
+    const ventas = Db.all('Ventas').sort((a, b) => a.id.localeCompare(b.id));
+    const num = (id) => { const m = /^OC-(\d+)$/.exec(id); return m ? Number(m[1]) : null; };
+    const destino = {};
+    const usados = {};
+    const porOc = {};
+    ventas.forEach((v) => {
+      const o = /OC original (OC|PR)\s*-?\s*0*(\d+)\b/i.exec(v.notas || '');
+      if (!o) return;
+      const base = o[1].toUpperCase() + '-' + String(Number(o[2])).padStart(4, '0');
+      (porOc[base] = porOc[base] || []).push(v);
+    });
+    let max = 0;
+    Object.keys(porOc).forEach((base) => {
+      porOc[base].forEach((v, i) => { destino[v.id] = i ? base + '-' + (i + 1) : base; usados[destino[v.id]] = true; });
+      if (base.indexOf('OC-') === 0) max = Math.max(max, Number(base.slice(3)));
+    });
+    const resto = ventas.filter((v) => !(v.id in destino));
+    resto.forEach((v) => { if (num(v.id) > max && !usados[v.id]) { destino[v.id] = v.id; usados[v.id] = true; } });
+    const sec = Db.get('Secuencias', 'OC');
+    let n = Math.max(max, sec ? sec.valor : 0);
+    resto.forEach((v) => {
+      if (v.id in destino) return;
+      do { n++; } while (usados['OC-' + String(n).padStart(4, '0')]);
+      destino[v.id] = 'OC-' + String(n).padStart(4, '0');
+      usados[destino[v.id]] = true;
+    });
+    const ultimo = Object.keys(usados).reduce((m, id) => Math.max(m, num(id) || 0), n);
+    const cambios = ventas.filter((v) => destino[v.id] !== v.id).map((v) => {
+      const m = /OC original ((?:OC|PR)\s*-?\s*\d+)/i.exec(v.notas || '');
+      return { de: v.id, a: destino[v.id], fecha: v.fecha, oc: m ? m[1] : '', anulada: v.anulada };
+    });
+    return { cambios: cambios, siguiente: 'OC-' + String(ultimo + 1).padStart(4, '0'), ultimo: ultimo };
+  },
+
+  /** Vista previa (aplicar = false) o renumeración de las OC migradas a su número original. */
+  numerosOriginales(p, user) {
+    const plan = Ventas._planOriginales();
+    if (!p || !p.aplicar) return plan;
+    if (!plan.cambios.length) return plan;
+    Respaldos.crear('antes de renumerar las OC', user);
+    const mapa = {};
+    plan.cambios.forEach((c) => { mapa[c.de] = c.a; });
+    const re = /\bOC-\d{4,}(?:-\d+)?\b/g;
+    const reemplazar = (t) => String(t || '').replace(re, (id) => (id in mapa ? mapa[id] : id));
+    // Todo en una escritura por hoja: los cambios de id se aplican a la vez (sin choques intermedios).
+    Db.actualizarVarios('Ventas', plan.cambios.reduce((o, c) => { o[c.de] = { id: c.a }; return o; }, {}));
+    [['Ventas_Lineas', 'ventaId'], ['Cobros', 'ventaId']].forEach(([tabla, campo]) => {
+      const cambios = {};
+      Db.all(tabla).forEach((r) => { if (r[campo] in mapa) cambios[r.id] = { [campo]: mapa[r[campo]] }; });
+      if (Object.keys(cambios).length) Db.actualizarVarios(tabla, cambios);
+    });
+    // Referencias en texto: lo que creó la migración de la caja y las notas de Finanzas.
+    [['Migracion_Caja', ['migrada']], ['Finanzas', ['referencia', 'notas']]].forEach(([tabla, campos]) => {
+      const cambios = {};
+      Db.all(tabla).forEach((r) => {
+        const c = {};
+        campos.forEach((k) => { const t = reemplazar(r[k]); if (t !== String(r[k] || '')) c[k] = t; });
+        if (Object.keys(c).length) cambios[r.id] = c;
+      });
+      if (Object.keys(cambios).length) Db.actualizarVarios(tabla, cambios);
+    });
+    const sec = Db.get('Secuencias', 'OC');
+    if (sec) Db.update('Secuencias', 'OC', { valor: Math.max(sec.valor, plan.ultimo) });
+    else Db.insert('Secuencias', { clave: 'OC', valor: plan.ultimo });
+    Audit.log(user, 'renumerar', 'Venta', '', { ventas: plan.cambios.length, ejemplos: plan.cambios.slice(0, 20).map((c) => c.de + '→' + c.a).join(', ') });
+    return plan;
+  },
+
   /** Anula una venta (administrador): sus unidades vuelven a su lote. La OC no se reutiliza. */
   anular(p, user) {
     const v = Ventas.requerir(p.id);

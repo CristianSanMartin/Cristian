@@ -645,6 +645,34 @@ test("editar factura: corregir la cantidad de un producto (23 → 25) deja las u
   assert.equal(Math.round(d.ventas[0].lineas[0].costo * 100) / 100, Math.round(lote.costo * 100) / 100, "la venta toma el costo nuevo");
 });
 
+test("OC migradas: toman su N° original (OC223 → OC-0223), con sus líneas, abonos y referencias", () => {
+  const s = createServer();
+  const venta = (notas, monto, extra) => {
+    const v = s.ok("crearVenta", Object.assign({ fecha: "2026-07-01", lineas: [{ categoria: "Otro", descripcion: "x", monto: monto }] }, extra || {})).result;
+    s.ok("editarVenta", { id: v.id, fecha: "2026-07-01", boleta: "", notas: notas });
+    return v.id;
+  };
+  const a = venta("Migración desde Excel · OC original OC3", 1000);                     // OC-0001 → OC-0003
+  const b = venta("Migración desde Excel · OC original OC1", 2000, { pagada: false, abono: 500, cliente: "Ana" });   // OC-0002 → OC-0001
+  const c = venta("Migración desde Excel · OC original oc 1", 3000);                    // misma OC → OC-0001-2
+  const d = venta("Caja diaria · torneos del día consolidados", 4000);                  // sin OC original y sobre el máximo (3): conserva OC-0004
+  s.ok("registrarCobro", { ventaId: b, fecha: "2026-07-02", monto: 500, medioPago: "efectivo" });
+  s.run(`Db.insert("Migracion_Caja", { id: "MC-1", fila: 2, fecha: "2026-07-01", glosa: "Ventas", entradas: 1000, salidas: 0, migrada: "Fecha ${a}, ${b}" })`);
+  const plan = s.ok("ocOriginales").data;
+  assert.deepEqual(plan.cambios.map(x => x.de + ">" + x.a).sort(), [a + ">OC-0003", b + ">OC-0001", c + ">OC-0001-2"].sort());
+  assert.equal(d, "OC-0004", "la venta sin OC original ya queda sobre el número más alto y conserva su número");
+  s.ok("renumerarOc");
+  const data = s.ok("bootstrap").data;
+  const v = (id) => data.ventas.find(x => x.id === id);
+  assert.deepEqual([v("OC-0003").total, v("OC-0001").total, v("OC-0001-2").total, v("OC-0004").total], [1000, 2000, 3000, 4000]);
+  assert.deepEqual([v("OC-0001").cobros.length, v("OC-0001").saldo], [1, 1000], "el abono sigue en su venta");
+  assert.equal(s.run(`Db.get("Migracion_Caja", "MC-1").migrada`), "Fecha OC-0003, OC-0001");
+  assert.equal(s.ok("crearVenta", { fecha: "2026-07-03", lineas: [{ categoria: "Otro", descripcion: "y", monto: 10 }] }).result.id, "OC-0005", "las ventas nuevas siguen desde el más alto");
+  assert.equal(s.ok("ocOriginales").data.cambios.length, 0);
+  s.ok("guardarUsuario", { email: "vista@gsprime.cl", nombre: "Vista", rol: "lectura" });
+  assert.equal(s.as("vista@gsprime.cl").call("renumerarOc", {}).code, "SIN_PERMISO");
+});
+
 test("venta en varios lotes (FIFO) y cuenta por cobrar con abonos", () => {
   const s = createServer();
   const { prods } = conInventario(s);

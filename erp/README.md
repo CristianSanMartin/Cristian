@@ -228,6 +228,13 @@ y la recuerda en `erp/.implementacion`. Después solo queda el paso 2 cuando cor
   `Migracion_Caja`.
 - **Editar venta** (administrador): fecha, boleta y notas desde la lista de Ventas.
 
+**N° de OC originales:** en Ventas → Órdenes de compra, el administrador tiene "Usar los N° de OC
+originales". Muestra la vista previa y renumera las ventas migradas a su OC original (la nota
+"OC original OC223" pasa a ser OC-0223; si una OC tenía varias ventas, OC-0223-2…). Las ventas sin OC
+original quedan a continuación del número más alto, y las nuevas siguen desde ahí. Actualiza líneas,
+abonos y referencias de la migración de la caja, con respaldo previo. Las OC de la caja que no
+estaban en el stock ya se crean con su número original.
+
 ## Demo con los datos reales
 
 La vista previa (demo) corre el mismo código que la web, pero con sus propios datos guardados en el

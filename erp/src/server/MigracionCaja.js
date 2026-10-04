@@ -197,7 +197,7 @@ const MigracionCaja = {
   _ventasPorOc() {
     const res = {};
     Db.all('Ventas').filter((v) => !v.anulada).forEach((v) => {
-      const m = /OC original (\S+)/.exec(v.notas || '');
+      const m = /OC original ((?:OC|PR)\s*-?\s*\d+)/i.exec(v.notas || '');
       const oc = m ? MigracionCaja.normalizarOc(m[1]) : '';
       if (oc) (res[oc] = res[oc] || []).push(v);
     });
@@ -336,7 +336,7 @@ const MigracionCaja = {
       const fecha = fs.reduce((m, f) => (!m || f.fecha < m ? f.fecha : m), '');
       const vs = porOc[oc] || [];
       if (!vs.length) {
-        ventasNuevas.push({ fecha: fecha, notas: 'Caja diaria · OC original ' + oc + ' (no estaba en el stock)', lineas: [{ categoria: 'Otro', descripcion: 'OC original ' + oc, monto: monto }], filas: fs });
+        ventasNuevas.push({ oc: oc, fecha: fecha, notas: 'Caja diaria · OC original ' + oc + ' (no estaba en el stock)', lineas: [{ categoria: 'Otro', descripcion: 'OC original ' + oc, monto: monto }], filas: fs });
         return;
       }
       vs.forEach((v) => { cambiosVentas[v.id] = Object.assign(cambiosVentas[v.id] || {}, { fecha: fecha }); });
@@ -396,7 +396,24 @@ const MigracionCaja = {
 
     // Escritura.
     if (Object.keys(cambiosVentas).length) Db.actualizarVarios('Ventas', Object.keys(cambiosVentas).reduce((o, id) => { o[id] = Object.assign(cambiosVentas[id], Util.sello(user)); return o; }, {}));
-    const idsVenta = Util.reservarIds('OC', 4, ventasNuevas.length);
+    // Una OC que no estaba en el stock toma su número original (OC048 → OC-0048) si está libre.
+    const existentes = {};
+    Db.all('Ventas').forEach((v) => { existentes[v.id] = true; });
+    const propio = ventasNuevas.map((v) => {
+      const o = v.oc && /^(OC|PR)\s*-?\s*0*(\d+)$/i.exec(v.oc);
+      const id = o ? o[1].toUpperCase() + '-' + String(Number(o[2])).padStart(4, '0') : '';
+      if (!id || existentes[id]) return '';
+      existentes[id] = true;
+      return id;
+    });
+    const correlativos = Util.reservarIds('OC', 4, propio.filter((x) => !x).length);
+    const idsVenta = propio.map((id) => id || correlativos.shift());
+    // El correlativo queda sobre el número más alto usado, para que una venta nueva no lo repita.
+    const altoOc = propio.reduce((m, id) => Math.max(m, /^OC-\d+$/.test(id) ? Number(id.slice(3)) : 0), 0);
+    const secOc = Db.get('Secuencias', 'OC');
+    if (altoOc && (!secOc || secOc.valor < altoOc)) {
+      if (secOc) Db.update('Secuencias', 'OC', { valor: altoOc }); else Db.insert('Secuencias', { clave: 'OC', valor: altoOc });
+    }
     const idsLinea = Util.reservarIds('VL', 6, ventasNuevas.reduce((t, v) => t + v.lineas.length, 0) + lineasExtra.length);
     let il = 0;
     const regLineas = [];
