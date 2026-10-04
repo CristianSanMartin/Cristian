@@ -160,6 +160,14 @@ const preview = `
             call('crearVenta', { fecha: mes(n, 4 + azar(24)), cliente: cli, canal: canales[k], evento: canales[k] === 'Evento' ? 'Torneo mensual' : '', medioPago: medios[azar(6)], lineas: lineasV });
           } catch (e) { /* sin stock: se omite */ }
         }
+        // Caja del mes: torneos y singles (sin OC), gastos (GAV, GOPM), SII y un aporte inicial.
+        if (n === 6) call('guardarMovimiento', { fecha: mes(n, 1), tipo: 'ingreso', categoria: 'aporte', subcategoria: 'Aporte socios', monto: 3000000, cuenta: 'banco' });
+        call('crearVenta', { fecha: mes(n, 9), medioPago: 'efectivo', lineas: [{ categoria: 'Torneo', descripcion: 'Liga semanal', monto: 24000 + 3000 * (n % 4) }] });
+        call('crearVenta', { fecha: mes(n, 15), medioPago: 'debito', lineas: [{ categoria: 'Singles', descripcion: 'Singles varios', monto: 15000 + 5000 * (n % 5) }] });
+        call('guardarMovimiento', { fecha: mes(n, 5), tipo: 'egreso', categoria: 'gav', subcategoria: 'Arriendo local', monto: 250000, cuenta: 'banco' });
+        call('guardarMovimiento', { fecha: mes(n, 10), tipo: 'egreso', categoria: 'gav', subcategoria: 'Luz e internet', monto: 45000 + 2000 * n, cuenta: 'banco' });
+        call('guardarMovimiento', { fecha: mes(n, 12), tipo: 'egreso', categoria: 'gopm', subcategoria: 'Bolsas y embalaje', monto: 15000 + 1000 * n, cuenta: 'caja' });
+        call('guardarMovimiento', { fecha: mes(n, 20), tipo: 'egreso', categoria: 'sii', subcategoria: 'F29', monto: 80000 + 5000 * n, cuenta: 'banco' });
       }
     }
   }

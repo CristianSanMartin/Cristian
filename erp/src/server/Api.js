@@ -245,6 +245,9 @@ const Snapshot = {
       tomas: Tomas.vista(),
       movimientos: Finanzas.vista(),
       pagosFacturas: MigracionCaja.pagosFacturas(),
+      // Filas de la caja diaria aún sin migrar, por glosa (para avisarlo en Finanzas).
+      cajaPendiente: Auth.puede(user, 'admin') ? Db.all('Migracion_Caja').filter((f) => !f.migrada && !f.descartada)
+        .reduce((o, f) => { const k = f.glosa || 'Sin glosa'; o[k] = (o[k] || 0) + 1; return o; }, {}) : {},
       ventas: ventas.ventas,
       clientes: clis,
       usuarios: Auth.puede(user, 'admin') ? Db.all('Usuarios') : [],

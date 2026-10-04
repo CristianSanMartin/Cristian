@@ -201,7 +201,13 @@
         const ing = suma('ingreso');
         const egr = suma('egreso');
         const sinPago = data().compras.filter((c) => !(data().pagosFacturas || []).some((x) => x.compraId === c.id)).length;
-        document.getElementById('mov-resumen').innerHTML = '<div class="kpi-grid">' +
+        const pend = data().cajaPendiente || {};
+        const nPend = Object.keys(pend).reduce((t, k) => t + pend[k], 0);
+        document.getElementById('mov-resumen').innerHTML = (nPend
+          ? '<div class="notice warn">Hay <strong>' + nPend + ' filas de la caja diaria sin migrar</strong> que todavía no aparecen aquí: ' +
+            Object.keys(pend).sort((a, b) => pend[b] - pend[a]).map((k) => esc(k) + ' (' + pend[k] + ')').join(', ') +
+            '. Revísalas y mígralas en <a href="#" data-nav="migracion">Migración → Caja diaria</a>.</div>'
+          : '') + '<div class="kpi-grid">' +
           kpi('Ingresos', '<span class="text-success">+' + fmt.money(ing) + '</span>', vivos.filter((m) => m.tipo === 'ingreso').length + ' movimientos') +
           kpi('Egresos', '−' + fmt.money(egr), vivos.filter((m) => m.tipo === 'egreso').length + ' movimientos') +
           kpi('Saldo', '<span class="' + (ing - egr < 0 ? 'text-danger' : 'text-gold') + '">' + fmt.money(ing - egr) + '</span>', 'Ingresos − egresos de lo que se ve') + '</div>' +
