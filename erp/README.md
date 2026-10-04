@@ -255,12 +255,6 @@ distintos). **Corregir** abre el registro; **Validar** lo marca como revisado (c
 `Validaciones` y deja de aparecer mientras esos datos no cambien. Las reglas están en
 `server/Validacion.js`.
 
-**Período contable:** la caja diaria trae Periodo (mes contable) además de Fecha (día del pago); un
-gasto de junio pagado el 3 de julio es de junio. Se guarda en la caja y en cada movimiento de
-Finanzas (columna `periodo`); Movimientos tiene la columna Período (filtro por año y mes) y el resumen
-mensual cuenta los movimientos en su período. Al volver a cargar el Excel de la caja, los movimientos
-ya migrados toman el Periodo de su fila.
-
 ## Demo con los datos reales
 
 La vista previa (demo) corre el mismo código que la web, pero con sus propios datos guardados en el

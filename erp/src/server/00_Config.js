@@ -15,7 +15,7 @@
 
 const APP = {
   nombre: 'GS Prime ERP',
-  version: '2.10.0',
+  version: '2.9.4',
   tz: 'America/Santiago',
   iva: 0.19,
 };
@@ -117,8 +117,6 @@ const SCHEMA = {
     key: 'id',
     cols: Object.assign({
       id: 's', fecha: 'd', tipo: 's', categoria: 's', subcategoria: 's', monto: 'n', cuenta: 's', referencia: 's', notas: 's', anulado: 'b',
-      // Mes contable (1° del mes): el de la caja diaria; puede diferir de la fecha (gasto de junio pagado el 3 de julio).
-      periodo: 'd',
     }, AUDIT_COLS),
   },
   /** Zona de migración de la caja diaria: una fila por movimiento del Excel. */
@@ -128,7 +126,6 @@ const SCHEMA = {
       id: 's', fila: 'n', fecha: 'd', glosa: 's', entradas: 'n', salidas: 'n', detalle: 's', obs: 's', oc: 's', clave: 's', descartada: 'b', nota: 's',
       // Destino propio de la fila (vacío = el de su grupo) y lo que se creó al migrarla (vacío = pendiente).
       accion: 's', destino: 's', extra: 's', migrada: 's', firma: 's',
-      periodo: 'd',
     },
   },
   /** Toma de inventario: foto de lo que debería haber, conteo unidad por unidad y cierre con ajustes. */

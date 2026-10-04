@@ -489,7 +489,7 @@
     const hoja = (v, label) => '<label class="col-menu-item"><input type="checkbox" value="' + GS.esc(v) + '"' + marcado(v) + '> ' + GS.esc(label) + '</label>';
     // Columna de fechas (su valor es AAAA-MM-DD): árbol año → mes → día, en orden cronológico, como el filtro de Excel.
     const isoDe = (f) => String(col.valor(f) == null ? '' : col.valor(f));
-    const esFecha = base.some((f) => isoDe(f)) && base.every((f) => !isoDe(f) || /^\d{4}-\d{2}(-\d{2})?/.test(isoDe(f)));
+    const esFecha = base.some((f) => isoDe(f)) && base.every((f) => !isoDe(f) || /^\d{4}-\d{2}-\d{2}/.test(isoDe(f)));
     let lista;
     if (esFecha) {
       const iso = {};
@@ -504,11 +504,8 @@
       const unAnio = Object.keys(anios).length === 1;
       const grupo = (clave, label, hijos, abierto) => '<div class="cm-grupo"><label class="col-menu-item"><span class="cm-tog" data-tog>' + (abierto ? '▾' : '▸') + '</span>' +
         '<input type="checkbox" data-grupo="' + clave + '"> ' + GS.esc(label) + '</label><div class="cm-hijos"' + (abierto ? '' : ' hidden') + '>' + hijos + '</div></div>';
-      // Columnas por mes (AAAA-MM, ej. Período): el mes es la última hoja, sin días.
-      const soloMes = conFecha.every((v) => iso[v].length === 7);
-      lista = Object.keys(anios).sort().map((a) => grupo(a, a, Object.keys(anios[a]).sort().map((m) => soloMes
-        ? anios[a][m].map((v) => hoja(v, MESES_LARGOS[Number(m.slice(5, 7)) - 1])).join('')
-        : grupo(m, MESES_LARGOS[Number(m.slice(5, 7)) - 1], anios[a][m].map((v) => {
+      lista = Object.keys(anios).sort().map((a) => grupo(a, a, Object.keys(anios[a]).sort().map((m) =>
+        grupo(m, MESES_LARGOS[Number(m.slice(5, 7)) - 1], anios[a][m].map((v) => {
           const dia = iso[v].slice(8, 10);
           // Si el texto no es la fecha del día (ej. con hora), se muestra completo.
           return hoja(v, v === GS.fmt.date(iso[v]) ? dia : v);

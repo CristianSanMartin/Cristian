@@ -43,9 +43,8 @@
 
     const cats = data().catalogos.categoriasMovimiento;
     const porMov = {};
-    // Gastos y aportes cuentan en su período (mes contable de la caja), aunque se hayan pagado después.
     movsVivos().forEach((m) => {
-      const i = mes(m.periodo || m.fecha);
+      const i = mes(m.fecha);
       if (i < 0) return;
       const k = m.tipo + '|' + m.categoria;
       (porMov[k] = porMov[k] || fila(cats[m.tipo][m.categoria] || m.categoria)).valores[i] += m.monto;
@@ -114,11 +113,8 @@
   /* ---------- movimientos ---------- */
 
   const tipoLabel = { ingreso: 'Ingreso', egreso: 'Egreso' };
-  const nombrePeriodo = (ym) => (ym ? MESES[Number(ym.slice(5, 7)) - 1].toLowerCase() + '-' + ym.slice(0, 4) : '');
   const colsMov = [
     { id: 'fecha', label: 'Fecha', clase: 'nowrap', valor: (m) => m.fecha, texto: (m) => fmt.date(m.fecha), celda: (m) => fmt.date(m.fecha) },
-    { id: 'periodo', label: 'Período', clase: 'nowrap', valor: (m) => (m.periodo || m.fecha).slice(0, 7), texto: (m) => nombrePeriodo((m.periodo || m.fecha).slice(0, 7)),
-      celda: (m) => '<span class="' + ((m.periodo || m.fecha).slice(0, 7) !== m.fecha.slice(0, 7) ? 'text-gold' : 'cell-dim') + '" title="Mes contable">' + esc(nombrePeriodo((m.periodo || m.fecha).slice(0, 7))) + '</span>' },
     { id: 'tipo', label: 'Tipo', valor: (m) => tipoLabel[m.tipo], celda: (m) => '<span class="badge ' + (m.tipo === 'ingreso' ? 'st-ok' : 'st-pedido') + '">' + tipoLabel[m.tipo] + '</span>' },
     { id: 'categoria', label: 'Categoría', valor: (m) => m.categoriaLabel, celda: (m) => '<span class="cell-strong">' + esc(m.categoriaLabel) + '</span>' },
     { id: 'detalle', label: 'Detalle', valor: (m) => m.subcategoria || '', celda: (m) => esc(m.subcategoria || '—') + (m.notas ? '<div class="cell-dim">' + esc(m.notas) + '</div>' : '') },
@@ -152,7 +148,7 @@
     const f = GS.filters('finanzas', DEF);
     const q = GS.norm((f.q || '').trim());
     // Todos los movimientos, de todos los años (el año elegido solo cambia el resumen), los más recientes primero.
-    return (data().movimientos || []).concat(f.ventas ? movsVentas() : []).filter((m) => !q || GS.norm(m.categoriaLabel + ' ' + m.subcategoria + ' ' + m.notas + ' ' + m.referencia + ' ' + m.id + ' ' + m.fecha + ' ' + (m.periodo || '')).includes(q))
+    return (data().movimientos || []).concat(f.ventas ? movsVentas() : []).filter((m) => !q || GS.norm(m.categoriaLabel + ' ' + m.subcategoria + ' ' + m.notas + ' ' + m.referencia + ' ' + m.id + ' ' + m.fecha).includes(q))
       .sort((a, b) => (b.fecha + b.id).localeCompare(a.fecha + a.id));
   };
   GS.tablaRegistrar('movimientos', { filas: movsBuscados, columnas: colsMov, alCambiar: () => GS.views.finanzas.update() });
@@ -253,7 +249,6 @@
       submitLabel: 'Guardar movimiento',
       fields: () => '<div class="form-grid">' +
         '<div class="form-field"><label>Fecha *</label><input type="date" name="fecha" value="' + esc(x.fecha) + '"></div>' +
-        '<div class="form-field"><label>Período (mes contable)</label><input type="month" name="periodo" value="' + esc((x.periodo || x.fecha || '').slice(0, 7)) + '"></div>' +
         '<div class="form-field"><label>Tipo *</label><select name="tipo">' + GS.options([{ value: 'egreso', label: 'Egreso' }, { value: 'ingreso', label: 'Ingreso' }], x.tipo) + '</select></div>' +
         '<div class="form-field"><label>Categoría *</label><select name="categoria">' + opcionesCat(x.tipo, x.categoria) + '</select></div>' +
         '<div class="form-field"><label>Monto *</label><input type="number" name="monto" min="1" step="1" value="' + esc(x.monto) + '" placeholder="Ej: 25000"></div>' +
@@ -264,10 +259,6 @@
         '<p class="hint">Las ventas y las facturas de compra se registran en sus módulos; aquí va todo lo demás. Compra de singles: categoría "Compra por monto" con detalle "Singles …".</p>',
       onMount: (form) => {
         form.elements.tipo.addEventListener('change', () => { form.elements.categoria.innerHTML = opcionesCat(form.elements.tipo.value, ''); });
-        // El período sigue a la fecha mientras no se cambie a mano (ej. gasto de junio pagado en julio).
-        let periodoManual = !!(m && m.periodo && m.periodo.slice(0, 7) !== m.fecha.slice(0, 7));
-        form.elements.periodo.addEventListener('input', () => { periodoManual = true; });
-        form.elements.fecha.addEventListener('change', () => { if (!periodoManual) form.elements.periodo.value = form.elements.fecha.value.slice(0, 7); });
       },
       onSubmit: (v) => GS.mutate('guardarMovimiento', Object.assign({ id: m ? m.id : '' }, v), m ? 'Movimiento actualizado' : (r) => 'Movimiento ' + r.id + ' registrado'),
     });
