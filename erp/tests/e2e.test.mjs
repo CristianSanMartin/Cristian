@@ -447,6 +447,35 @@ test("venta por monto, Finanzas y migración de la caja diaria", { skip }, async
   }
 });
 
+test("administración: validación de datos, buscar, validar y corregir", { skip }, async () => {
+  const browser = await chromium.launch();
+  try {
+    const { page, errores } = await abrir(browser);
+    await page.click('[data-nav="admin"]');
+    await page.click('[data-id="admin.validacion"]');
+    await page.waitForSelector("#val-cuerpo .val-grupo");
+    const validar = page.locator('#val-cuerpo [data-action="valValidar"]');
+    const n = await validar.count();
+    assert.ok(n > 0, "la demo tiene hallazgos");
+    // El buscador filtra sin perder el foco
+    await page.locator('input[data-filter="validacion.q"]').type("CP-0001");
+    assert.equal(await page.evaluate(() => document.activeElement.dataset.filter), "validacion.q");
+    await page.locator('input[data-filter="validacion.q"]').fill("");
+    await validar.first().click();
+    await modal(page).locator('input[name="nota"]').fill("revisado");
+    await modal(page).locator('button[type="submit"]').click();
+    await toast(page, /1 validados/);
+    await page.waitForFunction((n) => document.querySelectorAll('#val-cuerpo [data-action="valValidar"]').length === n - 1, n);
+    // Validados: se ven con su nota y se pueden reabrir
+    await page.selectOption('select[data-filter="validacion.estado"]', "validado");
+    assert.match(await page.locator("#val-cuerpo").textContent(), /Validado por .*revisado/);
+    assert.equal(await page.locator('#val-cuerpo [data-action="valReabrir"]').count(), 1);
+    assert.deepEqual(errores, []);
+  } finally {
+    await browser.close();
+  }
+});
+
 test("administración: respaldos automáticos y manuales", { skip }, async () => {
   const browser = await chromium.launch();
   try {

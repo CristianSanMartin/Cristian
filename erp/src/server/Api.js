@@ -62,6 +62,8 @@ function rutas_() {
     anularVenta: { rol: 'admin', write: true, fn: Ventas.anular },
     guardarCliente: { rol: 'operador', write: true, fn: Clientes.guardar },
 
+    validacion: { rol: 'admin', fn: (p, u) => Validacion.revisar(u) },
+    validarHallazgos: { rol: 'admin', write: true, fn: Validacion.marcar },
     respaldos: { rol: 'admin', fn: () => Respaldos.estado() },
     crearRespaldo: { rol: 'admin', write: true, fn: (p, u) => Respaldos.crear('manual', u) },
     exportarDemo: { rol: 'admin', fn: Respaldos.exportarDemo },

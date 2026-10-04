@@ -119,6 +119,144 @@
     GS.render();
   };
 
+  /* ---------- Validación de datos ---------- */
+
+  let validacion = null;      // { hallazgos, reglas, areas, revisado } o { cargando }
+  let validacionDe = null;    // foto de datos con la que se revisó: si cambia, se revisa de nuevo
+  const selVal = new Set();
+  const NIVEL = {
+    error: { label: 'Error', cls: 'st-cancelada' },
+    aviso: { label: 'Revisar', cls: 'st-parcial' },
+    info: { label: 'Completar', cls: 'st-pendiente' },
+  };
+  const DEF_V = { estado: 'pendiente', area: '', nivel: '', q: '' };
+
+  function cargarValidacion() {
+    validacion = { cargando: true };
+    validacionDe = data();
+    GS.api('validacion').then((r) => { validacion = r.data; selVal.clear(); GS.render(); })
+      .catch((e) => { validacion = null; GS.toast(e.message, true); });
+  }
+
+  function hallazgosFiltrados() {
+    const f = GS.filters('validacion', DEF_V);
+    const q = GS.norm(f.q || '');
+    return validacion.hallazgos.filter((h) =>
+      (f.estado === 'todos' || h.estado === f.estado) && (!f.area || h.area === f.area) && (!f.nivel || h.nivel === f.nivel) &&
+      (!q || GS.norm(h.titulo + ' ' + h.ref + ' ' + h.detalle).includes(q)));
+  }
+
+  function tabValidacion() {
+    if (!validacion || (!validacion.cargando && validacionDe !== data())) cargarValidacion();
+    if (validacion.cargando) return '<div class="empty-state"><div class="spinner"></div>Revisando toda la información…</div>';
+    const f = GS.filters('validacion', DEF_V);
+    const todos = validacion.hallazgos;
+    const pend = todos.filter((h) => h.estado === 'pendiente');
+    const cuenta = (lista, k, v) => lista.filter((h) => h[k] === v).length;
+    const kpiV = (l, v, sub, cls) => '<div class="kpi-card"><div class="kpi-label">' + l + '</div><div class="kpi-value small ' + (cls || '') + '">' + v + '</div><div class="kpi-sub">' + sub + '</div></div>';
+    const opt = (v, l, actual) => '<option value="' + esc(v) + '"' + (v === actual ? ' selected' : '') + '>' + esc(l) + '</option>';
+    return '<div class="notice">Revisa toda la información del ERP y muestra lo que no cuadra. <strong>Corregir</strong> abre el registro para editarlo; ' +
+      '<strong>Validar</strong> lo marca como revisado ("está bien así") y deja de aparecer mientras esos datos no cambien. Al corregir algo, la revisión se actualiza sola.</div>' +
+      '<div class="kpi-grid">' +
+      kpiV('Errores', cuenta(pend, 'nivel', 'error'), 'Datos incorrectos', cuenta(pend, 'nivel', 'error') ? 'text-danger' : 'text-success') +
+      kpiV('Por revisar', cuenta(pend, 'nivel', 'aviso'), 'Posibles inconsistencias', cuenta(pend, 'nivel', 'aviso') ? 'text-gold' : 'text-success') +
+      kpiV('Por completar', cuenta(pend, 'nivel', 'info'), 'Información faltante') +
+      kpiV('Validados', cuenta(todos, 'estado', 'validado'), 'Revisados y aceptados', 'text-success') + '</div>' +
+      '<div class="filters-bar"><div class="search-box">' + GS.icon('search') + '<input type="text" data-filter="validacion.q" value="' + esc(f.q) + '" placeholder="Buscar OC, factura, producto..."></div>' +
+      '<div class="select-input"><select data-filter="validacion.estado" aria-label="Estado">' + opt('pendiente', 'Pendientes (' + pend.length + ')', f.estado) + opt('validado', 'Validados', f.estado) + opt('todos', 'Todos', f.estado) + '</select></div>' +
+      '<div class="select-input"><select data-filter="validacion.area" aria-label="Área">' + opt('', 'Todas las áreas', f.area) +
+        validacion.areas.map((a) => opt(a, a + ' (' + cuenta(pend, 'area', a) + ')', f.area)).join('') + '</select></div>' +
+      '<div class="select-input"><select data-filter="validacion.nivel" aria-label="Gravedad">' + opt('', 'Toda gravedad', f.nivel) + opt('error', 'Errores', f.nivel) + opt('aviso', 'Por revisar', f.nivel) + opt('info', 'Por completar', f.nivel) + '</select></div>' +
+      '<button class="btn ghost" data-action="valRevisar">Revisar de nuevo</button></div>' +
+      '<div id="val-cuerpo">' + cuerpoVal() + '</div>';
+  }
+
+  function cuerpoVal() {
+    const f = GS.filters('validacion', DEF_V);
+    const pend = validacion.hallazgos.filter((h) => h.estado === 'pendiente');
+    const lista = hallazgosFiltrados();
+    const orden = { error: 0, aviso: 1, info: 2 };
+    const grupos = {};
+    lista.forEach((h) => { (grupos[h.regla] = grupos[h.regla] || []).push(h); });
+    const reglas = Object.keys(grupos).sort((a, b) => (orden[grupos[a][0].nivel] - orden[grupos[b][0].nivel]) || grupos[a][0].area.localeCompare(grupos[b][0].area));
+    const fila = (h) => '<tr class="' + (h.estado === 'validado' ? 'row-muted' : '') + (selVal.has(h.clave) ? ' row-selected' : '') + '">' +
+      '<td><input type="checkbox" class="row-check" data-sel-val="' + esc(h.clave) + '"' + (selVal.has(h.clave) ? ' checked' : '') + ' aria-label="Seleccionar"></td>' +
+      '<td class="cell-strong nowrap">' + esc(h.ref) + '</td>' +
+      '<td>' + esc(h.detalle) + (h.estado === 'validado' ? '<div class="cell-dim">✓ Validado por ' + esc(h.validadoPor || '') + ' · ' + esc(String(h.validadoEn || '').slice(0, 16)) + (h.nota ? ' · ' + esc(h.nota) : '') + '</div>' : '') + '</td>' +
+      '<td><div class="row-actions">' +
+      (h.accion ? '<button class="btn small secondary" data-action="valCorregir" data-id="' + esc(h.clave) + '">' + GS.icon('edit') + 'Corregir</button>' : '') +
+      (h.estado === 'validado'
+        ? '<button class="btn small ghost" data-action="valReabrir" data-id="' + esc(h.clave) + '">Reabrir</button>'
+        : '<button class="btn small ghost" data-action="valValidar" data-id="' + esc(h.clave) + '" title="Está bien así: no volver a mostrar mientras no cambie">' + GS.icon('check') + 'Validar</button>') +
+      '</div></td></tr>';
+    const MAX = 50;
+    const bloques = reglas.map((r) => {
+      const g = grupos[r];
+      const h0 = g[0];
+      const abierto = f['ver_' + r];
+      return '<tr class="val-grupo"><td><input type="checkbox" class="row-check" data-sel-grupo="' + esc(r) + '"' + (g.every((h) => selVal.has(h.clave)) ? ' checked' : '') + ' aria-label="Seleccionar todo el grupo"></td>' +
+        '<td colspan="3"><span class="badge ' + NIVEL[h0.nivel].cls + '">' + NIVEL[h0.nivel].label + '</span> <strong>' + esc(h0.titulo) + '</strong> <span class="muted">· ' + esc(h0.area) + ' · ' + g.length + '</span>' +
+        (h0.ayuda ? '<div class="cell-dim">' + esc(h0.ayuda) + '</div>' : '') + '</td></tr>' +
+        (abierto ? g : g.slice(0, MAX)).map(fila).join('') +
+        (g.length > MAX && !abierto ? '<tr><td></td><td colspan="3"><button class="btn small ghost" data-action="tab" data-id="validacion.ver_' + esc(r) + '.1">Ver los ' + g.length + '</button></td></tr>' : '');
+    }).join('');
+    return barraVal() +
+      '<div class="table-wrap"><table class="data-table val-tabla" style="min-width:720px;"><thead><tr><th></th><th>Registro</th><th>Detalle</th><th></th></tr></thead><tbody>' +
+      (bloques || '<tr><td colspan="4">' + GS.empty(f.estado === 'pendiente' && !pend.length ? '¡Todo en orden!' : 'Sin resultados', f.estado === 'pendiente' && !pend.length ? 'No quedan inconsistencias pendientes.' : 'Prueba con otros filtros.') + '</td></tr>') +
+      '</tbody></table></div>' +
+      '<p class="table-note">Revisado: ' + esc(validacion.revisado) + '.</p>';
+  }
+
+  function barraVal() {
+    if (!selVal.size) return '';
+    return '<div class="action-bar">' + GS.icon('check') + '<span><strong>' + selVal.size + '</strong> seleccionados</span>' +
+      '<button class="btn small" data-action="valValidarSel">Validar selección</button>' +
+      '<button class="btn small ghost" data-action="valReabrirSel">Reabrir</button>' +
+      '<button class="btn ghost small" data-action="valLimpiarSel">Quitar selección</button></div>';
+  }
+
+  const hallazgo = (clave) => validacion.hallazgos.find((h) => h.clave === clave);
+  function marcarVal(claves, estado) {
+    const items = claves.map(hallazgo).filter(Boolean).map((h) => ({ clave: h.clave, firma: h.firma }));
+    const enviar = (nota) => GS.mutate('validarHallazgos', { items: items, estado: estado, nota: nota || '' },
+      items.length + (estado === 'validado' ? ' validados' : ' reabiertos')).then(() => { selVal.clear(); });
+    if (estado !== 'validado') return enviar('').catch((e) => GS.toast(e.message, true));
+    GS.formModal({
+      title: items.length === 1 ? 'Validar: ' + hallazgo(claves[0]).titulo : 'Validar ' + items.length + ' hallazgos',
+      submitLabel: 'Validar',
+      fields: () => '<p class="hint">Quedan como revisados y dejan de aparecer mientras esos datos no cambien.</p>' +
+        '<div class="form-field full"><label>Nota (opcional)</label><input name="nota" maxlength="300" placeholder="Ej.: precio especial acordado, es correcto"></div>',
+      onSubmit: (v) => enviar(v.nota),
+    });
+  }
+  GS.actions.valValidar = (clave) => marcarVal([clave], 'validado');
+  GS.actions.valReabrir = (clave) => marcarVal([clave], 'pendiente');
+  GS.actions.valValidarSel = () => marcarVal(Array.from(selVal), 'validado');
+  GS.actions.valReabrirSel = () => marcarVal(Array.from(selVal), 'pendiente');
+  GS.actions.valLimpiarSel = () => { selVal.clear(); GS.render(); };
+  // Los filtros de la pestaña solo redibujan la lista (el buscador no pierde el foco).
+  GS.views.validacion = { update: () => { const el = document.getElementById('val-cuerpo'); if (el && validacion && validacion.hallazgos) el.innerHTML = cuerpoVal(); } };
+  GS.actions.valRevisar = () => { cargarValidacion(); GS.render(); };
+  GS.actions.valCorregir = (clave) => {
+    const a = hallazgo(clave).accion;
+    if (a.tipo === 'nav') return GS.go(a.id);
+    if (a.tipo === 'verCompra') return GS.go('compras', a.id);
+    if (a.tipo === 'verVenta') { GS.filters('ventas', { q: '' }).q = a.id; return GS.go('ventas', a.id); }
+    if (a.tipo === 'verCliente') {
+      const c = data().clientes.find((x) => x.id === a.id);
+      GS.filters('clientes', { q: '' }).q = c ? c.nombre : '';
+      return GS.go('clientes', a.id);
+    }
+    if (GS.actions[a.tipo]) GS.actions[a.tipo](a.id);
+  };
+  document.addEventListener('change', (e) => {
+    const t = e.target;
+    if (!t.dataset || (!t.dataset.selVal && !t.dataset.selGrupo) || !validacion || !validacion.hallazgos) return;
+    if (t.dataset.selVal) { if (t.checked) selVal.add(t.dataset.selVal); else selVal.delete(t.dataset.selVal); }
+    else hallazgosFiltrados().filter((h) => h.regla === t.dataset.selGrupo).forEach((h) => { if (t.checked) selVal.add(h.clave); else selVal.delete(h.clave); });
+    GS.render();
+  });
+
   GS.views.admin = {
     title: 'Administración',
     rol: 'admin',
@@ -126,9 +264,9 @@
       const f = GS.filters('admin', { tab: 'usuarios' });
       const tab = (id, label) => '<button class="tab' + (f.tab === id ? ' active' : '') + '" data-action="tab" data-id="admin.' + id + '">' + label + '</button>';
       el.innerHTML =
-        '<div class="page-head"><div><h1>Administración</h1><p>Usuarios y permisos, registro de cambios y respaldos.</p></div></div>' +
-        '<div class="tabs">' + tab('usuarios', 'Usuarios') + tab('auditoria', 'Auditoría') + tab('respaldos', 'Respaldos') + '</div>' +
-        (f.tab === 'auditoria' ? tabAuditoria() : f.tab === 'respaldos' ? tabRespaldos() : tabUsuarios());
+        '<div class="page-head"><div><h1>Administración</h1><p>Usuarios y permisos, registro de cambios, respaldos y validación de datos.</p></div></div>' +
+        '<div class="tabs">' + tab('usuarios', 'Usuarios') + tab('auditoria', 'Auditoría') + tab('respaldos', 'Respaldos') + tab('validacion', 'Validación de datos') + '</div>' +
+        (f.tab === 'auditoria' ? tabAuditoria() : f.tab === 'respaldos' ? tabRespaldos() : f.tab === 'validacion' ? tabValidacion() : tabUsuarios());
     },
   };
 

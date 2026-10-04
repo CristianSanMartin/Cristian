@@ -413,6 +413,7 @@
   GS.views.ventas = {
     title: 'Ventas',
     render(el) {
+      if (GS.state.param) { abiertas.add(GS.state.param); GS.state.param = null; }
       const f = GS.filters('ventas', { q: '', mes: '' });
       const hoy = data().hoy.slice(0, 7);
       const meses = Array.from(new Set([hoy].concat(data().ventas.map((v) => v.fecha.slice(0, 7))))).sort().reverse();
@@ -555,6 +556,7 @@
   GS.views.clientes = {
     title: 'Clientes',
     render(el) {
+      if (GS.state.param) { clientesAbiertos.add(GS.state.param); GS.state.param = null; }
       const f = GS.filters('clientes', { q: '' });
       el.innerHTML = '<div class="page-head"><div><h1>Clientes</h1><p>Fichas con su historial y lo que deben. Despliega un cliente para registrar abonos o avisarle por WhatsApp.</p></div>' +
         (GS.puede('operador') ? '<button class="btn" data-action="nuevoCliente">' + GS.icon('plus', 2.4) + 'Nuevo cliente</button>' : '') + '</div>' +

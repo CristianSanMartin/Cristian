@@ -236,6 +236,19 @@ abonos y referencias de la migración de la caja, con respaldo previo. Cada vent
 toma también la fecha de esa OC en la caja diaria (la más antigua), aunque sus filas no se hayan migrado. Las OC de la caja que no
 estaban en el stock ya se crean con su número original.
 
+## Validación de datos
+
+**Administración → Validación de datos** revisa toda la información y lista lo que no cuadra,
+agrupado por tipo y con su gravedad (**Error**, **Revisar**, **Completar**): productos sin precio,
+bajo el costo, duplicados o sin idioma/tipo/imagen; preventas sin costo o atrasadas; facturas con
+precio $0, sin despacho bajo el mínimo del proveedor o sin pago; lotes con más ventas que compras y
+facturas con ventas anteriores a su fecha; ventas sin costo, bajo el costo, con descuento alto, con
+la fecha de la migración, con otro N° que su OC original, con tarjeta sin comisión o con deuda
+antigua; clientes y movimientos duplicados; y la caja diaria (filas pendientes, OC sin venta, montos
+distintos). **Corregir** abre el registro; **Validar** lo marca como revisado (con nota) en la hoja
+`Validaciones` y deja de aparecer mientras esos datos no cambien. Las reglas están en
+`server/Validacion.js`.
+
 ## Demo con los datos reales
 
 La vista previa (demo) corre el mismo código que la web, pero con sus propios datos guardados en el

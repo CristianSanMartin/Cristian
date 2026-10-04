@@ -15,7 +15,7 @@
 
 const APP = {
   nombre: 'GS Prime ERP',
-  version: '2.7.9',
+  version: '2.8.0',
   tz: 'America/Santiago',
   iva: 0.19,
 };
@@ -160,6 +160,11 @@ const SCHEMA = {
   Migraciones: {
     key: 'id',
     cols: { id: 's', descripcion: 's', aplicadaEn: 't', aplicadaPor: 's' },
+  },
+  /** Hallazgos de la Validación de datos que el administrador revisó (clave = regla|registro). */
+  Validaciones: {
+    key: 'clave',
+    cols: { clave: 's', firma: 's', estado: 's', nota: 's', actualizadoEn: 't', actualizadoPor: 's' },
   },
   Auditoria: {
     key: null,

@@ -693,6 +693,41 @@ test("OC migradas: toman su N° original (OC223 → OC-0223), con sus líneas, a
   assert.equal(s.as("vista@gsprime.cl").call("renumerarOc", {}).code, "SIN_PERMISO");
 });
 
+test("validación de datos: encuentra inconsistencias, se validan y reaparecen si los datos cambian", () => {
+  const s = createServer();
+  const { prods } = conInventario(s);   // Binder ENG 24, Binder ESP 6, Mini Tin 10
+  // Duplicado, venta con descuento alto y bajo costo, cliente duplicado, movimiento duplicado
+  s.run(`Db.insert("Productos", { id: "GS-9999", nombre: "Mini  Tin", edicion: "30th celebration", idioma: "ENG", tipo: "Tin / Mini Tin", pvp: 13990, activo: true })`);   // como quedó de la migración
+  s.ok("crearVenta", { fecha: "2026-10-05", lineas: [{ productoId: prods.miniTin.id, cantidad: 1, precio: 5000 }] });
+  s.ok("guardarCliente", { nombre: "Ana Rojas" });
+  s.run(`Db.insert("Clientes", { id: "CLI-9999", nombre: "Ana  Rojas.", activo: true })`);
+  const mov = { fecha: "2026-10-01", tipo: "egreso", categoria: "gav", subcategoria: "Luz", monto: 30000 };
+  s.ok("guardarMovimiento", mov);
+  s.ok("guardarMovimiento", mov);
+  let r = s.ok("validacion").data;
+  const de = (regla) => r.hallazgos.filter(h => h.regla === regla);
+  assert.equal(de("prodDuplicado").length, 1);
+  assert.equal(de("vtDescuentoAlto").length, 1);
+  assert.equal(de("vtPerdida").length, 1);
+  assert.equal(de("cliDuplicado").length, 1);
+  assert.equal(de("finDuplicado").length, 1);
+  assert.ok(r.hallazgos.every(h => h.area && h.nivel && h.titulo && h.estado === "pendiente"));
+  // Validar el descuento: queda validado; si cambia la venta (otra firma), vuelve a pendiente
+  const h = de("vtDescuentoAlto")[0];
+  s.ok("validarHallazgos", { items: [{ clave: h.clave, firma: h.firma }], nota: "precio especial" });
+  r = s.ok("validacion").data;
+  assert.deepEqual([de("vtDescuentoAlto")[0].estado, de("vtDescuentoAlto")[0].nota], ["validado", "precio especial"]);
+  s.run(`Db.update("Ventas_Lineas", "${h.ref}", { precio: 4000 })`);
+  r = s.ok("validacion").data;
+  assert.equal(de("vtDescuentoAlto")[0].estado, "pendiente", "cambió el dato: hay que revisarlo de nuevo");
+  // Reabrir y permisos
+  s.ok("validarHallazgos", { items: [{ clave: de("cliDuplicado")[0].clave, firma: de("cliDuplicado")[0].firma }] });
+  s.ok("validarHallazgos", { items: [{ clave: de("cliDuplicado")[0].clave, firma: de("cliDuplicado")[0].firma }], estado: "pendiente" });
+  assert.equal(s.ok("validacion").data.hallazgos.find(x => x.regla === "cliDuplicado").estado, "pendiente");
+  s.ok("guardarUsuario", { email: "socio@gsprime.cl", nombre: "Socio", rol: "operador" });
+  assert.equal(s.as("socio@gsprime.cl").call("validacion", {}).code, "SIN_PERMISO");
+});
+
 test("venta en varios lotes (FIFO) y cuenta por cobrar con abonos", () => {
   const s = createServer();
   const { prods } = conInventario(s);
