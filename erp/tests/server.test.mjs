@@ -645,6 +645,21 @@ test("editar factura: corregir la cantidad de un producto (23 → 25) deja las u
   assert.equal(Math.round(d.ventas[0].lineas[0].costo * 100) / 100, Math.round(lote.costo * 100) / 100, "la venta toma el costo nuevo");
 });
 
+test("editar venta: el total que pagó el cliente queda con una línea de ajuste, su motivo y la comisión", () => {
+  const s = createServer();
+  const v = s.ok("crearVenta", { fecha: "2026-07-01", lineas: [{ categoria: "Otro", descripcion: "OC original OC004", monto: 84280 }] }).result;
+  assert.match(errorDe(s.call("editarVenta", { id: v.id, fecha: "2026-07-01", total: 85000, comision: 720 })), /motivo del ajuste/);
+  s.ok("editarVenta", { id: v.id, fecha: "2026-07-01", boleta: "", notas: "Migrada", total: 85000, comision: 720, motivo: "La caja registró el monto con la comisión descontada" });
+  const venta = s.ok("bootstrap").data.ventas.find(x => x.id === v.id);
+  assert.deepEqual([venta.total, venta.comision, venta.estadoPago, venta.saldo], [85000, 720, "pagada", 0]);
+  const aj = venta.lineas.find(l => l.categoria === "Ajuste");
+  assert.deepEqual([aj.precio, aj.descripcion], [720, "La caja registró el monto con la comisión descontada"]);
+  assert.match(venta.notas, /^Migrada · \d{4}-\d{2}-\d{2}: total ajustado 84280 → 85000 \(La caja registró/);
+  // Mismo total: no agrega nada
+  s.ok("editarVenta", { id: v.id, fecha: "2026-07-01", boleta: "", notas: venta.notas, total: 85000, comision: 720 });
+  assert.equal(s.ok("bootstrap").data.ventas.find(x => x.id === v.id).lineas.length, 2);
+});
+
 test("OC migradas: toman su N° original (OC223 → OC-0223), con sus líneas, abonos y referencias", () => {
   const s = createServer();
   const venta = (notas, monto, extra) => {

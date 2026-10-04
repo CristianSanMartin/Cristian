@@ -76,7 +76,11 @@ const Ventas = {
     return Object.assign({ total: total }, venta);
   },
 
-  /** Corrige la fecha, el N° de boleta o las notas de una venta (administrador). */
+  /**
+   * Corrige la fecha, el N° de boleta o las notas de una venta (administrador).
+   * Opcional: total (lo que pagó el cliente) y comisión. Si el total cambia, la diferencia queda
+   * como una línea "Ajuste" con su motivo, una anotación en las notas y la auditoría.
+   */
   editar(p, user) {
     const v = Ventas.requerir(p.id);
     const datos = {
@@ -84,8 +88,33 @@ const Ventas = {
       boleta: Util.texto(p.boleta, 'El N° de boleta', { max: 40 }),
       notas: Util.texto(p.notas, 'Las notas', { max: 500 }),
     };
-    Audit.log(user, 'editar', 'Venta', v.id, Audit.diff(v, Object.assign({}, v, datos)));
+    if (p.comision != null && p.comision !== '') datos.comision = Util.entero(p.comision, 'La comisión', { min: 0 });
+    let ajuste = null;
+    if (p.total != null && p.total !== '') {
+      if (v.anulada) throw new AppError('La venta ' + v.id + ' está anulada.');
+      const lineas = Db.all('Ventas_Lineas').filter((l) => l.ventaId === v.id);
+      const actual = lineas.reduce((t, l) => t + l.precio * l.cantidad, 0);
+      const total = Util.entero(p.total, 'El total pagado', { min: 0 });
+      const dif = total - actual;
+      if (dif) {
+        const motivo = Util.texto(p.motivo, 'El motivo del ajuste', { requerido: true, max: 120 });
+        const cobrado = v.abono + Db.all('Cobros').filter((c) => c.ventaId === v.id).reduce((t, c) => t + c.monto, 0);
+        // Si estaba pagada, sigue pagada con el total nuevo; si debía, el saldo cambia.
+        if (cobrado >= actual) datos.abono = Math.max(0, v.abono + dif);
+        ajuste = { dif: dif, actual: actual, total: total, motivo: motivo };
+        const nota = Util.hoy() + ': total ajustado ' + actual + ' → ' + total + ' (' + motivo + ')';
+        datos.notas = [datos.notas, nota].filter(Boolean).join(' · ').slice(-500);
+      }
+    }
+    Audit.log(user, 'editar', 'Venta', v.id, Object.assign(Audit.diff(v, Object.assign({}, v, datos)),
+      ajuste ? { totalAntes: ajuste.actual, total: ajuste.total, motivo: ajuste.motivo } : {}));
     Db.update('Ventas', v.id, Object.assign(datos, Util.sello(user)));
+    if (ajuste) {
+      Db.insert('Ventas_Lineas', Object.assign({
+        id: Util.siguienteId('VL', 6), ventaId: v.id, loteId: '', productoId: '', cantidad: 1,
+        precioLista: ajuste.dif, precio: ajuste.dif, costo: 0, categoria: 'Ajuste', descripcion: ajuste.motivo,
+      }, Util.sello(user, true)));
+    }
   },
 
   /**

@@ -252,21 +252,28 @@
   function detalleVenta(v) {
     const loteDe = {};
     data().lotes.forEach((l) => { loteDe[l.id] = l; });
+    // Descuento: precio de lista del producto al momento de la venta − precio cobrado.
+    const desc = (l) => (l.descuento > 0
+      ? '<span class="text-gold">−' + fmt.money(l.descuento) + '</span><div class="cell-dim">' + Math.round(100 * (l.precioLista - l.precio) / l.precioLista) + '%' + (l.cantidad > 1 ? ' · ' + fmt.money(l.precioLista - l.precio) + ' c/u' : '') + '</div>'
+      : '—');
     const filas = v.lineas.map((l) => '<tr><td>' + GS.thumb(l.imagen) + '</td><td class="cell-strong">' + esc(l.productoNombre) + ' ' + GS.langPill(l.idioma) + '<div class="cell-dim">' + esc(l.edicion || '') + '</div></td>' +
-      '<td>' + esc(loteDe[l.loteId] ? loteDe[l.loteId].factura : '') + '<div class="cell-dim">' + esc(l.loteId) + '</div></td>' +
+      '<td>' + esc(loteDe[l.loteId] ? loteDe[l.loteId].factura : '—') + '</td>' +
       '<td class="cell-num right">' + fmt.num(l.cantidad) + '</td>' +
-      '<td class="cell-num right">' + fmt.money(l.precio) + (l.precio < l.precioLista ? '<div class="cell-dim">lista ' + fmt.money(l.precioLista) + '</div>' : '') + '</td>' +
-      '<td class="cell-num right">' + fmt.money(l.subtotal) + '</td><td class="cell-num right">' + fmt.money(l.costo) + '</td>' +
+      '<td class="cell-num right">' + fmt.money(l.precioLista) + '</td>' +
+      '<td class="cell-num right">' + desc(l) + '</td>' +
+      '<td class="cell-num right">' + fmt.money(l.precio) + '</td>' +
+      '<td class="cell-num right">' + fmt.money(l.subtotal) + '</td><td class="cell-num right">' + (l.porMonto ? '—' : fmt.money(l.costo)) + '</td>' +
       '<td class="cell-num right ' + signo(l.ganancia) + '">' + fmt.money(l.ganancia) + '</td></tr>').join('');
-    const t = (l, val, cls) => '<tr class="' + (cls || '') + '"><td colspan="7" class="right">' + l + '</td><td class="cell-num right">' + val + '</td></tr>';
+    const t = (l, val, cls) => '<tr class="' + (cls || '') + '"><td colspan="9" class="right">' + l + '</td><td class="cell-num right">' + val + '</td></tr>';
     const cobros = v.cobros.length ? '<p class="table-note">Abonos: ' + v.cobros.map((c) => fmt.date(c.fecha) + ' ' + fmt.money(c.monto) + ' (' + esc(data().catalogos.mediosPago[c.medioPago] || c.medioPago) + ')').join(' · ') + '</p>' : '';
-    return '<div class="detalle-compra"><table class="data-table"><thead><tr><th></th><th>Producto</th><th>Factura / lote</th><th class="right">Cant.</th><th class="right">Precio</th>' +
+    return '<div class="detalle-compra"><table class="data-table"><thead><tr><th></th><th>Producto</th><th>Factura</th><th class="right">Cant.</th><th class="right">Precio lista</th><th class="right">Descuento</th><th class="right">Precio</th>' +
       '<th class="right">Subtotal</th><th class="right">Costo u.</th><th class="right">Ganancia real</th></tr></thead><tbody>' + filas + '</tbody><tfoot>' +
       t('Total', fmt.money(v.total)) + t('Neto / IVA (débito)', fmt.money(v.neto) + ' / ' + fmt.money(v.iva)) +
-      (v.descuento > 0 ? t('Descuentos', fmt.money(v.descuento)) : '') +
+      (v.descuento > 0 ? t('Descuentos', '−' + fmt.money(v.descuento)) : '') +
       t('Comisión ' + esc(v.medioPagoLabel), fmt.money(v.comision)) +
       t('<strong>Ganancia real</strong>', '<strong class="' + signo(v.gananciaNeta) + '">' + fmt.money(v.gananciaNeta) + '</strong>', 'total-row') +
-      '</tfoot></table>' + cobros + (v.saldo > 0 ? '<p class="table-note text-gold">Debe ' + fmt.money(v.saldo) + ': el abono se registra en Clientes.</p>' : '') + (v.notas ? '<p class="table-note">Notas: ' + esc(v.notas) + '</p>' : '') + '</div>';
+      '</tfoot></table>' + cobros + (v.saldo > 0 ? '<p class="table-note text-gold">Debe ' + fmt.money(v.saldo) + ': el abono se registra en Clientes.</p>' : '') + (v.notas ? '<p class="table-note">Notas: ' + esc(v.notas) + '</p>' : '') +
+      '<p class="table-note">Precio lista = precio del producto al momento de la venta (queda guardado en la venta). Descuento = precio lista − precio cobrado.</p></div>';
   }
 
   /* ---------- tablero ---------- */
@@ -457,8 +464,24 @@
       fields: () => '<div class="form-grid">' +
         '<div class="form-field"><label>Fecha *</label><input type="date" name="fecha" value="' + esc(v.fecha) + '"></div>' +
         '<div class="form-field"><label>N° boleta</label><input name="boleta" value="' + esc(v.boleta) + '"></div>' +
+        (v.anulada ? '' :
+          '<div class="form-field"><label>Total pagado por el cliente</label><input type="number" name="total" min="0" step="1" value="' + esc(v.total) + '"></div>' +
+          '<div class="form-field"><label>Comisión (' + esc(v.medioPagoLabel) + ')</label><input type="number" name="comision" min="0" step="1" value="' + esc(v.comision) + '"></div>' +
+          '<div class="form-field full" data-ev-motivo hidden><label>Motivo del ajuste *</label><input name="motivo" maxlength="120" placeholder="Ej.: la caja registró el monto con la comisión de la máquina descontada"></div>' +
+          '<div class="form-field full" data-ev-dif></div>') +
         '<div class="form-field full"><label>Notas</label><textarea name="notas" rows="3">' + esc(v.notas) + '</textarea></div></div>' +
-        '<p class="hint">Los productos y montos no se editan: si algo está mal, anula la venta y regístrala de nuevo.</p>',
+        '<p class="hint">Si el cliente pagó otro monto (por ejemplo, la migración tomó el valor con la comisión descontada), escribe el total real: la diferencia queda como una línea "Ajuste" con su motivo y se anota en las notas y en la auditoría. Los productos no se editan: si algo está mal, anula la venta y regístrala de nuevo.</p>',
+      onMount: (form) => {
+        if (!form.elements.total) return;
+        const upd = () => {
+          const dif = (Number(form.elements.total.value) || 0) - v.total;
+          form.querySelector('[data-ev-motivo]').hidden = !dif;
+          form.querySelector('[data-ev-dif]').innerHTML = dif
+            ? '<p class="table-note text-gold">Se agrega un ajuste de ' + (dif > 0 ? '+' : '−') + fmt.money(Math.abs(dif)) + ' (total ' + fmt.money(v.total) + ' → ' + fmt.money(v.total + dif) + ').</p>' : '';
+        };
+        form.elements.total.addEventListener('input', upd);
+        upd();
+      },
       onSubmit: (val) => GS.mutate('editarVenta', Object.assign({ id: id }, val), v.id + ' actualizada'),
     });
   };
