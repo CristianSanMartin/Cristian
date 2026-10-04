@@ -100,7 +100,7 @@
     { id: 'sel', label: '', sinMenu: true, valor: () => '', celda: (f) => (f.estado === 'pendiente'
       ? '<input type="checkbox" class="row-check" data-caja-sel="' + esc(f.id) + '"' + (sel.has(f.id) ? ' checked' : '') + ' aria-label="Seleccionar fila ' + f.fila + '">' : '') },
     { id: 'fila', label: 'Fila', right: true, valor: (f) => f.fila, celda: (f) => '<span class="cell-dim">' + f.fila + '</span>' },
-    { id: 'fecha', label: 'Fecha', clase: 'nowrap', valor: (f) => f.fecha, texto: (f) => (f.fecha ? f.fecha.slice(0, 7) : 'Sin fecha'), celda: (f) => (f.fecha ? fmt.date(f.fecha) : '<span class="text-gold">sin fecha</span>') },
+    { id: 'fecha', label: 'Fecha', clase: 'nowrap', valor: (f) => f.fecha, texto: (f) => (f.fecha ? fmt.date(f.fecha) : 'Sin fecha'), celda: (f) => (f.fecha ? fmt.date(f.fecha) : '<span class="text-gold">sin fecha</span>') },
     { id: 'glosa', label: 'Glosa', valor: (f) => f.glosa || '(sin glosa)', celda: (f) => esc(f.glosa || '—') },
     { id: 'obs', label: 'Obs', valor: (f) => f.obs, celda: (f) => esc(f.obs) + (f.detalle ? '<div class="cell-dim">' + esc(f.detalle) + '</div>' : '') },
     { id: 'entradas', label: 'Entradas', right: true, valor: (f) => f.entradas, texto: (f) => (f.entradas ? 'Con entrada' : 'Sin entrada'), celda: (f) => (f.entradas ? fmt.money(f.entradas) : '') },

@@ -92,7 +92,9 @@ test("preventas como carrito: agregar productos uno a uno, asignar en la tabla y
     const menu = (col) => page.click(`[data-action="menuColumna"][data-id="preventas|${col}"]`);
     await menu("lanzamiento");
     await page.locator(".col-menu [data-todos]").uncheck();
-    await page.locator(".col-menu .col-menu-lista label", { hasText: "08-11-2030" }).locator("input").check();
+    // Fechas en árbol año → mes → día: el buscador abre el mes y muestra el día
+    await page.fill(".col-menu .col-menu-buscar", "08-11-2030");
+    await page.locator('.col-menu .col-menu-lista input[value="08-11-2030"]').check();
     await page.click(".col-menu [data-aplicar]");
     const fila = (id) => page.locator(`#pv-tbody tr[data-pv="${id}"]`);
     assert.equal(await page.locator("#pv-tbody tr").count(), 2);
@@ -441,6 +443,33 @@ test("venta por monto, Finanzas y migración de la caja diaria", { skip }, async
     await page.selectOption("[data-caja-estado]", "");
     assert.equal(await page.locator(".badge:has-text('Migrada')").count(), 3);
     assert.equal(await page.locator(".badge:has-text('No se migra')").count(), 1, "el saldo 2025 no se migra");
+    assert.deepEqual(errores, []);
+  } finally {
+    await browser.close();
+  }
+});
+
+test("filtro de fechas como Excel: año, mes y día en orden cronológico", { skip }, async () => {
+  const browser = await chromium.launch();
+  try {
+    const { page, errores } = await abrir(browser);
+    await page.click('[data-nav="ventas"]');
+    const total = await page.locator("#vt-tbody tr.fila-compra").count();
+    await page.click('[data-action="menuColumna"][data-id="ventas|fecha"]');
+    const menu = page.locator(".col-menu");
+    // Meses en orden de calendario (no alfabético) y días como número
+    const meses = await menu.locator(".cm-hijos input[data-grupo]").evaluateAll((els) => els.map((e) => e.dataset.grupo));
+    assert.deepEqual(meses, [...meses].sort(), "meses en orden cronológico");
+    assert.ok(meses.length >= 2);
+    // Desmarcar un mes completo deja el año a medias y filtra solo ese mes
+    const mes = menu.locator(".cm-hijos input[data-grupo]").first();
+    const dias = await mes.locator("xpath=ancestor::div[contains(@class,'cm-grupo')][1]").locator(".cm-hijos input:not([data-grupo])").count();
+    await mes.uncheck();
+    assert.equal(await menu.locator("input[data-grupo]").first().evaluate((e) => e.indeterminate), true);
+    await menu.locator("[data-aplicar]").click();
+    const quedan = await page.locator("#vt-tbody tr.fila-compra").count();
+    assert.ok(quedan < total && quedan > 0 && dias > 0);
+    assert.ok(await page.locator('[data-id="ventas|fecha"].activo').count(), "el encabezado muestra el filtro activo");
     assert.deepEqual(errores, []);
   } finally {
     await browser.close();
