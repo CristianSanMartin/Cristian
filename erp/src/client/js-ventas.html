@@ -383,21 +383,23 @@
   GS.actions.ocOriginales = async () => {
     let plan;
     try { plan = (await GS.api('ocOriginales')).data; } catch (e) { return GS.toast(e.message, true); }
-    if (!plan.cambios.length) return GS.toast('Todas las ventas migradas ya tienen su N° de OC original');
-    const orig = plan.cambios.filter((c) => c.oc);
+    if (!plan.cambios.length) return GS.toast('Todas las ventas migradas ya tienen su N° de OC original y su fecha');
+    const orig = plan.cambios.filter((c) => c.oc && c.a !== c.de);
     const otras = plan.cambios.filter((c) => !c.oc);
-    const fila = (c) => '<tr><td class="cell-strong">' + esc(c.de) + '</td><td>→</td><td class="cell-strong text-gold">' + esc(c.a) + '</td><td>' + esc(c.oc || 'sin OC original') + '</td><td>' + fmt.date(c.fecha) + (c.anulada ? ' <span class="badge st-pedido">Anulada</span>' : '') + '</td></tr>';
+    const fechas = plan.cambios.filter((c) => c.fechaNueva !== c.fecha);
+    const fila = (c) => '<tr><td class="cell-strong">' + esc(c.de) + '</td><td>→</td><td class="cell-strong' + (c.a !== c.de ? ' text-gold' : '') + '">' + esc(c.a) + '</td><td>' + esc(c.oc || 'sin OC original') + '</td><td>' + (c.fechaNueva !== c.fecha ? '<span class="cell-dim">' + fmt.date(c.fecha) + '</span> → <strong class="text-gold">' + fmt.date(c.fechaNueva) + '</strong>' : fmt.date(c.fecha)) + (c.anulada ? ' <span class="badge st-pedido">Anulada</span>' : '') + '</td></tr>';
     GS.formModal({
-      title: 'Usar los N° de OC originales',
-      submitLabel: 'Renumerar ' + plan.cambios.length + ' ventas',
+      title: 'Usar los N° y fechas de las OC originales',
+      submitLabel: 'Actualizar ' + plan.cambios.length + ' ventas',
       size: 'wide',
       fields: () => '<p class="hint">Las ventas migradas toman el número de su OC original (la nota "OC original OC223" pasa a ser <strong>OC-0223</strong>). ' +
         'Si varias ventas venían de la misma OC, las siguientes quedan como OC-0223-2, -3… Las ventas sin OC original pasan a continuación del número más alto, y las ventas nuevas siguen desde <strong>' + esc(plan.siguiente) + '</strong>. ' +
-        'Se actualizan sus líneas, abonos y referencias de la migración de la caja. Antes se hace un respaldo.</p>' +
-        '<p><strong>' + orig.length + '</strong> con su OC original' + (otras.length ? ' · <strong>' + otras.length + '</strong> sin OC original que se mueven' : '') + '</p>' +
+        'Cada venta con OC original toma además la <strong>fecha de esa OC en la caja diaria</strong>. Se actualizan sus líneas, abonos y referencias de la migración de la caja. Antes se hace un respaldo.</p>' +
+        '<p><strong>' + orig.length + '</strong> con su OC original' + (otras.length ? ' · <strong>' + otras.length + '</strong> sin OC original que se mueven' : '') +
+          (fechas.length ? ' · <strong>' + fechas.length + '</strong> con la fecha de la caja' : '') + '</p>' +
         '<div class="table-wrap" style="max-height:360px;overflow:auto;"><table class="data-table" style="min-width:0"><thead><tr><th>Ahora</th><th></th><th>Queda</th><th>OC original</th><th>Fecha</th></tr></thead><tbody>' +
         plan.cambios.map(fila).join('') + '</tbody></table></div>',
-      onSubmit: () => GS.mutate('renumerarOc', {}, plan.cambios.length + ' ventas renumeradas con su OC original'),
+      onSubmit: () => GS.mutate('renumerarOc', {}, plan.cambios.length + ' ventas actualizadas con su OC original'),
     });
   };
 
@@ -415,7 +417,7 @@
         '<button class="btn ghost" data-action="exportarVentas">' + GS.icon('download') + 'Exportar</button></div></div>' +
         '<div id="vt-tablero"></div>' +
         '<div class="panel dash-card"><div class="dash-card-head"><h3>Órdenes de compra (OC)</h3><span class="muted">Todas las ventas' +
-          (GS.puede('admin') ? ' · <a href="#" data-action="ocOriginales">Usar los N° de OC originales</a>' : '') + '</span></div>' +
+          (GS.puede('admin') ? ' · <a href="#" data-action="ocOriginales">Usar los N° y fechas de las OC originales</a>' : '') + '</span></div>' +
         '<div class="filters-bar"><div class="search-box">' + GS.icon('search') + '<input type="text" data-filter="ventas.q" value="' + esc(f.q) + '" placeholder="Buscar OC, cliente, evento, boleta o producto..."></div></div>' +
         '<div class="table-wrap"><table class="data-table wide"><thead><tr id="vt-thead"></tr></thead><tbody id="vt-tbody"></tbody></table></div></div>';
       this.update();

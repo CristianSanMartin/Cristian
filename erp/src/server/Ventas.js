@@ -93,7 +93,9 @@ const Ventas = {
    * Si varias ventas venían de la misma OC, las siguientes llevan "-2", "-3"…
    * Las ventas sin OC original conservan su número si no choca y queda sobre el último
    * original; si no, pasan a continuación. El correlativo sigue desde el número más alto.
-   * Devuelve { cambios: [{ de, a, fecha, oc, anulada }], siguiente, ultimo }.
+   * Además cada venta con OC original toma la fecha de esa OC en la caja diaria (la más antigua),
+   * aunque sus filas aún no se hayan migrado.
+   * Devuelve { cambios: [{ de, a, fecha, fechaNueva, oc, anulada }], siguiente, ultimo }.
    */
   _planOriginales() {
     const ventas = Db.all('Ventas').sort((a, b) => a.id.localeCompare(b.id));
@@ -123,9 +125,18 @@ const Ventas = {
       usados[destino[v.id]] = true;
     });
     const ultimo = Object.keys(usados).reduce((m, id) => Math.max(m, num(id) || 0), n);
-    const cambios = ventas.filter((v) => destino[v.id] !== v.id).map((v) => {
+    const fechaCaja = {};
+    Db.all('Migracion_Caja').forEach((f) => {
+      if (f.oc && !f.descartada && f.fecha && (!fechaCaja[f.oc] || f.fecha < fechaCaja[f.oc])) fechaCaja[f.oc] = f.fecha;
+    });
+    const cambios = [];
+    ventas.forEach((v) => {
       const m = /OC original ((?:OC|PR)\s*-?\s*\d+)/i.exec(v.notas || '');
-      return { de: v.id, a: destino[v.id], fecha: v.fecha, oc: m ? m[1] : '', anulada: v.anulada };
+      const oc = m ? m[1] : '';
+      const fechaNueva = (oc && fechaCaja[MigracionCaja.normalizarOc(oc)]) || v.fecha;
+      if (destino[v.id] !== v.id || fechaNueva !== v.fecha) {
+        cambios.push({ de: v.id, a: destino[v.id], fecha: v.fecha, fechaNueva: fechaNueva, oc: oc, anulada: v.anulada });
+      }
     });
     return { cambios: cambios, siguiente: 'OC-' + String(ultimo + 1).padStart(4, '0'), ultimo: ultimo };
   },
@@ -137,11 +148,11 @@ const Ventas = {
     if (!plan.cambios.length) return plan;
     Respaldos.crear('antes de renumerar las OC', user);
     const mapa = {};
-    plan.cambios.forEach((c) => { mapa[c.de] = c.a; });
+    plan.cambios.forEach((c) => { if (c.a !== c.de) mapa[c.de] = c.a; });
     const re = /\bOC-\d{4,}(?:-\d+)?\b/g;
     const reemplazar = (t) => String(t || '').replace(re, (id) => (id in mapa ? mapa[id] : id));
     // Todo en una escritura por hoja: los cambios de id se aplican a la vez (sin choques intermedios).
-    Db.actualizarVarios('Ventas', plan.cambios.reduce((o, c) => { o[c.de] = { id: c.a }; return o; }, {}));
+    Db.actualizarVarios('Ventas', plan.cambios.reduce((o, c) => { o[c.de] = Object.assign({ id: c.a, fecha: c.fechaNueva }, Util.sello(user)); return o; }, {}));
     [['Ventas_Lineas', 'ventaId'], ['Cobros', 'ventaId']].forEach(([tabla, campo]) => {
       const cambios = {};
       Db.all(tabla).forEach((r) => { if (r[campo] in mapa) cambios[r.id] = { [campo]: mapa[r[campo]] }; });
@@ -160,7 +171,7 @@ const Ventas = {
     const sec = Db.get('Secuencias', 'OC');
     if (sec) Db.update('Secuencias', 'OC', { valor: Math.max(sec.valor, plan.ultimo) });
     else Db.insert('Secuencias', { clave: 'OC', valor: plan.ultimo });
-    Audit.log(user, 'renumerar', 'Venta', '', { ventas: plan.cambios.length, ejemplos: plan.cambios.slice(0, 20).map((c) => c.de + '→' + c.a).join(', ') });
+    Audit.log(user, 'renumerar', 'Venta', '', { ventas: plan.cambios.length, ejemplos: plan.cambios.slice(0, 20).map((c) => c.de + '→' + c.a + (c.fechaNueva !== c.fecha ? ' (' + c.fechaNueva + ')' : '')).join(', ') });
     return plan;
   },
 

@@ -658,13 +658,18 @@ test("OC migradas: toman su N° original (OC223 → OC-0223), con sus líneas, a
   const d = venta("Caja diaria · torneos del día consolidados", 4000);                  // sin OC original y sobre el máximo (3): conserva OC-0004
   s.ok("registrarCobro", { ventaId: b, fecha: "2026-07-02", monto: 500, medioPago: "efectivo" });
   s.run(`Db.insert("Migracion_Caja", { id: "MC-1", fila: 2, fecha: "2026-07-01", glosa: "Ventas", entradas: 1000, salidas: 0, migrada: "Fecha ${a}, ${b}" })`);
+  // Fila de la caja con la OC003 aún sin migrar: la venta toma su fecha (la más antigua)
+  s.run(`Db.insertMany("Migracion_Caja", [{ id: "MC-2", fila: 3, fecha: "2025-11-05", glosa: "Ventas", entradas: 600, salidas: 0, oc: "OC003" },
+    { id: "MC-3", fila: 4, fecha: "2025-11-09", glosa: "Ventas", entradas: 400, salidas: 0, oc: "OC003" }])`);
   const plan = s.ok("ocOriginales").data;
   assert.deepEqual(plan.cambios.map(x => x.de + ">" + x.a).sort(), [a + ">OC-0003", b + ">OC-0001", c + ">OC-0001-2"].sort());
+  assert.equal(plan.cambios.find(x => x.a === "OC-0003").fechaNueva, "2025-11-05");
   assert.equal(d, "OC-0004", "la venta sin OC original ya queda sobre el número más alto y conserva su número");
   s.ok("renumerarOc");
   const data = s.ok("bootstrap").data;
   const v = (id) => data.ventas.find(x => x.id === id);
   assert.deepEqual([v("OC-0003").total, v("OC-0001").total, v("OC-0001-2").total, v("OC-0004").total], [1000, 2000, 3000, 4000]);
+  assert.deepEqual([v("OC-0003").fecha, v("OC-0001").fecha], ["2025-11-05", "2026-07-01"], "fecha de la caja; sin fila en la caja no cambia");
   assert.deepEqual([v("OC-0001").cobros.length, v("OC-0001").saldo], [1, 1000], "el abono sigue en su venta");
   assert.equal(s.run(`Db.get("Migracion_Caja", "MC-1").migrada`), "Fecha OC-0003, OC-0001");
   assert.equal(s.ok("crearVenta", { fecha: "2026-07-03", lineas: [{ categoria: "Otro", descripcion: "y", monto: 10 }] }).result.id, "OC-0005", "las ventas nuevas siguen desde el más alto");
