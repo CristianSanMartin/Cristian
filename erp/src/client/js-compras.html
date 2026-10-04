@@ -44,6 +44,7 @@
   const buscadasCompras = () => buscar(data().compras, GS.filters('compras', DEF_C).q, (c) => c.id + ' ' + c.factura + ' ' + c.proveedor + ' ' + c.lineas.map((l) => l.producto + ' ' + l.preventaId).join(' '));
   GS.tablaRegistrar('compras', { filas: buscadasCompras, columnas: colsCompras, alCambiar: () => GS.views.compras.update() });
 
+  GS.detalleCompra = (c) => detalleCompra(c);   // también se despliega desde Finanzas
   function detalleCompra(c) {
     const admin = GS.puede('admin');
     const fila = (l) => '<tr><td>' + GS.thumb(l.imagen) + '</td><td class="cell-strong">' + esc(l.productoNombre) + ' ' + GS.langPill(l.idioma) +

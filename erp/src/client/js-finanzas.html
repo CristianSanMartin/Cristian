@@ -153,7 +153,17 @@
   };
   GS.tablaRegistrar('movimientos', { filas: movsBuscados, columnas: colsMov, alCambiar: () => GS.views.finanzas.update() });
 
-  GS.actions.finVerVenta = (id) => { GS.filters('ventas', { q: '' }).q = id; GS.go('ventas', id); };
+  // "Ver OC-…" / "Ver CP-…" despliega el detalle debajo de la fila, sin cambiar de página.
+  const abiertosMov = new Set();
+  GS.actions.finVer = (id) => {
+    if (abiertosMov.has(id)) abiertosMov.delete(id); else abiertosMov.add(id);
+    GS.views.finanzas.update();
+  };
+  const detalleMov = (m) => {
+    if (m.venta) { const v = data().ventas.find((x) => x.id === m.venta); return v && GS.detalleVenta ? GS.detalleVenta(v) : ''; }
+    const c = data().compras.find((x) => x.id === m.compra);
+    return c && GS.detalleCompra ? GS.detalleCompra(c) : '';
+  };
 
   GS.views.finanzas = {
     title: 'Finanzas',
@@ -202,11 +212,11 @@
         document.getElementById('mov-thead').innerHTML = GS.tablaEncabezado('movimientos', colsMov) + '<th></th>';
         document.getElementById('mov-tbody').innerHTML = rows.length ? rows.map((m) => '<tr class="' + (m.anulado ? 'row-muted' : '') + '">' +
           colsMov.map((c) => '<td class="' + (c.right ? 'cell-num right ' : '') + (c.clase || '') + '">' + c.celda(m) + '</td>').join('') +
-          '<td><div class="row-actions">' + (m.venta
-            ? '<button class="btn small ghost" data-action="finVerVenta" data-id="' + esc(m.venta) + '" title="Las ventas se editan en Ventas">Ver ' + esc(m.venta) + '</button>'
-            : m.compra ? '<button class="btn small ghost" data-nav="compras" data-param="' + esc(m.compra) + '">Ver ' + esc(m.compra) + '</button>'
+          '<td><div class="row-actions">' + (m.venta || m.compra
+            ? '<button class="btn small ghost" data-action="finVer" data-id="' + esc(m.id) + '" title="Ver el detalle aquí mismo">' + (abiertosMov.has(m.id) ? '▾ ' : '▸ ') + esc(m.venta || m.compra) + '</button>'
             : (op && !m.anulado ? GS.iconBtn('editarMovimiento', m.id, 'edit', 'Editar') : '') +
-              (admin && !m.anulado ? GS.iconBtn('anularMovimiento', m.id, 'trash', 'Anular', 'danger') : '')) + '</div></td></tr>').join('')
+              (admin && !m.anulado ? GS.iconBtn('anularMovimiento', m.id, 'trash', 'Anular', 'danger') : '')) + '</div></td></tr>' +
+          (abiertosMov.has(m.id) ? '<tr class="detalle-row"><td colspan="' + (colsMov.length + 1) + '">' + detalleMov(m) + '</td></tr>' : '')).join('')
           : '<tr><td colspan="' + (colsMov.length + 1) + '">' + GS.empty('Sin movimientos', 'Registra aportes, gastos, pagos al SII o compras por monto con "Nuevo movimiento".', 'finanzas') + '</td></tr>';
         return;
       }

@@ -259,6 +259,7 @@
     .concat(colsVentas.filter((c) => ['cliente', 'medio', 'total', 'comision', 'ganancia', 'pago'].indexOf(c.id) !== -1));
   GS.tablaRegistrar('ventasMonto', { filas: () => buscadas().filter((v) => !esOc(v)), columnas: colsMonto, alCambiar: () => GS.views.ventas.update() });
 
+  GS.detalleVenta = (v) => detalleVenta(v);   // también se despliega desde Finanzas
   function detalleVenta(v) {
     const loteDe = {};
     data().lotes.forEach((l) => { loteDe[l.id] = l; });
