@@ -34,7 +34,7 @@
 
   /* ---------- lectura ---------- */
 
-  const COLUMNAS = { fecha: /^fecha$/, glosa: /^glosa$/, entradas: /^entradas?$/, salidas: /^salidas?$/, obs: /^obs/ };
+  const COLUMNAS = { periodo: /^periodo$/, fecha: /^fecha$/, glosa: /^glosa$/, entradas: /^entradas?$/, salidas: /^salidas?$/, obs: /^obs/ };
   function aObjetos(tabla) {
     const norm = (v) => GS.norm(String(v == null ? '' : v).trim());
     const iTit = tabla.slice(0, 15).findIndex((r) => r.some((v) => norm(v) === 'glosa') && r.some((v) => norm(v) === 'fecha'));

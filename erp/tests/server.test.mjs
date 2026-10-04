@@ -1026,6 +1026,34 @@ function cajaEjemplo(totalFactura) {
   ].map((f, i) => ({ fila: i + 1, ...f }));
 }
 
+test("período contable: un gasto de junio pagado en julio queda en junio (caja, recarga y movimiento manual)", () => {
+  const s = createServer();
+  const filas = [
+    { fila: 1, periodo: "Periodo", fecha: "Fecha", glosa: "Glosa", entradas: "Entradas", salidas: "Salidas", obs: "Obs" },
+    { fila: 2, periodo: "01-jun", fecha: "2025-07-04", glosa: "GOPM", entradas: "", salidas: 4600, obs: "CBRS (N)" },
+    { fila: 3, periodo: "2025-06-01", fecha: "2025-07-03", glosa: "GAV", entradas: "", salidas: 1131, obs: "Shopify (C)" },
+    { fila: 4, periodo: "", fecha: "2025-06-24", glosa: "Patrimonio", entradas: 200000, salidas: "", obs: "Jaime" },
+    { fila: 5, periodo: "dic", fecha: "2026-01-05", glosa: "GAV", entradas: "", salidas: 9000, obs: "Arriendo" },
+  ];
+  let e = s.ok("cajaCargar", { filas: filas }).result;
+  const fila = (n) => e.filas.find(f => f.fila === n);
+  assert.deepEqual([2, 3, 4, 5].map(n => fila(n).periodo), ["2025-06-01", "2025-06-01", "2025-06-01", "2025-12-01"], "el mes sin año toma el de la fecha (dic pagado en enero = año anterior)");
+  s.ok("cajaMapeos", { mapeos: e.mapeos.map(m => ({ clave: m.clave, confirmado: true })) });
+  e = s.ok("cajaEstado").data;
+  s.ok("cajaMigrar", { ids: e.filas.filter(f => !f.problema && f.estado === "pendiente").map(f => f.id) });
+  const movs = s.ok("bootstrap").data.movimientos;
+  const gopm = movs.find(m => m.categoria === "gopm");
+  assert.deepEqual([gopm.fecha, gopm.periodo], ["2025-07-04", "2025-06-01"]);
+  // Movimientos migrados antes de leer el Periodo: al recargar la caja con Periodo se corrigen
+  s.run(`Db.all("Finanzas").forEach(m => Db.update("Finanzas", m.id, { periodo: "" }))`);
+  s.ok("cajaCargar", { filas: filas });
+  assert.equal(s.ok("bootstrap").data.movimientos.find(m => m.categoria === "gopm").periodo, "2025-06-01");
+  // Manual: sin período toma el mes de la fecha; con período, el indicado
+  const a = s.ok("guardarMovimiento", { fecha: "2025-07-02", tipo: "egreso", categoria: "gav", monto: 1000 }).result;
+  const b = s.ok("guardarMovimiento", { fecha: "2025-07-02", periodo: "2025-06", tipo: "egreso", categoria: "gav", monto: 1000 }).result;
+  assert.deepEqual([a.periodo, b.periodo], ["2025-07-01", "2025-06-01"]);
+});
+
 test("migración de la caja por partes: seleccionar, migrar, pago de factura, torneos del día y recargar sin duplicar", () => {
   const s = createServer();
   migrarStock(s);

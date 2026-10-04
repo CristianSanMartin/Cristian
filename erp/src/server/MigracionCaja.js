@@ -32,6 +32,23 @@ const MigracionCaja = {
     return '';
   },
 
+  /**
+   * Periodo de la caja como AAAA-MM-01. Acepta una fecha o un mes escrito ("01-jun", "jun"); en ese
+   * caso el año sale de la fecha del movimiento (un gasto de diciembre pagado en enero es del año anterior).
+   */
+  _periodo(v, fecha) {
+    const f = MigracionCaja._fecha(v);
+    if (f) return f.slice(0, 7) + '-01';
+    const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+    const m = /([a-zé]{3})/i.exec(Util.normalizar(v || ''));
+    const i = m ? MESES.indexOf(m[1]) : -1;
+    if (i === -1 || !fecha) return '';
+    let anio = Number(fecha.slice(0, 4));
+    const dif = i + 1 - Number(fecha.slice(5, 7));
+    if (dif > 6) anio--; else if (dif < -6) anio++;
+    return anio + '-' + ('0' + (i + 1)).slice(-2) + '-01';
+  },
+
   /** "OC001", "OC 1", "OC164 BOOSTER", "PR-5" → "OC001", "OC001", "OC164", "PR005". OC y PR (post-release) son series distintas. */
   normalizarOc(v) {
     const m = /^\s*(OC|PR)\s*-?\s*0*(\d+)/i.exec(String(v || ''));
@@ -63,10 +80,11 @@ const MigracionCaja = {
       const salidaTexto = f.salidas != null && f.salidas !== '' && !Migracion._num(f.salidas) && /[a-z]/i.test(String(f.salidas));
       const r = {
         fila: Number(f.fila) || i + 2,
-        fecha: MigracionCaja._fecha(f.fecha), glosa: Migracion._txt(f.glosa), entradas: Math.round(Migracion._num(f.entradas)),
+        fecha: MigracionCaja._fecha(f.fecha), periodo: '', glosa: Migracion._txt(f.glosa), entradas: Math.round(Migracion._num(f.entradas)),
         salidas: salidaTexto ? 0 : Math.round(Migracion._num(f.salidas)), detalle: salidaTexto ? Migracion._txt(f.salidas) : '',
         obs: Migracion._txt(f.obs), oc: '', clave: '', descartada: false, nota: '', accion: '', destino: '', extra: '', migrada: '', firma: '',
       };
+      r.periodo = MigracionCaja._periodo(f.periodo, r.fecha) || (r.fecha ? r.fecha.slice(0, 7) + '-01' : '');
       if (Util.normalizar(r.glosa) === 'ventas') r.oc = MigracionCaja.normalizarOc(r.obs);
       r.clave = MigracionCaja.clave(r);
       r.firma = MigracionCaja.firma(r);
@@ -85,9 +103,22 @@ const MigracionCaja = {
     registros.forEach((r, i) => { r.id = 'C-' + String(i + 1).padStart(5, '0'); });
     Db.vaciar('Migracion_Caja');
     Db.insertMany('Migracion_Caja', registros);
+    MigracionCaja._periodosMigrados(registros);
     MigracionCaja._proponer();
     Audit.log(user, 'cargar', 'Migración caja', '', { filas: registros.length });
     return MigracionCaja.estado();
+  },
+
+  /** Movimientos ya migrados toman el periodo de su fila de la caja (al volver a cargar el Excel con Periodo). */
+  _periodosMigrados(registros) {
+    const periodoMov = {};
+    registros.forEach((r) => {
+      if (!r.periodo || !r.migrada) return;
+      (String(r.migrada).match(/\bMOV-\d+\b/g) || []).forEach((id) => { periodoMov[id] = r.periodo; });
+    });
+    const cambios = {};
+    Db.all('Finanzas').forEach((m) => { if (periodoMov[m.id] && m.periodo !== periodoMov[m.id]) cambios[m.id] = { periodo: periodoMov[m.id] }; });
+    if (Object.keys(cambios).length) Db.actualizarVarios('Finanzas', cambios);
   },
 
   /** Facturas de compra del ERP con su total (neto + despacho + IVA). */
@@ -370,14 +401,14 @@ const MigracionCaja = {
         }
       }
       // Una salida dentro de "Ventas" (devolución, comisión de plataforma…) queda como egreso.
-      if (f.salidas > 0) movimientos.push({ fila: f, m: { fecha: f.fecha, tipo: 'egreso', categoria: 'otro_egreso', subcategoria: 'Salida en ventas · ' + f.obs, monto: f.salidas, referencia: 'Caja fila ' + f.fila, notas: f.detalle } });
+      if (f.salidas > 0) movimientos.push({ fila: f, m: { fecha: f.fecha, periodo: f.periodo || '', tipo: 'egreso', categoria: 'otro_egreso', subcategoria: 'Salida en ventas · ' + f.obs, monto: f.salidas, referencia: 'Caja fila ' + f.fila, notas: f.detalle } });
     });
 
     // 3) Movimientos de Finanzas.
     sel.filter((f) => f.accionEf === 'movimiento').forEach((f) => {
       const tipo = MigracionCaja._tipoDe(f.destinoEf);
       const neto = f.entradas - f.salidas;
-      const base = { fecha: f.fecha, subcategoria: (f.extraEf || f.obs || '').slice(0, 120), referencia: 'Caja fila ' + f.fila, notas: f.detalle };
+      const base = { fecha: f.fecha, periodo: f.periodo || '', subcategoria: (f.extraEf || f.obs || '').slice(0, 120), referencia: 'Caja fila ' + f.fila, notas: f.detalle };
       if (tipo === 'ingreso') {
         if (neto > 0) movimientos.push({ fila: f, m: Object.assign({ tipo: 'ingreso', categoria: f.destinoEf, monto: neto }, base) });
         else if (neto < 0) movimientos.push({ fila: f, m: Object.assign({ tipo: 'egreso', categoria: 'otro_egreso', monto: -neto }, base) });

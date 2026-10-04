@@ -19,7 +19,14 @@ const Finanzas = {
       cuenta: p.cuenta ? Util.opcion(p.cuenta, 'La cuenta', Object.keys(CUENTAS)) : '',
       referencia: Util.texto(p.referencia, 'La referencia', { max: 80 }),
       notas: Util.texto(p.notas, 'Las notas', { max: 300 }),
+      periodo: Finanzas.periodo(p.periodo, p.fecha),
     };
+  },
+
+  /** Mes contable como AAAA-MM-01: el indicado (AAAA-MM o una fecha) o, si no viene, el de la fecha. */
+  periodo(v, fecha) {
+    const m = /^(\d{4})-(\d{2})/.exec(String(v || '')) || /^(\d{4})-(\d{2})/.exec(String(fecha || ''));
+    return m ? m[1] + '-' + m[2] + '-01' : '';
   },
 
   guardar(p, user) {
@@ -53,6 +60,7 @@ const Finanzas = {
     return Db.all('Finanzas').map((m) => Object.assign(m, {
       categoriaLabel: (CATEGORIAS_MOVIMIENTO[m.tipo] || {})[m.categoria] || m.categoria,
       cuentaLabel: CUENTAS[m.cuenta] || '',
+      periodo: m.periodo || Finanzas.periodo('', m.fecha),
     })).sort((a, b) => (b.fecha + b.id).localeCompare(a.fecha + a.id));
   },
 };
