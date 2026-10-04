@@ -414,7 +414,7 @@
         (GS.puede('operador') ? '<button class="btn" data-nav="inventario">' + GS.icon('plus', 2.4) + 'Nueva venta</button>' : '') +
         '<button class="btn ghost" data-action="exportarVentas">' + GS.icon('download') + 'Exportar</button></div></div>' +
         '<div id="vt-tablero"></div>' +
-        '<div class="panel dash-card"><div class="dash-card-head"><h3>Órdenes de compra (OC)</h3><span class="muted">Consulta de cada venta' +
+        '<div class="panel dash-card"><div class="dash-card-head"><h3>Órdenes de compra (OC)</h3><span class="muted">Todas las ventas' +
           (GS.puede('admin') ? ' · <a href="#" data-action="ocOriginales">Usar los N° de OC originales</a>' : '') + '</span></div>' +
         '<div class="filters-bar"><div class="search-box">' + GS.icon('search') + '<input type="text" data-filter="ventas.q" value="' + esc(f.q) + '" placeholder="Buscar OC, cliente, evento, boleta o producto..."></div></div>' +
         '<div class="table-wrap"><table class="data-table wide"><thead><tr id="vt-thead"></tr></thead><tbody id="vt-tbody"></tbody></table></div></div>';
@@ -423,9 +423,9 @@
     update() {
       const f = GS.filters('ventas', { q: '', mes: data().hoy.slice(0, 7) });
       document.getElementById('vt-tablero').innerHTML = tablero(f.mes || data().hoy.slice(0, 7));
-      // La lista muestra el mes elegido; si se busca algo, busca en todas.
-      const mes = f.mes || data().hoy.slice(0, 7);
-      const rows = GS.tablaAplicar('ventas', buscadas().filter((v) => f.q || v.fecha.slice(0, 7) === mes), colsVentas);
+      // La lista muestra todas las OC (el mes elegido solo cambia el tablero), las más recientes primero.
+      const recientes = buscadas().sort((a, b) => (b.fecha + b.id).localeCompare(a.fecha + a.id));
+      const rows = GS.tablaAplicar('ventas', recientes, colsVentas);
       const admin = GS.puede('admin');
       const n = colsVentas.length + 2;
       document.getElementById('vt-thead').innerHTML = '<th></th>' + GS.tablaEncabezado('ventas', colsVentas) + '<th></th>';
