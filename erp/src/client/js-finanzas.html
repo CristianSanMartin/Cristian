@@ -134,6 +134,14 @@
         cuentaLabel: CUENTA_MEDIO[c.medioPago] || '' })));
       if (v.comision) res.push(Object.assign({}, base, { id: v.id + '·c', tipo: 'egreso', fecha: v.fecha, categoriaLabel: 'Comisión ' + v.medioPagoLabel, subcategoria: v.cliente, monto: v.comision }));
     });
+    // Pagos de facturas de compra registrados desde la caja diaria.
+    const compra = {};
+    data().compras.forEach((c) => { compra[c.id] = c; });
+    (data().pagosFacturas || []).forEach((x, i) => {
+      const c = compra[x.compraId];
+      res.push({ id: 'PF-' + i, tipo: 'egreso', fecha: x.fecha, categoriaLabel: 'Pago de factura', subcategoria: c ? c.factura + ' · ' + c.proveedor : x.compraId, notas: '',
+        cuentaLabel: '', referencia: x.compraId, compra: x.compraId, monto: x.monto });
+    });
     return res;
   }
   const movsBuscados = () => {
@@ -169,19 +177,34 @@
       if (f.tab === 'movimientos') {
         if (!document.getElementById('mov-tbody')) {
           cuerpo.innerHTML = '<div class="filters-bar"><div class="search-box">' + GS.icon('search') + '<input type="text" data-filter="finanzas.q" value="' + esc(f.q || '') + '" placeholder="Buscar categoría, detalle o referencia..."></div>' +
-            '<label class="check"><input type="checkbox" data-filter="finanzas.ventas"' + (f.ventas ? ' checked' : '') + '> Incluir ventas</label><span class="count" id="mov-count"></span></div>' +
+            '<label class="check"><input type="checkbox" data-filter="finanzas.ventas"' + (f.ventas ? ' checked' : '') + '> Incluir ventas y pagos de facturas</label><span class="count" id="mov-count"></span></div>' +
+            '<div id="mov-resumen"></div>' +
             '<div class="table-wrap"><table class="data-table"><thead><tr id="mov-thead"></tr></thead><tbody id="mov-tbody"></tbody></table></div>';
         }
         const rows = GS.tablaAplicar('movimientos', movsBuscados(), colsMov);
         const op = GS.puede('operador');
         const admin = GS.puede('admin');
         const nv = rows.filter((m) => m.venta).length;
+        // Resumen de lo visible (respeta el buscador y los filtros de columna); los anulados no cuentan.
+        const vivos = rows.filter((m) => !m.anulado);
+        const suma = (t) => vivos.filter((m) => m.tipo === t).reduce((a, m) => a + m.monto, 0);
+        const ing = suma('ingreso');
+        const egr = suma('egreso');
+        const sinPago = data().compras.filter((c) => !(data().pagosFacturas || []).some((x) => x.compraId === c.id)).length;
+        document.getElementById('mov-resumen').innerHTML = '<div class="kpi-grid">' +
+          kpi('Ingresos', '<span class="text-success">+' + fmt.money(ing) + '</span>', vivos.filter((m) => m.tipo === 'ingreso').length + ' movimientos') +
+          kpi('Egresos', '−' + fmt.money(egr), vivos.filter((m) => m.tipo === 'egreso').length + ' movimientos') +
+          kpi('Saldo', '<span class="' + (ing - egr < 0 ? 'text-danger' : 'text-gold') + '">' + fmt.money(ing - egr) + '</span>', 'Ingresos − egresos de lo que se ve') + '</div>' +
+          '<p class="table-note" style="margin:0 0 12px;">El saldo es lo que debería haber entre caja, banco y TUU <strong>si todo está registrado</strong>: aportes, ventas, gastos, pagos al SII y pagos de facturas. ' +
+          (f.ventas && sinPago ? 'Ojo: ' + sinPago + (sinPago === 1 ? ' factura de compra no tiene' : ' facturas de compra no tienen') + ' pago registrado y no se restan. ' : '') +
+          'Para el efectivo de la caja, filtra la columna Cuenta por "Caja (efectivo)" (los depósitos al banco no se registran como traspaso, así que el saldo por cuenta es solo referencial).</p>';
         document.getElementById('mov-count').textContent = rows.length + ' movimientos' + (nv ? ' · ' + nv + ' de ventas' : '');
         document.getElementById('mov-thead').innerHTML = GS.tablaEncabezado('movimientos', colsMov) + '<th></th>';
         document.getElementById('mov-tbody').innerHTML = rows.length ? rows.map((m) => '<tr class="' + (m.anulado ? 'row-muted' : '') + '">' +
           colsMov.map((c) => '<td class="' + (c.right ? 'cell-num right ' : '') + (c.clase || '') + '">' + c.celda(m) + '</td>').join('') +
           '<td><div class="row-actions">' + (m.venta
             ? '<button class="btn small ghost" data-action="finVerVenta" data-id="' + esc(m.venta) + '" title="Las ventas se editan en Ventas">Ver ' + esc(m.venta) + '</button>'
+            : m.compra ? '<button class="btn small ghost" data-nav="compras" data-param="' + esc(m.compra) + '">Ver ' + esc(m.compra) + '</button>'
             : (op && !m.anulado ? GS.iconBtn('editarMovimiento', m.id, 'edit', 'Editar') : '') +
               (admin && !m.anulado ? GS.iconBtn('anularMovimiento', m.id, 'trash', 'Anular', 'danger') : '')) + '</div></td></tr>').join('')
           : '<tr><td colspan="' + (colsMov.length + 1) + '">' + GS.empty('Sin movimientos', 'Registra aportes, gastos, pagos al SII o compras por monto con "Nuevo movimiento".', 'finanzas') + '</td></tr>';
