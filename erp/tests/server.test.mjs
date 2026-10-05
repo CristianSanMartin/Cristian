@@ -718,6 +718,29 @@ test("ventas sin OC: singles, torneos, bazar… con su propio correlativo; las e
   assert.ok(s.ok("validacion").data.hallazgos.some(h => h.regla === "vtOcSinProducto" && h.ref === "OC-0001"));
 });
 
+test("reclasificar una venta sin productos: a otro concepto o a Finanzas", () => {
+  const s = createServer();
+  conInventario(s);
+  const v1 = s.ok("crearVenta", { fecha: "2025-06-13", medioPago: "debito", lineas: [{ categoria: "Otro", descripcion: "OC original OC389", monto: 1000 }] }).result;
+  const v2 = s.ok("crearVenta", { fecha: "2025-06-14", lineas: [{ categoria: "Otro", descripcion: "Cartas", monto: 8000 }] }).result;
+  s.run(`Db.insert("Migracion_Caja", { id: "MC-1", fila: 2, fecha: "2025-06-13", glosa: "Ventas", entradas: 1000, salidas: 0, migrada: "${v1.id}" })`);
+  // Compra de prueba: no fue una venta → Finanzas
+  const r1 = s.ok("reclasificarVenta", { id: v1.id, destino: "finanzas", motivo: "Compra de prueba en la app" }).result;
+  let d = s.ok("bootstrap").data;
+  assert.equal(d.ventas.find(x => x.id === v1.id).anulada, true);
+  const mov = d.movimientos.find(m => m.id === r1.nuevo);
+  assert.deepEqual([mov.tipo, mov.categoria, mov.monto, mov.cuenta, mov.referencia, mov.fecha], ["ingreso", "otro_ingreso", 1000, "tuu", "Antes " + v1.id, "2025-06-13"]);
+  assert.equal(s.run(`Db.get("Migracion_Caja", "MC-1").migrada`), r1.nuevo);
+  // Otra: eran singles → sale de las OC
+  const r2 = s.ok("reclasificarVenta", { id: v2.id, destino: "Singles" }).result;
+  assert.equal(r2.nuevo, "SGL-0001");
+  d = s.ok("bootstrap").data;
+  assert.equal(d.ventas.find(x => x.id === "SGL-0001").lineas[0].categoria, "Singles");
+  // Con productos del inventario no se puede
+  const v3 = s.ok("crearVenta", { fecha: "2026-10-05", lineas: [{ productoId: d.productos[0].id, cantidad: 1 }] });
+  assert.match(errorDe(s.call("reclasificarVenta", { id: v3.result.id, destino: "Singles" })), /productos del inventario/);
+});
+
 test("validación de datos: encuentra inconsistencias, se validan y reaparecen si los datos cambian", () => {
   const s = createServer();
   const { prods } = conInventario(s);   // Binder ENG 24, Binder ESP 6, Mini Tin 10

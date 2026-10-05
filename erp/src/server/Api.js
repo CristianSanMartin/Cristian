@@ -48,6 +48,7 @@ function rutas_() {
     cajaMigrar: { rol: 'admin', write: true, fn: MigracionCaja.migrar },
     cajaLimpiar: { rol: 'admin', write: true, fn: MigracionCaja.limpiar },
     editarVenta: { rol: 'admin', write: true, fn: Ventas.editar },
+    reclasificarVenta: { rol: 'admin', write: true, fn: Ventas.reclasificar },
     ocOriginales: { rol: 'admin', fn: (p, u) => Ventas.numerosOriginales({ aplicar: false }, u) },
     renumerarOc: { rol: 'admin', write: true, fn: (p, u) => Ventas.numerosOriginales({ aplicar: true }, u) },
     guardarMovimiento: { rol: 'operador', write: true, fn: Finanzas.guardar },

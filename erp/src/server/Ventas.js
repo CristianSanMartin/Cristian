@@ -260,6 +260,53 @@ const Ventas = {
     return plan;
   },
 
+  /**
+   * Reclasifica una venta sin productos del inventario (administrador):
+   * - destino = una categoría de venta (Singles, Torneo… u Otro): sus líneas toman esa categoría y
+   *   la venta pasa al correlativo que le corresponde (SGL-, TOR-…, u OC si es Otro).
+   * - destino = 'finanzas': no fue una venta (ej. un pago de prueba). Se anula y lo cobrado queda
+   *   como "Otro ingreso" en Finanzas, con referencia a la venta. Lo registrado en la caja apunta al movimiento.
+   */
+  reclasificar(p, user) {
+    const v = Ventas.requerir(p.id);
+    if (v.anulada) throw new AppError('La venta ' + v.id + ' está anulada.');
+    const lineas = Db.all('Ventas_Lineas').filter((l) => l.ventaId === v.id);
+    if (lineas.some((l) => l.productoId)) throw new AppError('La venta ' + v.id + ' tiene productos del inventario: anúlala y regístrala de nuevo.');
+    const motivo = Util.texto(p.motivo, 'El motivo', { max: 120 });
+    const sello = Util.sello(user);
+    if (p.destino === 'finanzas') {
+      const cobrado = v.abono + Db.all('Cobros').filter((c) => c.ventaId === v.id).reduce((t, c) => t + c.monto, 0);
+      const cuenta = { efectivo: 'caja', transferencia: 'banco', debito: 'tuu', credito: 'tuu' }[v.medioPago] || '';
+      let mov = null;
+      if (cobrado > 0) {
+        mov = Finanzas.guardar({ fecha: v.fecha, tipo: 'ingreso', categoria: 'otro_ingreso', subcategoria: motivo || 'No era una venta',
+          monto: cobrado, cuenta: cuenta, referencia: 'Antes ' + v.id, notas: v.notas }, user);
+      }
+      Db.update('Ventas', v.id, Object.assign({ anulada: true, notas: [v.notas, 'Reclasificada a Finanzas' + (mov ? ' ' + mov.id : '') + (motivo ? ': ' + motivo : '')].filter(Boolean).join(' · ').slice(-500) }, sello));
+      if (mov) {
+        const re = new RegExp('\\b' + v.id + '\\b', 'g');
+        const cambios = {};
+        Db.all('Migracion_Caja').forEach((f) => { if (re.test(f.migrada || '')) { re.lastIndex = 0; cambios[f.id] = { migrada: f.migrada.replace(re, mov.id) }; } re.lastIndex = 0; });
+        if (Object.keys(cambios).length) Db.actualizarVarios('Migracion_Caja', cambios);
+      }
+      Audit.log(user, 'reclasificar', 'Venta', v.id, { destino: 'Finanzas', movimiento: mov ? mov.id : '', monto: cobrado, motivo: motivo });
+      return { id: v.id, nuevo: mov ? mov.id : '' };
+    }
+    const categoria = Util.opcion(p.destino, 'El concepto', CATEGORIAS_VENTA.filter((c) => c !== 'Ajuste'));
+    const cambiosL = {};
+    lineas.forEach((l) => { if (l.categoria !== 'Ajuste') cambiosL[l.id] = Object.assign({ categoria: categoria }, sello); });
+    if (Object.keys(cambiosL).length) Db.actualizarVarios('Ventas_Lineas', cambiosL);
+    const pre = PREFIJOS_VENTA[categoria] || 'OC';
+    let nuevo = v.id;
+    if (v.id.split('-')[0] !== pre && !(pre === 'OC' && Ventas.esOc(v.id))) {
+      nuevo = Util.siguienteId(pre, 4);
+      Ventas._renombrar({ [v.id]: nuevo }, null, user);
+    }
+    if (motivo) Db.update('Ventas', nuevo, { notas: [v.notas, 'Reclasificada a ' + categoria + ': ' + motivo].filter(Boolean).join(' · ').slice(-500) });
+    Audit.log(user, 'reclasificar', 'Venta', v.id, { categoria: categoria, nuevo: nuevo, motivo: motivo });
+    return { id: v.id, nuevo: nuevo };
+  },
+
   /** Anula una venta (administrador): sus unidades vuelven a su lote. La OC no se reutiliza. */
   anular(p, user) {
     const v = Ventas.requerir(p.id);

@@ -458,7 +458,9 @@
           return '<tr class="fila-compra' + (open ? ' abierta' : '') + (v.anulada ? ' row-muted' : '') + '" data-action="verVenta" data-id="' + esc(v.id) + '">' +
             '<td><span class="chev">' + (open ? '▾' : '▸') + '</span></td>' +
             cols.map((c) => '<td class="' + (c.right ? 'cell-num right' : '') + '">' + c.celda(v) + '</td>').join('') +
-            '<td><div class="row-actions">' + (admin && !v.anulada ? GS.iconBtn('editarVenta', v.id, 'edit', 'Editar fecha, boleta, total o notas') + GS.iconBtn('anularVenta', v.id, 'trash', 'Anular venta', 'danger') : '') + '</div></td></tr>' +
+            '<td><div class="row-actions">' + (admin && !v.anulada ? GS.iconBtn('editarVenta', v.id, 'edit', 'Editar fecha, boleta, total o notas') +
+              (v.lineas.every((l) => l.porMonto) ? '<button class="btn small ghost" data-action="reclasificarVenta" data-id="' + esc(v.id) + '" title="Cambiar el concepto o pasarla a Finanzas">Reclasificar</button>' : '') +
+              GS.iconBtn('anularVenta', v.id, 'trash', 'Anular venta', 'danger') : '') + '</div></td></tr>' +
             (open ? '<tr class="detalle-row"><td colspan="' + n + '">' + detalleVenta(v) + '</td></tr>' : '');
         }).join('') : '<tr><td colspan="' + n + '">' + vacio + '</td></tr>';
         const wrap = document.getElementById(tbody).closest('.table-wrap');
@@ -501,6 +503,35 @@
         upd();
       },
       onSubmit: (val) => GS.mutate('editarVenta', Object.assign({ id: id }, val), v.id + ' actualizada'),
+    });
+  };
+
+  /** Venta sin productos del inventario: cambiar su concepto (SGL, TOR…) o, si no fue una venta, pasarla a Finanzas. */
+  const PREFIJO = { Singles: 'SGL', Torneo: 'TOR', 'Sobres sueltos': 'SOB', Bazar: 'BAZ', Accesorios: 'ACC', Otro: 'OC' };
+  GS.actions.reclasificarVenta = (id) => {
+    const v = data().ventas.find((x) => x.id === id);
+    const actual = (v.lineas.find((l) => l.categoria !== 'Ajuste') || v.lineas[0] || {}).categoria;
+    const opciones = Object.keys(PREFIJO).map((c) => ({ value: c, label: c + ' (' + PREFIJO[c] + ')' + (c === actual ? ' · actual' : '') }))
+      .concat([{ value: 'finanzas', label: 'No fue una venta → Finanzas (otro ingreso)' }]);
+    GS.formModal({
+      title: 'Reclasificar ' + v.id,
+      submitLabel: 'Reclasificar',
+      fields: () => '<p class="hint">' + esc(v.id) + ' · ' + fmt.date(v.fecha) + ' · ' + fmt.money(v.total) + ' · ' + esc(v.lineas.map((l) => l.producto).join(', ')) + '</p>' +
+        '<div class="form-grid"><div class="form-field full"><label>¿Qué fue? *</label><select name="destino">' + GS.options(opciones, actual === 'Otro' ? 'Singles' : actual) + '</select></div>' +
+        '<div class="form-field full"><label>Motivo / detalle</label><input name="motivo" maxlength="120" placeholder="Ej.: compra de prueba en la app de pagos"></div></div>' +
+        '<p class="hint" data-rc-ayuda></p>',
+      onMount: (form) => {
+        const ayuda = () => {
+          const d = form.elements.destino.value;
+          form.querySelector('[data-rc-ayuda]').innerHTML = d === 'finanzas'
+            ? 'La venta queda <strong>anulada</strong> y lo cobrado (' + fmt.money(v.cobrado) + ') pasa a Finanzas como <strong>Otro ingreso</strong> con referencia a ' + esc(v.id) + '. No cuenta como venta.'
+            : 'Sus líneas pasan a <strong>' + esc(d) + '</strong>' + (PREFIJO[d] === v.id.split('-')[0] ? '.' : ' y la venta toma un N° ' + PREFIJO[d] + '-; el N° ' + esc(v.id) + ' queda libre en la numeración.');
+        };
+        form.elements.destino.addEventListener('change', ayuda);
+        ayuda();
+      },
+      onSubmit: (val) => GS.mutate('reclasificarVenta', { id: id, destino: val.destino, motivo: val.motivo },
+        (r) => v.id + ' reclasificada' + (r && r.nuevo && r.nuevo !== v.id ? ' → ' + r.nuevo : '')),
     });
   };
 
