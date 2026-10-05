@@ -229,12 +229,15 @@
       }
       const r = resumen(anio);
       const total = (fila) => fila.valores.reduce((t, x) => t + x, 0);
-      const aportes = movsVivos().filter((m) => m.categoria === 'aporte').reduce((t, m) => t + m.monto, 0);
+      // Capital: aportes menos salidas de capital (retiros y compra de acciones a socios).
+      const sumaCat = (cats) => movsVivos().filter((m) => cats.indexOf(m.categoria) !== -1).reduce((t, m) => t + m.monto, 0);
+      const aportes = sumaCat(['aporte']);
+      const salidas = sumaCat(['retiro', 'compra_acciones']);
       cuerpo.innerHTML = '<div class="kpi-grid">' +
         kpi('Ventas ' + anio, fmt.money(total(r.totalVentas)), 'productos y ventas por monto') +
         kpi('Egresos ' + anio, fmt.money(total(r.totalEgresos)), 'compras, gastos, SII y comisiones') +
         kpi('Flujo ' + anio, '<span class="' + (total(r.flujo) < 0 ? 'text-danger' : 'text-success') + '">' + fmt.money(total(r.flujo)) + '</span>', 'ventas + otros ingresos − egresos') +
-        kpi('Aportes de capital', fmt.money(aportes), 'acumulado de todos los años') + '</div>' +
+        kpi('Aportes de capital', fmt.money(aportes - salidas), salidas ? 'aportes ' + fmt.money(aportes) + ' − salidas de capital ' + fmt.money(salidas) : 'acumulado de todos los años') + '</div>' +
         tablaResumen(r) + tablaSocios();
     },
   };
