@@ -15,7 +15,7 @@
 
 const APP = {
   nombre: 'GS Prime ERP',
-  version: '2.9.8',
+  version: '2.9.9',
   tz: 'America/Santiago',
   iva: 0.19,
 };
@@ -190,9 +190,9 @@ const PREFIJOS_VENTA = { 'Singles': 'SGL', 'Torneo': 'TOR', 'Sobres sueltos': 'S
 
 /** Finanzas: categorías de movimientos (la subcategoría es texto libre: socio, proveedor, concepto). */
 const CATEGORIAS_MOVIMIENTO = {
-  ingreso: { aporte: 'Aporte de capital', devolucion_sii: 'Devolución SII', otro_ingreso: 'Otro ingreso' },
+  ingreso: { aporte: 'Patrimonio · aporte de capital', devolucion_sii: 'Devolución SII', otro_ingreso: 'Otro ingreso' },
   egreso: {
-    compra: 'Compra por monto', gav: 'GAV', gopm: 'GOPM (puesta en marcha)', sii: 'Pago SII', comision: 'Comisión', retiro: 'Retiro de capital (socio)', compra_acciones: 'Compra de acciones / compensación a socio', otro_egreso: 'Otro egreso',
+    compra: 'Compra por monto', gav: 'GAV', gopm: 'GOPM (puesta en marcha)', sii: 'Pago SII', comision: 'Comisión', retiro: 'Patrimonio · retiro de capital', compra_acciones: 'Patrimonio · compra de acciones / compensación a socio', otro_egreso: 'Otro egreso',
   },
 };
 const CUENTAS = { caja: 'Caja (efectivo)', banco: 'Banco', tuu: 'TUU' };

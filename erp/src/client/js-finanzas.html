@@ -258,7 +258,7 @@
     return '<h3 class="sub-titulo" style="margin-top:22px;">Capital por socio</h3><div class="table-wrap"><table class="data-table" style="min-width:0"><thead><tr><th>Socio</th><th class="right">Aportes</th><th class="right">Retiros de capital</th><th class="right">Saldo</th></tr></thead><tbody>' +
       lista.map((s) => '<tr><td class="cell-strong">' + esc(s.nombre) + '</td><td class="cell-num right">' + fmt.money(s.aportes) + '</td><td class="cell-num right">' + (s.retiros ? '−' + fmt.money(s.retiros) : '—') + '</td>' +
         '<td class="cell-num right"><strong class="' + (s.saldo ? '' : 'muted') + '">' + fmt.money(s.saldo) + '</strong></td></tr>').join('') +
-      '</tbody></table></div><p class="table-note">Aportes (ingresos "Aporte de capital") menos retiros (egresos "Retiro de capital"), agrupados por el nombre del socio en el detalle. Un socio que salió debería quedar en $0.</p>';
+      '</tbody></table></div><p class="table-note">Aportes ("Patrimonio · aporte de capital") menos retiros ("Patrimonio · retiro de capital"), agrupados por el nombre del socio en el detalle. Un socio que salió debería quedar en $0.</p>';
   }
 
   /** Separa un movimiento en partes (ej. salida de un socio: retiro de capital hasta dejar sus aportes en 0 + compra de acciones). */
