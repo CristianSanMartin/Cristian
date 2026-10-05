@@ -478,33 +478,70 @@
 
   GS.actions.editarVenta = (id) => {
     const v = data().ventas.find((x) => x.id === id);
+    const d = data();
+    const editables = v.lineas.filter((l) => l.categoria !== 'Ajuste');
+    const ajustes = v.lineas.filter((l) => l.categoria === 'Ajuste').reduce((t, l) => t + l.subtotal, 0);
+    const clientes = d.clientes.map((c) => '<option value="' + esc(c.nombre) + '">').join('');
+    const lineas = editables.length && !v.anulada
+      ? '<div class="form-field full"><label>Productos y precios</label><div class="table-wrap"><table class="data-table" style="min-width:0"><thead><tr><th>Producto</th><th class="right">Cant.</th><th class="right">Precio unidad</th><th class="right">Subtotal</th></tr></thead><tbody>' +
+        editables.map((l) => '<tr><td class="cell-strong">' + esc(l.producto || l.productoNombre) + '</td><td class="cell-num right">' + fmt.num(l.cantidad) + '</td>' +
+          '<td class="right"><input class="qty-input price-input" style="width:110px" type="number" min="0" step="1" data-ev-linea="' + esc(l.id) + '" value="' + esc(l.precio) + '"></td>' +
+          '<td class="cell-num right" data-ev-sub="' + esc(l.id) + '">' + fmt.money(l.subtotal) + '</td></tr>').join('') +
+        '</tbody></table></div></div>'
+      : '';
     GS.formModal({
       title: 'Editar ' + v.id,
       submitLabel: 'Guardar',
+      size: 'wide',
       fields: () => '<div class="form-grid">' +
+        '<div class="form-field"><label>N° *</label><input name="numero" value="' + esc(v.id) + '" placeholder="Ej.: OC-0286"></div>' +
         '<div class="form-field"><label>Fecha *</label><input type="date" name="fecha" value="' + esc(v.fecha) + '"></div>' +
+        '<div class="form-field"><label>Cliente</label><input name="cliente" list="ev-clientes" autocomplete="off" value="' + esc(v.clienteId ? v.cliente : '') + '" placeholder="Cliente general"><datalist id="ev-clientes">' + clientes + '</datalist></div>' +
         '<div class="form-field"><label>N° boleta</label><input name="boleta" value="' + esc(v.boleta) + '"></div>' +
+        '<div class="form-field"><label>Canal</label><select name="canal">' + GS.options(d.catalogos.canales, v.canal) + '</select></div>' +
+        '<div class="form-field"><label>Evento</label><input name="evento" value="' + esc(v.evento) + '"></div>' +
+        '<div class="form-field"><label>Medio de pago</label><select name="medioPago">' + GS.options(Object.keys(d.catalogos.mediosPago).map((k) => ({ value: k, label: d.catalogos.mediosPago[k] })), v.medioPago) + '</select></div>' +
+        '<div class="form-field"><label>Comisión</label><input type="number" name="comision" min="0" step="1" value="' + esc(v.comision) + '"></div>' +
+        lineas +
         (v.anulada ? '' :
           '<div class="form-field"><label>Total pagado por el cliente</label><input type="number" name="total" min="0" step="1" value="' + esc(v.total) + '"></div>' +
-          '<div class="form-field"><label>Comisión (' + esc(v.medioPagoLabel) + ')</label><input type="number" name="comision" min="0" step="1" value="' + esc(v.comision) + '"></div>' +
-          '<div class="form-field full" data-ev-motivo hidden><label>Motivo del ajuste *</label><input name="motivo" maxlength="120" placeholder="Ej.: la caja registró el monto con la comisión de la máquina descontada"></div>' +
+          '<div class="form-field" data-ev-motivo hidden><label>Motivo del ajuste *</label><input name="motivo" maxlength="120" placeholder="Ej.: la caja registró el monto con la comisión descontada"></div>' +
           '<div class="form-field full" data-ev-dif></div>') +
-        '<div class="form-field full"><label>Notas</label><textarea name="notas" rows="3">' + esc(v.notas) + '</textarea></div></div>' +
-        '<p class="hint">Si el cliente pagó otro monto (por ejemplo, la migración tomó el valor con la comisión descontada), escribe el total real: la diferencia queda como una línea "Ajuste" con su motivo y se anota en las notas y en la auditoría. Los productos no se editan: si algo está mal, anula la venta y regístrala de nuevo.</p>',
+        '<div class="form-field full"><label>Notas</label><textarea name="notas" rows="2">' + esc(v.notas) + '</textarea></div></div>' +
+        '<p class="hint">Cambiar el N° actualiza la venta, sus líneas, abonos y referencias (el N° no puede estar usado por otra venta). Si corriges un precio, el total cambia solo; ' +
+        'si además el cliente pagó otro monto, escribe el total real y la diferencia queda como una línea "Ajuste" con su motivo. Para cambiar los productos o las unidades, anula la venta y regístrala de nuevo.</p>',
       onMount: (form) => {
         if (!form.elements.total) return;
+        let totalTocado = false;
+        const sumaLineas = () => editables.reduce((t, l) => {
+          const inp = form.querySelector('[data-ev-linea="' + CSS.escape(l.id) + '"]');
+          return t + (inp ? Number(inp.value) || 0 : l.precio) * l.cantidad;
+        }, 0);
         const upd = () => {
-          const dif = (Number(form.elements.total.value) || 0) - v.total;
+          editables.forEach((l) => {
+            const inp = form.querySelector('[data-ev-linea="' + CSS.escape(l.id) + '"]');
+            const td = form.querySelector('[data-ev-sub="' + CSS.escape(l.id) + '"]');
+            if (inp && td) td.textContent = fmt.money((Number(inp.value) || 0) * l.cantidad);
+          });
+          const base = sumaLineas() + ajustes;
+          if (!totalTocado) form.elements.total.value = base;
+          const dif = (Number(form.elements.total.value) || 0) - base;
           form.querySelector('[data-ev-motivo]').hidden = !dif;
-          form.querySelector('[data-ev-dif]').innerHTML = dif
-            ? '<p class="table-note text-gold">Se agrega un ajuste de ' + (dif > 0 ? '+' : '−') + fmt.money(Math.abs(dif)) + ' (total ' + fmt.money(v.total) + ' → ' + fmt.money(v.total + dif) + ').</p>' : '';
+          form.querySelector('[data-ev-dif]').innerHTML = (base !== v.total ? '<p class="table-note">Con los precios corregidos: total ' + fmt.money(v.total) + ' → ' + fmt.money(base) + '.</p>' : '') +
+            (dif ? '<p class="table-note text-gold">Se agrega un ajuste de ' + (dif > 0 ? '+' : '−') + fmt.money(Math.abs(dif)) + ' (total ' + fmt.money(base + dif) + ').</p>' : '');
         };
-        form.elements.total.addEventListener('input', upd);
+        form.querySelectorAll('[data-ev-linea]').forEach((inp) => inp.addEventListener('input', upd));
+        form.elements.total.addEventListener('input', () => { totalTocado = true; upd(); });
         upd();
       },
-      onSubmit: (val) => GS.mutate('editarVenta', Object.assign({ id: id }, val), v.id + ' actualizada'),
+      onSubmit: (val, form) => {
+        const datos = Object.assign({ id: id }, val);
+        datos.lineas = Array.from(form.querySelectorAll('[data-ev-linea]')).map((inp) => ({ id: inp.dataset.evLinea, precio: inp.value }));
+        return GS.mutate('editarVenta', datos, (r) => (r && r.id && r.id !== v.id ? v.id + ' → ' + r.id + ' actualizada' : v.id + ' actualizada'));
+      },
     });
   };
+
 
   /** Venta sin productos del inventario: cambiar su concepto (SGL, TOR…) o, si no fue una venta, pasarla a Finanzas. */
   const PREFIJO = { Singles: 'SGL', Torneo: 'TOR', 'Sobres sueltos': 'SOB', Bazar: 'BAZ', Accesorios: 'ACC', Otro: 'OC' };

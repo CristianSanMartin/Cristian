@@ -161,33 +161,81 @@ const Ventas = {
       notas: Util.texto(p.notas, 'Las notas', { max: 500 }),
     };
     if (p.comision != null && p.comision !== '') datos.comision = Util.entero(p.comision, 'La comisión', { min: 0 });
+    if (p.canal != null && p.canal !== '') datos.canal = Util.opcion(p.canal, 'El canal', CANALES);
+    if (p.evento != null) datos.evento = Util.texto(p.evento, 'El evento', { max: 120 });
+    if (p.medioPago != null && p.medioPago !== '') datos.medioPago = Util.opcion(p.medioPago, 'El medio de pago', Object.keys(MEDIOS_PAGO));
+    // Nuevo N°: "286", "0286", "OC286" u "OC-0286" (sin prefijo, conserva el de la venta).
+    let nuevoId = v.id;
+    if (p.numero != null && String(p.numero).trim() !== '') {
+      const t = String(p.numero).trim().toUpperCase();
+      const m = /^(?:(OC|PR|SGL|TOR|SOB|BAZ|ACC)\s*-?\s*)?0*(\d+)(-\d+)?$/.exec(t);
+      if (!m) throw new AppError('El N° "' + p.numero + '" no es válido. Ej.: OC-0286 o 286.');
+      nuevoId = (m[1] || v.id.split('-')[0]) + '-' + String(Number(m[2])).padStart(4, '0') + (m[3] || '');
+      if (nuevoId !== v.id && Db.get('Ventas', nuevoId)) throw new AppError('El N° ' + nuevoId + ' ya lo usa otra venta.');
+    }
+    const lineas = Db.all('Ventas_Lineas').filter((l) => l.ventaId === v.id);
+    const sumaAntes = lineas.reduce((t, l) => t + l.precio * l.cantidad, 0);
+    // Precios de cada línea (corregir un precio mal ingresado).
+    const precios = {};
+    (Array.isArray(p.lineas) ? p.lineas : []).forEach((x) => {
+      const l = lineas.find((y) => y.id === String(x.id));
+      if (!l) throw new AppError('La línea ' + x.id + ' no es de la venta ' + v.id + '.');
+      if (l.categoria === 'Ajuste') return;
+      const precio = Util.entero(x.precio, 'El precio', { min: 0 });
+      if (precio !== l.precio) precios[l.id] = precio;
+    });
+    if (Object.keys(precios).length && v.anulada) throw new AppError('La venta ' + v.id + ' está anulada.');
+    const sumaLineas = lineas.reduce((t, l) => t + (l.id in precios ? precios[l.id] : l.precio) * l.cantidad, 0);
     let ajuste = null;
+    let totalFinal = sumaLineas;
     if (p.total != null && p.total !== '') {
       if (v.anulada) throw new AppError('La venta ' + v.id + ' está anulada.');
-      const lineas = Db.all('Ventas_Lineas').filter((l) => l.ventaId === v.id);
-      const actual = lineas.reduce((t, l) => t + l.precio * l.cantidad, 0);
       const total = Util.entero(p.total, 'El total pagado', { min: 0 });
-      const dif = total - actual;
+      const dif = total - sumaLineas;
       if (dif) {
         const motivo = Util.texto(p.motivo, 'El motivo del ajuste', { requerido: true, max: 120 });
-        const cobrado = v.abono + Db.all('Cobros').filter((c) => c.ventaId === v.id).reduce((t, c) => t + c.monto, 0);
-        // Si estaba pagada, sigue pagada con el total nuevo; si debía, el saldo cambia.
-        if (cobrado >= actual) datos.abono = Math.max(0, v.abono + dif);
-        ajuste = { dif: dif, actual: actual, total: total, motivo: motivo };
-        const nota = Util.hoy() + ': total ajustado ' + actual + ' → ' + total + ' (' + motivo + ')';
+        ajuste = { dif: dif, actual: sumaLineas, total: total, motivo: motivo };
+        totalFinal = total;
+        const nota = Util.hoy() + ': total ajustado ' + sumaLineas + ' → ' + total + ' (' + motivo + ')';
         datos.notas = [datos.notas, nota].filter(Boolean).join(' · ').slice(-500);
       }
     }
+    if (totalFinal !== sumaAntes) {
+      // Si estaba pagada, sigue pagada con el total nuevo; si debía, el saldo cambia.
+      const cobrado = v.abono + Db.all('Cobros').filter((c) => c.ventaId === v.id).reduce((t, c) => t + c.monto, 0);
+      if (cobrado >= sumaAntes) datos.abono = Math.max(0, v.abono + totalFinal - sumaAntes);
+    }
+    if (p.cliente != null || p.clienteId) {
+      datos.clienteId = Clientes.resolver(p, user);
+      const cobradoFinal = (datos.abono != null ? datos.abono : v.abono) + Db.all('Cobros').filter((c) => c.ventaId === v.id).reduce((t, c) => t + c.monto, 0);
+      if (!datos.clienteId && cobradoFinal < totalFinal) throw new AppError('Una venta con saldo por cobrar necesita un cliente (no puede ser "Cliente general").');
+    }
     Audit.log(user, 'editar', 'Venta', v.id, Object.assign(Audit.diff(v, Object.assign({}, v, datos)),
+      nuevoId !== v.id ? { numero: v.id + ' → ' + nuevoId } : {},
+      Object.keys(precios).length ? { precios: Object.keys(precios).map((k) => k + ' ' + lineas.find((l) => l.id === k).precio + '→' + precios[k]).join(', ') } : {},
       ajuste ? { totalAntes: ajuste.actual, total: ajuste.total, motivo: ajuste.motivo } : {}));
     Db.update('Ventas', v.id, Object.assign(datos, Util.sello(user)));
+    if (Object.keys(precios).length) {
+      Db.actualizarVarios('Ventas_Lineas', Object.keys(precios).reduce((o, k) => { o[k] = Object.assign({ precio: precios[k] }, Util.sello(user)); return o; }, {}));
+    }
     if (ajuste) {
       Db.insert('Ventas_Lineas', Object.assign({
         id: Util.siguienteId('VL', 6), ventaId: v.id, loteId: '', productoId: '', cantidad: 1,
         precioLista: ajuste.dif, precio: ajuste.dif, costo: 0, categoria: 'Ajuste', descripcion: ajuste.motivo,
       }, Util.sello(user, true)));
     }
+    if (nuevoId !== v.id) {
+      Ventas._renombrar({ [v.id]: nuevoId }, null, user);
+      // El correlativo de ese prefijo queda sobre el N° usado, para que una venta nueva no lo repita.
+      const pre = nuevoId.split('-')[0];
+      const n = Number(nuevoId.split('-')[1]);
+      const sec = Db.get('Secuencias', pre);
+      if (!sec) Db.insert('Secuencias', { clave: pre, valor: n });
+      else if (sec.valor < n) Db.update('Secuencias', pre, { valor: n });
+    }
+    return { id: nuevoId };
   },
+
 
   /**
    * Ventas migradas con su número de OC original (la nota "OC original OC223" → OC-0223).

@@ -718,6 +718,24 @@ test("ventas sin OC: singles, torneos, bazar… con su propio correlativo; las e
   assert.ok(s.ok("validacion").data.hallazgos.some(h => h.regla === "vtOcSinProducto" && h.ref === "OC-0001"));
 });
 
+test("editar venta: N°, cliente, canal, medio de pago y precios; el N° libre se respeta", () => {
+  const s = createServer();
+  const { prods } = conInventario(s);
+  const v = s.ok("crearVenta", { fecha: "2026-07-01", lineas: [{ productoId: prods.miniTin.id, cantidad: 2 }] }).result;   // OC-0001, 2 × 18.000
+  const linea = s.ok("bootstrap").data.ventas.find(x => x.id === v.id).lineas[0];
+  s.ok("crearVenta", { fecha: "2026-07-02", lineas: [{ productoId: prods.miniTin.id, cantidad: 1 }] });                   // OC-0002
+  assert.match(errorDe(s.call("editarVenta", { id: v.id, fecha: "2026-07-01", numero: "OC-0002" })), /ya lo usa otra venta/);
+  assert.match(errorDe(s.call("editarVenta", { id: v.id, fecha: "2026-07-01", numero: "abc" })), /no es válido/);
+  const r = s.ok("editarVenta", { id: v.id, fecha: "2026-07-01", numero: "286", cliente: "Vicente", canal: "Evento", evento: "Liga", medioPago: "transferencia",
+    lineas: [{ id: linea.id, precio: 17000 }] }).result;
+  assert.equal(r.id, "OC-0286");
+  const d = s.ok("bootstrap").data;
+  const e = d.ventas.find(x => x.id === "OC-0286");
+  assert.deepEqual([e.cliente, e.canal, e.evento, e.medioPago, e.total, e.estadoPago], ["Vicente", "Evento", "Liga", "transferencia", 34000, "pagada"]);
+  assert.ok(!d.ventas.some(x => x.id === v.id));
+  assert.equal(s.ok("crearVenta", { fecha: "2026-07-03", lineas: [{ productoId: prods.miniTin.id, cantidad: 1 }] }).result.id, "OC-0287", "el correlativo sigue después del N° usado");
+});
+
 test("reclasificar una venta sin productos: a otro concepto o a Finanzas", () => {
   const s = createServer();
   conInventario(s);
