@@ -383,7 +383,8 @@ const MigracionCaja = {
         else if (neto < 0) movimientos.push({ fila: f, m: Object.assign({ tipo: 'egreso', categoria: 'otro_egreso', monto: -neto }, base) });
       } else {
         if (f.salidas > 0) movimientos.push({ fila: f, m: Object.assign({ tipo: 'egreso', categoria: f.destinoEf, monto: f.salidas }, base) });
-        if (f.entradas > 0) movimientos.push({ fila: f, m: Object.assign({ tipo: 'ingreso', categoria: 'otro_ingreso', monto: f.entradas }, base, { subcategoria: 'Devolución · ' + base.subcategoria }) });
+        // Una entrada en una glosa de egreso es una devolución (la del SII tiene su propia categoría).
+        if (f.entradas > 0) movimientos.push({ fila: f, m: Object.assign({ tipo: 'ingreso', categoria: f.destinoEf === 'sii' ? 'devolucion_sii' : 'otro_ingreso', monto: f.entradas }, base, { subcategoria: 'Devolución · ' + base.subcategoria }) });
       }
     });
 

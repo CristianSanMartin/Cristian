@@ -279,7 +279,8 @@ const Ventas = {
       const cuenta = { efectivo: 'caja', transferencia: 'banco', debito: 'tuu', credito: 'tuu' }[v.medioPago] || '';
       let mov = null;
       if (cobrado > 0) {
-        mov = Finanzas.guardar({ fecha: v.fecha, tipo: 'ingreso', categoria: 'otro_ingreso', subcategoria: motivo || 'No era una venta',
+        const categoria = p.categoriaMov ? Util.opcion(p.categoriaMov, 'La categoría', Object.keys(CATEGORIAS_MOVIMIENTO.ingreso)) : 'otro_ingreso';
+        mov = Finanzas.guardar({ fecha: v.fecha, tipo: 'ingreso', categoria: categoria, subcategoria: motivo || 'No era una venta',
           monto: cobrado, cuenta: cuenta, referencia: 'Antes ' + v.id, notas: v.notas }, user);
       }
       Db.update('Ventas', v.id, Object.assign({ anulada: true, notas: [v.notas, 'Reclasificada a Finanzas' + (mov ? ' ' + mov.id : '') + (motivo ? ': ' + motivo : '')].filter(Boolean).join(' · ').slice(-500) }, sello));

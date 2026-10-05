@@ -731,6 +731,10 @@ test("reclasificar una venta sin productos: a otro concepto o a Finanzas", () =>
   const mov = d.movimientos.find(m => m.id === r1.nuevo);
   assert.deepEqual([mov.tipo, mov.categoria, mov.monto, mov.cuenta, mov.referencia, mov.fecha], ["ingreso", "otro_ingreso", 1000, "tuu", "Antes " + v1.id, "2025-06-13"]);
   assert.equal(s.run(`Db.get("Migracion_Caja", "MC-1").migrada`), r1.nuevo);
+  // Devolución del SII que entró como venta: va a Finanzas con su categoría
+  const sii = s.ok("crearVenta", { fecha: "2026-05-14", lineas: [{ categoria: "Otro", descripcion: "SII", monto: 986 }] }).result;
+  const r3 = s.ok("reclasificarVenta", { id: sii.id, destino: "finanzas", categoriaMov: "devolucion_sii", motivo: "Devolución de impuestos" }).result;
+  assert.equal(s.ok("bootstrap").data.movimientos.find(m => m.id === r3.nuevo).categoria, "devolucion_sii");
   // Otra: eran singles → sale de las OC
   const r2 = s.ok("reclasificarVenta", { id: v2.id, destino: "Singles" }).result;
   assert.equal(r2.nuevo, "SGL-0001");

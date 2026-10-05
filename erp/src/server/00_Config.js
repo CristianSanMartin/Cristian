@@ -15,7 +15,7 @@
 
 const APP = {
   nombre: 'GS Prime ERP',
-  version: '2.9.5',
+  version: '2.9.6',
   tz: 'America/Santiago',
   iva: 0.19,
 };
@@ -190,7 +190,7 @@ const PREFIJOS_VENTA = { 'Singles': 'SGL', 'Torneo': 'TOR', 'Sobres sueltos': 'S
 
 /** Finanzas: categorías de movimientos (la subcategoría es texto libre: socio, proveedor, concepto). */
 const CATEGORIAS_MOVIMIENTO = {
-  ingreso: { aporte: 'Aporte de capital', otro_ingreso: 'Otro ingreso' },
+  ingreso: { aporte: 'Aporte de capital', devolucion_sii: 'Devolución SII', otro_ingreso: 'Otro ingreso' },
   egreso: {
     compra: 'Compra por monto', gav: 'GAV', gopm: 'GOPM (puesta en marcha)', sii: 'Pago SII', comision: 'Comisión', retiro: 'Retiro de socio', otro_egreso: 'Otro egreso',
   },
