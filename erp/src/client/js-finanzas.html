@@ -221,6 +221,7 @@
           '<td><div class="row-actions">' + (m.venta || m.compra
             ? '<button class="btn small ghost" data-action="finVer" data-id="' + esc(m.id) + '" title="Ver el detalle aquí mismo">' + (abiertosMov.has(m.id) ? '▾ ' : '▸ ') + esc(m.venta || m.compra) + '</button>'
             : (op && !m.anulado ? GS.iconBtn('editarMovimiento', m.id, 'edit', 'Editar') : '') +
+              (admin && !m.anulado ? '<button class="btn small ghost" data-action="dividirMovimiento" data-id="' + esc(m.id) + '" title="Separar en partes con distinta categoría (ej. retiro de capital + compra de acciones)">Dividir</button>' : '') +
               (admin && !m.anulado ? GS.iconBtn('anularMovimiento', m.id, 'trash', 'Anular', 'danger') : '')) + '</div></td></tr>' +
           (abiertosMov.has(m.id) ? '<tr class="detalle-row"><td colspan="' + (colsMov.length + 1) + '">' + detalleMov(m) + '</td></tr>' : '')).join('')
           : '<tr><td colspan="' + (colsMov.length + 1) + '">' + GS.empty('Sin movimientos', 'Registra aportes, gastos, pagos al SII o compras por monto con "Nuevo movimiento".', 'finanzas') + '</td></tr>';
@@ -234,8 +235,101 @@
         kpi('Egresos ' + anio, fmt.money(total(r.totalEgresos)), 'compras, gastos, SII y comisiones') +
         kpi('Flujo ' + anio, '<span class="' + (total(r.flujo) < 0 ? 'text-danger' : 'text-success') + '">' + fmt.money(total(r.flujo)) + '</span>', 'ventas + otros ingresos − egresos') +
         kpi('Aportes de capital', fmt.money(aportes), 'acumulado de todos los años') + '</div>' +
-        tablaResumen(r);
+        tablaResumen(r) + tablaSocios();
     },
+  };
+
+  /* ---------- capital por socio ---------- */
+
+  /** Aportes − retiros de capital por socio (el detalle del movimiento es el nombre del socio). */
+  const claveSocio = (t) => GS.norm(String(t || '').replace(/^(aporte|retiro)( de capital)?\s*/i, '')).trim();
+  function socios() {
+    const res = {};
+    movsVivos().filter((m) => m.categoria === 'aporte' || m.categoria === 'retiro').forEach((m) => {
+      const k = claveSocio(m.subcategoria) || '(sin nombre)';
+      const s = res[k] = res[k] || { nombre: String(m.subcategoria || '(sin nombre)').replace(/^(aporte|retiro)( de capital)?\s*/i, '') || '(sin nombre)', aportes: 0, retiros: 0 };
+      if (m.categoria === 'aporte') s.aportes += m.monto; else s.retiros += m.monto;
+    });
+    return Object.keys(res).map((k) => Object.assign({ clave: k, saldo: res[k].aportes - res[k].retiros }, res[k])).sort((a, b) => b.saldo - a.saldo);
+  }
+  function tablaSocios() {
+    const lista = socios();
+    if (!lista.length) return '';
+    return '<h3 class="sub-titulo" style="margin-top:22px;">Capital por socio</h3><div class="table-wrap"><table class="data-table" style="min-width:0"><thead><tr><th>Socio</th><th class="right">Aportes</th><th class="right">Retiros de capital</th><th class="right">Saldo</th></tr></thead><tbody>' +
+      lista.map((s) => '<tr><td class="cell-strong">' + esc(s.nombre) + '</td><td class="cell-num right">' + fmt.money(s.aportes) + '</td><td class="cell-num right">' + (s.retiros ? '−' + fmt.money(s.retiros) : '—') + '</td>' +
+        '<td class="cell-num right"><strong class="' + (s.saldo ? '' : 'muted') + '">' + fmt.money(s.saldo) + '</strong></td></tr>').join('') +
+      '</tbody></table></div><p class="table-note">Aportes (ingresos "Aporte de capital") menos retiros (egresos "Retiro de capital"), agrupados por el nombre del socio en el detalle. Un socio que salió debería quedar en $0.</p>';
+  }
+
+  /** Separa un movimiento en partes (ej. salida de un socio: retiro de capital hasta dejar sus aportes en 0 + compra de acciones). */
+  GS.actions.dividirMovimiento = (id) => {
+    const m = data().movimientos.find((x) => x.id === id);
+    const cats = data().catalogos.categoriasMovimiento[m.tipo];
+    const listaSocios = socios();
+    const fila = (i, cat, sub, monto) => '<tr data-parte="' + i + '"><td><div class="form-field" style="margin:0"><select name="cat' + i + '">' + GS.options(Object.keys(cats).map((k) => ({ value: k, label: cats[k] })), cat) + '</select></div></td>' +
+      '<td><div class="form-field" style="margin:0"><input name="sub' + i + '" value="' + esc(sub) + '" list="div-socios" placeholder="Detalle (en un retiro: el socio)"></div></td>' +
+      '<td class="right"><input class="qty-input" style="width:120px" type="number" min="1" step="1" name="monto' + i + '" value="' + esc(monto) + '"></td></tr>';
+    GS.formModal({
+      title: 'Dividir ' + m.id,
+      submitLabel: 'Dividir',
+      size: 'wide',
+      fields: () => '<p class="hint">' + esc(m.id) + ' · ' + fmt.date(m.fecha) + ' · ' + esc(m.categoriaLabel) + ' · ' + esc(m.subcategoria || '') + ' · <strong>' + fmt.money(m.monto) + '</strong></p>' +
+        '<datalist id="div-socios">' + listaSocios.map((s) => '<option value="' + esc(s.nombre) + '">').join('') + '</datalist>' +
+        '<div class="table-wrap"><table class="data-table" style="min-width:0"><thead><tr><th>Categoría</th><th>Detalle</th><th class="right">Monto</th></tr></thead><tbody data-partes>' +
+        fila(0, m.categoria, m.subcategoria, m.monto) + fila(1, m.tipo === 'egreso' ? 'retiro' : 'otro_ingreso', '', '') + '</tbody></table></div>' +
+        '<div class="btn-row" style="margin-top:8px;"><button type="button" class="btn small ghost" data-div-agregar>+ Agregar parte</button></div>' +
+        '<div data-div-info></div>' +
+        '<p class="hint">La primera parte queda en ' + esc(m.id) + '; las demás se crean como movimientos nuevos con la misma fecha, cuenta y referencia. Las partes deben sumar ' + fmt.money(m.monto) + '.</p>',
+      onMount: (form) => {
+        let n = 2;
+        const partes = () => Array.from(form.querySelectorAll('[data-parte]')).map((tr) => {
+          const i = tr.dataset.parte;
+          return { categoria: form.elements['cat' + i].value, subcategoria: form.elements['sub' + i].value, monto: Number(form.elements['monto' + i].value) || 0 };
+        });
+        const upd = () => {
+          const ps = partes();
+          const suma = ps.reduce((t, x) => t + x.monto, 0);
+          // En un retiro de capital: cuánto falta para dejar al socio en 0 (sin contar este movimiento).
+          const ayudas = ps.map((x, i) => {
+            if (x.categoria !== 'retiro' || !x.subcategoria) return '';
+            const s = listaSocios.find((y) => y.clave === claveSocio(x.subcategoria));
+            if (!s) return '';
+            const propio = m.categoria === 'retiro' && claveSocio(m.subcategoria) === s.clave ? m.monto : 0;
+            const falta = s.saldo + propio;
+            return '<p class="table-note">' + esc(s.nombre) + ': aportes ' + fmt.money(s.aportes) + ', retiros ' + fmt.money(s.retiros - propio) + ' → para dejarlo en $0 el retiro debe ser <strong>' + fmt.money(falta) + '</strong> ' +
+              '<button type="button" class="btn small ghost" data-div-usar="' + form.querySelectorAll('[data-parte]')[i].dataset.parte + '" data-monto="' + falta + '">Usar</button></p>';
+          }).join('');
+          form.querySelector('[data-div-info]').innerHTML = ayudas +
+            '<p class="table-note ' + (suma === m.monto ? 'text-success' : 'text-gold') + '">Suma de las partes: ' + fmt.money(suma) + (suma === m.monto ? ' ✓' : ' (faltan ' + fmt.money(m.monto - suma) + ')') + '</p>';
+        };
+        form.addEventListener('input', upd);
+        form.addEventListener('change', upd);
+        form.addEventListener('click', (e) => {
+          if (e.target.dataset.divAgregar != null) {
+            form.querySelector('[data-partes]').insertAdjacentHTML('beforeend', fila(n++, Object.keys(cats)[0], '', ''));
+            upd();
+          }
+          if (e.target.dataset.divUsar != null) {
+            const i = e.target.dataset.divUsar;
+            form.elements['monto' + i].value = e.target.dataset.monto;
+            // La primera parte se ajusta para que la suma calce.
+            if (i !== '0') {
+              const otras = partes().reduce((t, x, k) => t + (k === 0 ? 0 : x.monto), 0);
+              form.elements.monto0.value = Math.max(0, m.monto - otras);
+            }
+            upd();
+          }
+        });
+        upd();
+      },
+      onSubmit: (v, form) => {
+        const ps = Array.from(form.querySelectorAll('[data-parte]')).map((tr) => {
+          const i = tr.dataset.parte;
+          return { categoria: v['cat' + i], subcategoria: v['sub' + i], monto: v['monto' + i] };
+        }).filter((x) => Number(x.monto) > 0);
+        return GS.mutate('dividirMovimiento', { id: id, partes: ps }, (r) => m.id + ' dividido en ' + (r.nuevos.length + 1) + ' movimientos');
+      },
+    });
   };
 
   /* ---------- formulario ---------- */

@@ -36,6 +36,34 @@ const Finanzas = {
     return mov;
   },
 
+  /**
+   * Divide un movimiento en partes del mismo tipo (ej. la salida de un socio: retiro de capital +
+   * compra de acciones). La primera parte queda en el movimiento original; las demás son movimientos
+   * nuevos con la misma fecha, cuenta y referencia. La suma de las partes debe ser el monto original.
+   * p: { id, partes: [{ categoria, subcategoria, monto }] }
+   */
+  dividir(p, user) {
+    const mov = Finanzas.requerir(p.id);
+    if (mov.anulado) throw new AppError('El movimiento ' + mov.id + ' está anulado.');
+    const partes = (Array.isArray(p.partes) ? p.partes : []).map((x, i) => ({
+      categoria: Util.opcion(x.categoria, 'La categoría de la parte ' + (i + 1), Object.keys(CATEGORIAS_MOVIMIENTO[mov.tipo])),
+      subcategoria: Util.texto(x.subcategoria, 'El detalle de la parte ' + (i + 1), { max: 120 }),
+      monto: Util.entero(x.monto, 'El monto de la parte ' + (i + 1), { requerido: true, min: 1 }),
+    }));
+    if (partes.length < 2) throw new AppError('Divide el movimiento en al menos dos partes.');
+    const suma = partes.reduce((t, x) => t + x.monto, 0);
+    if (suma !== mov.monto) throw new AppError('Las partes suman ' + suma + ' y el movimiento es de ' + mov.monto + '.');
+    const sello = Util.sello(user);
+    Db.update('Finanzas', mov.id, Object.assign({}, partes[0], sello));
+    const ids = Util.reservarIds('MOV', 5, partes.length - 1);
+    Db.insertMany('Finanzas', partes.slice(1).map((x, i) => Object.assign({
+      id: ids[i], fecha: mov.fecha, tipo: mov.tipo, cuenta: mov.cuenta, referencia: mov.referencia,
+      notas: ['Dividido de ' + mov.id, mov.notas].filter(Boolean).join(' · ').slice(0, 300), anulado: false,
+    }, x, Util.sello(user, true))));
+    Audit.log(user, 'dividir', 'Movimiento', mov.id, { monto: mov.monto, partes: partes.map((x, i) => (i ? ids[i - 1] : mov.id) + ' ' + x.categoria + ' ' + x.monto).join(', ') });
+    return { id: mov.id, nuevos: ids };
+  },
+
   anular(p, user) {
     const mov = Finanzas.requerir(p.id);
     if (mov.anulado) throw new AppError('El movimiento ' + mov.id + ' ya está anulado.');
