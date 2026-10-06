@@ -260,7 +260,8 @@ distintos). **Corregir** abre el registro; **Validar** lo marca como revisado (c
 - **Pagos a proveedores:** en Compras, el detalle de cada factura muestra sus pagos y lo que falta.
   "Registrar pago" (fecha, monto, cuenta) admite pagos parciales; quedan en la hoja `Pagos_Facturas`
   y cuentan como egreso en el flujo de Finanzas. Los pagos conciliados desde la caja diaria también
-  se ven ahí. El administrador puede anular un pago.
+  se ven ahí. El administrador puede anular un pago o, si quedó enlazado a la factura equivocada,
+  "cambiar factura" (en el detalle de la compra o con el lápiz de la fila en Finanzas → Movimientos).
 - **Deudas de clientes:** en Editar venta, "Pagado al vender" fija lo que se pagó al comprar; el
   resto queda como deuda (requiere cliente) y se salda con abonos en Clientes.
 - **Cerrar migración:** Administración → Respaldos. Hace un respaldo, vacía la zona de trabajo del

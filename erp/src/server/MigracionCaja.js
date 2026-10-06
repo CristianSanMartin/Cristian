@@ -450,12 +450,12 @@ const MigracionCaja = {
     return resumen;
   },
 
-  /** Pagos de facturas conciliados desde la caja: [{ compraId, fecha, monto }] (para el flujo de caja). */
+  /** Pagos de facturas conciliados desde la caja: [{ id (fila de Migracion_Caja), compraId, fecha, monto, fila }] (para el flujo de caja). */
   pagosFacturas() {
     const res = [];
     Db.all('Migracion_Caja').forEach((f) => {
       const m = /^Pago (\S+)/.exec(f.migrada || '');
-      if (m) res.push({ compraId: m[1], fecha: f.fecha, monto: f.salidas });
+      if (m) res.push({ id: f.id, compraId: m[1], fecha: f.fecha, monto: f.salidas, fila: f.fila });
     });
     return res;
   },

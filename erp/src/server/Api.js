@@ -43,6 +43,7 @@ function rutas_() {
     agregarLineaCompra: { rol: 'admin', write: true, fn: Compras.agregarLinea },
     registrarPagoCompra: { rol: 'operador', write: true, fn: Compras.registrarPago },
     anularPagoCompra: { rol: 'admin', write: true, fn: Compras.anularPago },
+    reenlazarPagoCompra: { rol: 'admin', write: true, fn: Compras.reenlazarPago },
     cerrarMigracion: { rol: 'admin', write: true, fn: (p, u) => Migracion.cerrar(p, u) },
     reabrirMigracion: { rol: 'admin', write: true, fn: (p, u) => Migracion.reabrir(p, u) },
     unirProductos: { rol: 'admin', write: true, fn: Productos.unir },

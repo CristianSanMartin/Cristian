@@ -778,18 +778,28 @@ test("dividir un movimiento: salida de un socio en retiro de capital + compra de
 
 test("pagos de facturas: registrar en partes, anular y estado de pago", () => {
   const s = createServer();
-  conInventario(s);
-  let c = s.ok("bootstrap").data.compras[0];
+  const { pv: pp } = preventa30th(s);
+  s.ok("registrarAsignacion", { lineas: [{ id: pp.binderEng.id, asignado: 24 }, { id: pp.binderEsp.id, asignado: 6 }, { id: pp.miniTin.id, asignado: 10 }] });
+  s.ok("crearCompra", { preventas: [pp.binderEng.id, pp.binderEsp.id], factura: "30th2", fecha: "2026-10-02" });
+  s.ok("crearCompra", { preventas: [pp.miniTin.id], factura: "30th3", fecha: "2026-10-03" });   // otra factura, para reenlazar
+  let c = s.ok("bootstrap").data.compras.find(x => x.factura === "30th2");
   assert.deepEqual([c.pagado, c.porPagar], [0, Math.round(c.total)]);
   assert.match(errorDe(s.call("registrarPagoCompra", { compraId: c.id, fecha: "2026-10-10", monto: Math.round(c.total) + 10 })), /no puede ser mayor/);
-  const p1 = s.ok("registrarPagoCompra", { compraId: c.id, fecha: "2026-10-10", monto: 500000, cuenta: "banco" }).result;
-  s.ok("registrarPagoCompra", { compraId: c.id, fecha: "2026-10-20", monto: Math.round(c.total) - 500000 });
+  const p1 = s.ok("registrarPagoCompra", { compraId: c.id, fecha: "2026-10-10", monto: 100000, cuenta: "banco" }).result;
+  s.ok("registrarPagoCompra", { compraId: c.id, fecha: "2026-10-20", monto: Math.round(c.total) - 100000 });
   let d = s.ok("bootstrap").data;
-  c = d.compras[0];
+  c = d.compras.find(x => x.id === c.id);
   assert.deepEqual([c.pagos.length, c.porPagar], [2, 0]);
   assert.ok(d.pagosFacturas.some(x => x.id === p1.id && x.cuenta === "banco"), "llega a Finanzas");
+  // Reenlazar a otra factura: la primera vuelve a quedar por pagar
+  const otra = d.compras.find(x => x.id !== c.id);
+  s.ok("reenlazarPagoCompra", { origen: "manual", id: p1.id, compraId: otra.id });
+  d = s.ok("bootstrap").data;
+  assert.deepEqual([d.compras.find(x => x.id === c.id).porPagar, d.compras.find(x => x.id === otra.id).pagado], [100000, 100000]);
+  assert.match(errorDe(s.call("reenlazarPagoCompra", { origen: "manual", id: p1.id, compraId: "CP-9999" })), /no existe/);
+  s.ok("reenlazarPagoCompra", { origen: "manual", id: p1.id, compraId: c.id });
   s.ok("anularPagoCompra", { id: p1.id });
-  assert.equal(s.ok("bootstrap").data.compras[0].porPagar, 500000);
+  assert.equal(s.ok("bootstrap").data.compras.find(x => x.id === c.id).porPagar, 100000);
   s.ok("guardarUsuario", { email: "vista@gsprime.cl", nombre: "Vista", rol: "lectura" });
   assert.equal(s.as("vista@gsprime.cl").call("registrarPagoCompra", { compraId: c.id, fecha: "2026-10-10", monto: 1 }).code, "SIN_PERMISO");
 });
@@ -1138,7 +1148,7 @@ function cajaEjemplo(totalFactura) {
     c("2025-06-10", "Patrimonio", 335000, "", "Ignacio"),
     c("13-06-2025", "Compras", "", 100000, "Stock | Singles"),
     c(45823, "Compras", "", totalFactura, "Stock | Asmodee $" + totalFactura),
-    c("2025-06-20", "Compras", "", 123456, "Stock | Asmodee"),
+    c("2025-06-20", "Compras", "", 12345, "Stock | Asmodee"),
     c("2025-06-22", "Ventas", 24500, "", "Stock | Singles"),
     c("2025-07-05", "Ventas", 8000, "", "TORNEO"),
     c("2025-07-05", "Ventas", 8000, "", "Torneo"),
@@ -1207,9 +1217,20 @@ test("migración de la caja por partes: seleccionar, migrar, pago de factura, to
   assert.deepEqual([r.facturas, r.movimientos], [1, 0], "no crea gasto: la factura ya está en el ERP");
   d = s.ok("bootstrap").data;
   assert.match(d.compras.find(c => c.id === fac.id).notas, /Pago caja .*fila 4.*Pago caja .*fila 5/);
-  assert.deepEqual(d.pagosFacturas.filter(p => p.compraId === fac.id).map(p => p.monto).sort((a, b) => a - b), [123456, Math.round(fac.total)].sort((a, b) => a - b), "pagos para el flujo de caja");
+  assert.deepEqual(d.pagosFacturas.filter(p => p.compraId === fac.id).map(p => p.monto).sort((a, b) => a - b), [12345, Math.round(fac.total)].sort((a, b) => a - b), "pagos para el flujo de caja");
   e = s.ok("cajaEstado").data;
-  assert.equal(e.compras.find(c => c.id === fac.id).pagado, Math.round(fac.total) + 123456);
+  assert.equal(e.compras.find(c => c.id === fac.id).pagado, Math.round(fac.total) + 12345);
+  // Enlace equivocado: el pago de la fila 5 se pasa a otra factura (y vuelve)
+  const otra = d.compras.find(c => c.id !== fac.id && c.porPagar >= 12345);
+  const p5 = d.pagosFacturas.find(p => p.origen === "caja" && p.fila === 5);
+  assert.match(errorDe(s.call("reenlazarPagoCompra", { origen: "caja", id: p5.id, compraId: fac.id })), /ya está enlazado/);
+  s.ok("reenlazarPagoCompra", { origen: "caja", id: p5.id, compraId: otra.id });
+  d = s.ok("bootstrap").data;
+  assert.equal(d.pagosFacturas.find(p => p.id === p5.id).compraId, otra.id);
+  assert.match(d.compras.find(c => c.id === otra.id).notas, /Pago caja .*fila 5/);
+  assert.doesNotMatch(d.compras.find(c => c.id === fac.id).notas, /fila 5\)/);
+  assert.equal(d.compras.find(c => c.id === otra.id).pagado, p5.monto);
+  s.ok("reenlazarPagoCompra", { origen: "caja", id: p5.id, compraId: fac.id });
 
   // 5) "No migrar": queda descartada
   s.ok("cajaMigrar", { ids: [fila(16).id] });

@@ -134,12 +134,12 @@
         cuentaLabel: CUENTA_MEDIO[c.medioPago] || '' })));
       if (v.comision) res.push(Object.assign({}, base, { id: v.id + '·c', tipo: 'egreso', fecha: v.fecha, categoriaLabel: 'Comisión ' + v.medioPagoLabel, subcategoria: v.cliente, monto: v.comision }));
     });
-    // Pagos de facturas de compra registrados desde la caja diaria.
+    // Pagos de facturas de compra: registrados en Compras o conciliados desde la caja diaria.
     const compra = {};
     data().compras.forEach((c) => { compra[c.id] = c; });
     (data().pagosFacturas || []).forEach((x, i) => {
       const c = compra[x.compraId];
-      res.push({ id: x.id || 'PF-' + i, tipo: 'egreso', fecha: x.fecha, categoriaLabel: 'Pago de factura', subcategoria: c ? c.factura + ' · ' + c.proveedor : x.compraId, notas: x.notas || '',
+      res.push({ id: 'PF-' + (x.id || i), pago: x.id, tipo: 'egreso', fecha: x.fecha, categoriaLabel: 'Pago de factura', subcategoria: c ? c.factura + ' · ' + c.proveedor : x.compraId, notas: x.notas || '',
         cuentaLabel: data().catalogos.cuentas[x.cuenta] || '', referencia: x.compraId, compra: x.compraId, monto: x.monto });
     });
     return res;
@@ -220,6 +220,7 @@
           colsMov.map((c) => '<td class="' + (c.right ? 'cell-num right ' : '') + (c.clase || '') + '">' + c.celda(m) + '</td>').join('') +
           '<td><div class="row-actions">' + (m.venta || m.compra
             ? '<button class="btn small ghost" data-action="finVer" data-id="' + esc(m.id) + '" title="Ver el detalle aquí mismo">' + (abiertosMov.has(m.id) ? '▾ ' : '▸ ') + esc(m.venta || m.compra) + '</button>'
+              + (admin && m.pago ? GS.iconBtn('reenlazarPagoCompra', m.pago, 'edit', 'Cambiar la factura de este pago') : '')
             : (op && !m.anulado ? GS.iconBtn('editarMovimiento', m.id, 'edit', 'Editar') : '') +
               (admin && !m.anulado ? '<button class="btn small ghost" data-action="dividirMovimiento" data-id="' + esc(m.id) + '" title="Separar en partes con distinta categoría (ej. retiro de capital + compra de acciones)">Dividir</button>' : '') +
               (admin && !m.anulado ? GS.iconBtn('anularMovimiento', m.id, 'trash', 'Anular', 'danger') : '')) + '</div></td></tr>' +

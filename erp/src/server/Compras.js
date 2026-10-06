@@ -215,6 +215,35 @@ const Compras = {
     Audit.log(user, 'anular pago', 'Compra', pago.compraId, { pago: pago.id, monto: pago.monto });
   },
 
+  /**
+   * Cambia la factura a la que corresponde un pago (enlace equivocado). Sirve para los pagos registrados
+   * en Compras y para los conciliados desde la caja diaria; mueve también la nota "Pago caja …".
+   */
+  reenlazarPago(p, user) {
+    const destino = Compras.requerir(p.compraId);
+    const caja = p.origen === 'caja';
+    const pago = caja ? Db.get('Migracion_Caja', String(p.id || '')) : Db.get('Pagos_Facturas', String(p.id || ''));
+    const m = caja && pago && /^Pago (\S+)$/.exec(pago.migrada || '');
+    if (!pago || (caja && !m) || (!caja && pago.anulado)) throw new AppError('El pago no existe.', 'NO_ENCONTRADO');
+    const anterior = caja ? m[1] : pago.compraId;
+    if (anterior === destino.id) throw new AppError('El pago ya está enlazado a ' + destino.id + '.');
+    const monto = caja ? pago.salidas : pago.monto;
+    if (caja) {
+      Db.update('Migracion_Caja', pago.id, { migrada: 'Pago ' + destino.id });
+      // La nota de conciliación se va con el pago.
+      const nota = 'Pago caja ' + pago.fecha + ' $' + pago.salidas + ' (fila ' + pago.fila + ')';
+      const vieja = Db.get('Compras', anterior);
+      if (vieja && String(vieja.notas || '').indexOf(nota) !== -1) {
+        Db.update('Compras', vieja.id, Object.assign({ notas: vieja.notas.split(' · ').filter((x) => x !== nota).join(' · ') }, Util.sello(user)));
+      }
+      Db.update('Compras', destino.id, Object.assign({ notas: [destino.notas, nota].filter(Boolean).join(' · ').slice(0, 500) }, Util.sello(user)));
+    } else {
+      Db.update('Pagos_Facturas', pago.id, Object.assign({ compraId: destino.id }, Util.sello(user)));
+    }
+    Audit.log(user, 'reenlazar pago', 'Compra', destino.id, { pago: pago.id, origen: caja ? 'caja' : 'manual', antes: anterior, monto: monto });
+    return { compraId: destino.id };
+  },
+
   /** Lo que falta pagar de una factura (total con IVA − pagos), redondeado hacia arriba. */
   _porPagar(compra) {
     const lineas = Db.all('Compras_Lineas').filter((l) => l.compraId === compra.id);

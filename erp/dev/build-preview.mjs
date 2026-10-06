@@ -149,7 +149,8 @@ const preview = `
         var cantA = 18 + azar(10);
         var cantB = 8 + azar(8);
         call('registrarAsignacion', { lineas: [{ id: a.id, asignado: cantA }, { id: b.id, asignado: cantB }] });
-        call('crearCompra', { preventas: [a.id, b.id], factura: ed.split(' ')[0].toUpperCase() + '-' + (100 + n), fecha: mes(n, 3) });
+        var cp = call('crearCompra', { preventas: [a.id, b.id], factura: ed.split(' ')[0].toUpperCase() + '-' + (100 + n), fecha: mes(n, 3) });
+        call('registrarPagoCompra', { compraId: cp.id, fecha: mes(n, 25), monto: 300000, cuenta: 'banco', notas: 'Transferencia (abono)' });
         var ventas = 6 + azar(7);
         for (var i = 0; i < ventas; i++) {
           var k = azar(6);
