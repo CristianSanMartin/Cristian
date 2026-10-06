@@ -84,8 +84,44 @@
           (admin && x.origen === 'manual' ? ' <a href="#" data-action="anularPagoCompra" data-id="' + esc(x.id) + '" title="Anular este pago">anular</a>' : '')).join(' · ')
         : 'ninguno') +
       ' — ' + (c.porPagar <= 1 ? '<span class="text-success">✓ pagada</span>' : '<span class="text-gold">por pagar ' + fmt.money(c.porPagar) + '</span>') +
-      (GS.puede('operador') && c.porPagar > 1 ? ' <button class="btn small secondary" data-action="registrarPagoCompra" data-id="' + esc(c.id) + '">Registrar pago</button>' : '') + '</p></div>';
+      (GS.puede('operador') && c.porPagar > 1 ? ' <button class="btn small secondary" data-action="registrarPagoCompra" data-id="' + esc(c.id) + '">Registrar pago</button>' : '') +
+      (admin ? ' <button class="btn small ghost" data-action="agregarLineaCompra" data-id="' + esc(c.id) + '" title="Corregir: agregar un producto que faltó en esta factura">+ Agregar producto</button>' : '') + '</p></div>';
   }
+
+  /** Agrega a una factura un producto que faltó (corrección): crea su preventa recibida y su lote en el inventario. */
+  GS.actions.agregarLineaCompra = (id) => {
+    const c = data().compras.find((x) => x.id === id);
+    const productos = data().productos.filter((p) => p.activo !== false).map((p) => '<option value="' + esc(p.nombreCompleto) + '">').join('');
+    GS.formModal({
+      title: 'Agregar producto a la factura ' + c.factura,
+      submitLabel: 'Agregar a la factura',
+      fields: () => '<p class="hint">' + esc(c.proveedor) + ' · ' + fmt.date(c.fecha) + '. Se crea igual que en una compra normal: su preventa (recibida), el lote en el Inventario y el despacho se reparte de nuevo entre todos los productos.</p>' +
+        '<div class="form-grid">' +
+        '<div class="form-field full"><label>Producto *</label><input name="producto" list="alc-productos" autocomplete="off" placeholder="Escribe o elige; si no existe se crea (ej. Pokemon TCG Journey Together - Booster Bundle ENG)"><datalist id="alc-productos">' + productos + '</datalist></div>' +
+        '<div class="form-field"><label>Cantidad *</label><input type="number" name="cantidad" min="1" step="1" value="1"></div>' +
+        '<div class="form-field"><label>Precio unidad neto *</label><input type="number" name="costoNeto" min="0" step="0.01" placeholder="Como en la factura, sin IVA"></div>' +
+        '<div class="form-field"><label>PVP (si es producto nuevo)</label><input type="number" name="pvp" min="0" step="1" placeholder="Opcional"></div>' +
+        '<div class="form-field" data-alc-info></div></div>',
+      onMount: (form) => {
+        const upd = () => {
+          const t = GS.norm(form.elements.producto.value);
+          const existe = data().productos.find((p) => GS.norm(p.nombreCompleto) === t);
+          form.querySelector('[data-alc-info]').innerHTML = !t ? '' : existe
+            ? '<p class="table-note text-success">✓ ' + esc(existe.nombreCompleto) + ' (' + esc(existe.id) + ')</p>'
+            : '<p class="table-note text-gold">Producto nuevo: se crea en el catálogo con edición, idioma y tipo leídos del nombre.</p>';
+        };
+        form.elements.producto.addEventListener('input', upd);
+      },
+      onSubmit: (v) => {
+        const existe = data().productos.find((p) => GS.norm(p.nombreCompleto) === GS.norm(v.producto));
+        return GS.mutate('agregarLineaCompra', Object.assign({ compraId: id }, v, existe ? { productoId: existe.id } : {}),
+          (r) => 'Producto agregado a la factura ' + c.factura + ' (lote ' + r.lote + ')').then(() => {
+          // Si la ventana de Editar factura quedó abierta, se cierra para que se reabra con los datos nuevos.
+          setTimeout(() => GS.closeModals(), 0);
+        });
+      },
+    });
+  };
 
   GS.actions.registrarPagoCompra = (id) => {
     const c = data().compras.find((x) => x.id === id);
@@ -188,7 +224,8 @@
         '<div class="form-field"><label>Despacho (neto)</label><input type="number" name="despacho" min="0" step="1" value="' + esc(c.despacho || 0) + '"></div>' +
         '<div class="form-field"><label class="check" style="margin-top:22px;"><input type="checkbox" name="descontar"' + (c.despacho ? '' : ' checked') + '> Descontar el despacho de los precios (mantener el total)</label></div></div>' +
         '<p class="hint">Úsalo cuando los precios traen el despacho incluido (como en la migración): escribe el despacho de la factura y los precios se recalculan para que el total no cambie. Después puedes ajustar cada precio a mano para que calce con la factura.</p>' +
-        '<p class="hint">Si la cantidad de un producto no calza con la factura, corrígela: las unidades de más quedan disponibles en el inventario. No puede quedar por debajo de lo ya vendido o entregado.</p>' +
+        '<p class="hint">Si la cantidad de un producto no calza con la factura, corrígela: las unidades de más quedan disponibles en el inventario. No puede quedar por debajo de lo ya vendido o entregado. ' +
+          '¿Falta un producto? <button type="button" class="btn small secondary" data-action="agregarLineaCompra" data-id="' + esc(c.id) + '">+ Agregar producto a la factura</button></p>' +
         '<div class="table-wrap"><table class="data-table" style="min-width:0"><thead><tr><th>Producto</th><th class="right">Cant.</th><th class="right">Antes</th><th class="right">Precio unidad neto</th><th class="right">Total neto</th></tr></thead><tbody>' +
         c.lineas.map((l) => '<tr><td class="cell-strong">' + esc(l.productoNombre) + ' ' + GS.langPill(l.idioma) + '</td>' +
           '<td class="right"><input class="qty-input" style="width:70px" type="number" step="1" min="' + Math.max(1, (l.vendidas || 0) + (l.salidas || 0)) + '" data-ec-cant="' + esc(l.id) + '" value="' + esc(l.cantidad) + '"' +

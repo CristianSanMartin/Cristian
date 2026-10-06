@@ -40,6 +40,7 @@ function rutas_() {
     anularCompra: { rol: 'admin', write: true, fn: Compras.anular },
     quitarLineaCompra: { rol: 'admin', write: true, fn: Compras.quitarLinea },
     editarCompra: { rol: 'admin', write: true, fn: Compras.editar },
+    agregarLineaCompra: { rol: 'admin', write: true, fn: Compras.agregarLinea },
     registrarPagoCompra: { rol: 'operador', write: true, fn: Compras.registrarPago },
     anularPagoCompra: { rol: 'admin', write: true, fn: Compras.anularPago },
     cerrarMigracion: { rol: 'admin', write: true, fn: (p, u) => Migracion.cerrar(p, u) },

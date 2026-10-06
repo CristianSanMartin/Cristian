@@ -827,6 +827,28 @@ test("cerrar la migración: limpia la zona de trabajo, conserva lo migrado de la
   assert.equal(s.ok("bootstrap").data.app.migracionCerrada, "");
 });
 
+test("agregar un producto que faltó en una factura: preventa recibida, lote y despacho repartido", () => {
+  const s = createServer();
+  const { prods } = conInventario(s);   // factura con despacho $15.000
+  let d = s.ok("bootstrap").data;
+  const c = d.compras[0];
+  const r = s.ok("agregarLineaCompra", { compraId: c.id, producto: "Pokemon TCG Journey Together - Booster Bundle ENG", cantidad: 3, costoNeto: 19500, pvp: 32990 }).result;
+  d = s.ok("bootstrap").data;
+  const cp = d.compras.find(x => x.id === c.id);
+  assert.equal(cp.lineas.length, c.lineas.length + 1);
+  const lote = d.lotes.find(l => l.id === r.lote);
+  assert.deepEqual([lote.cantidad, lote.disponible, lote.costoNeto, lote.producto], [3, 3, 19500, "Journey Together – Booster Bundle · ENG"]);
+  assert.ok(lote.despacho > 0, "le toca parte del despacho");
+  assert.ok(Math.abs(cp.lineas.reduce((t, l) => t + l.despacho, 0) - 15000) < 0.01);
+  const pv = d.preventas.find(x => x.id === r.preventa);
+  assert.deepEqual([pv.estado, pv.asignado, pv.proveedorId], ["recibida", 3, cp.proveedorId]);
+  // Producto existente por ID
+  s.ok("agregarLineaCompra", { compraId: c.id, productoId: prods.miniTin.id, cantidad: 1, costoNeto: 8000 });
+  assert.equal(s.ok("bootstrap").data.compras.find(x => x.id === c.id).lineas.length, c.lineas.length + 2);
+  s.ok("guardarUsuario", { email: "socio@gsprime.cl", nombre: "Socio", rol: "operador" });
+  assert.equal(s.as("socio@gsprime.cl").call("agregarLineaCompra", { compraId: c.id, productoId: prods.miniTin.id, cantidad: 1, costoNeto: 1 }).code, "SIN_PERMISO");
+});
+
 test("validación de datos: encuentra inconsistencias, se validan y reaparecen si los datos cambian", () => {
   const s = createServer();
   const { prods } = conInventario(s);   // Binder ENG 24, Binder ESP 6, Mini Tin 10

@@ -109,6 +109,34 @@ const Compras = {
     });
   },
 
+  /**
+   * Agrega un producto a una factura ya registrada (corrección de la puesta en marcha). Se crea
+   * con el mismo estándar que una compra normal: su preventa (recibida, asignada = cantidad), el lote
+   * del inventario y el despacho vuelto a repartir entre todas las líneas.
+   * p: { compraId, productoId | producto (texto), cantidad, costoNeto, pvp? }
+   */
+  agregarLinea(p, user) {
+    const compra = Compras.requerir(p.compraId);
+    const cantidad = Util.entero(p.cantidad, 'La cantidad', { requerido: true, min: 1 });
+    const costoNeto = Util.monto(p.costoNeto, 'El precio unitario neto', { requerido: true });
+    if (!p.productoId) Util.texto(p.producto, 'El producto', { requerido: true, max: 200 });
+    const prod = p.productoId ? Productos.requerir(p.productoId) : Productos.resolverTexto(p.producto, p.pvp, user);
+    if (!prod.activo) throw new AppError('El producto está archivado.');
+    const sello = Util.sello(user, true);
+    const pv = Object.assign({
+      id: Util.siguienteId('PVI', 6), proveedorId: compra.proveedorId, productoId: prod.id, lanzamiento: compra.fecha,
+      solicitado: cantidad, asignado: cantidad, estado: 'recibida', costoNeto: costoNeto,
+      notas: 'Agregado a la factura ' + compra.factura + ' (corrección)',
+    }, sello);
+    Db.insert('Preventas', pv);
+    const linea = Object.assign({ id: Util.siguienteId('CPI', 6), compraId: compra.id, preventaId: pv.id, productoId: prod.id, cantidad: cantidad, costoNeto: costoNeto, despacho: 0 }, sello);
+    Db.insert('Compras_Lineas', linea);
+    // Reparte de nuevo el despacho de la factura entre todas sus líneas (y corrige el costo de lo vendido).
+    Compras.editar({ id: compra.id, despacho: compra.despacho, lineas: [] }, user);
+    Audit.log(user, 'agregar producto', 'Compra', compra.id, { producto: Productos.nombreCompleto(prod), cantidad: cantidad, costoNeto: costoNeto, lote: linea.id, preventa: pv.id });
+    return { lote: linea.id, preventa: pv.id, productoId: prod.id };
+  },
+
   /** Deshace una factura mal ingresada: sus preventas vuelven a "asignada" y los lotes salen del inventario. */
   anular(p, user) {
     const compra = Compras.requerir(p.id);
