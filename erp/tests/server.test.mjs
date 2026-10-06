@@ -767,12 +767,12 @@ test("dividir un movimiento: salida de un socio en retiro de capital + compra de
   const s = createServer();
   s.ok("guardarMovimiento", { fecha: "2025-05-01", tipo: "ingreso", categoria: "aporte", subcategoria: "Jaime", monto: 500000 });
   const m = s.ok("guardarMovimiento", { fecha: "2026-03-13", tipo: "egreso", categoria: "gopm", subcategoria: "Salida Jaime", monto: 750000, cuenta: "banco" }).result;
-  assert.match(errorDe(s.call("dividirMovimiento", { id: m.id, partes: [{ categoria: "retiro", subcategoria: "Jaime", monto: 500000 }, { categoria: "compra_acciones", monto: 200000 }] })), /suman 700000/);
+  assert.match(errorDe(s.call("dividirMovimiento", { id: m.id, partes: [{ categoria: "retiro", subcategoria: "Jaime", monto: 500000 }, { categoria: "otro_egreso", monto: 200000 }] })), /suman 700000/);
   assert.match(errorDe(s.call("dividirMovimiento", { id: m.id, partes: [{ categoria: "aporte", monto: 750000 }, { categoria: "gav", monto: 0 }] })), /categoría/);
-  const r = s.ok("dividirMovimiento", { id: m.id, partes: [{ categoria: "retiro", subcategoria: "Jaime", monto: 500000 }, { categoria: "compra_acciones", subcategoria: "Compra de acciones Jaime", monto: 250000 }] }).result;
+  const r = s.ok("dividirMovimiento", { id: m.id, partes: [{ categoria: "retiro", subcategoria: "Jaime", monto: 500000 }, { categoria: "otro_egreso", subcategoria: "Compensación Jaime", monto: 250000 }] }).result;
   const movs = s.ok("bootstrap").data.movimientos;
   const a = movs.find(x => x.id === m.id), b = movs.find(x => x.id === r.nuevos[0]);
-  assert.deepEqual([a.categoria, a.monto, b.categoria, b.monto, b.fecha, b.cuenta], ["retiro", 500000, "compra_acciones", 250000, "2026-03-13", "banco"]);
+  assert.deepEqual([a.categoria, a.monto, b.categoria, b.monto, b.fecha, b.cuenta], ["retiro", 500000, "otro_egreso", 250000, "2026-03-13", "banco"]);
   assert.match(b.notas, /Dividido de MOV-/);
 });
 

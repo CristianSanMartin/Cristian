@@ -38,6 +38,15 @@ const MIGRACIONES = [
     descripcion: 'Singles, torneos, sobres sueltos, bazar y accesorios dejan de usar N° de OC: pasan a SGL-, TOR-, SOB-, BAZ- y ACC-',
     fn: (user) => { Ventas.separarSinOc(user); },
   },
+  {
+    id: '2026-10-06-sin-compra-acciones',
+    descripcion: 'Se quita la categoría "compra de acciones / compensación a socio": sus movimientos pasan a "Otro egreso"',
+    fn: () => {
+      const cambios = {};
+      Db.all('Finanzas').forEach((m) => { if (m.categoria === 'compra_acciones') cambios[m.id] = { categoria: 'otro_egreso', subcategoria: ('Compensación socio · ' + (m.subcategoria || '')).slice(0, 120) }; });
+      if (Object.keys(cambios).length) Db.actualizarVarios('Finanzas', cambios);
+    },
+  },
 ];
 
 const Respaldos = {
