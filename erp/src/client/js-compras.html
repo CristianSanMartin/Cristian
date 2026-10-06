@@ -401,7 +401,8 @@
         filas.push('<tr' + (u ? '' : ' class="unidad-libre' + (selUnidades.has(clave) ? ' row-selected' : '') + '"') + '>' +
           '<td>' + (marcable ? '<input type="checkbox" class="row-check" data-sel-unidad="' + esc(clave) + '"' + (selUnidades.has(clave) ? ' checked' : '') + ' aria-label="Seleccionar unidad ' + n + '">' : '') + '</td>' +
           '<td class="cell-num right">' + n + '<span class="cell-dim"> / ' + r.cantidad + '</span></td>' +
-          '<td>' + (u ? (u.salida ? '<span class="badge st-pedido">' + esc(u.oc) + '</span>' : '<span class="badge st-parcial">Vendida</span>') : '<span class="badge st-ok">Disponible</span>') + '</td>' +
+          '<td>' + (u ? (u.salida ? '<span class="badge st-pedido">' + esc(u.oc) + '</span>' : '<span class="badge st-parcial">Vendida</span>') : '<span class="badge st-ok">Disponible</span>') +
+            (u && u.salidaId && GS.puede('admin') ? ' <a href="#" class="cell-dim" data-action="anularSalida" data-id="' + esc(u.salidaId) + '" title="Devolver la unidad al stock">anular</a>' : '') + '</td>' +
           '<td>' + (u && !u.salida ? '<span class="cell-strong">' + esc(u.oc) + '</span>' : '—') + '</td><td>' + (u ? esc(u.cliente) : '—') + '</td>' +
           m(l.valorUnitario) + m(l.costo) + m(l.credito) + m(precio) + m(precio / iva) + m(precio - precio / iva) + m(precio - precio / iva - l.credito) +
           '<td class="cell-num right ' + signo(precio / iva - l.costo) + '">' + fmt.money(precio / iva - l.costo) + '</td></tr>');
@@ -443,6 +444,10 @@
         // Productos sin unidades disponibles (todo vendido o entregado): aparte, abajo.
         '<div id="inv-agotados-bloque"><h3 class="sub-titulo" style="margin-top:22px;">Productos vendidos en su totalidad <span class="muted" id="inv-agotados-n"></span></h3>' +
         '<div class="table-wrap"><table class="data-table compacta"><thead><tr id="inv-thead-ago"></tr></thead><tbody id="inv-tbody-ago"></tbody></table></div></div>' +
+        // Salidas sin venta (uso interno, premios…): aparte, para revisarlas o anularlas.
+        '<div id="inv-salidas-bloque" hidden><h3 class="sub-titulo" style="margin-top:22px;">Salidas sin venta <span class="muted" id="inv-salidas-n"></span></h3>' +
+        '<div class="table-wrap"><table class="data-table compacta"><thead><tr><th>Fecha</th><th>Motivo</th><th>Producto</th><th class="right">Unidades</th><th class="right">Costo c/IVA</th><th>Detalle</th><th></th></tr></thead><tbody id="inv-salidas"></tbody></table></div>' +
+        '<p class="table-note">El uso interno cuenta como GOPM en el resumen de Finanzas, al costo con IVA (lo pagado por esas unidades deja de contar como compra de mercadería).</p></div>' +
         '<p class="table-note">Para vender: escribe la cantidad en la fila y presiona "+ Venta", o despliega el producto y marca unidades. Costo c/IVA = (precio unidad neto + despacho prorrateado) + IVA, para compararlo con el precio de venta (si el producto llegó en varias compras, el promedio de lo disponible). Ganancia = precio de venta sin IVA − costo neto (el IVA de la compra se recupera como crédito fiscal). El precio de venta es el del producto (el propio o el sugerido).</p>';
       GS.montarVenta(document.getElementById('inv-venta'));
       this.update();
@@ -465,7 +470,8 @@
           colsInv.map((c) => '<td class="' + (c.right ? 'cell-num right ' : '') + (c.clase || '') + '">' + c.celda(r) + '</td>').join('') +
           '<td><div class="row-actions">' + (vendible
             ? '<input class="qty-input cant-venta" type="number" min="1" max="' + r.disponible + '" step="1" placeholder="Cant." data-cant-prod="' + esc(r.productoId) + '" aria-label="Cantidad a vender">' +
-              '<button class="btn small secondary" data-action="agregarProductoVenta" data-id="' + esc(r.productoId) + '">' + GS.icon('plus', 2.4) + 'Venta</button>'
+              '<button class="btn small secondary" data-action="agregarProductoVenta" data-id="' + esc(r.productoId) + '">' + GS.icon('plus', 2.4) + 'Venta</button>' +
+              '<button class="btn small ghost" data-action="registrarSalida" data-id="' + esc(r.productoId) + '" title="Sacar del stock sin venta: uso interno de la tienda, premio, caja abierta o pérdida">Salida</button>'
             : '') +
           (op ? GS.iconBtn('editarProducto', r.productoId, 'edit', 'Editar nombre, foto o precio') : '') + '</div></td></tr>' +
           (open ? '<tr class="detalle-row"><td colspan="' + n + '">' + detalleProducto(r) + '</td></tr>' : '');
@@ -479,6 +485,13 @@
       document.getElementById('inv-tbody-ago').innerHTML = agotados.map(fila).join('');
       document.querySelectorAll('#inv-tbody .detalle-compra, #inv-tbody-ago .detalle-compra').forEach((d) => { d.style.width = Math.max(320, d.closest('.table-wrap').clientWidth - 36) + 'px'; });
       barraStock();
+      const iva = 1 + data().app.iva;
+      const sal = (data().salidas || []).filter((x) => { const pr = findProdInv(x.productoId); return !f.q || GS.norm(pr + ' ' + x.motivoLabel + ' ' + x.notas).includes(GS.norm(f.q)); });
+      document.getElementById('inv-salidas-bloque').hidden = !sal.length;
+      document.getElementById('inv-salidas-n').textContent = '(' + sal.length + ')';
+      document.getElementById('inv-salidas').innerHTML = sal.map((x) => '<tr><td class="nowrap">' + fmt.date(x.fecha) + '</td><td><span class="badge st-pedido">' + esc(x.motivoLabel) + '</span></td>' +
+        '<td class="cell-strong">' + esc(findProdInv(x.productoId)) + '</td><td class="cell-num right">' + x.cantidad + '</td><td class="cell-num right">' + fmt.money(x.costo * x.cantidad * iva) + '</td>' +
+        '<td class="cell-dim">' + esc(x.notas || '') + '</td><td>' + (GS.puede('admin') ? GS.iconBtn('anularSalida', x.id, 'trash', 'Anular: la unidad vuelve al stock', 'danger') : '') + '</td></tr>').join('');
 
       const sum = (k) => rows.reduce((t, r) => t + r[k], 0);
       const conStock = rows.filter((r) => r.disponible > 0).length;
@@ -488,6 +501,36 @@
         kpi('Venta proyectada', fmt.money(sum('ventaProyectada')), 'Vendiendo todo al precio de venta') +
         kpi('Ganancia proyectada', '<span class="text-success">' + fmt.money(sum('gananciaProyectada')) + '</span>', 'Real neta') + '</div>';
     },
+  };
+
+  const findProdInv = (id) => { const pr = data().productos.find((x) => x.id === id); return pr ? pr.nombreCompleto : id; };
+
+  // Salida sin venta (uso interno, premio, caja abierta, pérdida): sale del lote más antiguo, sin OC.
+  GS.actions.registrarSalida = (id) => {
+    const r = buscadasInv().find((x) => x.productoId === id);
+    const motivos = data().catalogos.motivosSalida;
+    GS.formModal({
+      title: 'Salida sin venta',
+      submitLabel: 'Registrar salida',
+      fields: () => '<p class="hint"><strong>' + esc(findProdInv(id)) + '</strong> · ' + r.disponible + (r.disponible === 1 ? ' unidad disponible' : ' unidades disponibles') + '</p>' +
+        '<div class="form-grid">' +
+        '<div class="form-field"><label>Motivo *</label><select name="motivo">' + GS.options(Object.keys(motivos).map((k) => ({ value: k, label: motivos[k] })), 'interno') + '</select></div>' +
+        '<div class="form-field"><label>Cantidad *</label><input type="number" name="cantidad" min="1" max="' + r.disponible + '" step="1" value="1"></div>' +
+        '<div class="form-field"><label>Fecha *</label><input type="date" name="fecha" value="' + esc(data().hoy) + '"></div>' +
+        '<div class="form-field"><label>Detalle</label><input name="notas" maxlength="200" placeholder="Ej: protectores para los singles de la vitrina"></div></div>' +
+        '<p class="hint">Sale del stock sin crear una OC, al costo de su lote. El uso interno se suma a GOPM en el resumen de Finanzas.</p>',
+      onSubmit: (v) => GS.mutate('registrarSalida', Object.assign({ productoId: id }, v), (res) => 'Salida registrada (costo ' + fmt.money(res.costo * (1 + data().app.iva)) + ' c/IVA)'),
+    });
+  };
+  GS.actions.anularSalida = (id) => {
+    const x = (data().salidas || []).find((s) => s.id === id);
+    GS.confirm({
+      title: 'Anular la salida ' + id,
+      message: (x ? x.cantidad + ' × ' + esc(findProdInv(x.productoId)) + ' (' + esc(x.motivoLabel) + ')' : 'La salida') + ' vuelve al stock. Queda en la auditoría.',
+      confirmLabel: 'Sí, anular',
+      danger: true,
+      onConfirm: () => GS.mutate('anularSalida', { id: id }, 'Salida anulada'),
+    });
   };
 
   GS.actions.verInventario = (id) => {

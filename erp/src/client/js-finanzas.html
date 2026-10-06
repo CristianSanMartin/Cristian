@@ -66,6 +66,15 @@
       const resto = c.total - pagado;
       if (iFac >= 0 && (!suyos.length || resto > 2000)) facturas.valores[iFac] += suyos.length ? resto : c.total;
     });
+    // Uso interno: lo pagado por esas unidades pasa de compras de mercadería a GOPM (al costo con IVA, en el mes de la salida).
+    const internoGopm = fila(cats.egreso.gopm || 'GOPM');
+    (data().salidas || []).filter((x) => x.motivo === 'interno').forEach((x) => {
+      const i = mes(x.fecha);
+      if (i < 0) return;
+      const v = Math.round(x.costo * x.cantidad * (1 + data().app.iva));
+      facturas.valores[i] -= v;
+      (porMov['egreso|gopm'] = porMov['egreso|gopm'] || internoGopm).valores[i] += v;
+    });
     const egresos = [facturas].concat(Object.keys(cats.egreso).map((c) => porMov['egreso|' + c]).filter(Boolean));
     const comisionesTuu = fila('Comisiones TUU (ventas)');
     data().ventas.filter((v) => !v.anulada).forEach((v) => { const i = mes(v.fecha); if (i >= 0) comisionesTuu.valores[i] += v.comision || 0; });
@@ -107,6 +116,7 @@
       grupo('Impuestos') + fila(r.iva, true) +
       '</tbody></table></div>' +
       '<p class="table-note">Ventas y compras con factura incluyen IVA. Las compras con factura cuentan en el mes en que se pagaron (pagos conciliados desde la caja); si no hay pago registrado, en el mes de la factura. Flujo del mes = ventas + otros ingresos − egresos. ' +
+      'Los productos sacados del inventario para uso interno se suman a GOPM al costo con IVA y se restan de las compras con factura (el total de egresos no cambia). ' +
       'IVA estimado = IVA de las ventas − IVA de las facturas de compra (las compras por monto no tienen IVA registrado).</p>';
   }
 

@@ -1279,3 +1279,26 @@ test("ventas por monto y movimientos de Finanzas", () => {
   const m2 = s.ok("bootstrap").data.movimientos[0];
   assert.deepEqual([m2.monto, m2.subcategoria, m2.anulado, m2.cuentaLabel, m2.categoriaLabel], [310000, "Arriendo octubre", true, "Banco", "GAV"]);
 });
+
+test("salida sin venta (uso interno): rebaja stock al costo del lote, sin OC, y se anula", () => {
+  const s = createServer();
+  const { prods } = conInventario(s);
+  const antes = s.ok("bootstrap").data;
+  assert.match(errorDe(s.call("registrarSalida", { productoId: prods.miniTin.id, cantidad: 11, motivo: "interno", fecha: "2026-10-05" })), /quedan 10/);
+  assert.match(errorDe(s.call("registrarSalida", { productoId: prods.miniTin.id, cantidad: 1, motivo: "regalo", fecha: "2026-10-05" })), /motivo/i);
+  const r = s.ok("registrarSalida", { productoId: prods.miniTin.id, cantidad: 2, motivo: "interno", fecha: "2026-10-05", notas: "Protectores vitrina" }).result;
+  const lt = lote(s, prods.miniTin.id)[0];
+  assert.equal(r.costo, Math.round(lt.costo * 2));
+  let d = s.ok("bootstrap").data;
+  assert.equal(d.ventas.length, antes.ventas.length, "no crea venta ni OC");
+  assert.deepEqual(d.salidas.map(x => [x.motivoLabel, x.cantidad, x.notas]), [["Uso interno", 2, "Protectores vitrina"]]);
+  assert.equal(d.catalogos.motivosSalida.interno, "Uso interno");
+  // No se puede vender lo que salió
+  assert.match(errorDe(s.call("crearVenta", { fecha: "2026-10-06", lineas: [{ productoId: prods.miniTin.id, cantidad: 9 }] })), /quedan 8/);
+  s.ok("guardarUsuario", { email: "socio@gsprime.cl", nombre: "Socio", rol: "operador" });
+  assert.equal(s.as("socio@gsprime.cl").call("anularSalida", { id: r.ids[0] }).code, "SIN_PERMISO");
+  s.as("admin@gsprime.cl").ok("anularSalida", { id: r.ids[0] });
+  d = s.ok("bootstrap").data;
+  assert.equal(d.salidas.length, 0);
+  s.ok("crearVenta", { fecha: "2026-10-06", lineas: [{ productoId: prods.miniTin.id, cantidad: 10 }] });
+});

@@ -262,6 +262,10 @@ distintos). **Corregir** abre el registro; **Validar** lo marca como revisado (c
   y cuentan como egreso en el flujo de Finanzas. Los pagos conciliados desde la caja diaria también
   se ven ahí. El administrador puede anular un pago o, si quedó enlazado a la factura equivocada,
   "cambiar factura" (en el detalle de la compra o con el lápiz de la fila en Finanzas → Movimientos).
+- **Salidas sin venta:** en Inventario, el botón "Salida" de cada producto saca unidades del stock sin
+  crear OC (uso interno de la tienda, premio, caja abierta o pérdida), del lote más antiguo y a su costo.
+  Se listan en "Salidas sin venta" y el administrador puede anularlas. El uso interno se suma a GOPM en el
+  resumen de Finanzas al costo con IVA y se resta de las compras con factura (el flujo de caja no cambia).
 - **Deudas de clientes:** en Editar venta, "Pagado al vender" fija lo que se pagó al comprar; el
   resto queda como deuda (requiere cliente) y se salda con abonos en Clientes.
 - **Cerrar migración:** Administración → Respaldos. Hace un respaldo, vacía la zona de trabajo del

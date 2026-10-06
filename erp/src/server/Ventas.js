@@ -478,7 +478,7 @@ const Ventas = {
       const r = porLote[x.loteId] = porLote[x.loteId] || { vendidas: 0, ventas: 0, ganancia: 0, unidades: [] };
       r.salidas = (r.salidas || 0) + x.cantidad;
       r.costoSalidas = (r.costoSalidas || 0) + x.costo * x.cantidad;
-      for (let i = 0; i < x.cantidad; i++) r.unidades.push({ oc: MOTIVOS_SALIDA[x.motivo] || x.motivo, cliente: x.notas, fecha: x.fecha, precio: 0, salida: x.motivo });
+      for (let i = 0; i < x.cantidad; i++) r.unidades.push({ oc: MOTIVOS_SALIDA[x.motivo] || x.motivo, cliente: x.notas, fecha: x.fecha, precio: 0, salida: x.motivo, salidaId: x.id });
     });
 
     ventas.forEach((v) => {

@@ -44,6 +44,8 @@ function rutas_() {
     registrarPagoCompra: { rol: 'operador', write: true, fn: Compras.registrarPago },
     anularPagoCompra: { rol: 'admin', write: true, fn: Compras.anularPago },
     reenlazarPagoCompra: { rol: 'admin', write: true, fn: Compras.reenlazarPago },
+    registrarSalida: { rol: 'operador', write: true, fn: Salidas.registrar },
+    anularSalida: { rol: 'admin', write: true, fn: Salidas.anular },
     cerrarMigracion: { rol: 'admin', write: true, fn: (p, u) => Migracion.cerrar(p, u) },
     reabrirMigracion: { rol: 'admin', write: true, fn: (p, u) => Migracion.reabrir(p, u) },
     unirProductos: { rol: 'admin', write: true, fn: Productos.unir },
@@ -243,7 +245,7 @@ const Snapshot = {
       user: { email: user.email, nombre: user.nombre, rol: user.rol },
       catalogos: {
         idiomas: IDIOMAS, tipos: TIPOS_PRODUCTO, canales: CANALES, mediosPago: MEDIOS_PAGO, comisiones: COMISIONES_PAGO,
-        categoriasVenta: CATEGORIAS_VENTA, categoriasMovimiento: CATEGORIAS_MOVIMIENTO, cuentas: CUENTAS,
+        categoriasVenta: CATEGORIAS_VENTA, motivosSalida: MOTIVOS_SALIDA, categoriasMovimiento: CATEGORIAS_MOVIMIENTO, cuentas: CUENTAS,
       },
       proveedores: proveedores,
       productos: prods,
@@ -253,6 +255,7 @@ const Snapshot = {
       tomas: Tomas.vista(),
       movimientos: Finanzas.vista(),
       pagosFacturas: Compras.pagos(),
+      salidas: Salidas.vista(),
       // Filas de la caja diaria aún sin migrar, por glosa (para avisarlo en Finanzas).
       cajaPendiente: Auth.puede(user, 'admin') ? Db.all('Migracion_Caja').filter((f) => !f.migrada && !f.descartada)
         .reduce((o, f) => { const k = f.glosa || 'Sin glosa'; o[k] = (o[k] || 0) + 1; return o; }, {}) : {},

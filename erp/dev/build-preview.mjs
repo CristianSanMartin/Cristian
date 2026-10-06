@@ -161,6 +161,7 @@ const preview = `
             call('crearVenta', { fecha: mes(n, 4 + azar(24)), cliente: cli, canal: canales[k], evento: canales[k] === 'Evento' ? 'Torneo mensual' : '', medioPago: medios[azar(6)], lineas: lineasV });
           } catch (e) { /* sin stock: se omite */ }
         }
+        if (n === 3) call('registrarSalida', { productoId: bundle.id, cantidad: 1, motivo: 'interno', fecha: mes(n, 18), notas: 'Abierto para exhibir en la vitrina' });
         // Caja del mes: torneos y singles (sin OC), gastos (GAV, GOPM), SII y un aporte inicial.
         if (n === 6) call('guardarMovimiento', { fecha: mes(n, 1), tipo: 'ingreso', categoria: 'aporte', subcategoria: 'Aporte socios', monto: 3000000, cuenta: 'banco' });
         call('crearVenta', { fecha: mes(n, 9), medioPago: 'efectivo', lineas: [{ categoria: 'Torneo', descripcion: 'Liga semanal', monto: 24000 + 3000 * (n % 4) }] });
