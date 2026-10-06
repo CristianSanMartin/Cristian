@@ -139,8 +139,8 @@
     data().compras.forEach((c) => { compra[c.id] = c; });
     (data().pagosFacturas || []).forEach((x, i) => {
       const c = compra[x.compraId];
-      res.push({ id: 'PF-' + i, tipo: 'egreso', fecha: x.fecha, categoriaLabel: 'Pago de factura', subcategoria: c ? c.factura + ' · ' + c.proveedor : x.compraId, notas: '',
-        cuentaLabel: '', referencia: x.compraId, compra: x.compraId, monto: x.monto });
+      res.push({ id: x.id || 'PF-' + i, tipo: 'egreso', fecha: x.fecha, categoriaLabel: 'Pago de factura', subcategoria: c ? c.factura + ' · ' + c.proveedor : x.compraId, notas: x.notas || '',
+        cuentaLabel: data().catalogos.cuentas[x.cuenta] || '', referencia: x.compraId, compra: x.compraId, monto: x.monto });
     });
     return res;
   }
@@ -201,7 +201,7 @@
         const ing = suma('ingreso');
         const egr = suma('egreso');
         const sinPago = data().compras.filter((c) => !(data().pagosFacturas || []).some((x) => x.compraId === c.id)).length;
-        const pend = data().cajaPendiente || {};
+        const pend = data().app.migracionCerrada ? {} : data().cajaPendiente || {};
         const nPend = Object.keys(pend).reduce((t, k) => t + pend[k], 0);
         document.getElementById('mov-resumen').innerHTML = (nPend
           ? '<div class="notice warn">Hay <strong>' + nPend + ' filas de la caja diaria sin migrar</strong> que todavía no aparecen aquí: ' +

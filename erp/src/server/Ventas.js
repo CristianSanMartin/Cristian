@@ -205,8 +205,13 @@ const Ventas = {
       const cobrado = v.abono + Db.all('Cobros').filter((c) => c.ventaId === v.id).reduce((t, c) => t + c.monto, 0);
       if (cobrado >= sumaAntes) datos.abono = Math.max(0, v.abono + totalFinal - sumaAntes);
     }
-    if (p.cliente != null || p.clienteId) {
-      datos.clienteId = Clientes.resolver(p, user);
+    // Pagado al vender: lo demás queda como deuda del cliente (se salda con abonos en Clientes).
+    if (p.abono != null && p.abono !== '') {
+      const cobros = Db.all('Cobros').filter((c) => c.ventaId === v.id).reduce((t, c) => t + c.monto, 0);
+      datos.abono = Util.entero(p.abono, 'Lo pagado al vender', { min: 0, max: Math.max(0, totalFinal - cobros) });
+    }
+    if (p.cliente != null || p.clienteId || (datos.abono != null && datos.abono < v.abono)) {
+      datos.clienteId = p.cliente != null || p.clienteId ? Clientes.resolver(p, user) : v.clienteId;
       const cobradoFinal = (datos.abono != null ? datos.abono : v.abono) + Db.all('Cobros').filter((c) => c.ventaId === v.id).reduce((t, c) => t + c.monto, 0);
       if (!datos.clienteId && cobradoFinal < totalFinal) throw new AppError('Una venta con saldo por cobrar necesita un cliente (no puede ser "Cliente general").');
     }

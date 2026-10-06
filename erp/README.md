@@ -255,6 +255,18 @@ distintos). **Corregir** abre el registro; **Validar** lo marca como revisado (c
 `Validaciones` y deja de aparecer mientras esos datos no cambien. Las reglas están en
 `server/Validacion.js`.
 
+## Pagos de facturas, deudas de clientes y cierre de la migración
+
+- **Pagos a proveedores:** en Compras, el detalle de cada factura muestra sus pagos y lo que falta.
+  "Registrar pago" (fecha, monto, cuenta) admite pagos parciales; quedan en la hoja `Pagos_Facturas`
+  y cuentan como egreso en el flujo de Finanzas. Los pagos conciliados desde la caja diaria también
+  se ven ahí. El administrador puede anular un pago.
+- **Deudas de clientes:** en Editar venta, "Pagado al vender" fija lo que se pagó al comprar; el
+  resto queda como deuda (requiere cliente) y se salda con abonos en Clientes.
+- **Cerrar migración:** Administración → Respaldos. Hace un respaldo, vacía la zona de trabajo del
+  stock y las filas de la caja pendientes o descartadas (conserva las migradas, que registran lo
+  creado y los pagos de facturas) y saca Migración del menú. Se puede reabrir.
+
 ## Demo con los datos reales
 
 La vista previa (demo) corre el mismo código que la web, pero con sus propios datos guardados en el

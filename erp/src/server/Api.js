@@ -40,6 +40,10 @@ function rutas_() {
     anularCompra: { rol: 'admin', write: true, fn: Compras.anular },
     quitarLineaCompra: { rol: 'admin', write: true, fn: Compras.quitarLinea },
     editarCompra: { rol: 'admin', write: true, fn: Compras.editar },
+    registrarPagoCompra: { rol: 'operador', write: true, fn: Compras.registrarPago },
+    anularPagoCompra: { rol: 'admin', write: true, fn: Compras.anularPago },
+    cerrarMigracion: { rol: 'admin', write: true, fn: (p, u) => Migracion.cerrar(p, u) },
+    reabrirMigracion: { rol: 'admin', write: true, fn: (p, u) => Migracion.reabrir(p, u) },
     unirProductos: { rol: 'admin', write: true, fn: Productos.unir },
     cajaEstado: { rol: 'admin', fn: () => MigracionCaja.estado() },
     cajaCargar: { rol: 'admin', write: true, fn: MigracionCaja.cargar },
@@ -232,7 +236,7 @@ const Snapshot = {
     });
 
     return {
-      app: { nombre: APP.nombre, version: APP.version, iva: APP.iva },
+      app: { nombre: APP.nombre, version: APP.version, iva: APP.iva, migracionCerrada: Migracion.cerrada() },
       hoy: Util.hoy(),
       user: { email: user.email, nombre: user.nombre, rol: user.rol },
       catalogos: {
@@ -246,7 +250,7 @@ const Snapshot = {
       lotes: compras.lotes,
       tomas: Tomas.vista(),
       movimientos: Finanzas.vista(),
-      pagosFacturas: MigracionCaja.pagosFacturas(),
+      pagosFacturas: Compras.pagos(),
       // Filas de la caja diaria aún sin migrar, por glosa (para avisarlo en Finanzas).
       cajaPendiente: Auth.puede(user, 'admin') ? Db.all('Migracion_Caja').filter((f) => !f.migrada && !f.descartada)
         .reduce((o, f) => { const k = f.glosa || 'Sin glosa'; o[k] = (o[k] || 0) + 1; return o; }, {}) : {},

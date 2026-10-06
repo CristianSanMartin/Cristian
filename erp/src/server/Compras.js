@@ -163,6 +163,46 @@ const Compras = {
     });
   },
 
+  /** Pago (total o parcial) de una factura al proveedor. Cuenta en el flujo de Finanzas en su fecha. */
+  registrarPago(p, user) {
+    const compra = Compras.requerir(p.compraId);
+    const pago = Object.assign({
+      id: Util.siguienteId('PAG', 5), compraId: compra.id,
+      fecha: Util.fecha(p.fecha, 'La fecha del pago', { requerido: true }),
+      monto: Util.entero(p.monto, 'El monto del pago', { requerido: true, min: 1, max: Compras._porPagar(compra) }),
+      cuenta: p.cuenta ? Util.opcion(p.cuenta, 'La cuenta', Object.keys(CUENTAS)) : '',
+      notas: Util.texto(p.notas, 'Las notas', { max: 300 }),
+      anulado: false,
+    }, Util.sello(user, true));
+    Db.insert('Pagos_Facturas', pago);
+    Audit.log(user, 'pago', 'Compra', compra.id, { pago: pago.id, monto: pago.monto, fecha: pago.fecha, cuenta: pago.cuenta });
+    return pago;
+  },
+
+  anularPago(p, user) {
+    const pago = Db.get('Pagos_Facturas', String(p.id || ''));
+    if (!pago) throw new AppError('El pago no existe.', 'NO_ENCONTRADO');
+    if (pago.anulado) throw new AppError('El pago ' + pago.id + ' ya está anulado.');
+    Db.update('Pagos_Facturas', pago.id, Object.assign({ anulado: true }, Util.sello(user)));
+    Audit.log(user, 'anular pago', 'Compra', pago.compraId, { pago: pago.id, monto: pago.monto });
+  },
+
+  /** Lo que falta pagar de una factura (total con IVA − pagos), redondeado hacia arriba. */
+  _porPagar(compra) {
+    const lineas = Db.all('Compras_Lineas').filter((l) => l.compraId === compra.id);
+    const total = (lineas.reduce((t, l) => t + l.cantidad * l.costoNeto, 0) + compra.despacho) * (1 + APP.iva);
+    const pagado = Compras.pagos().filter((x) => x.compraId === compra.id).reduce((t, x) => t + x.monto, 0);
+    return Math.max(0, Math.ceil(total - pagado));
+  },
+
+  /** Todos los pagos de facturas: los registrados en Compras y los conciliados desde la caja diaria. */
+  pagos() {
+    const manuales = Db.all('Pagos_Facturas').filter((x) => !x.anulado)
+      .map((x) => ({ id: x.id, compraId: x.compraId, fecha: x.fecha, monto: x.monto, cuenta: x.cuenta, notas: x.notas, origen: 'manual' }));
+    const caja = MigracionCaja.pagosFacturas().map((x) => Object.assign({ origen: 'caja', cuenta: '' }, x));
+    return manuales.concat(caja).sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
+  },
+
   requerir(id) {
     const c = Db.get('Compras', String(id || ''));
     if (!c) throw new AppError('La compra no existe.', 'NO_ENCONTRADO');
@@ -236,6 +276,8 @@ const Compras = {
       return lote;
     });
 
+    const pagosPorCompra = {};
+    Compras.pagos().forEach((x) => { (pagosPorCompra[x.compraId] = pagosPorCompra[x.compraId] || []).push(x); });
     compras.forEach((c) => {
       c.netoProductos = c.lineas.reduce((s, l) => s + l.netoLinea, 0);
       c.unidades = c.lineas.reduce((s, l) => s + l.cantidad, 0);
@@ -253,6 +295,9 @@ const Compras = {
       c.gananciaProyectada = c.lineas.reduce((s, l) => s + l.cantidad * l.gananciaUnidad, 0);
       const salieron = c.vendidas + c.salidas;
       c.estadoVenta = salieron === 0 ? 'sin_ventas' : salieron < c.unidades ? 'vendiendo' : 'vendida';
+      c.pagos = pagosPorCompra[c.id] || [];
+      c.pagado = c.pagos.reduce((s, x) => s + x.monto, 0);
+      c.porPagar = Math.max(0, Math.round(c.total - c.pagado));
     });
     compras.sort((a, b) => (b.fecha + b.id).localeCompare(a.fecha + a.id));
     lotes.sort((a, b) => (a.fecha + a.id).localeCompare(b.fecha + b.id));

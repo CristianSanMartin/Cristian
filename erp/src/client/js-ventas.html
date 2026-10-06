@@ -505,6 +505,7 @@
         lineas +
         (v.anulada ? '' :
           '<div class="form-field"><label>Total pagado por el cliente</label><input type="number" name="total" min="0" step="1" value="' + esc(v.total) + '"></div>' +
+          '<div class="form-field"><label>Pagado al vender</label><input type="number" name="abono" min="0" step="1" value="' + esc(v.abono) + '" title="Lo que el cliente pagó al comprar; el resto queda como deuda"></div>' +
           '<div class="form-field" data-ev-motivo hidden><label>Motivo del ajuste *</label><input name="motivo" maxlength="120" placeholder="Ej.: la caja registró el monto con la comisión descontada"></div>' +
           '<div class="form-field full" data-ev-dif></div>') +
         '<div class="form-field full"><label>Notas</label><textarea name="notas" rows="2">' + esc(v.notas) + '</textarea></div></div>' +
@@ -527,16 +528,25 @@
           if (!totalTocado) form.elements.total.value = base;
           const dif = (Number(form.elements.total.value) || 0) - base;
           form.querySelector('[data-ev-motivo]').hidden = !dif;
-          form.querySelector('[data-ev-dif]').innerHTML = (base !== v.total ? '<p class="table-note">Con los precios corregidos: total ' + fmt.money(v.total) + ' → ' + fmt.money(base) + '.</p>' : '') +
+          const totalNuevo = Number(form.elements.total.value) || 0;
+          const cobros = v.cobros.reduce((t, c) => t + c.monto, 0);
+          const pagado = form.elements.abono.dataset.tocado ? Number(form.elements.abono.value) || 0 : (v.saldo <= 0 ? totalNuevo - cobros : v.abono);
+          if (!form.elements.abono.dataset.tocado) form.elements.abono.value = Math.max(0, pagado);
+          const debe = totalNuevo - pagado - cobros;
+          form.querySelector('[data-ev-dif]').innerHTML = (debe > 0 ? '<p class="table-note text-gold">Queda una deuda de ' + fmt.money(debe) + (cobros ? ' (ya abonó ' + fmt.money(cobros) + ')' : '') + ': se cobra con abonos en Clientes. Requiere un cliente.</p>' : '') +
+            (base !== v.total ? '<p class="table-note">Con los precios corregidos: total ' + fmt.money(v.total) + ' → ' + fmt.money(base) + '.</p>' : '') +
             (dif ? '<p class="table-note text-gold">Se agrega un ajuste de ' + (dif > 0 ? '+' : '−') + fmt.money(Math.abs(dif)) + ' (total ' + fmt.money(base + dif) + ').</p>' : '');
         };
         form.querySelectorAll('[data-ev-linea]').forEach((inp) => inp.addEventListener('input', upd));
         form.elements.total.addEventListener('input', () => { totalTocado = true; upd(); });
+        form.elements.abono.addEventListener('input', () => { form.elements.abono.dataset.tocado = '1'; upd(); });
         upd();
       },
       onSubmit: (val, form) => {
         const datos = Object.assign({ id: id }, val);
         datos.lineas = Array.from(form.querySelectorAll('[data-ev-linea]')).map((inp) => ({ id: inp.dataset.evLinea, precio: inp.value }));
+        // Lo pagado al vender solo se envía si se cambió (si no, el servidor lo ajusta solo con el total).
+        if (form.elements.abono && !form.elements.abono.dataset.tocado) delete datos.abono;
         return GS.mutate('editarVenta', datos, (r) => (r && r.id && r.id !== v.id ? v.id + ' → ' + r.id + ' actualizada' : v.id + ' actualizada'));
       },
     });

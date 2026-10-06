@@ -776,6 +776,57 @@ test("dividir un movimiento: salida de un socio en retiro de capital + compra de
   assert.match(b.notas, /Dividido de MOV-/);
 });
 
+test("pagos de facturas: registrar en partes, anular y estado de pago", () => {
+  const s = createServer();
+  conInventario(s);
+  let c = s.ok("bootstrap").data.compras[0];
+  assert.deepEqual([c.pagado, c.porPagar], [0, Math.round(c.total)]);
+  assert.match(errorDe(s.call("registrarPagoCompra", { compraId: c.id, fecha: "2026-10-10", monto: Math.round(c.total) + 10 })), /no puede ser mayor/);
+  const p1 = s.ok("registrarPagoCompra", { compraId: c.id, fecha: "2026-10-10", monto: 500000, cuenta: "banco" }).result;
+  s.ok("registrarPagoCompra", { compraId: c.id, fecha: "2026-10-20", monto: Math.round(c.total) - 500000 });
+  let d = s.ok("bootstrap").data;
+  c = d.compras[0];
+  assert.deepEqual([c.pagos.length, c.porPagar], [2, 0]);
+  assert.ok(d.pagosFacturas.some(x => x.id === p1.id && x.cuenta === "banco"), "llega a Finanzas");
+  s.ok("anularPagoCompra", { id: p1.id });
+  assert.equal(s.ok("bootstrap").data.compras[0].porPagar, 500000);
+  s.ok("guardarUsuario", { email: "vista@gsprime.cl", nombre: "Vista", rol: "lectura" });
+  assert.equal(s.as("vista@gsprime.cl").call("registrarPagoCompra", { compraId: c.id, fecha: "2026-10-10", monto: 1 }).code, "SIN_PERMISO");
+});
+
+test("editar venta: lo pagado al vender deja deuda (con cliente) y se salda con abonos", () => {
+  const s = createServer();
+  const { prods } = conInventario(s);
+  const v = s.ok("crearVenta", { fecha: "2026-07-01", lineas: [{ productoId: prods.miniTin.id, cantidad: 2 }] }).result;   // 36.000 pagada
+  assert.match(errorDe(s.call("editarVenta", { id: v.id, fecha: "2026-07-01", abono: 10000 })), /necesita un cliente/);
+  s.ok("editarVenta", { id: v.id, fecha: "2026-07-01", abono: 10000, cliente: "Vicente" });
+  let e = s.ok("bootstrap").data.ventas.find(x => x.id === v.id);
+  assert.deepEqual([e.estadoPago, e.saldo, e.cliente], ["abonada", 26000, "Vicente"]);
+  s.ok("registrarCobro", { ventaId: v.id, fecha: "2026-07-05", monto: 26000, medioPago: "efectivo" });
+  e = s.ok("bootstrap").data.ventas.find(x => x.id === v.id);
+  assert.equal(e.estadoPago, "pagada");
+  assert.match(errorDe(s.call("editarVenta", { id: v.id, fecha: "2026-07-01", abono: 20000 })), /no puede ser mayor a 10000/);
+});
+
+test("cerrar la migración: limpia la zona de trabajo, conserva lo migrado de la caja y se puede reabrir", () => {
+  const s = createServer();
+  s.run(`Db.insertMany("Migracion_Caja", [
+    { id: "MC-1", fila: 2, fecha: "2026-01-01", glosa: "Ventas", entradas: 1000, salidas: 0, migrada: "OC-0001" },
+    { id: "MC-2", fila: 3, fecha: "2026-01-02", glosa: "GAV", entradas: 0, salidas: 500 },
+    { id: "MC-3", fila: 4, fecha: "2026-01-03", glosa: "x", entradas: 0, salidas: 0, descartada: true }]);
+    Db.insert("Migracion", { id: "MIG-1", fila: 2, producto: "x" });`);
+  assert.equal(s.ok("bootstrap").data.app.migracionCerrada, "");
+  const r = s.ok("cerrarMigracion").result;
+  assert.deepEqual([r.conservadas, r.quitadas], [1, 2]);
+  assert.deepEqual(JSON.parse(s.run(`JSON.stringify(Db.all("Migracion_Caja").map(f => f.id))`)), ["MC-1"]);
+  assert.equal(s.run(`Db.all("Migracion").length`), 0);
+  const d = s.ok("bootstrap").data;
+  assert.match(d.app.migracionCerrada, /admin@gsprime.cl/);
+  assert.deepEqual(d.cajaPendiente, {});
+  s.ok("reabrirMigracion");
+  assert.equal(s.ok("bootstrap").data.app.migracionCerrada, "");
+});
+
 test("validación de datos: encuentra inconsistencias, se validan y reaparecen si los datos cambian", () => {
   const s = createServer();
   const { prods } = conInventario(s);   // Binder ENG 24, Binder ESP 6, Mini Tin 10

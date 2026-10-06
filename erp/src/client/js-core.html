@@ -342,6 +342,7 @@
     let open = false;
     NAV.forEach((n) => {
       if (n.rol && !GS.puede(n.rol)) return;
+      if (n.id === 'migracion' && GS.state.data.app.migracionCerrada) return;   // cerrada en Administración → Respaldos
       if (n.group) {
         if (open) html += '</ul>';
         html += '<div class="nav-group-label">' + n.group + '</div><ul class="nav">';

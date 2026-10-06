@@ -90,6 +90,13 @@
         : '<button class="btn secondary" data-action="exportarDemo">' + GS.icon('download') + 'Exportar datos para la demo</button>') +
       (exportDemo && exportDemo.url ? '<a class="btn" href="' + esc(exportDemo.url) + '" target="_blank" rel="noopener">' + GS.icon('download') + 'Descargar ' + esc(exportDemo.kb) + ' KB</a><span class="muted" style="font-size:12px;">' + esc(exportDemo.nombre) + '</span>' : '') +
       '</div>' +
+      '<h3 class="sub-titulo" style="margin-top:22px;">Migración desde el sistema anterior</h3>' +
+      (data().app.migracionCerrada
+        ? '<div class="notice">Cerrada el ' + esc(data().app.migracionCerrada) + '. Lo migrado sigue en el ERP; Migración ya no aparece en el menú.</div>' +
+          '<div class="btn-row" style="margin-bottom:12px;"><button class="btn ghost" data-action="reabrirMigracion">Reabrir migración</button></div>'
+        : '<div class="notice">Cuando termines de migrar, ciérrala: se hace un respaldo, se vacía la zona de trabajo del stock y las filas de la caja pendientes o descartadas, y Migración sale del menú. ' +
+          'Lo ya migrado de la caja se conserva (es el registro de lo creado, incluidos los pagos de facturas). Se puede reabrir.</div>' +
+          '<div class="btn-row" style="margin-bottom:12px;"><button class="btn secondary" data-action="cerrarMigracion">Cerrar migración</button></div>') +
       '<h3 class="sub-titulo" style="margin-top:22px;">Migraciones de datos</h3>' +
       (r.pendientes.length ? '<div class="notice warn">Hay ' + r.pendientes.length + ' migración(es) pendiente(s): ' + r.pendientes.map((m) => esc(m.id)).join(', ') + '. Se aplican al ejecutar <strong>instalar</strong>, después de un respaldo.</div>' : '') +
       '<div class="table-wrap"><table class="data-table" style="min-width:640px;"><thead><tr><th>Aplicada</th><th>Migración</th><th>Qué cambió</th><th>Por</th></tr></thead><tbody>' +
@@ -105,6 +112,15 @@
       GS.render();
     } catch (e) { GS.toast(e.message, true); }
   };
+
+  GS.actions.cerrarMigracion = () => GS.confirm({
+    title: 'Cerrar la migración',
+    message: 'Se crea un respaldo y luego se <strong>vacía</strong> la zona de trabajo de la migración del stock y las filas de la caja diaria <strong>pendientes o descartadas</strong>. ' +
+      'Lo ya migrado no cambia. Migración sale del menú (se puede reabrir desde aquí).',
+    confirmLabel: 'Cerrar migración',
+    onConfirm: () => GS.mutate('cerrarMigracion', {}, (r) => 'Migración cerrada · ' + r.quitadas + ' filas de la caja quitadas, ' + r.conservadas + ' migradas conservadas').then(() => { respaldos = null; }),
+  });
+  GS.actions.reabrirMigracion = () => GS.mutate('reabrirMigracion', {}, 'Migración reabierta: vuelve a estar en el menú').catch((e) => GS.toast(e.message, true));
 
   GS.actions.exportarDemo = async () => {
     exportDemo = { cargando: true };

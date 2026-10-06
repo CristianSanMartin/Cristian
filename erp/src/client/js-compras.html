@@ -38,6 +38,9 @@
     { id: 'ganancia', label: 'Ganancia acumulada', right: true, valor: (c) => c.gananciaAcumulada, texto: (c) => fmt.money(c.gananciaAcumulada),
       celda: (c) => '<strong class="' + (c.gananciaAcumulada < 0 ? 'text-danger' : c.gananciaAcumulada > 0 ? 'text-success' : '') + '">' + fmt.money(c.gananciaAcumulada) + '</strong>' +
         '<div class="cell-dim">de ' + fmt.money(c.gananciaProyectada) + ' proyectada</div>' },
+    { id: 'pago', label: 'Pago', valor: (c) => (c.porPagar <= 1 ? 'Pagada' : c.pagado ? 'Abonada' : 'Por pagar'), celda: (c) => (c.porPagar <= 1
+      ? '<span class="badge st-ok">Pagada</span>'
+      : '<span class="badge ' + (c.pagado ? 'st-parcial' : 'st-cancelada') + '">' + (c.pagado ? 'Abonada' : 'Por pagar') + '</span><div class="cell-dim">debe ' + fmt.money(c.porPagar) + '</div>') },
     { id: 'estadoVenta', label: 'Estado', valor: (c) => ESTADO_VENTA[c.estadoVenta], celda: (c) =>
       '<span class="badge ' + { sin_ventas: 'st-pedido', vendiendo: 'st-parcial', vendida: 'st-ok' }[c.estadoVenta] + '">' + ESTADO_VENTA[c.estadoVenta] + '</span>' },
   ];
@@ -67,8 +70,50 @@
       total('Neto', fmt.money(c.neto)) + total('IVA 19%', fmt.money(c.iva)) + total('<strong>Total factura</strong>', '<strong>' + fmt.money(c.total) + '</strong>', 'total-row') +
       '</tfoot></table>' +
       (c.despacho ? '' : '<p class="table-note text-success">✓ Sin cobro de despacho' + (c.despachoGratisDesde ? ' (neto ≥ ' + fmt.money(c.despachoGratisDesde) + ')' : '') + '</p>') +
+      pagosCompra(c) +
       (c.notas ? '<p class="table-note">Notas: ' + esc(c.notas) + '</p>' : '') + '</div>';
   }
+
+  /** Pagos al proveedor de la factura: registrados aquí o conciliados desde la caja diaria. */
+  function pagosCompra(c) {
+    const cuentas = data().catalogos.cuentas;
+    const admin = GS.puede('admin');
+    return '<div class="pagos-compra"><p class="table-note"><strong>Pagos al proveedor:</strong> ' +
+      (c.pagos.length
+        ? c.pagos.map((x) => fmt.date(x.fecha) + ' ' + fmt.money(x.monto) + (x.cuenta ? ' (' + esc(cuentas[x.cuenta] || x.cuenta) + ')' : '') + (x.origen === 'caja' ? ' · caja diaria' : '') +
+          (admin && x.origen === 'manual' ? ' <a href="#" data-action="anularPagoCompra" data-id="' + esc(x.id) + '" title="Anular este pago">anular</a>' : '')).join(' · ')
+        : 'ninguno') +
+      ' — ' + (c.porPagar <= 1 ? '<span class="text-success">✓ pagada</span>' : '<span class="text-gold">por pagar ' + fmt.money(c.porPagar) + '</span>') +
+      (GS.puede('operador') && c.porPagar > 1 ? ' <button class="btn small secondary" data-action="registrarPagoCompra" data-id="' + esc(c.id) + '">Registrar pago</button>' : '') + '</p></div>';
+  }
+
+  GS.actions.registrarPagoCompra = (id) => {
+    const c = data().compras.find((x) => x.id === id);
+    const cuentas = data().catalogos.cuentas;
+    GS.formModal({
+      title: 'Pago de la factura ' + c.factura,
+      submitLabel: 'Registrar pago',
+      fields: () => '<p class="hint">' + esc(c.proveedor) + ' · total ' + fmt.money(c.total) + (c.pagado ? ' · pagado ' + fmt.money(c.pagado) : '') + ' · <strong>por pagar ' + fmt.money(c.porPagar) + '</strong></p>' +
+        '<div class="form-grid">' +
+        '<div class="form-field"><label>Fecha del pago *</label><input type="date" name="fecha" value="' + esc(data().hoy) + '"></div>' +
+        '<div class="form-field"><label>Monto *</label><input type="number" name="monto" min="1" step="1" value="' + esc(c.porPagar) + '"></div>' +
+        '<div class="form-field"><label>Cuenta</label><select name="cuenta">' + GS.options([{ value: '', label: 'Sin cuenta' }].concat(Object.keys(cuentas).map((k) => ({ value: k, label: cuentas[k] }))), 'banco') + '</select></div>' +
+        '<div class="form-field"><label>Notas</label><input name="notas" placeholder="Transferencia, N° de operación…"></div></div>' +
+        '<p class="hint">Cuenta como egreso en el flujo de Finanzas en la fecha del pago. Puedes pagar la factura en varias partes.</p>',
+      onSubmit: (v) => GS.mutate('registrarPagoCompra', Object.assign({ compraId: id }, v), 'Pago de ' + fmt.money(v.monto) + ' registrado'),
+    });
+  };
+  GS.actions.anularPagoCompra = (id) => {
+    const c = data().compras.find((x) => x.pagos.some((p) => p.id === id));
+    const p = c.pagos.find((x) => x.id === id);
+    GS.confirm({
+      title: 'Anular el pago ' + id,
+      message: 'El pago de ' + fmt.money(p.monto) + ' del ' + fmt.date(p.fecha) + ' a la factura ' + esc(c.factura) + ' deja de contar. Queda en la auditoría.',
+      confirmLabel: 'Sí, anular',
+      danger: true,
+      onConfirm: () => GS.mutate('anularPagoCompra', { id: id }, 'Pago anulado'),
+    });
+  };
 
   GS.views.compras = {
     title: 'Compras',

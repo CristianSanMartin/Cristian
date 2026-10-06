@@ -331,6 +331,36 @@ const Migracion = {
     return Migracion.estado();
   },
 
+  /** Fecha y usuario del cierre, o '' si la migración sigue abierta. */
+  cerrada() {
+    return PropertiesService.getScriptProperties().getProperty('MIGRACION_CERRADA') || '';
+  },
+
+  /**
+   * Cierra la migración: respaldo, se vacía la zona de trabajo del stock y lo pendiente o descartado de
+   * la caja (lo migrado de la caja se conserva: es el registro de lo creado, incluidos los pagos de
+   * facturas) y Migración sale del menú. Se puede reabrir.
+   */
+  cerrar(p, user) {
+    Respaldos.crear('antes de cerrar la migración', user);
+    const caja = Db.all('Migracion_Caja');
+    const quedan = caja.filter((f) => f.migrada);
+    Db.vaciar('Migracion');
+    Db.vaciar('Migracion_Mapeos');
+    Db.vaciar('Migracion_Caja');
+    if (quedan.length) Db.insertMany('Migracion_Caja', quedan);
+    const marca = Util.ahora() + ' · ' + user.email;
+    PropertiesService.getScriptProperties().setProperty('MIGRACION_CERRADA', marca);
+    Audit.log(user, 'cerrar', 'Migración', '', { cajaConservadas: quedan.length, cajaQuitadas: caja.length - quedan.length });
+    return { cerrada: marca, conservadas: quedan.length, quitadas: caja.length - quedan.length };
+  },
+
+  reabrir(p, user) {
+    PropertiesService.getScriptProperties().deleteProperty('MIGRACION_CERRADA');
+    Audit.log(user, 'reabrir', 'Migración', '', {});
+    return { cerrada: '' };
+  },
+
   _noImportada() {
     if (PropertiesService.getScriptProperties().getProperty('MIGRACION_IMPORTADA')) {
       throw new AppError('La migración ya se importó. Si necesitas corregir algo, hazlo en el ERP (queda en la auditoría).');

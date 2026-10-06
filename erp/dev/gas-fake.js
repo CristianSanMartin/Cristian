@@ -157,6 +157,7 @@ var createGasFake = function (opts) {
         return {
           getProperty: function (k) { return state.props[k] || null; },
           setProperty: function (k, v) { state.props[k] = String(v); },
+          deleteProperty: function (k) { delete state.props[k]; },
           getProperties: function () { return JSON.parse(JSON.stringify(state.props)); },
         };
       },

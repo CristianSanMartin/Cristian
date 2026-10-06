@@ -15,7 +15,7 @@
 
 const APP = {
   nombre: 'GS Prime ERP',
-  version: '2.10.1',
+  version: '2.11.0',
   tz: 'America/Santiago',
   iva: 0.19,
 };
@@ -160,6 +160,13 @@ const SCHEMA = {
   Migraciones: {
     key: 'id',
     cols: { id: 's', descripcion: 's', aplicadaEn: 't', aplicadaPor: 's' },
+  },
+  /** Pagos a proveedores de una factura de compra (abonos o pago total). */
+  Pagos_Facturas: {
+    key: 'id',
+    cols: Object.assign({
+      id: 's', compraId: 's', fecha: 'd', monto: 'n', cuenta: 's', notas: 's', anulado: 'b',
+    }, AUDIT_COLS),
   },
   /** Hallazgos de la Validación de datos que el administrador revisó (clave = regla|registro). */
   Validaciones: {
