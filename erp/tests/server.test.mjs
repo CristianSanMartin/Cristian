@@ -1324,4 +1324,12 @@ test("editar venta: cambiar un concepto por un producto del inventario (quitar y
   s.ok("editarVenta", { id: v.id, fecha: venta.fecha, quitar: [tin.id], agregar: [{ productoId: prods.binderEsp.id, cantidad: 1, precio: tin.precio }] });
   d = s.ok("bootstrap").data;
   assert.deepEqual([disp(prods.miniTin.id), disp(prods.binderEsp.id), d.ventas.find(x => x.id === v.id).total], [10, 5, v.total]);
+  // Una línea de ajuste (ej. "Diferencia con la caja diaria") también se puede quitar
+  s.ok("editarVenta", { id: v.id, fecha: venta.fecha, total: v.total + 5000, motivo: "Diferencia con la caja diaria" });
+  venta = s.ok("bootstrap").data.ventas.find(x => x.id === v.id);
+  const aj = venta.lineas.find(l => l.categoria === "Ajuste");
+  assert.equal(venta.total, v.total + 5000);
+  s.ok("editarVenta", { id: v.id, fecha: venta.fecha, quitar: [aj.id] });
+  venta = s.ok("bootstrap").data.ventas.find(x => x.id === v.id);
+  assert.deepEqual([venta.total, venta.estadoPago, venta.lineas.some(l => l.categoria === "Ajuste")], [v.total, "pagada", false]);
 });

@@ -480,12 +480,13 @@
     const v = data().ventas.find((x) => x.id === id);
     const d = data();
     const editables = v.lineas.filter((l) => l.categoria !== 'Ajuste');
-    const ajustes = v.lineas.filter((l) => l.categoria === 'Ajuste').reduce((t, l) => t + l.subtotal, 0);
+    const lineasAjuste = v.lineas.filter((l) => l.categoria === 'Ajuste');
     const clientes = d.clientes.map((c) => '<option value="' + esc(c.nombre) + '">').join('');
-    const lineas = editables.length && !v.anulada
+    const lineas = v.lineas.length && !v.anulada
       ? '<div class="form-field full"><label>Productos y precios</label><div class="table-wrap"><table class="data-table" style="min-width:0"><thead><tr><th>Producto</th><th class="right">Cant.</th><th class="right">Precio unidad</th><th class="right">Subtotal</th><th class="center" title="Quitar la línea de la venta: sus unidades vuelven al inventario">Quitar</th></tr></thead><tbody data-ev-cuerpo>' +
-        editables.map((l) => '<tr data-ev-fila="' + esc(l.id) + '"><td class="cell-strong">' + esc(l.producto || l.productoNombre) + '</td><td class="cell-num right">' + fmt.num(l.cantidad) + '</td>' +
-          '<td class="right"><input class="qty-input price-input" style="width:110px" type="number" min="0" step="1" data-ev-linea="' + esc(l.id) + '" value="' + esc(l.precio) + '"></td>' +
+        // Los ajustes (ej. "Diferencia con la caja diaria") no cambian de precio, pero se pueden quitar.
+        editables.concat(lineasAjuste).map((l) => '<tr data-ev-fila="' + esc(l.id) + '"><td class="cell-strong">' + esc(l.producto || l.productoNombre) + (l.categoria === 'Ajuste' ? ' <span class="cell-dim">(ajuste)</span>' : '') + '</td><td class="cell-num right">' + fmt.num(l.cantidad) + '</td>' +
+          '<td class="right">' + (l.categoria === 'Ajuste' ? fmt.money(l.precio) : '<input class="qty-input price-input" style="width:110px" type="number" min="0" step="1" data-ev-linea="' + esc(l.id) + '" value="' + esc(l.precio) + '">') + '</td>' +
           '<td class="cell-num right" data-ev-sub="' + esc(l.id) + '">' + fmt.money(l.subtotal) + '</td>' +
           '<td class="center"><input type="checkbox" data-ev-quitar="' + esc(l.id) + '" aria-label="Quitar ' + esc(l.producto || '') + '"></td></tr>').join('') +
         '</tbody></table></div>' +
@@ -560,7 +561,7 @@
             const td = form.querySelector('[data-ev-sub="' + CSS.escape(l.id) + '"]');
             if (inp && td) td.textContent = fmt.money((Number(inp.value) || 0) * l.cantidad);
           });
-          const base = sumaLineas() + ajustes;
+          const base = sumaLineas() + lineasAjuste.reduce((t, l) => t + (quitada(l) ? 0 : l.subtotal), 0);
           if (!totalTocado) form.elements.total.value = base;
           const dif = (Number(form.elements.total.value) || 0) - base;
           form.querySelector('[data-ev-motivo]').hidden = !dif;
