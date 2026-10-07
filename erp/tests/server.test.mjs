@@ -1361,3 +1361,17 @@ test("anular venta liberando el N°: la anulada pasa a -ANU y el correlativo se 
   s.ok("anularVenta", { id: a.id, liberar: true });
   assert.ok(s.ok("bootstrap").data.ventas.some(v => v.id === a.id + "-ANU2"));
 });
+
+test("eliminar una venta anulada (duplicado): se borra con sus líneas y abonos", () => {
+  const s = createServer();
+  const { prods } = conInventario(s);
+  const v = s.ok("crearVenta", { fecha: "2026-07-01", cliente: "Ludi", pagada: false, abono: 1000, lineas: [{ categoria: "Otro", descripcion: "Ludi", monto: 184990 }] }).result;
+  s.ok("registrarCobro", { ventaId: v.id, fecha: "2026-07-02", monto: 5000 });
+  assert.match(errorDe(s.call("eliminarVenta", { id: v.id })), /Primero anula/);
+  s.ok("anularVenta", { id: v.id, liberar: true });
+  const anu = v.id + "-ANU";
+  s.ok("eliminarVenta", { id: anu });
+  const d = s.ok("bootstrap").data;
+  assert.ok(!d.ventas.some(x => x.id === anu));
+  assert.equal(s.ok("crearVenta", { fecha: "2026-07-03", lineas: [{ productoId: prods.miniTin.id, cantidad: 1 }] }).result.id, v.id, "el N° queda libre");
+});

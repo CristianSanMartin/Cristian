@@ -413,6 +413,33 @@ const Ventas = {
   },
 
   /**
+   * Elimina definitivamente una venta anulada (un duplicado o un error de la migración), con sus
+   * líneas y abonos. La auditoría guarda una copia completa. Su N° queda libre.
+   */
+  eliminar(p, user) {
+    const v = Ventas.requerir(p.id);
+    if (!v.anulada) throw new AppError('Primero anula la venta ' + v.id + '; solo se eliminan ventas anuladas.');
+    const lineas = Db.all('Ventas_Lineas').filter((l) => l.ventaId === v.id);
+    const cobros = Db.all('Cobros').filter((c) => c.ventaId === v.id);
+    Audit.log(user, 'eliminar', 'Venta', v.id, {
+      venta: JSON.stringify(v).slice(0, 2000),
+      lineas: lineas.map((l) => (l.productoId ? l.productoId + ' ×' + l.cantidad + ' (' + l.loteId + ')' : l.categoria + ' ' + l.descripcion) + ' $' + l.precio).join(', '),
+      cobros: cobros.map((c) => c.fecha + ' $' + c.monto).join(', '),
+    });
+    lineas.forEach((l) => Db.remove('Ventas_Lineas', l.id));
+    cobros.forEach((c) => Db.remove('Cobros', c.id));
+    Db.remove('Ventas', v.id);
+    // Si era el último N° del correlativo, la próxima venta lo toma.
+    const m = /^([A-Z]+)-(\d+)$/.exec(v.id);
+    const sec = m && Db.get('Secuencias', m[1]);
+    if (sec && sec.valor === Number(m[2])) {
+      const re = new RegExp('^' + m[1] + '-(\\d+)$');
+      Db.update('Secuencias', m[1], { valor: Db.all('Ventas').reduce((t, x) => { const r = re.exec(x.id); return r ? Math.max(t, Number(r[1])) : t; }, 0) });
+    }
+    return { id: v.id };
+  },
+
+  /**
    * Deja libre el N° de una venta anulada para volver a usarlo: la anulada pasa a "OC-0012-ANU"
    * (con sus líneas, abonos y referencias). Si era el último N° del correlativo, la próxima venta lo
    * toma; si no, se puede asignar a mano con Editar venta (N°).

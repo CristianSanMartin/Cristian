@@ -461,7 +461,8 @@
             '<td><div class="row-actions">' + (admin && !v.anulada ? GS.iconBtn('editarVenta', v.id, 'edit', 'Editar fecha, boleta, total o notas') +
               (v.lineas.every((l) => l.porMonto) ? '<button class="btn small ghost" data-action="reclasificarVenta" data-id="' + esc(v.id) + '" title="Cambiar el concepto o pasarla a Finanzas">Reclasificar</button>' : '') +
               GS.iconBtn('anularVenta', v.id, 'trash', 'Anular venta', 'danger') : '') +
-            (admin && v.anulada && /^[A-Z]+-\d+$/.test(v.id) ? '<button class="btn small ghost" data-action="liberarNumeroVenta" data-id="' + esc(v.id) + '" title="Dejar libre este N° para volver a usarlo">Liberar N°</button>' : '') + '</div></td></tr>' +
+            (admin && v.anulada && /^[A-Z]+-\d+$/.test(v.id) ? '<button class="btn small ghost" data-action="liberarNumeroVenta" data-id="' + esc(v.id) + '" title="Dejar libre este N° para volver a usarlo">Liberar N°</button>' : '') +
+            (admin && v.anulada ? GS.iconBtn('eliminarVenta', v.id, 'trash', 'Eliminar definitivamente (duplicado o error)', 'danger') : '') + '</div></td></tr>' +
             (open ? '<tr class="detalle-row"><td colspan="' + n + '">' + detalleVenta(v) + '</td></tr>' : '');
         }).join('') : '<tr><td colspan="' + n + '">' + vacio + '</td></tr>';
         const wrap = document.getElementById(tbody).closest('.table-wrap');
@@ -642,6 +643,17 @@
         '<div class="form-field"><label>Motivo</label><input name="motivo" maxlength="300" placeholder="Opcional"></div>',
       onSubmit: (val) => GS.mutate('anularVenta', { id: id, liberar: !!val.liberar, motivo: val.motivo },
         (r) => v.id + ' anulada' + (r && r.liberado ? ' · N° liberado' : '')),
+    });
+  };
+  GS.actions.eliminarVenta = (id) => {
+    const v = data().ventas.find((x) => x.id === id);
+    GS.confirm({
+      title: 'Eliminar ' + id,
+      message: 'La venta anulada <strong>' + esc(id) + '</strong> (' + fmt.money(v.total) + ', ' + esc(v.lineas.map((l) => l.producto).join(', ')) + ') se borra definitivamente con sus líneas y abonos. ' +
+        'Úsalo para duplicados o errores de la migración. La auditoría guarda una copia.',
+      confirmLabel: 'Sí, eliminar',
+      danger: true,
+      onConfirm: () => GS.mutate('eliminarVenta', { id: id }, id + ' eliminada'),
     });
   };
   GS.actions.liberarNumeroVenta = (id) => {
