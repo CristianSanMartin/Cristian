@@ -68,7 +68,15 @@ try {
     if ($id) { Set-Content -Path $archivoImpl -Value $id }
   }
   if ($id) {
-    & clasp deploy -i $id -d "v$version"
+    # Google a veces responde "The service is currently unavailable": se reintenta unas veces.
+    for ($intento = 1; $intento -le 4; $intento++) {
+      & clasp deploy -i $id -d "v$version"
+      if ($LASTEXITCODE -eq 0) { break }
+      if ($intento -lt 4) {
+        Write-Host "    Google no respondió (intento $intento de 4). Reintento en $(5 * $intento) segundos..." -ForegroundColor Yellow
+        Start-Sleep -Seconds (5 * $intento)
+      }
+    }
     if ($LASTEXITCODE -ne 0) { throw 'No se pudo actualizar la implementación. Hazlo a mano: Implementar > Gestionar implementaciones > editar > Versión nueva.' }
     Write-Host "    Listo: la aplicación web ya usa la versión $version (el link no cambia)." -ForegroundColor Green
   }
