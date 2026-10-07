@@ -460,7 +460,8 @@
             cols.map((c) => '<td class="' + (c.right ? 'cell-num right' : '') + '">' + c.celda(v) + '</td>').join('') +
             '<td><div class="row-actions">' + (admin && !v.anulada ? GS.iconBtn('editarVenta', v.id, 'edit', 'Editar fecha, boleta, total o notas') +
               (v.lineas.every((l) => l.porMonto) ? '<button class="btn small ghost" data-action="reclasificarVenta" data-id="' + esc(v.id) + '" title="Cambiar el concepto o pasarla a Finanzas">Reclasificar</button>' : '') +
-              GS.iconBtn('anularVenta', v.id, 'trash', 'Anular venta', 'danger') : '') + '</div></td></tr>' +
+              GS.iconBtn('anularVenta', v.id, 'trash', 'Anular venta', 'danger') : '') +
+            (admin && v.anulada && /^[A-Z]+-\d+$/.test(v.id) ? '<button class="btn small ghost" data-action="liberarNumeroVenta" data-id="' + esc(v.id) + '" title="Dejar libre este N° para volver a usarlo">Liberar N°</button>' : '') + '</div></td></tr>' +
             (open ? '<tr class="detalle-row"><td colspan="' + n + '">' + detalleVenta(v) + '</td></tr>' : '');
         }).join('') : '<tr><td colspan="' + n + '">' + vacio + '</td></tr>';
         const wrap = document.getElementById(tbody).closest('.table-wrap');
@@ -631,12 +632,24 @@
 
   GS.actions.anularVenta = (id) => {
     const v = data().ventas.find((x) => x.id === id);
-    GS.confirm({
+    GS.formModal({
       title: 'Anular ' + v.id,
-      message: 'La venta <strong>' + esc(v.id) + '</strong> (' + fmt.money(v.total) + ', ' + esc(v.cliente) + ') queda anulada y sus ' + v.unidades + ' unidades vuelven al inventario. La OC no se reutiliza y queda en la auditoría.',
-      confirmLabel: 'Sí, anular',
-      danger: true,
-      onConfirm: () => GS.mutate('anularVenta', { id: id }, v.id + ' anulada'),
+      submitLabel: 'Sí, anular',
+      fields: () => '<p class="confirm-text" style="padding:0 0 12px;">La venta <strong>' + esc(v.id) + '</strong> (' + fmt.money(v.total) + ', ' + esc(v.cliente) + ') queda anulada' +
+        (v.unidades ? ' y sus ' + v.unidades + ' unidades vuelven al inventario' : '') + '. Queda en la auditoría.</p>' +
+        '<div class="form-field"><label class="check"><input type="checkbox" name="liberar"> Liberar el N° ' + esc(v.id) + ' para volver a usarlo</label></div>' +
+        '<p class="hint">La anulada pasa a llamarse ' + esc(v.id) + '-ANU. Si es el último N°, la próxima venta lo toma; si no, puedes asignarlo a otra venta con Editar (N°).</p>' +
+        '<div class="form-field"><label>Motivo</label><input name="motivo" maxlength="300" placeholder="Opcional"></div>',
+      onSubmit: (val) => GS.mutate('anularVenta', { id: id, liberar: !!val.liberar, motivo: val.motivo },
+        (r) => v.id + ' anulada' + (r && r.liberado ? ' · N° liberado' : '')),
+    });
+  };
+  GS.actions.liberarNumeroVenta = (id) => {
+    GS.confirm({
+      title: 'Liberar el N° ' + id,
+      message: 'La venta anulada pasa a llamarse <strong>' + esc(id) + '-ANU</strong> y el N° ' + esc(id) + ' queda libre: si es el último, la próxima venta lo toma; si no, puedes asignarlo con Editar (N°).',
+      confirmLabel: 'Liberar N°',
+      onConfirm: () => GS.mutate('liberarNumeroVenta', { id: id }, 'N° ' + id + ' liberado'),
     });
   };
 

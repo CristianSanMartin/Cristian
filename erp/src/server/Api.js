@@ -70,6 +70,7 @@ function rutas_() {
     crearVenta: { rol: 'operador', write: true, fn: Ventas.crear },
     registrarCobro: { rol: 'operador', write: true, fn: Ventas.registrarCobro },
     anularVenta: { rol: 'admin', write: true, fn: Ventas.anular },
+    liberarNumeroVenta: { rol: 'admin', write: true, fn: Ventas.liberarNumero },
     guardarCliente: { rol: 'operador', write: true, fn: Clientes.guardar },
 
     validacion: { rol: 'admin', fn: (p, u) => Validacion.revisar(u) },

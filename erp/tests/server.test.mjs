@@ -1333,3 +1333,31 @@ test("editar venta: cambiar un concepto por un producto del inventario (quitar y
   venta = s.ok("bootstrap").data.ventas.find(x => x.id === v.id);
   assert.deepEqual([venta.total, venta.estadoPago, venta.lineas.some(l => l.categoria === "Ajuste")], [v.total, "pagada", false]);
 });
+
+test("anular venta liberando el N°: la anulada pasa a -ANU y el correlativo se reutiliza", () => {
+  const s = createServer();
+  const { prods } = conInventario(s);
+  const a = s.ok("crearVenta", { fecha: "2026-07-01", lineas: [{ productoId: prods.miniTin.id, cantidad: 1 }] }).result;
+  const b = s.ok("crearVenta", { fecha: "2026-07-02", lineas: [{ productoId: prods.miniTin.id, cantidad: 1 }] }).result;
+  s.ok("guardarMovimiento", { fecha: "2026-07-02", tipo: "ingreso", categoria: "otro_ingreso", monto: 1000, referencia: b.id });
+  assert.match(errorDe(s.call("liberarNumeroVenta", { id: b.id })), /anulada/);
+  const r = s.ok("anularVenta", { id: b.id, liberar: true }).result;
+  assert.equal(r.id, b.id + "-ANU");
+  let d = s.ok("bootstrap").data;
+  const anu = d.ventas.find(v => v.id === b.id + "-ANU");
+  assert.ok(anu && anu.anulada && anu.lineas.length === 1, "conserva sus líneas");
+  assert.equal(d.movimientos[0].referencia, b.id + "-ANU");
+  assert.match(errorDe(s.call("liberarNumeroVenta", { id: anu.id })), /ya está liberado/);
+  // La próxima venta toma el N° liberado
+  const c = s.ok("crearVenta", { fecha: "2026-07-03", lineas: [{ productoId: prods.miniTin.id, cantidad: 1 }] }).result;
+  assert.equal(c.id, b.id);
+  // Un N° del medio: queda libre para asignarlo con Editar
+  s.ok("anularVenta", { id: a.id });
+  s.ok("liberarNumeroVenta", { id: a.id });
+  const e = s.ok("crearVenta", { fecha: "2026-07-04", lineas: [{ productoId: prods.miniTin.id, cantidad: 1 }] }).result;
+  assert.notEqual(e.id, a.id);
+  assert.equal(s.ok("editarVenta", { id: e.id, fecha: "2026-07-04", numero: a.id }).result.id, a.id);
+  // Liberar dos veces el mismo N°: -ANU2
+  s.ok("anularVenta", { id: a.id, liberar: true });
+  assert.ok(s.ok("bootstrap").data.ventas.some(v => v.id === a.id + "-ANU2"));
+});

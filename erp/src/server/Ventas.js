@@ -108,7 +108,7 @@ const Ventas = {
     if (Object.keys(cambiosV).length) Db.actualizarVarios('Ventas', cambiosV);
     const cambia = (id) => mapa[id] && mapa[id] !== id;
     if (!Object.keys(mapa).some(cambia)) return;
-    const re = /\b(?:OC|PR|SGL|TOR|SOB|BAZ|ACC)-\d{4,}(?:-\d+)?\b/g;
+    const re = /\b(?:OC|PR|SGL|TOR|SOB|BAZ|ACC)-\d{4,}(?:-\d+)?\b(?!-ANU)/g;
     const reemplazar = (t) => String(t || '').replace(re, (id) => (cambia(id) ? mapa[id] : id));
     [['Ventas_Lineas', 'ventaId'], ['Cobros', 'ventaId']].forEach(([tabla, campo]) => {
       const cambios = {};
@@ -409,6 +409,31 @@ const Ventas = {
     if (v.anulada) throw new AppError('La venta ' + v.id + ' ya está anulada.');
     Db.update('Ventas', v.id, Object.assign({ anulada: true }, Util.sello(user)));
     Audit.log(user, 'anular', 'Venta', v.id, { motivo: Util.texto(p.motivo, 'El motivo', { max: 300 }) });
+    return p.liberar ? Ventas.liberarNumero({ id: v.id }, user) : { id: v.id };
+  },
+
+  /**
+   * Deja libre el N° de una venta anulada para volver a usarlo: la anulada pasa a "OC-0012-ANU"
+   * (con sus líneas, abonos y referencias). Si era el último N° del correlativo, la próxima venta lo
+   * toma; si no, se puede asignar a mano con Editar venta (N°).
+   */
+  liberarNumero(p, user) {
+    const v = Ventas.requerir(p.id);
+    if (!v.anulada) throw new AppError('Solo se puede liberar el N° de una venta anulada.');
+    const m = /^([A-Z]+)-(\d+)$/.exec(v.id);
+    if (!m) throw new AppError('El N° de ' + v.id + ' ya está liberado.');
+    let nuevo = v.id + '-ANU';
+    for (let i = 2; Db.get('Ventas', nuevo); i++) nuevo = v.id + '-ANU' + i;
+    Ventas._renombrar({ [v.id]: nuevo }, null, user);
+    // El correlativo vuelve al N° más alto que sigue en uso de ese prefijo.
+    const sec = Db.get('Secuencias', m[1]);
+    if (sec && sec.valor === Number(m[2])) {
+      const re = new RegExp('^' + m[1] + '-(\\d+)$');
+      const alto = Db.all('Ventas').reduce((t, x) => { const r = re.exec(x.id); return r ? Math.max(t, Number(r[1])) : t; }, 0);
+      Db.update('Secuencias', m[1], { valor: alto });
+    }
+    Audit.log(user, 'liberar N°', 'Venta', nuevo, { numero: v.id + ' → ' + nuevo });
+    return { id: nuevo, liberado: v.id };
   },
 
   /** Abono a una venta pendiente de pago. */

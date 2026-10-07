@@ -269,6 +269,9 @@ distintos). **Corregir** abre el registro; **Validar** lo marca como revisado (c
 - **Cambiar productos de una venta:** en Editar venta, "Quitar" saca una línea (sus unidades vuelven al
   inventario) y "Agregar producto del inventario" suma unidades del lote más antiguo. Sirve para cambiar un
   concepto migrado (ej. "Diferencia con la caja diaria") o un producto equivocado por el correcto.
+- **Reutilizar el N° de una venta anulada:** al anular, "Liberar el N°" renombra la anulada a
+  `OC-0012-ANU` (con sus líneas, abonos y referencias). Si era el último N°, la próxima venta lo toma;
+  si no, se asigna a otra venta con Editar (N°). Las ya anuladas tienen el botón "Liberar N°".
 - **Deudas de clientes:** en Editar venta, "Pagado al vender" fija lo que se pagó al comprar; el
   resto queda como deuda (requiere cliente) y se salda con abonos en Clientes.
 - **Cerrar migración:** Administración → Respaldos. Hace un respaldo, vacía la zona de trabajo del
