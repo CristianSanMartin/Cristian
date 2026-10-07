@@ -260,7 +260,9 @@ distintos). **Corregir** abre el registro; **Validar** lo marca como revisado (c
 - **Pagos a proveedores:** en Compras, el detalle de cada factura muestra sus pagos y lo que falta.
   "Registrar pago" (fecha, monto, cuenta) admite pagos parciales; quedan en la hoja `Pagos_Facturas`
   y cuentan como egreso en el flujo de Finanzas. Los pagos conciliados desde la caja diaria también
-  se ven ahí. El administrador puede anular un pago o, si quedó enlazado a la factura equivocada,
+  se ven ahí. Un egreso de Finanzas que fue el pago de una factura (ej. migrado como "Compra por monto")
+  se pasa con "→ Factura": queda como pago de esa factura y el movimiento se anula.
+  El administrador puede anular un pago o, si quedó enlazado a la factura equivocada,
   "cambiar factura" (en el detalle de la compra o con el lápiz de la fila en Finanzas → Movimientos).
 - **Salidas sin venta:** en Inventario, el botón "Salida" de cada producto saca unidades del stock sin
   crear OC (uso interno de la tienda, premio, caja abierta o pérdida), del lote más antiguo y a su costo.

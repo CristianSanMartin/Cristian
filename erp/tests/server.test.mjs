@@ -1375,3 +1375,21 @@ test("eliminar una venta anulada (duplicado): se borra con sus líneas y abonos"
   assert.ok(!d.ventas.some(x => x.id === anu));
   assert.equal(s.ok("crearVenta", { fecha: "2026-07-03", lineas: [{ productoId: prods.miniTin.id, cantidad: 1 }] }).result.id, v.id, "el N° queda libre");
 });
+
+test("un egreso de Finanzas pasa a ser pago de una factura (y se anula para no contarlo dos veces)", () => {
+  const s = createServer();
+  conInventario(s);
+  const c = s.ok("bootstrap").data.compras[0];
+  const m = s.ok("guardarMovimiento", { fecha: "2025-10-30", tipo: "egreso", categoria: "compra", subcategoria: "Stock | Vudu", monto: 477000, cuenta: "banco", referencia: "Caja fila 132" }).result;
+  const ing = s.ok("guardarMovimiento", { fecha: "2025-10-30", tipo: "ingreso", categoria: "otro_ingreso", monto: 1000 }).result;
+  assert.match(errorDe(s.call("movimientoAPagoFactura", { id: ing.id, compraId: c.id })), /egreso/);
+  assert.match(errorDe(s.call("movimientoAPagoFactura", { id: m.id, compraId: "CP-9999" })), /no existe/);
+  const r = s.ok("movimientoAPagoFactura", { id: m.id, compraId: c.id }).result;
+  const d = s.ok("bootstrap").data;
+  const p = d.pagosFacturas.find(x => x.id === r.pago);
+  assert.deepEqual([p.compraId, p.fecha, p.monto, p.cuenta], [c.id, "2025-10-30", 477000, "banco"]);
+  const mov = d.movimientos.find(x => x.id === m.id);
+  assert.ok(mov.anulado && /Pasado a pago de la factura/.test(mov.notas));
+  assert.equal(d.compras.find(x => x.id === c.id).porPagar, Math.round(c.total) - 477000);
+  assert.match(errorDe(s.call("movimientoAPagoFactura", { id: m.id, compraId: c.id })), /anulado/);
+});

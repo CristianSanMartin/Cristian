@@ -165,6 +165,21 @@
 
   // "Ver OC-…" / "Ver CP-…" despliega el detalle debajo de la fila, sin cambiar de página.
   const abiertosMov = new Set();
+  // Un egreso que fue el pago de una factura (ej. migrado como "Compra por monto"): pasa a ser pago de esa factura.
+  GS.actions.movimientoAPagoFactura = (id) => {
+    const m = data().movimientos.find((x) => x.id === id);
+    const opciones = data().compras.slice().sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)))
+      .map((c) => ({ value: c.id, label: c.id + ' · factura ' + c.factura + ' · ' + c.proveedor + ' · ' + fmt.date(c.fecha) + ' · ' + (c.porPagar <= 1 ? 'pagada' : 'por pagar ' + fmt.money(c.porPagar)) }));
+    GS.formModal({
+      title: 'Pasar ' + id + ' a pago de factura',
+      submitLabel: 'Registrar como pago',
+      fields: () => '<p class="hint">' + fmt.date(m.fecha) + ' · ' + esc(m.categoriaLabel) + ' · ' + esc(m.subcategoria || '') + ' · <strong>' + fmt.money(m.monto) + '</strong></p>' +
+        '<div class="form-field"><label>Factura *</label><select name="compraId">' + GS.options([{ value: '', label: 'Elige la factura…' }].concat(opciones), '') + '</select></div>' +
+        '<p class="hint">Se registra como pago de esa factura con la misma fecha, monto y cuenta (se ve en Compras → Pagos y aquí como "Pago de factura"). ' +
+        'El movimiento ' + esc(id) + ' queda anulado para no contar el egreso dos veces. Si una factura se pagó en partes, repite esto con cada pago.</p>',
+      onSubmit: (v) => GS.mutate('movimientoAPagoFactura', { id: id, compraId: v.compraId }, (r) => 'Pago ' + r.pago + ' registrado en ' + r.compraId),
+    });
+  };
   GS.actions.finVer = (id) => {
     if (abiertosMov.has(id)) abiertosMov.delete(id); else abiertosMov.add(id);
     GS.views.finanzas.update();
@@ -232,6 +247,7 @@
             ? '<button class="btn small ghost" data-action="finVer" data-id="' + esc(m.id) + '" title="Ver el detalle aquí mismo">' + (abiertosMov.has(m.id) ? '▾ ' : '▸ ') + esc(m.venta || m.compra) + '</button>'
               + (admin && m.pago ? GS.iconBtn('reenlazarPagoCompra', m.pago, 'edit', 'Cambiar la factura de este pago') : '')
             : (op && !m.anulado ? GS.iconBtn('editarMovimiento', m.id, 'edit', 'Editar') : '') +
+              (admin && !m.anulado && m.tipo === 'egreso' ? '<button class="btn small ghost" data-action="movimientoAPagoFactura" data-id="' + esc(m.id) + '" title="Este egreso fue el pago de una factura de compra: registrarlo en esa factura">→ Factura</button>' : '') +
               (admin && !m.anulado ? '<button class="btn small ghost" data-action="dividirMovimiento" data-id="' + esc(m.id) + '" title="Separar en partes con distinta categoría (ej. retiro de capital + compra de acciones)">Dividir</button>' : '') +
               (admin && !m.anulado ? GS.iconBtn('anularMovimiento', m.id, 'trash', 'Anular', 'danger') : '')) + '</div></td></tr>' +
           (abiertosMov.has(m.id) ? '<tr class="detalle-row"><td colspan="' + (colsMov.length + 1) + '">' + detalleMov(m) + '</td></tr>' : '')).join('')

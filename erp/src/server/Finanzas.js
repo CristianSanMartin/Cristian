@@ -71,6 +71,25 @@ const Finanzas = {
     Audit.log(user, 'anular', 'Movimiento', mov.id, { monto: mov.monto, categoria: mov.categoria });
   },
 
+  /**
+   * Un egreso que en realidad fue el pago (total o parcial) de una factura de compra: se registra como
+   * pago de esa factura (misma fecha, monto y cuenta) y el movimiento queda anulado, para no contarlo dos veces.
+   */
+  aPagoFactura(p, user) {
+    const mov = Finanzas.requerir(p.id);
+    if (mov.anulado) throw new AppError('El movimiento ' + mov.id + ' está anulado.');
+    if (mov.tipo !== 'egreso') throw new AppError('Solo un egreso puede ser el pago de una factura.');
+    const compra = Compras.requerir(p.compraId);
+    const pago = Compras.registrarPago({
+      compraId: compra.id, fecha: mov.fecha, monto: mov.monto, cuenta: mov.cuenta,
+      notas: ('Desde ' + mov.id + (mov.subcategoria ? ' · ' + mov.subcategoria : '') + (mov.referencia ? ' · ' + mov.referencia : '')).slice(0, 300),
+    }, user);
+    const nota = 'Pasado a pago de la factura ' + compra.factura + ' (' + compra.id + ', ' + pago.id + ')';
+    Db.update('Finanzas', mov.id, Object.assign({ anulado: true, notas: [mov.notas, nota].filter(Boolean).join(' · ').slice(-300) }, Util.sello(user)));
+    Audit.log(user, 'a pago de factura', 'Movimiento', mov.id, { compra: compra.id, pago: pago.id, monto: mov.monto });
+    return { pago: pago.id, compraId: compra.id };
+  },
+
   requerir(id) {
     const m = Db.get('Finanzas', String(id || ''));
     if (!m) throw new AppError('El movimiento no existe.', 'NO_ENCONTRADO');
