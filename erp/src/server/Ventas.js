@@ -175,17 +175,51 @@ const Ventas = {
     }
     const lineas = Db.all('Ventas_Lineas').filter((l) => l.ventaId === v.id);
     const sumaAntes = lineas.reduce((t, l) => t + l.precio * l.cantidad, 0);
+    // Quitar líneas (sus unidades vuelven al inventario) y agregar productos del inventario (FIFO).
+    const quitar = {};
+    (Array.isArray(p.quitar) ? p.quitar : []).forEach((id) => {
+      if (!lineas.some((l) => l.id === String(id))) throw new AppError('La línea ' + id + ' no es de la venta ' + v.id + '.');
+      quitar[String(id)] = true;
+    });
+    const nuevas = [];
+    const agregar = Array.isArray(p.agregar) ? p.agregar.filter((x) => x && x.productoId) : [];
+    if (agregar.length) {
+      const lotes = Ventas.lotesDisponibles();
+      // Las unidades de las líneas que se quitan quedan disponibles para lo que se agrega.
+      lineas.filter((l) => quitar[l.id] && l.loteId).forEach((l) => { const lt = lotes.find((x) => x.id === l.loteId); if (lt) lt.disponible += l.cantidad; });
+      agregar.forEach((x) => {
+        const prod = Productos.requerir(x.productoId);
+        const nombre = Productos.nombreCompleto(prod);
+        const cantidad = Util.entero(x.cantidad, 'La cantidad de ' + nombre, { requerido: true, min: 1 });
+        const precioLista = Productos.precio(prod);
+        const precio = x.precio === '' || x.precio == null ? precioLista : Util.entero(x.precio, 'El precio de ' + nombre, { min: 0 });
+        const suyos = lotes.filter((l) => l.productoId === prod.id && l.disponible > 0);
+        const stock = suyos.reduce((t, l) => t + l.disponible, 0);
+        if (cantidad > stock) throw new AppError('Stock insuficiente de ' + nombre + ': ' + (stock ? 'quedan ' + stock : 'no hay unidades') + ' en inventario.');
+        let falta = cantidad;
+        suyos.forEach((l) => {
+          if (!falta) return;
+          const n = Math.min(falta, l.disponible);
+          l.disponible -= n;
+          falta -= n;
+          nuevas.push({ loteId: l.id, productoId: prod.id, cantidad: n, precioLista: precioLista, precio: precio, costo: l.costo });
+        });
+      });
+    }
+    if ((Object.keys(quitar).length || nuevas.length) && v.anulada) throw new AppError('La venta ' + v.id + ' está anulada.');
+    if (Object.keys(quitar).length && !nuevas.length && lineas.every((l) => quitar[l.id])) throw new AppError('La venta tiene que quedar con al menos un producto. Para eliminarla, anúlala.');
     // Precios de cada línea (corregir un precio mal ingresado).
     const precios = {};
     (Array.isArray(p.lineas) ? p.lineas : []).forEach((x) => {
       const l = lineas.find((y) => y.id === String(x.id));
       if (!l) throw new AppError('La línea ' + x.id + ' no es de la venta ' + v.id + '.');
-      if (l.categoria === 'Ajuste') return;
+      if (l.categoria === 'Ajuste' || quitar[l.id]) return;
       const precio = Util.entero(x.precio, 'El precio', { min: 0 });
       if (precio !== l.precio) precios[l.id] = precio;
     });
     if (Object.keys(precios).length && v.anulada) throw new AppError('La venta ' + v.id + ' está anulada.');
-    const sumaLineas = lineas.reduce((t, l) => t + (l.id in precios ? precios[l.id] : l.precio) * l.cantidad, 0);
+    const sumaLineas = lineas.filter((l) => !quitar[l.id]).reduce((t, l) => t + (l.id in precios ? precios[l.id] : l.precio) * l.cantidad, 0) +
+      nuevas.reduce((t, l) => t + l.precio * l.cantidad, 0);
     let ajuste = null;
     let totalFinal = sumaLineas;
     if (p.total != null && p.total !== '') {
@@ -218,10 +252,18 @@ const Ventas = {
     Audit.log(user, 'editar', 'Venta', v.id, Object.assign(Audit.diff(v, Object.assign({}, v, datos)),
       nuevoId !== v.id ? { numero: v.id + ' → ' + nuevoId } : {},
       Object.keys(precios).length ? { precios: Object.keys(precios).map((k) => k + ' ' + lineas.find((l) => l.id === k).precio + '→' + precios[k]).join(', ') } : {},
-      ajuste ? { totalAntes: ajuste.actual, total: ajuste.total, motivo: ajuste.motivo } : {}));
+      ajuste ? { totalAntes: ajuste.actual, total: ajuste.total, motivo: ajuste.motivo } : {},
+      Object.keys(quitar).length ? { quitadas: lineas.filter((l) => quitar[l.id]).map((l) => (l.productoId ? l.productoId + ' ×' + l.cantidad : l.categoria + ' ' + l.precio)).join(', ') } : {},
+      nuevas.length ? { agregadas: nuevas.map((l) => l.productoId + ' ×' + l.cantidad + ' (' + l.loteId + ') $' + l.precio).join(', ') } : {}));
     Db.update('Ventas', v.id, Object.assign(datos, Util.sello(user)));
     if (Object.keys(precios).length) {
       Db.actualizarVarios('Ventas_Lineas', Object.keys(precios).reduce((o, k) => { o[k] = Object.assign({ precio: precios[k] }, Util.sello(user)); return o; }, {}));
+    }
+    Object.keys(quitar).forEach((id) => Db.remove('Ventas_Lineas', id));
+    if (nuevas.length) {
+      const ids = Util.reservarIds('VL', 6, nuevas.length);
+      const sello = Util.sello(user, true);
+      Db.insertMany('Ventas_Lineas', nuevas.map((l, i) => Object.assign({ id: ids[i], ventaId: v.id }, l, sello)));
     }
     if (ajuste) {
       Db.insert('Ventas_Lineas', Object.assign({

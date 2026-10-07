@@ -266,6 +266,9 @@ distintos). **Corregir** abre el registro; **Validar** lo marca como revisado (c
   crear OC (uso interno de la tienda, premio, caja abierta o pérdida), del lote más antiguo y a su costo.
   Se listan en "Salidas sin venta" y el administrador puede anularlas. El uso interno se suma a GOPM en el
   resumen de Finanzas al costo con IVA y se resta de las compras con factura (el flujo de caja no cambia).
+- **Cambiar productos de una venta:** en Editar venta, "Quitar" saca una línea (sus unidades vuelven al
+  inventario) y "Agregar producto del inventario" suma unidades del lote más antiguo. Sirve para cambiar un
+  concepto migrado (ej. "Diferencia con la caja diaria") o un producto equivocado por el correcto.
 - **Deudas de clientes:** en Editar venta, "Pagado al vender" fija lo que se pagó al comprar; el
   resto queda como deuda (requiere cliente) y se salda con abonos en Clientes.
 - **Cerrar migración:** Administración → Respaldos. Hace un respaldo, vacía la zona de trabajo del

@@ -1302,3 +1302,26 @@ test("salida sin venta (uso interno): rebaja stock al costo del lote, sin OC, y 
   assert.equal(d.salidas.length, 0);
   s.ok("crearVenta", { fecha: "2026-10-06", lineas: [{ productoId: prods.miniTin.id, cantidad: 10 }] });
 });
+
+test("editar venta: cambiar un concepto por un producto del inventario (quitar y agregar líneas)", () => {
+  const s = createServer();
+  const { prods } = conInventario(s);
+  const v = s.ok("crearVenta", { fecha: "2026-07-01", lineas: [{ productoId: prods.miniTin.id, cantidad: 1 }, { categoria: "Otro", descripcion: "Diferencia con la caja diaria", monto: 30000 }] }).result;
+  let venta = s.ok("bootstrap").data.ventas.find(x => x.id === v.id);
+  const otro = venta.lineas.find(l => !l.productoId);
+  const tin = venta.lineas.find(l => l.productoId);
+  assert.match(errorDe(s.call("editarVenta", { id: v.id, fecha: venta.fecha, quitar: [otro.id, tin.id] })), /al menos un producto/);
+  assert.match(errorDe(s.call("editarVenta", { id: v.id, fecha: venta.fecha, agregar: [{ productoId: prods.miniTin.id, cantidad: 10 }] })), /quedan 9/);
+  // Quitar la diferencia y agregar 1 Binder ENG a $30.000: el total no cambia y sigue pagada
+  s.ok("editarVenta", { id: v.id, fecha: venta.fecha, quitar: [otro.id], agregar: [{ productoId: prods.binderEng.id, cantidad: 1, precio: 30000 }] });
+  let d = s.ok("bootstrap").data;
+  venta = d.ventas.find(x => x.id === v.id);
+  assert.deepEqual([venta.total, venta.estadoPago, venta.lineas.length], [v.total, "pagada", 2]);
+  assert.ok(venta.lineas.some(l => l.productoId === prods.binderEng.id && l.costo > 0), "con el costo de su lote");
+  const disp = (id) => d.lotes.filter(l => l.productoId === id).reduce((t, l) => t + l.disponible, 0);
+  assert.equal(disp(prods.binderEng.id), 23);
+  // Cambiar el Mini Tin por otro Binder: las unidades del Mini Tin vuelven
+  s.ok("editarVenta", { id: v.id, fecha: venta.fecha, quitar: [tin.id], agregar: [{ productoId: prods.binderEsp.id, cantidad: 1, precio: tin.precio }] });
+  d = s.ok("bootstrap").data;
+  assert.deepEqual([disp(prods.miniTin.id), disp(prods.binderEsp.id), d.ventas.find(x => x.id === v.id).total], [10, 5, v.total]);
+});

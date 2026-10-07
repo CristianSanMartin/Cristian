@@ -483,12 +483,23 @@
     const ajustes = v.lineas.filter((l) => l.categoria === 'Ajuste').reduce((t, l) => t + l.subtotal, 0);
     const clientes = d.clientes.map((c) => '<option value="' + esc(c.nombre) + '">').join('');
     const lineas = editables.length && !v.anulada
-      ? '<div class="form-field full"><label>Productos y precios</label><div class="table-wrap"><table class="data-table" style="min-width:0"><thead><tr><th>Producto</th><th class="right">Cant.</th><th class="right">Precio unidad</th><th class="right">Subtotal</th></tr></thead><tbody>' +
-        editables.map((l) => '<tr><td class="cell-strong">' + esc(l.producto || l.productoNombre) + '</td><td class="cell-num right">' + fmt.num(l.cantidad) + '</td>' +
+      ? '<div class="form-field full"><label>Productos y precios</label><div class="table-wrap"><table class="data-table" style="min-width:0"><thead><tr><th>Producto</th><th class="right">Cant.</th><th class="right">Precio unidad</th><th class="right">Subtotal</th><th class="center" title="Quitar la línea de la venta: sus unidades vuelven al inventario">Quitar</th></tr></thead><tbody data-ev-cuerpo>' +
+        editables.map((l) => '<tr data-ev-fila="' + esc(l.id) + '"><td class="cell-strong">' + esc(l.producto || l.productoNombre) + '</td><td class="cell-num right">' + fmt.num(l.cantidad) + '</td>' +
           '<td class="right"><input class="qty-input price-input" style="width:110px" type="number" min="0" step="1" data-ev-linea="' + esc(l.id) + '" value="' + esc(l.precio) + '"></td>' +
-          '<td class="cell-num right" data-ev-sub="' + esc(l.id) + '">' + fmt.money(l.subtotal) + '</td></tr>').join('') +
-        '</tbody></table></div></div>'
+          '<td class="cell-num right" data-ev-sub="' + esc(l.id) + '">' + fmt.money(l.subtotal) + '</td>' +
+          '<td class="center"><input type="checkbox" data-ev-quitar="' + esc(l.id) + '" aria-label="Quitar ' + esc(l.producto || '') + '"></td></tr>').join('') +
+        '</tbody></table></div>' +
+        '<button type="button" class="btn small secondary" data-ev-agregar style="margin-top:8px;">' + GS.icon('plus', 2.4) + 'Agregar producto del inventario</button></div>'
       : '';
+    // Productos con stock (para agregar a la venta).
+    const stock = {};
+    d.lotes.forEach((l) => { if (l.disponible > 0) stock[l.productoId] = (stock[l.productoId] || 0) + l.disponible; });
+    const conStock = d.productos.filter((pr) => stock[pr.id]).sort((a, b) => a.nombreCompleto.localeCompare(b.nombreCompleto));
+    const filaNueva = () => '<tr data-ev-nueva><td><select data-ev-prod style="max-width:320px"><option value="">Elige el producto…</option>' +
+      conStock.map((pr) => '<option value="' + esc(pr.id) + '" data-precio="' + esc(pr.precio) + '">' + esc(pr.nombreCompleto) + ' (' + stock[pr.id] + ' disp.)</option>').join('') + '</select></td>' +
+      '<td class="right"><input class="qty-input" style="width:70px" type="number" min="1" step="1" value="1" data-ev-cant></td>' +
+      '<td class="right"><input class="qty-input price-input" style="width:110px" type="number" min="0" step="1" data-ev-precio></td>' +
+      '<td class="cell-num right" data-ev-subn>—</td><td class="center"><button type="button" class="btn small ghost" data-ev-borrar title="No agregar">✕</button></td></tr>';
     GS.formModal({
       title: 'Editar ' + v.id,
       submitLabel: 'Guardar',
@@ -510,14 +521,39 @@
           '<div class="form-field full" data-ev-dif></div>') +
         '<div class="form-field full"><label>Notas</label><textarea name="notas" rows="2">' + esc(v.notas) + '</textarea></div></div>' +
         '<p class="hint">Cambiar el N° actualiza la venta, sus líneas, abonos y referencias (el N° no puede estar usado por otra venta). Si corriges un precio, el total cambia solo; ' +
-        'si además el cliente pagó otro monto, escribe el total real y la diferencia queda como una línea "Ajuste" con su motivo. Para cambiar los productos o las unidades, anula la venta y regístrala de nuevo.</p>',
+        'si además el cliente pagó otro monto, escribe el total real y la diferencia queda como una línea "Ajuste" con su motivo. ' +
+        'Para cambiar un producto: marca "Quitar" en la línea equivocada (sus unidades vuelven al inventario) y agrega el correcto desde el inventario (sale del lote más antiguo). Si el total no cambia, la venta sigue pagada.</p>',
       onMount: (form) => {
         if (!form.elements.total) return;
         let totalTocado = false;
+        const quitada = (l) => { const c = form.querySelector('[data-ev-quitar="' + CSS.escape(l.id) + '"]'); return c && c.checked; };
         const sumaLineas = () => editables.reduce((t, l) => {
+          if (quitada(l)) return t;
           const inp = form.querySelector('[data-ev-linea="' + CSS.escape(l.id) + '"]');
           return t + (inp ? Number(inp.value) || 0 : l.precio) * l.cantidad;
+        }, 0) + Array.from(form.querySelectorAll('[data-ev-nueva]')).reduce((t, tr) => {
+          const sub = tr.querySelector('[data-ev-prod]').value ? (Number(tr.querySelector('[data-ev-cant]').value) || 0) * (Number(tr.querySelector('[data-ev-precio]').value) || 0) : 0;
+          tr.querySelector('[data-ev-subn]').textContent = sub ? fmt.money(sub) : '—';
+          return t + sub;
         }, 0);
+        const cuerpo = form.querySelector('[data-ev-cuerpo]');
+        const btnAgregar = form.querySelector('[data-ev-agregar]');
+        if (btnAgregar) btnAgregar.addEventListener('click', () => {
+          cuerpo.insertAdjacentHTML('beforeend', filaNueva());
+          const tr = cuerpo.lastElementChild;
+          tr.querySelector('[data-ev-prod]').addEventListener('change', (e) => {
+            const o = e.target.selectedOptions[0];
+            tr.querySelector('[data-ev-precio]').value = o && o.dataset.precio ? o.dataset.precio : '';
+            upd();
+          });
+          tr.querySelectorAll('input').forEach((inp) => inp.addEventListener('input', upd));
+          tr.querySelector('[data-ev-borrar]').addEventListener('click', () => { tr.remove(); upd(); });
+          tr.querySelector('[data-ev-prod]').focus();
+        });
+        form.querySelectorAll('[data-ev-quitar]').forEach((c) => c.addEventListener('change', () => {
+          c.closest('tr').classList.toggle('row-muted', c.checked);
+          upd();
+        }));
         const upd = () => {
           editables.forEach((l) => {
             const inp = form.querySelector('[data-ev-linea="' + CSS.escape(l.id) + '"]');
@@ -534,7 +570,7 @@
           if (!form.elements.abono.dataset.tocado) form.elements.abono.value = Math.max(0, pagado);
           const debe = totalNuevo - pagado - cobros;
           form.querySelector('[data-ev-dif]').innerHTML = (debe > 0 ? '<p class="table-note text-gold">Queda una deuda de ' + fmt.money(debe) + (cobros ? ' (ya abonó ' + fmt.money(cobros) + ')' : '') + ': se cobra con abonos en Clientes. Requiere un cliente.</p>' : '') +
-            (base !== v.total ? '<p class="table-note">Con los precios corregidos: total ' + fmt.money(v.total) + ' → ' + fmt.money(base) + '.</p>' : '') +
+            (base !== v.total ? '<p class="table-note">Con los cambios: total ' + fmt.money(v.total) + ' → ' + fmt.money(base) + '.</p>' : '') +
             (dif ? '<p class="table-note text-gold">Se agrega un ajuste de ' + (dif > 0 ? '+' : '−') + fmt.money(Math.abs(dif)) + ' (total ' + fmt.money(base + dif) + ').</p>' : '');
         };
         form.querySelectorAll('[data-ev-linea]').forEach((inp) => inp.addEventListener('input', upd));
@@ -545,6 +581,10 @@
       onSubmit: (val, form) => {
         const datos = Object.assign({ id: id }, val);
         datos.lineas = Array.from(form.querySelectorAll('[data-ev-linea]')).map((inp) => ({ id: inp.dataset.evLinea, precio: inp.value }));
+        datos.quitar = Array.from(form.querySelectorAll('[data-ev-quitar]:checked')).map((c) => c.dataset.evQuitar);
+        datos.agregar = Array.from(form.querySelectorAll('[data-ev-nueva]')).map((tr) => ({
+          productoId: tr.querySelector('[data-ev-prod]').value, cantidad: tr.querySelector('[data-ev-cant]').value, precio: tr.querySelector('[data-ev-precio]').value,
+        })).filter((x) => x.productoId);
         // Lo pagado al vender solo se envía si se cambió (si no, el servidor lo ajusta solo con el total).
         if (form.elements.abono && !form.elements.abono.dataset.tocado) delete datos.abono;
         return GS.mutate('editarVenta', datos, (r) => (r && r.id && r.id !== v.id ? v.id + ' → ' + r.id + ' actualizada' : v.id + ' actualizada'));
