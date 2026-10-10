@@ -168,6 +168,82 @@
     });
   };
 
+  const OTRAS_CATS = ['compra', 'gav', 'gopm'];
+
+  /** "Nueva compra": qué se compró decide dónde queda registrado. */
+  GS.actions.nuevaCompra = () => {
+    const op = (accion, titulo, texto) => '<button type="button" class="btn secondary" style="display:block;width:100%;text-align:left;margin:0 0 10px;white-space:normal;height:auto;padding:12px 14px;" data-nc="' + accion + '">' +
+      '<strong>' + titulo + '</strong><div class="cell-dim" style="font-weight:400;margin-top:2px;">' + texto + '</div></button>';
+    GS.formModal({
+      title: 'Nueva compra',
+      submitLabel: 'Cerrar',
+      fields: () => '<p class="hint" style="margin-top:0;">¿Qué compraste?</p>' +
+        op('preventas', 'Productos sellados de una preventa', 'Factura del proveedor (Asmodee…): se arma desde Preventas marcando lo asignado.') +
+        op('directa', 'Productos sellados sin preventa', 'Compra directa (ej. cajas compradas en el momento): elige los productos y entran al inventario con su costo.') +
+        op('singles', 'Singles', 'Cartas compradas a un cliente o un lote: por monto, se ven en "Singles (por lote)" de Finanzas.') +
+        op('bazar', 'Bazar / accesorios para revender', 'Micas, carpetas, dados…: por monto, sin stock por producto.') +
+        op('gasto', 'Gasto de la tienda', 'Aseo, insumos, servicios: GAV (día a día) o GOPM (puesta en marcha).'),
+      onMount: (form) => {
+        form.addEventListener('click', (e) => {
+          const b = e.target.closest('[data-nc]');
+          if (!b) return;
+          const k = b.dataset.nc;
+          GS.closeModals();
+          if (k === 'preventas') return GS.go('preventas');
+          if (k === 'directa') return setTimeout(compraDirecta, 0);
+          const pre = {
+            singles: { titulo: 'Compra de singles', categoria: 'compra', subcategoria: 'Singles · ', ayuda: 'Compra de cartas sueltas: escribe en Detalle a quién o qué lote (ej. "Singles · lote Juan Pérez").' },
+            bazar: { titulo: 'Compra de bazar / accesorios', categoria: 'compra', subcategoria: 'Bazar · ', ayuda: 'Productos para revender registrados por monto. Al venderlos usa "Venta por monto" (Bazar o Accesorios).' },
+            gasto: { titulo: 'Gasto de la tienda', categoria: 'gav', subcategoria: '', ayuda: 'GAV = gastos del día a día (aseo, insumos, servicios); GOPM = puesta en marcha.' },
+          }[k];
+          setTimeout(() => GS.formMovimiento(null, pre), 0);
+        });
+      },
+      onSubmit: () => true,
+    });
+  };
+
+  /** Compra directa de sellados (sin preventa): proveedor, documento y productos. */
+  function compraDirecta() {
+    const d = data();
+    const productos = d.productos.filter((p) => p.activo !== false).map((p) => '<option value="' + esc(p.nombreCompleto) + '">').join('');
+    const fila = () => '<tr data-cd-fila><td><input name="producto" list="cd-productos" autocomplete="off" style="min-width:280px" placeholder="Escribe o elige (si no existe se crea)"></td>' +
+      '<td><input class="qty-input" style="width:70px" type="number" name="cantidad" min="1" step="1" value="1"></td>' +
+      '<td><input class="qty-input price-input" style="width:110px" type="number" name="costoNeto" min="0" step="1" placeholder="Neto c/u"></td>' +
+      '<td><input class="qty-input price-input" style="width:100px" type="number" name="pvp" min="0" step="1" placeholder="Si es nuevo"></td>' +
+      '<td><button type="button" class="btn small ghost" data-cd-borrar title="Quitar">✕</button></td></tr>';
+    GS.formModal({
+      title: 'Compra de sellados sin preventa',
+      submitLabel: 'Registrar compra',
+      size: 'wide',
+      fields: () => '<div class="form-grid">' +
+        '<div class="form-field"><label>Proveedor *</label><select name="proveedorId">' + GS.options(d.proveedores.filter((p) => p.activo !== false).map((p) => ({ value: p.id, label: p.nombre })), '') + '</select></div>' +
+        '<div class="form-field"><label>N° factura o boleta *</label><input name="factura"></div>' +
+        '<div class="form-field"><label>Fecha *</label><input type="date" name="fecha" value="' + esc(d.hoy) + '"></div>' +
+        '<div class="form-field"><label>Despacho (neto)</label><input type="number" name="despacho" min="0" step="1" value="0"></div>' +
+        '<div class="form-field full"><label>Productos</label><div class="table-wrap"><table class="data-table" style="min-width:0"><thead><tr><th>Producto</th><th>Cant.</th><th>Precio unidad neto</th><th>PVP</th><th></th></tr></thead>' +
+        '<tbody data-cd-cuerpo>' + fila() + '</tbody></table></div><datalist id="cd-productos">' + productos + '</datalist>' +
+        '<button type="button" class="btn small secondary" data-cd-mas style="margin-top:8px;">' + GS.icon('plus', 2.4) + 'Otro producto</button></div>' +
+        '<div class="form-field full"><label>Notas</label><input name="notas" maxlength="500"></div></div>' +
+        '<p class="hint">Entran al inventario igual que una factura normal (con su lote, costo y despacho repartido). Si el proveedor no está en la lista, créalo primero en Proveedores. El pago se registra después en el detalle de la compra.</p>',
+      onMount: (form) => {
+        const cuerpo = form.querySelector('[data-cd-cuerpo]');
+        form.querySelector('[data-cd-mas]').addEventListener('click', () => cuerpo.insertAdjacentHTML('beforeend', fila()));
+        cuerpo.addEventListener('click', (e) => { if (e.target.closest('[data-cd-borrar]') && cuerpo.children.length > 1) e.target.closest('tr').remove(); });
+      },
+      onSubmit: (v, form) => {
+        const lineas = Array.from(form.querySelectorAll('[data-cd-fila]')).map((tr) => {
+          const nombre = tr.querySelector('[name="producto"]').value.trim();
+          const existe = d.productos.find((p) => GS.norm(p.nombreCompleto) === GS.norm(nombre));
+          return Object.assign({ cantidad: tr.querySelector('[name="cantidad"]').value, costoNeto: tr.querySelector('[name="costoNeto"]').value, pvp: tr.querySelector('[name="pvp"]').value },
+            existe ? { productoId: existe.id } : { producto: nombre });
+        }).filter((x) => x.productoId || x.producto);
+        return GS.mutate('crearCompraDirecta', { proveedorId: v.proveedorId, factura: v.factura, fecha: v.fecha, despacho: v.despacho, notas: v.notas, lineas: lineas },
+          (r) => 'Compra ' + r.id + ' registrada');
+      },
+    });
+  }
+
   GS.views.compras = {
     title: 'Compras',
     render(el) {
@@ -175,14 +251,18 @@
       if (GS.state.param) { abiertas.add(GS.state.param); GS.state.param = null; }
       el.innerHTML =
         '<div class="page-head"><div><h1>Compras</h1><p>Facturas de proveedores. Se crean desde Preventas seleccionando las preventas asignadas que vienen en la factura.</p></div>' +
-        (GS.puede('operador') ? '<button class="btn" data-nav="preventas">' + GS.icon('plus', 2.4) + 'Nueva factura desde Preventas</button>' : '') + '</div>' +
+        (GS.puede('operador') ? '<button class="btn" data-action="nuevaCompra">' + GS.icon('plus', 2.4) + 'Nueva compra</button>' : '') + '</div>' +
         '<div class="filters-bar"><div class="search-box">' + GS.icon('search') + '<input type="text" data-filter="compras.q" value="' + esc(f.q) + '" placeholder="Buscar factura, producto o PVI..."></div></div>' +
         '<div id="cp-resumen"></div>' +
         '<div class="table-wrap"><table class="data-table wide"><thead><tr id="cp-thead"></tr></thead><tbody id="cp-tbody"></tbody></table></div>' +
         // Facturas con todas sus unidades vendidas o entregadas: aparte, abajo.
         '<div id="cp-completas-bloque"><h3 class="sub-titulo" style="margin-top:22px;">Facturas completas <span class="muted" id="cp-completas-n"></span></h3>' +
         '<div class="table-wrap"><table class="data-table wide"><thead><tr id="cp-thead-comp"></tr></thead><tbody id="cp-tbody-comp"></tbody></table></div></div>' +
-        '<p class="table-note">El despacho se reparte entre los productos según su participación en $ del neto de la factura, y queda incluido en el costo de cada unidad del inventario.</p>';
+        '<p class="table-note">El despacho se reparte entre los productos según su participación en $ del neto de la factura, y queda incluido en el costo de cada unidad del inventario.</p>' +
+        // Compras sin inventario (singles, bazar, gastos): son movimientos de Finanzas, aquí se ven juntas.
+        '<div id="cp-otras-bloque"><h3 class="sub-titulo" style="margin-top:22px;">Otras compras y gastos <span class="muted" id="cp-otras-n"></span></h3>' +
+        '<div class="table-wrap"><table class="data-table"><thead><tr><th>Fecha</th><th>Tipo</th><th>Detalle</th><th>Cuenta</th><th>Referencia</th><th class="right">IVA</th><th class="right">Monto</th><th></th></tr></thead><tbody id="cp-otras"></tbody></table></div>' +
+        '<p class="table-note">Singles, bazar, accesorios por monto, aseo e insumos: se registran con "Nueva compra" y quedan como egresos en Finanzas (allí se editan, dividen o anulan).</p></div>';
       this.update();
     },
     update() {
@@ -210,6 +290,17 @@
       document.getElementById('cp-thead-comp').innerHTML = '<th></th>' + GS.tablaEncabezado('compras', colsCompras) + '<th></th>';
       document.getElementById('cp-tbody-comp').innerHTML = completas.map(fila).join('');
       // El detalle queda fijo al ancho visible aunque la lista de facturas se desplace hacia el lado.
+      const q = GS.norm(GS.filters('compras', DEF_C).q || '');
+      const otras = (data().movimientos || []).filter((m) => m.tipo === 'egreso' && !m.anulado && OTRAS_CATS.indexOf(m.categoria) !== -1 &&
+        (!q || GS.norm(m.categoriaLabel + ' ' + m.subcategoria + ' ' + m.referencia + ' ' + m.notas + ' ' + m.id).includes(q)))
+        .sort((a, b) => (b.fecha + b.id).localeCompare(a.fecha + a.id));
+      document.getElementById('cp-otras-bloque').hidden = !otras.length;
+      document.getElementById('cp-otras-n').textContent = '(' + otras.length + ')';
+      document.getElementById('cp-otras').innerHTML = otras.slice(0, 50).map((m) => '<tr><td class="nowrap">' + fmt.date(m.fecha) + '</td><td><span class="badge st-pedido">' + esc(m.categoriaLabel) + '</span></td>' +
+        '<td class="cell-strong">' + esc(m.subcategoria || '—') + (m.notas ? '<div class="cell-dim">' + esc(m.notas) + '</div>' : '') + '</td><td>' + esc(m.cuentaLabel || '—') + '</td>' +
+        '<td class="cell-dim">' + esc(m.referencia || '') + '</td><td class="cell-num right">' + (m.iva ? fmt.money(m.iva) : '—') + '</td><td class="cell-num right"><strong>' + fmt.money(m.monto) + '</strong></td>' +
+        '<td>' + (GS.puede('operador') ? GS.iconBtn('editarMovimiento', m.id, 'edit', 'Editar') : '') + '</td></tr>').join(' +
+        (otras.length > 50 ? '<tr><td colspan="8" class="muted center">Se muestran las 50 más recientes; busca arriba o revisa todas en Finanzas → Movimientos.</td></tr>' : '');
       document.querySelectorAll('.detalle-compra').forEach((d) => { d.style.width = Math.max(320, d.closest('.table-wrap').clientWidth - 36) + 'px'; });
       const sum = (k) => rows.reduce((t, c) => t + c[k], 0);
       document.getElementById('cp-resumen').innerHTML = '<div class="kpi-grid">' +

@@ -75,6 +75,8 @@
       facturas.valores[i] -= v;
       (porMov['egreso|gopm'] = porMov['egreso|gopm'] || internoGopm).valores[i] += v;
     });
+    // Egresos con factura (bazar, aseo, insumos…): su IVA también es crédito fiscal.
+    movsVivos().forEach((m) => { const i = mes(m.fecha); if (i >= 0 && m.tipo === 'egreso' && m.iva) credito[i] += m.iva; });
     const egresos = [facturas].concat(Object.keys(cats.egreso).map((c) => porMov['egreso|' + c]).filter(Boolean));
     const comisionesTuu = fila('Comisiones TUU (ventas)');
     data().ventas.filter((v) => !v.anulada).forEach((v) => { const i = mes(v.fecha); if (i >= 0) comisionesTuu.valores[i] += v.comision || 0; });
@@ -117,7 +119,7 @@
       '</tbody></table></div>' +
       '<p class="table-note">Ventas y compras con factura incluyen IVA. Las compras con factura cuentan en el mes en que se pagaron (pagos conciliados desde la caja); si no hay pago registrado, en el mes de la factura. Flujo del mes = ventas + otros ingresos − egresos. ' +
       'Los productos sacados del inventario para uso interno se suman a GOPM al costo con IVA y se restan de las compras con factura (el total de egresos no cambia). ' +
-      'IVA estimado = IVA de las ventas − IVA de las facturas de compra (las compras por monto no tienen IVA registrado).</p>';
+      'IVA estimado = IVA de las ventas − IVA de las facturas de compra y de los gastos marcados "con factura".</p>';
   }
 
   /* ---------- movimientos ---------- */
@@ -365,12 +367,14 @@
 
   /* ---------- formulario ---------- */
 
-  function formMovimiento(m) {
+  /** pre (opcional, desde Compras → Nueva compra): { titulo, categoria, subcategoria, ayuda }. */
+  function formMovimiento(m, pre) {
     const c = data().catalogos;
-    const x = m || { fecha: data().hoy, tipo: 'egreso', categoria: 'gav', subcategoria: '', monto: '', cuenta: '', referencia: '', notas: '' };
+    const x = m || { fecha: data().hoy, tipo: 'egreso', categoria: (pre && pre.categoria) || 'gav', subcategoria: (pre && pre.subcategoria) || '', monto: '', cuenta: '', referencia: '', notas: '', iva: 0 };
     const opcionesCat = (tipo, sel) => GS.options(Object.keys(c.categoriasMovimiento[tipo]).map((k) => ({ value: k, label: c.categoriasMovimiento[tipo][k] })), sel);
+    const tasa = data().app.iva;
     GS.formModal({
-      title: m ? 'Editar movimiento ' + m.id : 'Nuevo movimiento',
+      title: m ? 'Editar movimiento ' + m.id : (pre && pre.titulo) || 'Nuevo movimiento',
       submitLabel: 'Guardar movimiento',
       fields: () => '<div class="form-grid">' +
         '<div class="form-field"><label>Fecha *</label><input type="date" name="fecha" value="' + esc(x.fecha) + '"></div>' +
@@ -380,14 +384,34 @@
         '<div class="form-field"><label>Detalle</label><input name="subcategoria" value="' + esc(x.subcategoria) + '" placeholder="Ej: Sueldo Alex, Singles lote 12, socio Jaime"></div>' +
         '<div class="form-field"><label>Cuenta</label><select name="cuenta">' + GS.options([{ value: '', label: 'Sin cuenta' }].concat(Object.keys(c.cuentas).map((k) => ({ value: k, label: c.cuentas[k] }))), x.cuenta) + '</select></div>' +
         '<div class="form-field"><label>Referencia</label><input name="referencia" value="' + esc(x.referencia) + '" placeholder="N° de documento, boleta…"></div>' +
+        '<div class="form-field" data-mv-fac><label class="check" style="margin-top:22px;"><input type="checkbox" name="conFactura"' + (x.iva ? ' checked' : '') + '> Con factura (registrar el IVA como crédito fiscal)</label></div>' +
+        '<div class="form-field" data-mv-iva' + (x.iva ? '' : ' hidden') + '><label>IVA incluido en el monto</label><input type="number" name="iva" min="0" step="1" value="' + esc(x.iva || '') + '"></div>' +
         '<div class="form-field full"><label>Notas</label><textarea name="notas" rows="2">' + esc(x.notas) + '</textarea></div></div>' +
-        '<p class="hint">Las ventas y las facturas de compra se registran en sus módulos; aquí va todo lo demás. Compra de singles: categoría "Compra por monto" con detalle "Singles …".</p>',
+        '<p class="hint">' + ((pre && pre.ayuda) || 'Las ventas y las facturas de compra se registran en sus módulos; aquí va todo lo demás. Compra de singles: categoría "Compra por monto" con detalle "Singles …".') +
+        ' Si el gasto viene con factura, marca "Con factura": el IVA se calcula solo (' + Math.round(tasa * 100) + '% incluido en el monto) y se descuenta del IVA estimado.</p>',
       onMount: (form) => {
-        form.elements.tipo.addEventListener('change', () => { form.elements.categoria.innerHTML = opcionesCat(form.elements.tipo.value, ''); });
+        let ivaTocado = !!x.iva;
+        const upd = () => {
+          const egreso = form.elements.tipo.value === 'egreso';
+          form.querySelector('[data-mv-fac]').hidden = !egreso;
+          const con = egreso && form.elements.conFactura.checked;
+          form.querySelector('[data-mv-iva]').hidden = !con;
+          if (con && !ivaTocado) form.elements.iva.value = Math.round((Number(form.elements.monto.value) || 0) * tasa / (1 + tasa)) || '';
+        };
+        form.elements.tipo.addEventListener('change', () => { form.elements.categoria.innerHTML = opcionesCat(form.elements.tipo.value, ''); upd(); });
+        form.elements.conFactura.addEventListener('change', upd);
+        form.elements.monto.addEventListener('input', upd);
+        form.elements.iva.addEventListener('input', () => { ivaTocado = true; });
+        upd();
       },
-      onSubmit: (v) => GS.mutate('guardarMovimiento', Object.assign({ id: m ? m.id : '' }, v), m ? 'Movimiento actualizado' : (r) => 'Movimiento ' + r.id + ' registrado'),
+      onSubmit: (v) => {
+        const datos = Object.assign({ id: m ? m.id : '' }, v, { iva: v.tipo === 'egreso' && v.conFactura ? v.iva : 0 });
+        delete datos.conFactura;
+        return GS.mutate('guardarMovimiento', datos, m ? 'Movimiento actualizado' : (r) => 'Movimiento ' + r.id + ' registrado');
+      },
     });
   }
+  GS.formMovimiento = formMovimiento;
   GS.actions.nuevoMovimiento = () => formMovimiento(null);
   GS.actions.editarMovimiento = (id) => formMovimiento(data().movimientos.find((m) => m.id === id));
   GS.actions.anularMovimiento = (id) => {

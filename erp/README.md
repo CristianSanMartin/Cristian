@@ -275,6 +275,11 @@ distintos). **Corregir** abre el registro; **Validar** lo marca como revisado (c
   `OC-0012-ANU` (con sus líneas, abonos y referencias). Si era el último N°, la próxima venta lo toma;
   si no, se asigna a otra venta con Editar (N°). Las ya anuladas tienen el botón "Liberar N°" y el basurero
   "Eliminar definitivamente" (para duplicados o errores de migración; borra líneas y abonos, la auditoría guarda copia).
+- **Nueva compra (Compras):** pregunta qué se compró. Sellados de preventa → Preventas; sellados sin
+  preventa → compra directa (productos, cantidad, neto y despacho; entran al inventario con su lote);
+  singles, bazar/accesorios y gastos (aseo, insumos) → un egreso de Finanzas con la categoría puesta.
+  Estos últimos se listan en "Otras compras y gastos". Un egreso puede marcarse "Con factura": su IVA
+  (columna `iva` de la hoja Finanzas) se resta del IVA estimado. Requiere "Instalar / actualizar hojas".
 - **Deudas de clientes:** en Editar venta, "Pagado al vender" fija lo que se pagó al comprar; el
   resto queda como deuda (requiere cliente) y se salda con abonos en Clientes.
 - **Cerrar migración:** Administración → Respaldos. Hace un respaldo, vacía la zona de trabajo del

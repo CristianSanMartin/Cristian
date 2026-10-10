@@ -117,6 +117,18 @@ const Compras = {
    */
   agregarLinea(p, user) {
     const compra = Compras.requerir(p.compraId);
+    const { prod, cantidad, costoNeto, linea, pv } = Compras._lineaNueva(compra, p, 'Agregado a la factura ' + compra.factura + ' (corrección)', user);
+    // Reparte de nuevo el despacho de la factura entre todas sus líneas (y corrige el costo de lo vendido).
+    Compras.editar({ id: compra.id, despacho: compra.despacho, lineas: [] }, user);
+    Audit.log(user, 'agregar producto', 'Compra', compra.id, { producto: Productos.nombreCompleto(prod), cantidad: cantidad, costoNeto: costoNeto, lote: linea.id, preventa: pv.id });
+    return { lote: linea.id, preventa: pv.id, productoId: prod.id };
+  },
+
+  /**
+   * Producto agregado a una factura sin pasar por Preventas: crea su preventa ya recibida (para que el
+   * producto tenga historial y costo) y su lote en el inventario. No reparte el despacho.
+   */
+  _lineaNueva(compra, p, nota, user) {
     const cantidad = Util.entero(p.cantidad, 'La cantidad', { requerido: true, min: 1 });
     const costoNeto = Util.monto(p.costoNeto, 'El precio unitario neto', { requerido: true });
     if (!p.productoId) Util.texto(p.producto, 'El producto', { requerido: true, max: 200 });
@@ -125,16 +137,46 @@ const Compras = {
     const sello = Util.sello(user, true);
     const pv = Object.assign({
       id: Util.siguienteId('PVI', 6), proveedorId: compra.proveedorId, productoId: prod.id, lanzamiento: compra.fecha,
-      solicitado: cantidad, asignado: cantidad, estado: 'recibida', costoNeto: costoNeto,
-      notas: 'Agregado a la factura ' + compra.factura + ' (corrección)',
+      solicitado: cantidad, asignado: cantidad, estado: 'recibida', costoNeto: costoNeto, notas: nota,
     }, sello);
     Db.insert('Preventas', pv);
     const linea = Object.assign({ id: Util.siguienteId('CPI', 6), compraId: compra.id, preventaId: pv.id, productoId: prod.id, cantidad: cantidad, costoNeto: costoNeto, despacho: 0 }, sello);
     Db.insert('Compras_Lineas', linea);
-    // Reparte de nuevo el despacho de la factura entre todas sus líneas (y corrige el costo de lo vendido).
-    Compras.editar({ id: compra.id, despacho: compra.despacho, lineas: [] }, user);
-    Audit.log(user, 'agregar producto', 'Compra', compra.id, { producto: Productos.nombreCompleto(prod), cantidad: cantidad, costoNeto: costoNeto, lote: linea.id, preventa: pv.id });
-    return { lote: linea.id, preventa: pv.id, productoId: prod.id };
+    return { prod: prod, cantidad: cantidad, costoNeto: costoNeto, linea: linea, pv: pv };
+  },
+
+  /**
+   * Compra directa de productos sellados, sin preventa (ej. cajas compradas en el momento para revender):
+   * la factura (o boleta) con sus productos entra al inventario igual que una compra normal.
+   * p: { proveedorId, factura, fecha, despacho, notas, lineas: [{ productoId | producto + pvp, cantidad, costoNeto }] }
+   */
+  crearDirecta(p, user) {
+    const prov = Proveedores.requerir(p.proveedorId);
+    const factura = Util.texto(p.factura, 'El N° de factura o boleta', { requerido: true, max: 40 });
+    const repetida = Db.all('Compras').find((c) => c.proveedorId === prov.id && Util.normalizar(c.factura) === Util.normalizar(factura));
+    if (repetida) throw new AppError('La factura ' + factura + ' de ' + prov.nombre + ' ya está registrada (' + repetida.id + ').');
+    const lineas = (Array.isArray(p.lineas) ? p.lineas : []).filter((x) => x && (x.productoId || x.producto));
+    if (!lineas.length) throw new AppError('Agrega al menos un producto a la compra.');
+    // Se valida todo antes de escribir.
+    lineas.forEach((x, i) => {
+      Util.entero(x.cantidad, 'La cantidad del producto ' + (i + 1), { requerido: true, min: 1 });
+      Util.monto(x.costoNeto, 'El precio neto del producto ' + (i + 1), { requerido: true });
+      if (x.productoId) Productos.requerir(x.productoId);
+    });
+    const compra = Object.assign({
+      id: Util.siguienteId('CP', 4), proveedorId: prov.id, factura: factura,
+      fecha: Util.fecha(p.fecha, 'La fecha de la compra', { requerido: true }),
+      despacho: p.despacho === '' || p.despacho == null ? 0 : Util.monto(p.despacho, 'El despacho'),
+      notas: Util.texto(p.notas, 'Las notas', { max: 500 }),
+    }, Util.sello(user, true));
+    Db.insert('Compras', compra);
+    const hechas = lineas.map((x) => Compras._lineaNueva(compra, x, 'Compra directa ' + factura + ' (sin preventa)', user));
+    if (compra.despacho) Compras.editar({ id: compra.id, despacho: compra.despacho, lineas: [] }, user);
+    Audit.log(user, 'crear', 'Compra', compra.id, {
+      proveedor: prov.nombre, factura: factura, directa: true, despacho: compra.despacho,
+      productos: hechas.map((h) => Productos.nombreCompleto(h.prod) + ' ×' + h.cantidad + ' $' + h.costoNeto).join(', '),
+    });
+    return compra;
   },
 
   /** Deshace una factura mal ingresada: sus preventas vuelven a "asignada" y los lotes salen del inventario. */

@@ -19,6 +19,7 @@ const Finanzas = {
       cuenta: p.cuenta ? Util.opcion(p.cuenta, 'La cuenta', Object.keys(CUENTAS)) : '',
       referencia: Util.texto(p.referencia, 'La referencia', { max: 80 }),
       notas: Util.texto(p.notas, 'Las notas', { max: 300 }),
+      iva: tipo === 'egreso' && p.iva !== '' && p.iva != null ? Util.entero(p.iva, 'El IVA de la factura', { min: 0, max: Util.entero(p.monto, 'El monto', { requerido: true, min: 1 }) }) : 0,
     };
   },
 
@@ -54,11 +55,12 @@ const Finanzas = {
     const suma = partes.reduce((t, x) => t + x.monto, 0);
     if (suma !== mov.monto) throw new AppError('Las partes suman ' + suma + ' y el movimiento es de ' + mov.monto + '.');
     const sello = Util.sello(user);
-    Db.update('Finanzas', mov.id, Object.assign({}, partes[0], sello));
+    // El IVA (si tenía factura) queda en la primera parte, sin superar su monto.
+    Db.update('Finanzas', mov.id, Object.assign({ iva: Math.min(mov.iva || 0, partes[0].monto) }, partes[0], sello));
     const ids = Util.reservarIds('MOV', 5, partes.length - 1);
     Db.insertMany('Finanzas', partes.slice(1).map((x, i) => Object.assign({
       id: ids[i], fecha: mov.fecha, tipo: mov.tipo, cuenta: mov.cuenta, referencia: mov.referencia,
-      notas: ['Dividido de ' + mov.id, mov.notas].filter(Boolean).join(' · ').slice(0, 300), anulado: false,
+      notas: ['Dividido de ' + mov.id, mov.notas].filter(Boolean).join(' · ').slice(0, 300), anulado: false, iva: 0,
     }, x, Util.sello(user, true))));
     Audit.log(user, 'dividir', 'Movimiento', mov.id, { monto: mov.monto, partes: partes.map((x, i) => (i ? ids[i - 1] : mov.id) + ' ' + x.categoria + ' ' + x.monto).join(', ') });
     return { id: mov.id, nuevos: ids };

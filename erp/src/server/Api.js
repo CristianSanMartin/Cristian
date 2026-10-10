@@ -37,6 +37,7 @@ function rutas_() {
     fijarPreciosVenta: { rol: 'operador', write: true, fn: Productos.fijarPrecios },
 
     crearCompra: { rol: 'operador', write: true, fn: Compras.crear },
+    crearCompraDirecta: { rol: 'operador', write: true, fn: Compras.crearDirecta },
     anularCompra: { rol: 'admin', write: true, fn: Compras.anular },
     quitarLineaCompra: { rol: 'admin', write: true, fn: Compras.quitarLinea },
     editarCompra: { rol: 'admin', write: true, fn: Compras.editar },

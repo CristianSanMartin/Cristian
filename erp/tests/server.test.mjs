@@ -1393,3 +1393,31 @@ test("un egreso de Finanzas pasa a ser pago de una factura (y se anula para no c
   assert.equal(d.compras.find(x => x.id === c.id).porPagar, Math.round(c.total) - 477000);
   assert.match(errorDe(s.call("movimientoAPagoFactura", { id: m.id, compraId: c.id })), /anulado/);
 });
+
+test("compra directa de sellados sin preventa: entra al inventario con su costo y despacho", () => {
+  const s = createServer();
+  const prov = s.ok("bootstrap").data.proveedores[0];
+  const prod = s.ok("guardarProducto", { nombre: "Elite Trainer Box", edicion: "Surging Sparks", idioma: "ENG", tipo: "Elite Trainer Box", pvp: 64990 }).result;
+  assert.match(errorDe(s.call("crearCompraDirecta", { proveedorId: prov.id, factura: "B-1", fecha: "2026-10-01", lineas: [] })), /al menos un producto/);
+  const c = s.ok("crearCompraDirecta", { proveedorId: prov.id, factura: "B-1", fecha: "2026-10-01", despacho: 3000, lineas: [
+    { productoId: prod.id, cantidad: 2, costoNeto: 40000 },
+    { producto: "Booster Bundle Surging Sparks ENG", pvp: 32990, cantidad: 3, costoNeto: 20000 },
+  ] }).result;
+  const d = s.ok("bootstrap").data;
+  const lotes = d.lotes.filter(l => l.compraId === c.id);
+  assert.equal(lotes.length, 2);
+  assert.equal(lotes.reduce((t, l) => t + l.disponible, 0), 5);
+  assert.equal(Math.round(lotes.reduce((t, l) => t + l.despacho, 0)), 3000, "despacho repartido");
+  assert.ok(d.preventas.filter(pv => /Compra directa B-1/.test(pv.notas)).every(pv => pv.estado === "recibida"));
+  assert.match(errorDe(s.call("crearCompraDirecta", { proveedorId: prov.id, factura: "b-1", fecha: "2026-10-01", lineas: [{ productoId: prod.id, cantidad: 1, costoNeto: 1 }] })), /ya está registrada/);
+  s.ok("crearVenta", { fecha: "2026-10-02", lineas: [{ productoId: prod.id, cantidad: 2 }] });
+});
+
+test("movimiento con factura: guarda el IVA (crédito fiscal) y no supera el monto", () => {
+  const s = createServer();
+  assert.match(errorDe(s.call("guardarMovimiento", { fecha: "2026-10-01", tipo: "egreso", categoria: "gav", subcategoria: "Aseo", monto: 11900, iva: 20000 })), /IVA/);
+  const m = s.ok("guardarMovimiento", { fecha: "2026-10-01", tipo: "egreso", categoria: "gav", subcategoria: "Aseo", monto: 11900, iva: 1900 }).result;
+  assert.equal(s.ok("bootstrap").data.movimientos.find(x => x.id === m.id).iva, 1900);
+  const sinIva = s.ok("guardarMovimiento", { fecha: "2026-10-01", tipo: "egreso", categoria: "compra", subcategoria: "Singles · lote", monto: 5000 }).result;
+  assert.equal(s.ok("bootstrap").data.movimientos.find(x => x.id === sinIva.id).iva, 0);
+});
