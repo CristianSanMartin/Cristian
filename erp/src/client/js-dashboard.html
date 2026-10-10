@@ -1,0 +1,81 @@
+<script>
+/* =========================================================
+   Dashboard: próximos lanzamientos, asignaciones pendientes
+   y compromiso con proveedores.
+========================================================= */
+(function () {
+  'use strict';
+  const { fmt, esc } = GS;
+
+  function kpi(label, value, sub, cls) {
+    return '<div class="kpi-card ' + (cls || '') + '"><div class="kpi-label">' + label + '</div>' +
+      '<div class="kpi-value">' + value + '</div><div class="kpi-sub">' + (sub || '') + '</div></div>';
+  }
+
+  GS.views.dashboard = {
+    title: 'Dashboard',
+    render(el, d) {
+      const iva = (n) => n * (1 + d.app.iva);
+      const activas = d.preventas.filter((p) => ['solicitada', 'asignada'].indexOf(p.estado) !== -1);
+      const porAsignar = activas.filter((p) => p.estado === 'solicitada');
+      const asignadas = activas.filter((p) => p.estado === 'asignada');
+      const compromiso = asignadas.reduce((s, p) => s + p.netoAsignado, 0);
+      const ganancia = activas.reduce((s, p) => s + p.gananciaTotal, 0);
+
+      // Próximos pedidos: uno por proveedor y fecha de lanzamiento.
+      const pedidos = {};
+      activas.filter((p) => p.lanzamiento >= d.hoy).forEach((p) => {
+        const k = p.lanzamiento + '|' + p.proveedorId;
+        const x = pedidos[k] || (pedidos[k] = { fecha: p.lanzamiento, proveedorId: p.proveedorId, proveedor: p.proveedor, productos: 0, neto: 0, ediciones: new Set() });
+        x.productos++;
+        x.neto += p.netoVigente;
+        if (p.edicion) x.ediciones.add(p.edicion);
+      });
+      const lista = Object.values(pedidos).sort((a, b) => (a.fecha < b.fecha ? -1 : 1));
+      const despacho = (x) => {
+        const prov = d.proveedores.find((p) => p.id === x.proveedorId);
+        if (!prov || !prov.despachoMonto) return '—';
+        if (prov.despachoUmbral && x.neto >= prov.despachoUmbral) return '<span class="text-success">Gratis</span>';
+        return '<span class="text-gold">' + fmt.money(prov.despachoMonto) + '</span>' + (prov.despachoUmbral ? '<div class="cell-dim">faltan ' + fmt.money(prov.despachoUmbral - x.neto) + '</div>' : '');
+      };
+
+      // Esperando asignación, agrupado por proveedor y edición.
+      const pend = {};
+      porAsignar.forEach((p) => {
+        const k = p.proveedor + '|' + p.edicion;
+        const x = pend[k] || (pend[k] = { proveedor: p.proveedor, edicion: p.edicion, productos: 0, unidades: 0 });
+        x.productos++;
+        x.unidades += p.solicitado;
+      });
+
+      el.innerHTML =
+        '<div class="page-head"><div><h1>Dashboard</h1><p>Resumen de la operación de GS Prime.</p></div></div>' +
+        '<div class="kpi-grid">' +
+        kpi('Productos en preventa', activas.length, porAsignar.length ? '<span class="text-gold">' + porAsignar.length + ' esperando asignación</span>' : 'Todos asignados') +
+        kpi('Unidades por comprar', fmt.num(asignadas.reduce((s, p) => s + p.asignado, 0)), 'Asignadas, aún sin compra') +
+        kpi('Compromiso con proveedores', fmt.money(iva(compromiso)), 'Con IVA · ' + fmt.money(compromiso) + ' neto') +
+        kpi('Ganancia proyectada', '<span class="text-success">' + fmt.money(ganancia) + '</span>', 'Real neta de las preventas activas') +
+        '</div>' +
+        '<div class="dash-grid">' +
+        '<div class="panel"><div class="panel-head"><h3>Próximos lanzamientos</h3><span class="tag">Un pedido por proveedor y fecha</span></div><div class="panel-body">' +
+        (lista.length
+          ? '<table class="mini-table"><thead><tr><th>Fecha</th><th>Pedido</th><th class="right">Productos</th><th class="right">Neto</th><th>Despacho</th></tr></thead><tbody>' +
+            lista.slice(0, 8).map((x) => '<tr><td class="nowrap">' + fmt.date(x.fecha) + '<div>' + GS.relDays(x.fecha) + '</div></td>' +
+              '<td class="prod-cell"><div class="name">' + esc(x.proveedor) + '</div><div class="prov">' + esc(Array.from(x.ediciones).join(', ') || '—') + '</div></td>' +
+              '<td class="cell-num right">' + x.productos + '</td><td class="cell-num right">' + fmt.money(x.neto) + '</td><td>' + despacho(x) + '</td></tr>').join('') +
+            '</tbody></table>'
+          : GS.empty('Sin lanzamientos próximos', 'Agrega productos en Preventas a medida que el proveedor los anuncia.', 'preventas')) +
+        '</div></div>' +
+        '<div class="panel"><div class="panel-head"><h3>Esperando asignación</h3></div><div class="panel-body">' +
+        (Object.keys(pend).length
+          ? '<table class="mini-table"><thead><tr><th>Proveedor · edición</th><th class="right">Productos</th><th class="right">Solicitado</th></tr></thead><tbody>' +
+            Object.values(pend).map((x) => '<tr><td class="prod-cell"><div class="name">' + esc(x.proveedor) + '</div><div class="prov">' + esc(x.edicion || 'Sin edición') + '</div></td>' +
+              '<td class="cell-num right">' + x.productos + '</td><td class="cell-num right">' + fmt.num(x.unidades) + '</td></tr>').join('') +
+            '</tbody></table>'
+          : GS.empty('Nada pendiente', 'Todas las preventas tienen su asignación registrada.')) +
+        '</div></div>' +
+        '</div>';
+    },
+  };
+})();
+</script>

@@ -1,0 +1,324 @@
+<script>
+/* =========================================================
+   Administración (solo admin): usuarios, auditoría e
+   importación desde el ERP anterior. Además, las vistas
+   "Pronto" de Finanzas.
+========================================================= */
+(function () {
+  'use strict';
+  const { fmt, esc } = GS;
+  const data = () => GS.state.data;
+  const ROL_LABEL = { admin: 'Administrador', operador: 'Operador', lectura: 'Solo lectura' };
+  let auditoria = null;
+
+  const colsUsuarios = [
+    { id: 'email', label: 'Correo', valor: (u) => u.email, celda: (u) => '<span class="cell-strong">' + esc(u.email) + '</span>' + (u.email === data().user.email ? ' <span class="pill">tú</span>' : '') },
+    { id: 'nombre', label: 'Nombre', valor: (u) => u.nombre, celda: (u) => esc(u.nombre) },
+    { id: 'rol', label: 'Rol', valor: (u) => ROL_LABEL[u.rol] || u.rol, celda: (u) => '<span class="badge rol-' + esc(u.rol) + '">' + esc(ROL_LABEL[u.rol] || u.rol) + '</span>' },
+    { id: 'estado', label: 'Estado', valor: (u) => (u.activo ? 'Activo' : 'Inactivo'), celda: (u) => (u.activo ? '<span class="badge st-ok">Activo</span>' : '<span class="badge st-cancelada">Inactivo</span>') },
+    { id: 'alta', label: 'Alta', valor: (u) => String(u.creadoEn || '').slice(0, 10), celda: (u) => '<span class="cell-dim">' + esc(String(u.creadoEn || '').slice(0, 10)) + '</span>' },
+  ];
+  const usuariosOrdenados = () => data().usuarios.slice().sort((a, b) => (b.activo - a.activo) || a.email.localeCompare(b.email));
+  GS.tablaRegistrar('usuarios', { filas: usuariosOrdenados, columnas: colsUsuarios, alCambiar: () => GS.render() });
+
+  const prettyJson = (s) => {
+    if (!s) return '';
+    try { return JSON.stringify(JSON.parse(s), null, 1).replace(/^\{\n|\n\}$/g, '').replace(/^ /gm, ''); } catch (e) { return s; }
+  };
+  const colsAuditoria = [
+    { id: 'fecha', label: 'Fecha', clase: 'nowrap', valor: (a) => a.fecha, texto: (a) => String(a.fecha).slice(0, 10), celda: (a) => '<span class="cell-dim">' + esc(a.fecha) + '</span>' },
+    { id: 'usuario', label: 'Usuario', valor: (a) => a.usuario, celda: (a) => esc(a.usuario) },
+    { id: 'accion', label: 'Acción', valor: (a) => a.accion, celda: (a) => '<span class="cell-strong">' + esc(a.accion) + '</span>' },
+    { id: 'entidad', label: 'Entidad', valor: (a) => a.entidad, celda: (a) => esc(a.entidad) },
+    { id: 'detalle', label: 'Detalle', sinMenu: true, valor: () => '', celda: (a) => '<pre class="json">' + esc(prettyJson(a.detalle)) + '</pre>' },
+  ];
+  GS.tablaRegistrar('auditoria', { filas: () => auditoria || [], columnas: colsAuditoria, alCambiar: () => GS.render() });
+
+  function tabUsuarios() {
+    const users = GS.tablaAplicar('usuarios', usuariosOrdenados(), colsUsuarios);
+    return '<div class="notice">Para entrar, cada persona necesita <strong>dos cosas</strong>: estar en esta lista (activa) y tener acceso de <strong>edición</strong> a la planilla del ERP en Google Drive. ' +
+      'Roles: <strong>Solo lectura</strong> consulta; <strong>Operador</strong> crea y edita preventas, productos y proveedores; <strong>Administrador</strong> además elimina y gestiona usuarios.</div>' +
+      '<div class="btn-row" style="justify-content:flex-end;margin-bottom:12px;"><button class="btn" data-action="nuevoUsuario">' + GS.icon('plus', 2.4) + 'Agregar usuario</button></div>' +
+      '<div class="table-wrap"><table class="data-table" style="min-width:680px;"><thead><tr>' + GS.tablaEncabezado('usuarios', colsUsuarios) + '<th class="right">Acciones</th></tr></thead><tbody>' +
+      users.map((u) => '<tr class="' + (u.activo ? '' : 'row-muted') + '">' + colsUsuarios.map((c) => '<td>' + c.celda(u) + '</td>').join('') +
+        '<td><div class="row-actions">' + GS.iconBtn('editarUsuario', u.email, 'edit', 'Editar') + '</div></td></tr>').join('') +
+      '</tbody></table></div>';
+  }
+
+  function tabAuditoria() {
+    if (!auditoria) {
+      GS.api('auditoria').then((r) => { auditoria = r.data; GS.render(); }).catch((e) => GS.toast(e.message, true));
+      return '<div class="empty-state"><div class="spinner"></div>Cargando registro…</div>';
+    }
+    const filasAud = GS.tablaAplicar('auditoria', auditoria, colsAuditoria);
+    return '<div class="btn-row" style="justify-content:space-between;margin-bottom:12px;"><span class="muted" style="font-size:12px;">Últimos 300 cambios, del más reciente al más antiguo.</span>' +
+      '<button class="btn ghost" data-action="recargarAuditoria">Actualizar</button></div>' +
+      '<div class="table-wrap"><table class="data-table"><thead><tr>' + GS.tablaEncabezado('auditoria', colsAuditoria) + '</tr></thead><tbody>' +
+      (filasAud.length
+        ? filasAud.map((a) => '<tr>' + colsAuditoria.map((c) => '<td class="' + (c.clase || '') + '">' + c.celda(a) + '</td>').join('') + '</tr>').join('')
+        : '<tr><td colspan="5">' + GS.empty('Sin registros', '') + '</td></tr>') +
+      '</tbody></table></div>';
+  }
+
+  let respaldos = null;
+  let exportDemo = null;   // { cargando } o el último archivo exportado
+  function tabRespaldos() {
+    if (!respaldos) {
+      GS.api('respaldos').then((r) => { respaldos = r.data; GS.render(); }).catch((e) => GS.toast(e.message, true));
+      return '<div class="empty-state"><div class="spinner"></div>Cargando respaldos…</div>';
+    }
+    const r = respaldos;
+    const estado = r.programado
+      ? '<span class="badge st-ok">Activo</span> Respaldo automático todas las noches (3 a. m.). Se guardan los últimos ' + r.conservar + '.'
+      : '<span class="badge st-cancelada">Sin programar</span> Ejecuta <strong>instalar</strong> para activar el respaldo nocturno.';
+    return '<div class="notice">' + estado + ' Además se crea uno automáticamente <strong>antes de cada instalar o migración</strong>. ' +
+      'Cada respaldo es una copia completa de la planilla en la carpeta "GS Prime ERP · Respaldos", junto a la planilla. ' +
+      'Para volver atrás, abre la copia y reemplaza las hojas, o avísanos y lo hacemos juntos.</div>' +
+      '<div class="btn-row" style="justify-content:space-between;margin-bottom:12px;"><span class="muted" style="font-size:12px;">' + r.respaldos.length + ' respaldos guardados.</span>' +
+      '<button class="btn" data-action="crearRespaldo">' + GS.icon('download') + 'Crear respaldo ahora</button></div>' +
+      '<div class="table-wrap"><table class="data-table" style="min-width:640px;"><thead><tr><th>Fecha</th><th>Respaldo</th><th></th></tr></thead><tbody>' +
+      (r.respaldos.length
+        ? r.respaldos.map((x) => '<tr><td class="nowrap">' + esc(x.fecha) + '</td><td>' + esc(x.nombre) + '</td><td class="right"><a class="btn small ghost" href="' + esc(x.url) + '" target="_blank" rel="noopener">Abrir</a></td></tr>').join('')
+        : '<tr><td colspan="3" class="muted center">Aún no hay respaldos.</td></tr>') +
+      '</tbody></table></div>' +
+      '<h3 class="sub-titulo" style="margin-top:22px;">Datos para la demo</h3>' +
+      '<div class="notice">Genera un archivo con todos los datos actuales (sin las carpetas de Drive) para cargarlo en la vista previa con <strong>Cargar datos reales</strong>, ' +
+      'o para enviárselo a Claude y dejar la demo como un reflejo de esta web. Contiene datos de clientes: compártelo solo con quien corresponda.</div>' +
+      '<div class="btn-row" style="margin-bottom:12px;">' +
+      (exportDemo && exportDemo.cargando
+        ? '<span class="muted"><span class="spinner"></span> Exportando…</span>'
+        : '<button class="btn secondary" data-action="exportarDemo">' + GS.icon('download') + 'Exportar datos para la demo</button>') +
+      (exportDemo && exportDemo.url ? '<a class="btn" href="' + esc(exportDemo.url) + '" target="_blank" rel="noopener">' + GS.icon('download') + 'Descargar ' + esc(exportDemo.kb) + ' KB</a><span class="muted" style="font-size:12px;">' + esc(exportDemo.nombre) + '</span>' : '') +
+      '</div>' +
+      '<h3 class="sub-titulo" style="margin-top:22px;">Migración desde el sistema anterior</h3>' +
+      (data().app.migracionCerrada
+        ? '<div class="notice">Cerrada el ' + esc(data().app.migracionCerrada) + '. Lo migrado sigue en el ERP; Migración ya no aparece en el menú.</div>' +
+          '<div class="btn-row" style="margin-bottom:12px;"><button class="btn ghost" data-action="reabrirMigracion">Reabrir migración</button></div>'
+        : '<div class="notice">Cuando termines de migrar, ciérrala: se hace un respaldo, se vacía la zona de trabajo del stock y las filas de la caja pendientes o descartadas, y Migración sale del menú. ' +
+          'Lo ya migrado de la caja se conserva (es el registro de lo creado, incluidos los pagos de facturas). Se puede reabrir.</div>' +
+          '<div class="btn-row" style="margin-bottom:12px;"><button class="btn secondary" data-action="cerrarMigracion">Cerrar migración</button></div>') +
+      '<h3 class="sub-titulo" style="margin-top:22px;">Migraciones de datos</h3>' +
+      (r.pendientes.length ? '<div class="notice warn">Hay ' + r.pendientes.length + ' migración(es) pendiente(s): ' + r.pendientes.map((m) => esc(m.id)).join(', ') + '. Se aplican al ejecutar <strong>instalar</strong>, después de un respaldo.</div>' : '') +
+      '<div class="table-wrap"><table class="data-table" style="min-width:640px;"><thead><tr><th>Aplicada</th><th>Migración</th><th>Qué cambió</th><th>Por</th></tr></thead><tbody>' +
+      (r.migraciones.length
+        ? r.migraciones.map((m) => '<tr><td class="nowrap">' + esc(m.aplicadaEn) + '</td><td class="cell-strong">' + esc(m.id) + '</td><td>' + esc(m.descripcion) + '</td><td>' + esc(m.aplicadaPor) + '</td></tr>').join('')
+        : '<tr><td colspan="4" class="muted center">Todavía no se ha aplicado ninguna migración.</td></tr>') +
+      '</tbody></table></div>';
+  }
+  GS.actions.crearRespaldo = async () => {
+    try {
+      await GS.mutate('crearRespaldo', {}, 'Respaldo creado en Google Drive');
+      respaldos = null;
+      GS.render();
+    } catch (e) { GS.toast(e.message, true); }
+  };
+
+  GS.actions.cerrarMigracion = () => GS.confirm({
+    title: 'Cerrar la migración',
+    message: 'Se crea un respaldo y luego se <strong>vacía</strong> la zona de trabajo de la migración del stock y las filas de la caja diaria <strong>pendientes o descartadas</strong>. ' +
+      'Lo ya migrado no cambia. Migración sale del menú (se puede reabrir desde aquí).',
+    confirmLabel: 'Cerrar migración',
+    onConfirm: () => GS.mutate('cerrarMigracion', {}, (r) => 'Migración cerrada · ' + r.quitadas + ' filas de la caja quitadas, ' + r.conservadas + ' migradas conservadas').then(() => { respaldos = null; }),
+  });
+  GS.actions.reabrirMigracion = () => GS.mutate('reabrirMigracion', {}, 'Migración reabierta: vuelve a estar en el menú').catch((e) => GS.toast(e.message, true));
+
+  GS.actions.exportarDemo = async () => {
+    exportDemo = { cargando: true };
+    GS.render();
+    try {
+      exportDemo = (await GS.api('exportarDemo')).data;
+      GS.toast('Archivo listo: presiona Descargar');
+    } catch (e) {
+      exportDemo = null;
+      GS.toast(e.message, true);
+    }
+    GS.render();
+  };
+
+  /* ---------- Validación de datos ---------- */
+
+  let validacion = null;      // { hallazgos, reglas, areas, revisado } o { cargando }
+  let validacionDe = null;    // foto de datos con la que se revisó: si cambia, se revisa de nuevo
+  const selVal = new Set();
+  const NIVEL = {
+    error: { label: 'Error', cls: 'st-cancelada' },
+    aviso: { label: 'Revisar', cls: 'st-parcial' },
+    info: { label: 'Completar', cls: 'st-pendiente' },
+  };
+  const DEF_V = { estado: 'pendiente', area: '', nivel: '', q: '' };
+
+  function cargarValidacion() {
+    validacion = { cargando: true };
+    validacionDe = data();
+    GS.api('validacion').then((r) => { validacion = r.data; selVal.clear(); GS.render(); })
+      .catch((e) => { validacion = null; GS.toast(e.message, true); });
+  }
+
+  function hallazgosFiltrados() {
+    const f = GS.filters('validacion', DEF_V);
+    const q = GS.norm(f.q || '');
+    return validacion.hallazgos.filter((h) =>
+      (f.estado === 'todos' || h.estado === f.estado) && (!f.area || h.area === f.area) && (!f.nivel || h.nivel === f.nivel) &&
+      (!q || GS.norm(h.titulo + ' ' + h.ref + ' ' + h.detalle).includes(q)));
+  }
+
+  function tabValidacion() {
+    if (!validacion || (!validacion.cargando && validacionDe !== data())) cargarValidacion();
+    if (validacion.cargando) return '<div class="empty-state"><div class="spinner"></div>Revisando toda la información…</div>';
+    const f = GS.filters('validacion', DEF_V);
+    const todos = validacion.hallazgos;
+    const pend = todos.filter((h) => h.estado === 'pendiente');
+    const cuenta = (lista, k, v) => lista.filter((h) => h[k] === v).length;
+    const kpiV = (l, v, sub, cls) => '<div class="kpi-card"><div class="kpi-label">' + l + '</div><div class="kpi-value small ' + (cls || '') + '">' + v + '</div><div class="kpi-sub">' + sub + '</div></div>';
+    const opt = (v, l, actual) => '<option value="' + esc(v) + '"' + (v === actual ? ' selected' : '') + '>' + esc(l) + '</option>';
+    return '<div class="notice">Revisa toda la información del ERP y muestra lo que no cuadra. <strong>Corregir</strong> abre el registro para editarlo; ' +
+      '<strong>Validar</strong> lo marca como revisado ("está bien así") y deja de aparecer mientras esos datos no cambien. Al corregir algo, la revisión se actualiza sola.</div>' +
+      '<div class="kpi-grid">' +
+      kpiV('Errores', cuenta(pend, 'nivel', 'error'), 'Datos incorrectos', cuenta(pend, 'nivel', 'error') ? 'text-danger' : 'text-success') +
+      kpiV('Por revisar', cuenta(pend, 'nivel', 'aviso'), 'Posibles inconsistencias', cuenta(pend, 'nivel', 'aviso') ? 'text-gold' : 'text-success') +
+      kpiV('Por completar', cuenta(pend, 'nivel', 'info'), 'Información faltante') +
+      kpiV('Validados', cuenta(todos, 'estado', 'validado'), 'Revisados y aceptados', 'text-success') + '</div>' +
+      '<div class="filters-bar"><div class="search-box">' + GS.icon('search') + '<input type="text" data-filter="validacion.q" value="' + esc(f.q) + '" placeholder="Buscar OC, factura, producto..."></div>' +
+      '<div class="select-input"><select data-filter="validacion.estado" aria-label="Estado">' + opt('pendiente', 'Pendientes (' + pend.length + ')', f.estado) + opt('validado', 'Validados', f.estado) + opt('todos', 'Todos', f.estado) + '</select></div>' +
+      '<div class="select-input"><select data-filter="validacion.area" aria-label="Área">' + opt('', 'Todas las áreas', f.area) +
+        validacion.areas.map((a) => opt(a, a + ' (' + cuenta(pend, 'area', a) + ')', f.area)).join('') + '</select></div>' +
+      '<div class="select-input"><select data-filter="validacion.nivel" aria-label="Gravedad">' + opt('', 'Toda gravedad', f.nivel) + opt('error', 'Errores', f.nivel) + opt('aviso', 'Por revisar', f.nivel) + opt('info', 'Por completar', f.nivel) + '</select></div>' +
+      '<button class="btn ghost" data-action="valRevisar">Revisar de nuevo</button></div>' +
+      '<div id="val-cuerpo">' + cuerpoVal() + '</div>';
+  }
+
+  function cuerpoVal() {
+    const f = GS.filters('validacion', DEF_V);
+    const pend = validacion.hallazgos.filter((h) => h.estado === 'pendiente');
+    const lista = hallazgosFiltrados();
+    const orden = { error: 0, aviso: 1, info: 2 };
+    const grupos = {};
+    lista.forEach((h) => { (grupos[h.regla] = grupos[h.regla] || []).push(h); });
+    const reglas = Object.keys(grupos).sort((a, b) => (orden[grupos[a][0].nivel] - orden[grupos[b][0].nivel]) || grupos[a][0].area.localeCompare(grupos[b][0].area));
+    const fila = (h) => '<tr class="' + (h.estado === 'validado' ? 'row-muted' : '') + (selVal.has(h.clave) ? ' row-selected' : '') + '">' +
+      '<td><input type="checkbox" class="row-check" data-sel-val="' + esc(h.clave) + '"' + (selVal.has(h.clave) ? ' checked' : '') + ' aria-label="Seleccionar"></td>' +
+      '<td class="cell-strong nowrap">' + esc(h.ref) + '</td>' +
+      '<td>' + esc(h.detalle) + (h.estado === 'validado' ? '<div class="cell-dim">✓ Validado por ' + esc(h.validadoPor || '') + ' · ' + esc(String(h.validadoEn || '').slice(0, 16)) + (h.nota ? ' · ' + esc(h.nota) : '') + '</div>' : '') + '</td>' +
+      '<td><div class="row-actions">' +
+      (h.accion ? '<button class="btn small secondary" data-action="valCorregir" data-id="' + esc(h.clave) + '">' + GS.icon('edit') + 'Corregir</button>' : '') +
+      (h.estado === 'validado'
+        ? '<button class="btn small ghost" data-action="valReabrir" data-id="' + esc(h.clave) + '">Reabrir</button>'
+        : '<button class="btn small ghost" data-action="valValidar" data-id="' + esc(h.clave) + '" title="Está bien así: no volver a mostrar mientras no cambie">' + GS.icon('check') + 'Validar</button>') +
+      '</div></td></tr>';
+    const MAX = 50;
+    const bloques = reglas.map((r) => {
+      const g = grupos[r];
+      const h0 = g[0];
+      const abierto = f['ver_' + r];
+      return '<tr class="val-grupo"><td><input type="checkbox" class="row-check" data-sel-grupo="' + esc(r) + '"' + (g.every((h) => selVal.has(h.clave)) ? ' checked' : '') + ' aria-label="Seleccionar todo el grupo"></td>' +
+        '<td colspan="3"><span class="badge ' + NIVEL[h0.nivel].cls + '">' + NIVEL[h0.nivel].label + '</span> <strong>' + esc(h0.titulo) + '</strong> <span class="muted">· ' + esc(h0.area) + ' · ' + g.length + '</span>' +
+        (h0.ayuda ? '<div class="cell-dim">' + esc(h0.ayuda) + '</div>' : '') + '</td></tr>' +
+        (abierto ? g : g.slice(0, MAX)).map(fila).join('') +
+        (g.length > MAX && !abierto ? '<tr><td></td><td colspan="3"><button class="btn small ghost" data-action="tab" data-id="validacion.ver_' + esc(r) + '.1">Ver los ' + g.length + '</button></td></tr>' : '');
+    }).join('');
+    return barraVal() +
+      '<div class="table-wrap"><table class="data-table val-tabla" style="min-width:720px;"><thead><tr><th></th><th>Registro</th><th>Detalle</th><th></th></tr></thead><tbody>' +
+      (bloques || '<tr><td colspan="4">' + GS.empty(f.estado === 'pendiente' && !pend.length ? '¡Todo en orden!' : 'Sin resultados', f.estado === 'pendiente' && !pend.length ? 'No quedan inconsistencias pendientes.' : 'Prueba con otros filtros.') + '</td></tr>') +
+      '</tbody></table></div>' +
+      '<p class="table-note">Revisado: ' + esc(validacion.revisado) + '.</p>';
+  }
+
+  function barraVal() {
+    if (!selVal.size) return '';
+    return '<div class="action-bar">' + GS.icon('check') + '<span><strong>' + selVal.size + '</strong> seleccionados</span>' +
+      '<button class="btn small" data-action="valValidarSel">Validar selección</button>' +
+      '<button class="btn small ghost" data-action="valReabrirSel">Reabrir</button>' +
+      '<button class="btn ghost small" data-action="valLimpiarSel">Quitar selección</button></div>';
+  }
+
+  const hallazgo = (clave) => validacion.hallazgos.find((h) => h.clave === clave);
+  function marcarVal(claves, estado) {
+    const items = claves.map(hallazgo).filter(Boolean).map((h) => ({ clave: h.clave, firma: h.firma }));
+    const enviar = (nota) => GS.mutate('validarHallazgos', { items: items, estado: estado, nota: nota || '' },
+      items.length + (estado === 'validado' ? ' validados' : ' reabiertos')).then(() => { selVal.clear(); });
+    if (estado !== 'validado') return enviar('').catch((e) => GS.toast(e.message, true));
+    GS.formModal({
+      title: items.length === 1 ? 'Validar: ' + hallazgo(claves[0]).titulo : 'Validar ' + items.length + ' hallazgos',
+      submitLabel: 'Validar',
+      fields: () => '<p class="hint">Quedan como revisados y dejan de aparecer mientras esos datos no cambien.</p>' +
+        '<div class="form-field full"><label>Nota (opcional)</label><input name="nota" maxlength="300" placeholder="Ej.: precio especial acordado, es correcto"></div>',
+      onSubmit: (v) => enviar(v.nota),
+    });
+  }
+  GS.actions.valValidar = (clave) => marcarVal([clave], 'validado');
+  GS.actions.valReabrir = (clave) => marcarVal([clave], 'pendiente');
+  GS.actions.valValidarSel = () => marcarVal(Array.from(selVal), 'validado');
+  GS.actions.valReabrirSel = () => marcarVal(Array.from(selVal), 'pendiente');
+  GS.actions.valLimpiarSel = () => { selVal.clear(); GS.render(); };
+  // Los filtros de la pestaña solo redibujan la lista (el buscador no pierde el foco).
+  GS.views.validacion = { update: () => { const el = document.getElementById('val-cuerpo'); if (el && validacion && validacion.hallazgos) el.innerHTML = cuerpoVal(); } };
+  GS.actions.valRevisar = () => { cargarValidacion(); GS.render(); };
+  GS.actions.valCorregir = (clave) => {
+    const a = hallazgo(clave).accion;
+    if (a.tipo === 'nav') return GS.go(a.id);
+    if (a.tipo === 'verCompra') return GS.go('compras', a.id);
+    if (a.tipo === 'verVenta') { GS.filters('ventas', { q: '' }).q = a.id; return GS.go('ventas', a.id); }
+    if (a.tipo === 'verCliente') {
+      const c = data().clientes.find((x) => x.id === a.id);
+      GS.filters('clientes', { q: '' }).q = c ? c.nombre : '';
+      return GS.go('clientes', a.id);
+    }
+    if (GS.actions[a.tipo]) GS.actions[a.tipo](a.id);
+  };
+  document.addEventListener('change', (e) => {
+    const t = e.target;
+    if (!t.dataset || (!t.dataset.selVal && !t.dataset.selGrupo) || !validacion || !validacion.hallazgos) return;
+    if (t.dataset.selVal) { if (t.checked) selVal.add(t.dataset.selVal); else selVal.delete(t.dataset.selVal); }
+    else hallazgosFiltrados().filter((h) => h.regla === t.dataset.selGrupo).forEach((h) => { if (t.checked) selVal.add(h.clave); else selVal.delete(h.clave); });
+    GS.render();
+  });
+
+  GS.views.admin = {
+    title: 'Administración',
+    rol: 'admin',
+    render(el) {
+      const f = GS.filters('admin', { tab: 'usuarios' });
+      const tab = (id, label) => '<button class="tab' + (f.tab === id ? ' active' : '') + '" data-action="tab" data-id="admin.' + id + '">' + label + '</button>';
+      el.innerHTML =
+        '<div class="page-head"><div><h1>Administración</h1><p>Usuarios y permisos, registro de cambios, respaldos y validación de datos.</p></div></div>' +
+        '<div class="tabs">' + tab('usuarios', 'Usuarios') + tab('auditoria', 'Auditoría') + tab('respaldos', 'Respaldos') + tab('validacion', 'Validación de datos') + '</div>' +
+        (f.tab === 'auditoria' ? tabAuditoria() : f.tab === 'respaldos' ? tabRespaldos() : f.tab === 'validacion' ? tabValidacion() : tabUsuarios());
+    },
+  };
+
+  GS.actions.recargarAuditoria = () => { auditoria = null; GS.render(); };
+
+  function usuarioForm(u) {
+    const nuevo = !u;
+    u = u || { email: '', nombre: '', rol: 'operador', activo: true };
+    GS.formModal({
+      title: nuevo ? 'Agregar usuario' : 'Editar usuario',
+      submitLabel: 'Guardar usuario',
+      fields: () =>
+        '<div class="form-grid">' +
+        '<div class="form-field full"><label>Correo de Google *</label><input name="email" type="email" value="' + esc(u.email) + '"' + (nuevo ? '' : ' readonly') + ' placeholder="nombre@gmail.com"></div>' +
+        '<div class="form-field"><label>Nombre *</label><input name="nombre" value="' + esc(u.nombre) + '"></div>' +
+        '<div class="form-field"><label>Rol</label><select name="rol">' + GS.options(Object.keys(ROL_LABEL), u.rol, ROL_LABEL) + '</select></div>' +
+        '<div class="form-field full"><label class="check"><input type="checkbox" name="activo"' + (u.activo ? ' checked' : '') + '> Usuario activo</label></div>' +
+        '</div>' +
+        (nuevo ? '<div class="notice">Recuerda compartir la planilla del ERP con este correo (permiso de edición).</div>' : ''),
+      onSubmit: (v) => GS.mutate('guardarUsuario', v, 'Usuario guardado').then(() => { auditoria = null; }),
+    });
+  }
+
+  GS.actions.nuevoUsuario = () => usuarioForm(null);
+  GS.actions.editarUsuario = (email) => usuarioForm(data().usuarios.find((u) => u.email === email));
+
+  /* ---------- módulos próximos ---------- */
+
+  function proximamente(id, titulo, sub, texto) {
+    GS.views[id] = {
+      title: titulo,
+      render(el) {
+        el.innerHTML = '<div class="page-head"><div><h1>' + titulo + '</h1><p>' + sub + '</p></div></div>' +
+          '<div class="placeholder-panel"><div class="ph-icon">' + GS.icon(id) + '</div><h2>Módulo en construcción</h2><p>' + texto + '</p></div>';
+      },
+    };
+  }
+})();
+</script>

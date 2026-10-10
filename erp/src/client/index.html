@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<base target="_top">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GS Prime · ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<?!= include_('client/styles'); ?>
+</head>
+<body>
+
+<!-- Pantalla de carga / errores de acceso -->
+<div class="boot" id="boot">
+  <div class="boot-card">
+    <?!= include_('client/logo'); ?>
+    <div id="boot-body">
+      <div class="spinner"></div>
+      <p>Cargando datos…</p>
+    </div>
+  </div>
+</div>
+
+<div class="app hidden" id="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <?!= include_('client/logo'); ?>
+      <div class="brand-tag">ERP · TCG</div>
+    </div>
+    <div id="nav"></div>
+    <div class="sidebar-footer">
+      <span class="who" id="footer-user"></span>
+      <span>GS Prime TCG · v<span id="footer-version"></span></span>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <button class="menu-toggle" id="menu-toggle" aria-label="Menú">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/></svg>
+        </button>
+        <div class="topbar-title" id="topbar-title"></div>
+      </div>
+      <div class="topbar-actions">
+        <button class="icon-btn refresh-btn" id="btn-refresh" title="Actualizar datos">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+        </button>
+        <div class="user-chip">
+          <div class="user-avatar" id="user-avatar"></div>
+          <div>
+            <div class="u-name" id="user-name"></div>
+            <div class="u-role" id="user-role"></div>
+          </div>
+        </div>
+      </div>
+    </header>
+    <main class="content" id="view"></main>
+  </div>
+</div>
+
+<div id="modal-root"></div>
+
+<div class="toast" id="toast">
+  <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+  <span id="toast-msg"></span>
+</div>
+
+<script>window.interpretarNombre = <?!= interpretarNombre_.toString(); ?>;</script>
+<?!= include_('client/js-core'); ?>
+<?!= include_('client/js-dashboard'); ?>
+<?!= include_('client/js-preventas'); ?>
+<?!= include_('client/js-graficos'); ?>
+<?!= include_('client/js-compras'); ?>
+<?!= include_('client/js-ventas'); ?>
+<?!= include_('client/js-catalogo'); ?>
+<?!= include_('client/js-admin'); ?>
+<?!= include_('client/js-toma'); ?>
+<?!= include_('client/js-finanzas'); ?>
+<?!= include_('client/js-migracion'); ?>
+<?!= include_('client/js-migracion-caja'); ?>
+<script>GS.start();</script>
+</body>
+</html>
