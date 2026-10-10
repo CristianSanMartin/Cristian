@@ -299,7 +299,7 @@
       document.getElementById('cp-otras').innerHTML = otras.slice(0, 50).map((m) => '<tr><td class="nowrap">' + fmt.date(m.fecha) + '</td><td><span class="badge st-pedido">' + esc(m.categoriaLabel) + '</span></td>' +
         '<td class="cell-strong">' + esc(m.subcategoria || '—') + (m.notas ? '<div class="cell-dim">' + esc(m.notas) + '</div>' : '') + '</td><td>' + esc(m.cuentaLabel || '—') + '</td>' +
         '<td class="cell-dim">' + esc(m.referencia || '') + '</td><td class="cell-num right">' + (m.iva ? fmt.money(m.iva) : '—') + '</td><td class="cell-num right"><strong>' + fmt.money(m.monto) + '</strong></td>' +
-        '<td>' + (GS.puede('operador') ? GS.iconBtn('editarMovimiento', m.id, 'edit', 'Editar') : '') + '</td></tr>').join(' +
+        '<td>' + (GS.puede('operador') ? GS.iconBtn('editarMovimiento', m.id, 'edit', 'Editar') : '') + '</td></tr>').join('') +
         (otras.length > 50 ? '<tr><td colspan="8" class="muted center">Se muestran las 50 más recientes; busca arriba o revisa todas en Finanzas → Movimientos.</td></tr>' : '');
       document.querySelectorAll('.detalle-compra').forEach((d) => { d.style.width = Math.max(320, d.closest('.table-wrap').clientWidth - 36) + 'px'; });
       const sum = (k) => rows.reduce((t, c) => t + c[k], 0);
