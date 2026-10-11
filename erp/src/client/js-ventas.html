@@ -520,6 +520,7 @@
         (v.anulada ? '' :
           '<div class="form-field"><label>Total pagado por el cliente</label><input type="number" name="total" min="0" step="1" value="' + esc(v.total) + '"></div>' +
           '<div class="form-field"><label>Pagado al vender</label><input type="number" name="abono" min="0" step="1" value="' + esc(v.abono) + '" title="Lo que el cliente pagó al comprar; el resto queda como deuda"></div>' +
+          '<div class="form-field"><label>Recibido neto (opcional)</label><input type="number" name="depositado" min="0" step="1" placeholder="Ej.: lo que depositó TUU" title="Si solo sabes lo que entró a la cuenta: calcula el total y la comisión"></div>' +
           '<div class="form-field" data-ev-motivo hidden><label>Motivo del ajuste *</label><input name="motivo" maxlength="120" placeholder="Ej.: la caja registró el monto con la comisión descontada"></div>' +
           '<div class="form-field full" data-ev-dif></div>') +
         '<div class="form-field full"><label>Notas</label><textarea name="notas" rows="2">' + esc(v.notas) + '</textarea></div></div>' +
@@ -579,6 +580,37 @@
         form.querySelectorAll('[data-ev-linea]').forEach((inp) => inp.addEventListener('input', upd));
         form.elements.total.addEventListener('input', () => { totalTocado = true; upd(); });
         form.elements.abono.addEventListener('input', () => { form.elements.abono.dataset.tocado = '1'; upd(); });
+        // La comisión se recalcula sola (0,77% + $65 en débito/crédito sobre lo pagado) mientras no se escriba a mano.
+        let comTocada = false;
+        const regla = () => d.catalogos.comisiones[form.elements.medioPago.value];
+        const recalcCom = () => {
+          if (comTocada) return;
+          const r = regla();
+          const pagado = Number(form.elements.abono.value) || 0;
+          form.elements.comision.value = r && pagado ? Math.round(pagado * r.pct + r.fijo) : 0;
+        };
+        form.elements.comision.addEventListener('input', () => { comTocada = true; });
+        ['input', 'change'].forEach((ev) => form.addEventListener(ev, (e) => {
+          if (['comision', 'depositado', 'motivo', 'notas', 'numero', 'cliente', 'boleta', 'evento'].indexOf(e.target.name) !== -1) return;
+          recalcCom();
+        }));
+        // Recibido neto → total = el monto que, menos su comisión, da lo recibido.
+        form.elements.depositado.addEventListener('input', () => {
+          const neto = Number(form.elements.depositado.value) || 0;
+          if (!neto) return;
+          const r = regla();
+          let total = neto;
+          if (r) {
+            const base = Math.floor((neto + r.fijo) / (1 - r.pct)) - 3;
+            for (let t = base; t < base + 8; t++) { if (t - Math.round(t * r.pct + r.fijo) === neto) { total = t; break; } }
+          }
+          totalTocado = true;
+          form.elements.total.value = total;
+          if (!form.elements.motivo.value) form.elements.motivo.value = 'Cuadre con lo recibido neto ' + fmt.money(neto);
+          upd();
+          comTocada = false;
+          recalcCom();
+        });
         upd();
       },
       onSubmit: (val, form) => {
@@ -590,6 +622,7 @@
         })).filter((x) => x.productoId);
         // Lo pagado al vender solo se envía si se cambió (si no, el servidor lo ajusta solo con el total).
         if (form.elements.abono && !form.elements.abono.dataset.tocado) delete datos.abono;
+        delete datos.depositado;
         return GS.mutate('editarVenta', datos, (r) => (r && r.id && r.id !== v.id ? v.id + ' → ' + r.id + ' actualizada' : v.id + ' actualizada'));
       },
     });
