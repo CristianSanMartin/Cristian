@@ -413,6 +413,8 @@ test("venta por monto, Finanzas y migración de la caja diaria", { skip }, async
     await modal(page).locator('[name="subcategoria"]').fill("Sueldo Alex");
     await modal(page).locator('button[type="submit"]').click();
     await toast(page, /Movimiento MOV-\d{5} registrado/);
+    await page.waitForSelector("td:has-text('Sueldo Alex')");
+    await page.click('[data-action="tab"][data-id="finanzas.resumen"]');
     assert.match(await page.locator(".fin-resumen").textContent(), /Ventas · Torneo/);
     assert.match(await page.locator(".fin-resumen").textContent(), /GAV/);
     await page.click('[data-action="tab"][data-id="finanzas.movimientos"]');

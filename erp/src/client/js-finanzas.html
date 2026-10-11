@@ -10,7 +10,7 @@
   const data = () => GS.state.data;
   const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
   const kpi = (l, v, sub) => '<div class="kpi-card"><div class="kpi-label">' + l + '</div><div class="kpi-value small">' + v + '</div><div class="kpi-sub">' + sub + '</div></div>';
-  const DEF = { tab: 'resumen', anio: '', q: '', ventas: true };
+  const DEF = { tab: 'movimientos', anio: '', q: '', ventas: true };
 
   const movsVivos = () => (data().movimientos || []).filter((m) => !m.anulado);
   const anios = () => {
@@ -186,6 +186,21 @@
       onSubmit: (v) => GS.mutate('movimientoAPagoFactura', { id: id, compraId: v.compraId }, (r) => 'Pago ' + r.pago + ' registrado en ' + r.compraId),
     });
   };
+  // Informe detallado de los movimientos visibles (buscador y filtros de columna aplicados), en orden cronológico con saldo.
+  GS.actions.exportarMovimientos = () => {
+    const rows = GS.tablaAplicar('movimientos', movsBuscados(), colsMov).slice().sort((a, b) => (a.fecha + a.id).localeCompare(b.fecha + b.id));
+    let saldo = 0;
+    const filas = rows.map((m) => {
+      const signo = m.anulado ? 0 : m.tipo === 'ingreso' ? m.monto : -m.monto;
+      saldo += signo;
+      return [m.fecha, m.id, m.tipo === 'ingreso' ? 'Ingreso' : 'Egreso', m.categoriaLabel, m.subcategoria || '', m.cuentaLabel || '', m.referencia || '',
+        m.venta ? 'Venta' : m.compra ? 'Pago de factura' : 'Movimiento', m.bruto || '', m.comision || '', m.iva || '',
+        m.tipo === 'ingreso' && !m.anulado ? m.monto : '', m.tipo === 'egreso' && !m.anulado ? m.monto : '', saldo, m.anulado ? 'Anulado' : 'Vigente', m.notas || ''];
+    });
+    GS.downloadCsv('movimientos-' + data().hoy + '.csv',
+      ['Fecha', 'ID', 'Tipo', 'Categoría', 'Detalle', 'Cuenta', 'Referencia', 'Origen', 'Venta bruta', 'Comisión', 'IVA (factura)', 'Ingreso', 'Egreso', 'Saldo acumulado', 'Estado', 'Notas'], filas);
+    GS.toast(filas.length + ' movimientos descargados');
+  };
   GS.actions.finVer = (id) => {
     if (abiertosMov.has(id)) abiertosMov.delete(id); else abiertosMov.add(id);
     GS.views.finanzas.update();
@@ -206,7 +221,7 @@
         '<div class="page-head"><div><h1>Finanzas</h1><p>Resumen mensual del negocio y libro de movimientos: aportes, gastos, pagos al SII y compras por monto.</p></div>' +
         '<div class="btn-row"><div class="select-input"><select data-filter="finanzas.anio" aria-label="Año">' + GS.options(anios(), f.anio) + '</select></div>' +
         (GS.puede('operador') ? '<button class="btn" data-action="nuevoMovimiento">' + GS.icon('plus', 2.4) + 'Nuevo movimiento</button>' : '') + '</div></div>' +
-        '<div class="tabs">' + tab('resumen', 'Resumen mensual') + tab('movimientos', 'Movimientos') + '</div>' +
+        '<div class="tabs">' + tab('movimientos', 'Movimientos') + tab('resumen', 'Resumen mensual') + '</div>' +
         '<div id="fin-cuerpo"></div>';
       this.update();
     },
@@ -218,7 +233,8 @@
       if (f.tab === 'movimientos') {
         if (!document.getElementById('mov-tbody')) {
           cuerpo.innerHTML = '<div class="filters-bar"><div class="search-box">' + GS.icon('search') + '<input type="text" data-filter="finanzas.q" value="' + esc(f.q || '') + '" placeholder="Buscar categoría, detalle o referencia..."></div>' +
-            '<label class="check"><input type="checkbox" data-filter="finanzas.ventas"' + (f.ventas ? ' checked' : '') + '> Incluir ventas y pagos de facturas</label><span class="count" id="mov-count"></span></div>' +
+            '<label class="check"><input type="checkbox" data-filter="finanzas.ventas"' + (f.ventas ? ' checked' : '') + '> Incluir ventas y pagos de facturas</label><span class="count" id="mov-count"></span>' +
+            '<button class="btn ghost small" data-action="exportarMovimientos" title="Descarga en Excel (CSV) los movimientos que se ven, con filtros y buscador aplicados">' + GS.icon('download') + 'Descargar informe</button></div>' +
             '<div id="mov-resumen"></div>' +
             '<div class="table-wrap"><table class="data-table"><thead><tr id="mov-thead"></tr></thead><tbody id="mov-tbody"></tbody></table></div>';
         }
