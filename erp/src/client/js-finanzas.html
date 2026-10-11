@@ -135,16 +135,20 @@
     { id: 'monto', label: 'Monto', right: true, valor: (m) => (m.tipo === 'ingreso' ? m.monto : -m.monto), texto: (m) => fmt.money(m.monto),
       celda: (m) => '<strong class="' + (m.anulado ? 'muted' : m.tipo === 'ingreso' ? 'text-success' : '') + '">' + (m.tipo === 'ingreso' ? '+' : '−') + fmt.money(m.monto) + '</strong>' + (m.anulado ? '<div class="cell-dim">anulado</div>' : '') },
   ];
-  /** Ingresos de ventas como filas del libro (solo lectura): lo pagado al vender, los abonos y la comisión del medio de pago. */
+  /** Ingresos de ventas como filas del libro (solo lectura): lo pagado al vender (neto de la comisión del medio de pago) y los abonos. */
   const CUENTA_MEDIO = { efectivo: 'Caja (efectivo)', transferencia: 'Banco', debito: 'TUU', credito: 'TUU' };
   function movsVentas() {
     const res = [];
     data().ventas.filter((v) => !v.anulada).forEach((v) => {
       const base = { tipo: 'ingreso', referencia: v.id, venta: v.id, cuentaLabel: CUENTA_MEDIO[v.medioPago] || '', notas: '' };
-      if (v.abono) res.push(Object.assign({}, base, { id: v.id + '·v', fecha: v.fecha, categoriaLabel: 'Venta', subcategoria: v.cliente + ' · ' + v.medioPagoLabel, monto: v.abono }));
+      // La comisión del medio de pago va dentro de la venta: el monto es lo que entra a la cuenta (neto).
+      const conCom = v.abono && v.comision && v.comision < v.abono;
+      if (v.abono) res.push(Object.assign({}, base, { id: v.id + '·v', fecha: v.fecha, categoriaLabel: 'Venta', subcategoria: v.cliente + ' · ' + v.medioPagoLabel,
+        monto: conCom ? v.abono - v.comision : v.abono, bruto: v.abono, comision: conCom ? v.comision : 0,
+        notas: conCom ? 'venta ' + fmt.money(v.abono) + ' − comisión ' + fmt.money(v.comision) : '' }));
       v.cobros.forEach((c) => res.push(Object.assign({}, base, { id: c.id, fecha: c.fecha, categoriaLabel: 'Abono de venta', subcategoria: v.cliente + ' · ' + (data().catalogos.mediosPago[c.medioPago] || c.medioPago), monto: c.monto,
         cuentaLabel: CUENTA_MEDIO[c.medioPago] || '' })));
-      if (v.comision) res.push(Object.assign({}, base, { id: v.id + '·c', tipo: 'egreso', fecha: v.fecha, categoriaLabel: 'Comisión ' + v.medioPagoLabel, subcategoria: v.cliente, monto: v.comision }));
+      if (v.comision && !conCom) res.push(Object.assign({}, base, { id: v.id + '·c', tipo: 'egreso', fecha: v.fecha, categoriaLabel: 'Comisión ' + v.medioPagoLabel, subcategoria: v.cliente, monto: v.comision }));
     });
     // Pagos de facturas de compra: registrados en Compras o conciliados desde la caja diaria.
     const compra = {};
