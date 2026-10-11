@@ -141,6 +141,13 @@
       : '';
   }
 
+  /** Devuelve el foco a un campo redibujado. Los campos numéricos no tienen posición de cursor: queda al final. */
+  function enfocar(inp, pos) {
+    inp.focus();
+    if (inp.type === 'number' || pos == null) { const v = inp.value; inp.value = ''; inp.value = v; return; }
+    try { inp.setSelectionRange(pos, pos); } catch (err) { /* select */ }
+  }
+
   function conectarVenta(el) {
     const form = el.querySelector('#nueva-venta form');
     if (!form) return;
@@ -152,7 +159,7 @@
         const pos = t.selectionStart;
         calcVenta(form);
         const again = form.querySelector('[data-carrito-campo="' + t.dataset.carritoCampo + '"]');
-        if (again) { again.focus(); try { again.setSelectionRange(pos, pos); } catch (err) { /* select / number */ } }
+        if (again) enfocar(again, pos);
         return;
       }
       if (t.dataset.carritoCant) carrito[t.dataset.carritoCant].cantidad = t.value;
@@ -164,7 +171,7 @@
         const pos = t.selectionStart;
         calcVenta(form);
         const again = form.querySelector('[data-carrito-' + (t.dataset.carritoCant ? 'cant' : 'precio') + '="' + (t.dataset.carritoCant || t.dataset.carritoPrecio) + '"]');
-        if (again) { again.focus(); try { again.setSelectionRange(pos, pos); } catch (err) { /* number inputs */ } }
+        if (again) enfocar(again, pos);
         return;
       }
       calcVenta(form);
