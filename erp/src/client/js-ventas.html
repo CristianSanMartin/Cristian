@@ -404,7 +404,7 @@
       '</div>';
   }
 
-  /** Vista previa y renumeración de las ventas migradas a su N° de OC original (OC223 → OC-0223). */
+  /** Vista previa y renumeración de las ventas migradas a su N° de OC original (OC223 → OC-0223). Se abre desde Validación de datos. */
   GS.actions.ocOriginales = async () => {
     let plan;
     try { plan = (await GS.api('ocOriginales')).data; } catch (e) { return GS.toast(e.message, true); }
@@ -442,8 +442,7 @@
         (GS.puede('operador') ? '<button class="btn" data-nav="inventario">' + GS.icon('plus', 2.4) + 'Nueva venta</button>' : '') +
         '<button class="btn ghost" data-action="exportarVentas">' + GS.icon('download') + 'Exportar</button></div></div>' +
         '<div id="vt-tablero"></div>' +
-        '<div class="panel dash-card"><div class="dash-card-head"><h3>Órdenes de compra (OC)</h3><span class="muted">Todas las ventas' +
-          (GS.puede('admin') ? ' · <a href="#" data-action="ocOriginales">Usar los N° y fechas de las OC originales</a>' : '') + '</span></div>' +
+        '<div class="panel dash-card"><div class="dash-card-head"><h3>Órdenes de compra (OC)</h3><span class="muted">Todas las ventas</span></div>' +
         '<div class="filters-bar"><div class="search-box">' + GS.icon('search') + '<input type="text" data-filter="ventas.q" value="' + esc(f.q) + '" placeholder="Buscar OC, cliente, evento, boleta o producto..."></div></div>' +
         '<div class="table-wrap"><table class="data-table wide"><thead><tr id="vt-thead"></tr></thead><tbody id="vt-tbody"></tbody></table></div></div>' +
         '<div class="panel dash-card"><div class="dash-card-head"><h3>Singles, torneos y otros</h3><span class="muted">Ventas sin OC: SGL singles · TOR torneos · SOB sobres sueltos · BAZ bazar · ACC accesorios</span></div>' +
