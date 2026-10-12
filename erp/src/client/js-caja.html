@@ -46,6 +46,7 @@
         '<div class="page-head"><div><h1>Caja del día</h1><p>Registra cada atención como un ticket durante el día. Al cerrar la caja, todo pasa a Ventas, Inventario y Finanzas.</p></div>' +
         '<div class="btn-row"><div class="select-input"><select data-filter="caja.caja" aria-label="Caja">' +
           GS.options(cajas().map((x) => ({ value: x.id, label: fmt.date(x.fecha) + (x.estado === 'abierta' ? ' · abierta' : ' · cerrada') })), c ? c.id : '') + '</select></div>' +
+        (op ? '<button class="btn ghost" data-action="abrirCajaFecha" title="Para poner al día una caja de un día anterior">Abrir otra fecha</button>' : '') +
         (op && !cajas().some((x) => x.id === hoyId) ? '<button class="btn" data-action="abrirCaja">' + GS.icon('plus', 2.4) + 'Abrir caja de hoy</button>' : '') + '</div></div>' +
         (atrasadas.length ? '<div class="notice warn">Hay ' + (atrasadas.length === 1 ? 'una caja sin cerrar' : atrasadas.length + ' cajas sin cerrar') + ': ' +
           atrasadas.map((x) => '<a href="#" data-action="verCaja" data-id="' + esc(x.id) + '">' + fmt.date(x.fecha) + ' (' + vivos(x).length + ' tickets)</a>').join(', ') +
@@ -97,6 +98,14 @@
   };
 
   GS.actions.verCaja = (id) => { GS.filters('caja', DEF).caja = id; GS.render(); };
+  // Caja de otro día (ej. poner al día el 04-10): las ventas y movimientos quedan con esa fecha.
+  GS.actions.abrirCajaFecha = () => GS.formModal({
+    title: 'Abrir caja de otra fecha',
+    submitLabel: 'Abrir caja',
+    fields: () => '<div class="form-field"><label>Fecha de la caja *</label><input type="date" name="fecha" max="' + esc(data().hoy) + '" value="' + esc(data().hoy) + '"></div>' +
+      '<p class="hint">Todo lo que registres en esa caja (ventas, compras de singles, gastos) queda con esa fecha al cerrarla. Si la caja de ese día ya existe y está abierta, se abre la misma.</p>',
+    onSubmit: (v) => GS.mutate('abrirCaja', { fecha: v.fecha }, (r) => { GS.filters('caja', DEF).caja = r.id; return 'Caja del ' + fmt.date(r.fecha) + ' abierta'; }),
+  });
   GS.actions.abrirCaja = () => GS.mutate('abrirCaja', { fecha: data().hoy }, (r) => { GS.filters('caja', DEF).caja = r.id; return 'Caja de hoy abierta'; });
 
   /* ---------- ticket de venta ---------- */
