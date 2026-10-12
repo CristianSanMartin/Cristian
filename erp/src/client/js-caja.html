@@ -110,12 +110,14 @@
     d.lotes.forEach((l) => { if (l.disponible > 0) stock[l.productoId] = (stock[l.productoId] || 0) + l.disponible; });
     if (t) t.lineas.forEach((l) => { if (l.productoId) stock[l.productoId] = (stock[l.productoId] || 0) + l.cantidad; });
     const prods = d.productos.filter((p) => stock[p.id]).sort((a, b) => a.nombreCompleto.localeCompare(b.nombreCompleto));
-    const porNombre = {};
-    prods.forEach((p) => { porNombre[GS.norm(p.nombreCompleto)] = p; });
+    const porId = {};
+    prods.forEach((p) => { porId[p.id] = p; });
     const cats = d.catalogos.categoriasVenta.filter((x) => x !== 'Ajuste');
-    const filaProd = (l) => '<tr data-tk-prod><td><input name="tkProd" list="tk-prods" autocomplete="off" style="min-width:260px" placeholder="Producto sellado…" value="' + esc(l ? l.producto : '') + '"></td>' +
-      '<td><input class="qty-input" style="width:64px" type="number" min="1" step="1" name="tkCant" value="' + esc(l ? l.cantidad : 1) + '"></td>' +
-      '<td><input class="qty-input price-input" style="width:100px" type="number" min="0" step="1" name="tkPrecio" value="' + esc(l ? l.precio : '') + '"></td>' +
+    const prodCelda = (p) => '<div class="prod-cell">' + GS.thumb(p.imagen) + '<div><span class="cell-strong">' + esc(p.nombre) + '</span> ' + GS.langPill(p.idioma) +
+      '<div class="cell-dim">' + esc(p.edicion || '') + '</div></div></div>';
+    const filaProd = (l) => '<tr data-tk-prod data-pid="' + esc(l.productoId) + '"><td>' + prodCelda(porId[l.productoId] || { nombre: l.producto }) + '</td>' +
+      '<td><input class="qty-input" style="width:64px" type="number" min="1" max="' + (stock[l.productoId] || '') + '" step="1" name="tkCant" value="' + esc(l.cantidad) + '"></td>' +
+      '<td><input class="qty-input price-input" style="width:100px" type="number" min="0" step="1" name="tkPrecio" value="' + esc(l.precio) + '"></td>' +
       '<td class="cell-num right" data-tk-sub>—</td><td><button type="button" class="btn small ghost" data-tk-quitar title="Quitar">✕</button></td></tr>';
     const filaMonto = (l) => '<tr data-tk-monto><td><div class="field-row"><select name="tkCat">' + GS.options(cats, l ? l.categoria : 'Singles') + '</select>' +
       '<input name="tkDesc" placeholder="Detalle (opcional)" value="' + esc(l ? l.descripcion : '') + '"></div></td><td class="cell-dim">por monto</td>' +
@@ -133,9 +135,14 @@
         '<div class="form-field"><label>Evento</label><input name="evento" value="' + esc(t ? t.evento : '') + '"></div>' +
         '<div class="form-field full"><label>Productos y líneas</label><div class="table-wrap"><table class="data-table" style="min-width:0"><thead><tr><th>Producto / concepto</th><th>Cant.</th><th>Precio</th><th class="right">Subtotal</th><th></th></tr></thead>' +
         '<tbody data-tk-lineas>' + (t ? t.lineas.map((l) => (l.productoId ? filaProd(l) : filaMonto(l))).join('') : '') + '</tbody></table></div>' +
-        '<datalist id="tk-prods">' + prods.map((p) => '<option value="' + esc(p.nombreCompleto) + '">' + stock[p.id] + ' disp.</option>').join('') + '</datalist>' +
         '<div class="btn-row" style="margin-top:8px;"><button type="button" class="btn small secondary" data-tk-add-prod>' + GS.icon('plus', 2.4) + 'Producto sellado</button>' +
-        '<button type="button" class="btn small secondary" data-tk-add-monto>' + GS.icon('plus', 2.4) + 'Singles, torneo, bazar…</button></div></div>' +
+        '<button type="button" class="btn small secondary" data-tk-add-monto>' + GS.icon('plus', 2.4) + 'Singles, torneo, bazar…</button></div>' +
+        // Ventana de productos disponibles: buscar y tocar para agregar.
+        '<div data-tk-picker hidden class="panel" style="margin-top:10px;padding:12px;border:1px solid var(--gold, #f5b800);">' +
+          '<div class="field-row" style="margin-bottom:8px;"><div class="search-box" style="flex:1;">' + GS.icon('search') + '<input type="text" data-tk-buscar placeholder="Buscar producto, edición o idioma…" autocomplete="off"></div>' +
+          '<button type="button" class="btn small" data-tk-listo>Listo</button></div>' +
+          '<div style="max-height:340px;overflow:auto;"><table class="data-table" style="min-width:0"><thead><tr><th>Producto</th><th>Tipo</th><th class="right">Disponible</th><th class="right">Precio</th><th></th></tr></thead><tbody data-tk-lista></tbody></table></div>' +
+          '<p class="table-note" style="margin:6px 0 0;">Toca un producto para agregarlo; si ya está en el ticket, suma una unidad.</p></div></div>' +
         '<div class="form-field full"><label>Pago</label><div data-tk-pagos>' + (t ? t.pagos.map(filaPago).join('') : filaPago(null)) + '</div>' +
         '<button type="button" class="btn small ghost" data-tk-add-pago>' + GS.icon('plus', 2.4) + 'Otro medio de pago</button><p class="table-note" data-tk-cuadre></p></div>' +
         '<div class="form-field full"><label>Notas</label><input name="notas" maxlength="300" value="' + esc(t ? t.notas : '') + '"></div></div>' +
@@ -144,11 +151,40 @@
         const cuerpo = form.querySelector('[data-tk-lineas]');
         const pagos = form.querySelector('[data-tk-pagos]');
         let pagoTocado = !!t;
+        const picker = form.querySelector('[data-tk-picker]');
+        const lista = form.querySelector('[data-tk-lista]');
+        const buscar = form.querySelector('[data-tk-buscar]');
+        const enTicket = (pid) => Array.from(cuerpo.querySelectorAll('[data-tk-prod]')).filter((tr) => tr.dataset.pid === pid).reduce((s, tr) => s + (Number(tr.querySelector('[name="tkCant"]').value) || 0), 0);
+        // Sigla para buscar rápido: "Elite Trainer Box" → "etb".
+        const sigla = (t) => String(t || '').split(/\s+/).filter((w) => /^[A-Za-zÁÉÍÓÚÑ]/.test(w)).map((w) => w[0]).join('');
+        const pintarLista = () => {
+          const q = GS.norm(buscar.value.trim());
+          const vis = prods.filter((p) => !q || GS.norm(p.nombreCompleto + ' ' + p.tipo + ' ' + p.edicion + ' ' + p.idioma + ' ' + sigla(p.tipo) + ' ' + sigla(p.nombre)).includes(q));
+          lista.innerHTML = vis.length ? vis.map((p) => {
+            const ya = enTicket(p.id);
+            const queda = stock[p.id] - ya;
+            return '<tr data-tk-pick="' + esc(p.id) + '" style="cursor:' + (queda > 0 ? 'pointer' : 'not-allowed') + ';' + (queda > 0 ? '' : 'opacity:.5;') + '">' +
+              '<td>' + prodCelda(p) + '</td><td class="cell-dim">' + esc(p.tipo || '') + '</td>' +
+              '<td class="cell-num right"><strong>' + queda + '</strong>' + (ya ? '<div class="cell-dim">' + ya + ' en el ticket</div>' : '') + '</td>' +
+              '<td class="cell-num right">' + fmt.money(p.precio) + '</td><td>' + (queda > 0 ? '<span class="btn small secondary">' + GS.icon('plus', 2.4) + '</span>' : '') + '</td></tr>';
+          }).join('') : '<tr><td colspan="5" class="muted center">' + (prods.length ? 'Ningún producto coincide.' : 'No hay productos con stock disponible.') + '</td></tr>';
+        };
+        const agregar = (pid) => {
+          if (enTicket(pid) >= stock[pid]) return;
+          const tr = Array.from(cuerpo.querySelectorAll('[data-tk-prod]')).find((x) => x.dataset.pid === pid);
+          if (tr) { const c = tr.querySelector('[name="tkCant"]'); c.value = (Number(c.value) || 0) + 1; }
+          else cuerpo.insertAdjacentHTML('beforeend', filaProd({ productoId: pid, cantidad: 1, precio: porId[pid].precio }));
+          pintarLista();
+          upd();
+        };
+        const abrirPicker = () => { picker.hidden = false; buscar.value = ''; pintarLista(); buscar.focus(); };
+        lista.addEventListener('click', (e) => { const tr = e.target.closest('[data-tk-pick]'); if (tr) agregar(tr.dataset.tkPick); });
+        buscar.addEventListener('input', pintarLista);
+        buscar.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); const f = lista.querySelector('[data-tk-pick]'); if (f) agregar(f.dataset.tkPick); } });
         const total = () => Array.from(cuerpo.children).reduce((s, tr) => {
           let sub = 0;
           if (tr.hasAttribute('data-tk-prod')) {
-            const p = porNombre[GS.norm(tr.querySelector('[name="tkProd"]').value)];
-            sub = p ? (Number(tr.querySelector('[name="tkCant"]').value) || 0) * (Number(tr.querySelector('[name="tkPrecio"]').value) || 0) : 0;
+            sub = (Number(tr.querySelector('[name="tkCant"]').value) || 0) * (Number(tr.querySelector('[name="tkPrecio"]').value) || 0);
           } else sub = Number(tr.querySelector('[name="tkMonto"]').value) || 0;
           tr.querySelector('[data-tk-sub]').textContent = sub ? fmt.money(sub) : '—';
           return s + sub;
@@ -162,9 +198,10 @@
             (suma === tot ? ' · <span class="text-success">pagos cuadrados</span>' : suma < tot ? ' · <span class="text-gold">faltan ' + fmt.money(tot - suma) + '</span>' : ' · <span class="text-danger">sobran ' + fmt.money(suma - tot) + '</span>');
         };
         form.addEventListener('click', (e) => {
-          if (e.target.closest('[data-tk-add-prod]')) { cuerpo.insertAdjacentHTML('beforeend', filaProd(null)); cuerpo.lastElementChild.querySelector('input').focus(); }
+          if (e.target.closest('[data-tk-add-prod]')) { abrirPicker(); return; }
+          else if (e.target.closest('[data-tk-listo]')) { picker.hidden = true; return; }
           else if (e.target.closest('[data-tk-add-monto]')) { cuerpo.insertAdjacentHTML('beforeend', filaMonto(null)); cuerpo.lastElementChild.querySelector('[name="tkMonto"]').focus(); }
-          else if (e.target.closest('[data-tk-quitar]')) e.target.closest('tr').remove();
+          else if (e.target.closest('[data-tk-quitar]')) { e.target.closest('tr').remove(); if (!picker.hidden) pintarLista(); }
           else if (e.target.closest('[data-tk-add-pago]')) { pagoTocado = true; pagos.insertAdjacentHTML('beforeend', filaPago({ medio: 'debito', monto: '' })); }
           else if (e.target.closest('[data-tk-quitar-pago]') && pagos.children.length > 1) e.target.closest('[data-tk-pago]').remove();
           else return;
@@ -172,26 +209,16 @@
         });
         form.addEventListener('input', (e) => {
           if (e.target.name === 'tkPagoMonto') pagoTocado = true;
-          if (e.target.name === 'tkProd') {
-            const p = porNombre[GS.norm(e.target.value)];
-            const precio = e.target.closest('tr').querySelector('[name="tkPrecio"]');
-            if (p && !precio.value) precio.value = p.precio;
-          }
+          if (e.target.name === 'tkCant' && !picker.hidden) pintarLista();
           upd();
         });
         form.addEventListener('change', upd);
-        if (!t) cuerpo.insertAdjacentHTML('beforeend', filaProd(null));
+        if (!t) abrirPicker();
         upd();
       },
       onSubmit: (v, form) => {
         const lineas = Array.from(form.querySelector('[data-tk-lineas]').children).map((tr) => {
-          if (tr.hasAttribute('data-tk-prod')) {
-            const nombre = tr.querySelector('[name="tkProd"]').value.trim();
-            if (!nombre) return null;
-            const p = porNombre[GS.norm(nombre)];
-            if (!p) throw new Error('"' + nombre + '" no es un producto con stock. Elígelo de la lista.');
-            return { productoId: p.id, cantidad: tr.querySelector('[name="tkCant"]').value, precio: tr.querySelector('[name="tkPrecio"]').value };
-          }
+          if (tr.hasAttribute('data-tk-prod')) return { productoId: tr.dataset.pid, cantidad: tr.querySelector('[name="tkCant"]').value, precio: tr.querySelector('[name="tkPrecio"]').value };
           const monto = tr.querySelector('[name="tkMonto"]').value;
           return monto ? { categoria: tr.querySelector('[name="tkCat"]').value, descripcion: tr.querySelector('[name="tkDesc"]').value, monto: monto } : null;
         }).filter(Boolean);
