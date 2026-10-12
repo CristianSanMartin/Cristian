@@ -32,6 +32,8 @@
     r.tuu = TUU.reduce((s, m) => s + (r.medios[m] || 0), 0);
     return r;
   };
+  /** Comisión TUU estimada de la caja: por cada pago con la máquina (0,77% + $65 + IVA). */
+  const comisionEstimada = (c) => vivos(c).reduce((s, t) => s + t.pagos.reduce((a, p) => a + (TUU.indexOf(p.medio) !== -1 ? GS.comisionPago(data().catalogos.comisiones[p.medio], p.monto) : 0), 0), 0);
   const lineaTexto = (l) => (l.productoId ? l.cantidad + ' × ' + l.producto : l.categoria ? (data().catalogos.egresosCaja[l.categoria] ? data().catalogos.egresosCaja[l.categoria].label : l.categoria) + (l.descripcion ? ' · ' + l.descripcion : '') : '');
   const pagosTexto = (t) => (t.tipo === 'egreso' ? (data().catalogos.cuentas[t.cuenta] || 'Caja') : t.pagos.map((p) => data().catalogos.mediosCaja[p.medio] + ' ' + fmt.money(p.monto)).join(' + '));
 
@@ -72,7 +74,7 @@
         kpi('Por medio de pago', Object.keys(medios).filter((m) => r.medios[m]).map((m) => '<div style="font-size:13px;">' + esc(medios[m]) + ' <strong>' + fmt.money(r.medios[m]) + '</strong></div>').join('') || '—', '') +
         kpi('Compras y gastos', fmt.money(r.salidas), r.nSalidas + (r.nSalidas === 1 ? ' salida' : ' salidas')) +
         kpi(abierta ? 'Cobrado con TUU' : 'TUU: comisión', abierta ? fmt.money(r.tuu) : fmt.money(c.comisionTuu),
-          abierta ? 'el depósito llega en 2 días hábiles' : (c.depositoTuu ? 'depósito ' + fmt.money(c.depositoTuu) + ' de ' + fmt.money(c.tuuTotal) : c.tuuTotal ? 'estimada (falta el depósito)' : 'sin pagos con TUU')) + '</div>' +
+          abierta ? (r.tuu ? 'comisión estimada ' + fmt.money(comisionEstimada(c)) + ' · ' : '') + 'el depósito llega en 2 días hábiles' : (c.depositoTuu ? 'depósito ' + fmt.money(c.depositoTuu) + ' de ' + fmt.money(c.tuuTotal) : c.tuuTotal ? 'estimada (falta el depósito)' : 'sin pagos con TUU')) + '</div>' +
         '<div class="btn-row" style="margin:6px 0 14px;">' +
         (abierta && op ? '<button class="btn" data-action="nuevoTicket">' + GS.icon('plus', 2.4) + 'Venta</button>' +
           '<button class="btn secondary" data-action="nuevaSalidaCaja">' + GS.icon('plus', 2.4) + 'Compra / gasto</button>' : '') +
@@ -205,6 +207,14 @@
           const suma = Array.from(filas).reduce((s, f) => s + (Number(f.querySelector('[name="tkPagoMonto"]').value) || 0), 0);
           form.querySelector('[data-tk-cuadre]').innerHTML = '<strong>Total ' + fmt.money(tot) + '</strong>' +
             (suma === tot ? ' · <span class="text-success">pagos cuadrados</span>' : suma < tot ? ' · <span class="text-gold">faltan ' + fmt.money(tot - suma) + '</span>' : ' · <span class="text-danger">sobran ' + fmt.money(suma - tot) + '</span>');
+          // Comisión TUU estimada de cada pago con la máquina (0,77% + $65 + IVA) y lo que deposita TUU.
+          const tuu = Array.from(filas).map((f) => ({ medio: f.querySelector('[name="tkMedio"]').value, monto: Number(f.querySelector('[name="tkPagoMonto"]').value) || 0 }))
+            .filter((x) => TUU.indexOf(x.medio) !== -1 && x.monto > 0);
+          if (tuu.length) {
+            const cobrado = tuu.reduce((t, x) => t + x.monto, 0);
+            const com = tuu.reduce((t, x) => t + GS.comisionPago(d.catalogos.comisiones[x.medio], x.monto), 0);
+            form.querySelector('[data-tk-cuadre]').innerHTML += '<br>Comisión TUU estimada: <strong>' + fmt.money(com) + '</strong> <span class="cell-dim">(0,77% + $65 + IVA sobre ' + fmt.money(cobrado) + ')</span> · TUU deposita <strong>' + fmt.money(cobrado - com) + '</strong>';
+          }
         };
         form.addEventListener('click', (e) => {
           if (e.target.closest('[data-tk-add-prod]')) { abrirPicker(); return; }
