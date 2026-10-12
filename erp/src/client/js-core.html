@@ -164,6 +164,14 @@
   GS.icon = (name, w) =>
     '<svg viewBox="0 0 24 24" fill="none" stroke-width="' + (w || 2) + '" stroke-linecap="round" stroke-linejoin="round">' + (ICONS[name] || '') + '</svg>';
 
+  /** Comisión de la máquina (TUU) para una regla { pct, fijo, iva }: redondear(monto × % + fijo) + IVA. Igual que en el servidor. */
+  GS.comisionPago = (r, monto) => {
+    if (!r || !monto) return 0;
+    const par = (x) => { const f = Math.floor(x); const d = x - f; return Math.abs(d - 0.5) < 1e-9 ? (f % 2 ? f + 1 : f) : Math.round(x); };
+    const c = par(monto * r.pct + r.fijo);
+    return c + par(c * (r.iva || 0));
+  };
+
   GS.iconBtn = (action, id, icon, title, cls) =>
     '<button class="icon-btn ' + (cls || '') + '" title="' + GS.esc(title) + '" aria-label="' + GS.esc(title) + '" data-action="' + action + '" data-id="' + GS.esc(id) + '">' + GS.icon(icon) + '</button>';
 

@@ -165,10 +165,9 @@ const Cajas = {
     });
   },
 
-  /** Comisión estimada de TUU (0,77% + $65 por pago con la máquina). */
+  /** Comisión estimada de TUU (0,77% + $65 + IVA por pago con la máquina). */
   _comisionEstimada(medio, monto) {
-    const r = COMISIONES_PAGO[medio];
-    return r && monto ? Math.round(monto * r.pct + r.fijo) : 0;
+    return Economia.comisionPago(medio, monto);
   },
 
   /**

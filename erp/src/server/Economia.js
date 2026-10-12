@@ -4,6 +4,16 @@
  * Se calcula con decimales; el redondeo al peso se hace al mostrar.
  */
 const Economia = {
+  /** Comisión de la máquina (TUU) por un pago: redondear(monto × % + fijo) + IVA sobre esa comisión. */
+  comisionPago(medio, monto) {
+    const r = COMISIONES_PAGO[medio];
+    if (!r || !monto) return 0;
+    // TUU redondea al par en los medios exactos ($55.000 → 488,5 → 488 + 93 IVA = $581).
+    const par = (x) => { const f = Math.floor(x); const d = x - f; return Math.abs(d - 0.5) < 1e-9 ? (f % 2 ? f + 1 : f) : Math.round(x); };
+    const c = par(monto * r.pct + r.fijo);
+    return c + par(c * (r.iva || 0));
+  },
+
   conIva(neto) {
     return neto * (1 + APP.iva);
   },

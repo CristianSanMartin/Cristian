@@ -128,14 +128,14 @@
     const pagada = form.elements.pagada.checked;
     const abono = pagada ? total : Math.min(Number(form.elements.abono.value) || 0, total);
     const regla = data().catalogos.comisiones[medio];
-    const comision = regla && abono ? Math.round(abono * regla.pct + regla.fijo) : 0;
+    const comision = GS.comisionPago(regla, abono);
     const neto = total / (1 + iva());
     const fila = (l, v, cls) => '<div class="' + (cls || '') + '"><span>' + l + '</span><strong>' + v + '</strong></div>';
     form.querySelector('[data-nv-totales]').innerHTML = carrito.length
       ? fila('Total', fmt.money(total), 'grande') +
         fila('Neto / IVA', fmt.money(neto) + ' / ' + fmt.money(total - neto)) +
         (descuento > 0 ? fila('Descuentos', fmt.money(descuento)) : '') +
-        fila('Comisión ' + (regla ? 'TUU' : ''), regla ? fmt.money(comision) + ' <span class="cell-dim">(' + (regla.pct * 100).toLocaleString('es-CL') + '% + ' + fmt.money(regla.fijo) + ')</span>' : '$0') +
+        fila('Comisión ' + (regla ? 'TUU' : ''), regla ? fmt.money(comision) + ' <span class="cell-dim">(' + (regla.pct * 100).toLocaleString('es-CL') + '% + ' + fmt.money(regla.fijo) + (regla.iva ? ' + IVA' : '') + ')</span>' : '$0') +
         fila('Ganancia real', '<span class="' + signo(ganancia - comision) + '">' + fmt.money(ganancia - comision) + '</span>') +
         (pagada ? '' : fila('Queda por cobrar', '<span class="text-gold">' + fmt.money(total - abono) + '</span>'))
       : '';
@@ -593,7 +593,7 @@
           if (comTocada) return;
           const r = regla();
           const pagado = Number(form.elements.abono.value) || 0;
-          form.elements.comision.value = r && pagado ? Math.round(pagado * r.pct + r.fijo) : 0;
+          form.elements.comision.value = GS.comisionPago(r, pagado);
         };
         form.elements.comision.addEventListener('input', () => { comTocada = true; });
         ['input', 'change'].forEach((ev) => form.addEventListener(ev, (e) => {
@@ -607,8 +607,8 @@
           const r = regla();
           let total = neto;
           if (r) {
-            const base = Math.floor((neto + r.fijo) / (1 - r.pct)) - 3;
-            for (let t = base; t < base + 8; t++) { if (t - Math.round(t * r.pct + r.fijo) === neto) { total = t; break; } }
+            const base = Math.floor((neto + r.fijo * (1 + (r.iva || 0))) / (1 - r.pct * (1 + (r.iva || 0)))) - 5;
+            for (let t = base; t < base + 12; t++) { if (t - GS.comisionPago(r, t) === neto) { total = t; break; } }
           }
           totalTocado = true;
           form.elements.total.value = total;

@@ -254,7 +254,7 @@ test("venta desde Inventario: cantidad en la fila, descuento, comisión TUU, sto
     assert.equal(await form.locator('select[name="canal"]').inputValue(), "Tienda");
     // Descuento en la línea: 26.990 → 24.990
     await form.locator("[data-carrito-precio]").fill("24990");
-    assert.match(await form.locator("[data-nv-totales]").textContent(), /Total\$49\.980.*Descuentos\$4\.000.*Comisión TUU\$450/);
+    assert.match(await form.locator("[data-nv-totales]").textContent(), /Total\$49\.980.*Descuentos\$4\.000.*Comisión TUU\$536/);
     // Por cobrar sin cliente no se permite
     await form.locator('[name="pagada"]').uncheck();
     await form.locator('button[type="submit"]').click();
@@ -279,7 +279,7 @@ test("venta desde Inventario: cantidad en la fila, descuento, comisión TUU, sto
     await page.click('[data-nav="ventas"]');
     assert.equal(await page.locator("#nueva-venta").count(), 0, "Ventas es informativo: sin formulario");
     const fila = page.locator("#vt-tbody tr.fila-compra", { hasText: "Maria Soto" });
-    assert.match(await fila.textContent(), /Tienda.*Débito.*2.*\$49\.980.*\$450.*Pagada/s);
+    assert.match(await fila.textContent(), /Tienda.*Débito.*2.*\$49\.980.*\$536.*Pagada/s);
     assert.match(await page.locator(".dash-card", { hasText: "Mejores clientes del mes" }).textContent(), /Maria Soto.*\$49\.980/s);
     assert.ok(await page.locator("svg.grafico").count() >= 2, "gráficos de ventas vs compras y por día");
     assert.match(await page.locator(".resumen-mensual").textContent(), /Ventas.*Compras.*Ventas − compras/s);

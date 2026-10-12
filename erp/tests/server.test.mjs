@@ -481,7 +481,7 @@ test("venta: sale del inventario, calcula ganancia real y comisión TUU, y acumu
   const data = s.ok("bootstrap").data;
   const venta = data.ventas.find(x => x.id === v.id);
   assert.deepEqual([venta.cliente, venta.canal, venta.boleta, venta.total, venta.estadoPago], ["Cliente general", "Tienda", "1234", 2 * 18000 + 39990, "pagada"]);
-  assert.equal(venta.comision, Math.round(75990 * 0.0077 + 65));
+  assert.equal(venta.comision, 774, "0,77% + $65 = 650, + IVA 124");
   assert.equal(venta.descuento, 4000, "descuento por producto: 43.990 → 39.990");
   const tin = data.lotes.find(l => l.productoId === prods.miniTin.id);
   assert.equal(Math.round(venta.lineas.find(l => l.productoId === prods.miniTin.id).gananciaUnidad), Math.round(18000 / 1.19 - tin.costo), "ganancia con el costo real del lote (con despacho)");
@@ -1486,5 +1486,14 @@ test("caja del día sin depósito de TUU: comisión estimada", () => {
   s.ok("guardarTicket", { cajaId: caja.id, lineas: [{ categoria: "Singles", monto: 10000 }], pagos: [{ medio: "credito", monto: 10000 }] });
   s.ok("cerrarCaja", { id: caja.id });
   const v = s.ok("bootstrap").data.ventas.find(x => /^SGL-/.test(x.id));
-  assert.equal(v.comision, Math.round(10000 * 0.0077 + 65));
+  assert.equal(v.comision, 169, "142 + 27 de IVA, como en el informe de TUU");
+});
+
+test("comisión TUU con IVA: calza con el informe de abonos de TUU", () => {
+  const s = createServer();
+  const casos = [[55000, 581], [73000, 746], [18000, 243], [10000, 169], [8000, 151]];
+  casos.forEach(([monto, comision]) => {
+    const v = s.ok("crearVenta", { fecha: "2026-10-04", medioPago: "debito", lineas: [{ categoria: "Singles", monto: monto }] }).result;
+    assert.equal(v.comision, comision, "venta de $" + monto);
+  });
 });

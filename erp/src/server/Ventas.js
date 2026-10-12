@@ -56,9 +56,8 @@ const Ventas = {
     const total = lineas.reduce((t, l) => t + l.precio * l.cantidad, 0);
     const pagada = p.pagada !== false;
     const abono = pagada ? total : Util.entero(p.abono, 'El abono', { max: total });
-    const regla = COMISIONES_PAGO[medioPago];
     // La comisión se cobra sobre lo pagado con la máquina.
-    const comision = regla && abono ? Math.round(abono * regla.pct + regla.fijo) : 0;
+    const comision = Economia.comisionPago(medioPago, abono);
 
     const clienteId = Clientes.resolver(p, user);
     if (abono < total && !clienteId) throw new AppError('Una venta con saldo por cobrar necesita un cliente (no puede ser "Cliente general").');

@@ -15,7 +15,7 @@
 
 const APP = {
   nombre: 'GS Prime ERP',
-  version: '2.15.2',
+  version: '2.15.3',
   tz: 'America/Santiago',
   iva: 0.19,
 };
@@ -233,12 +233,13 @@ const CUENTAS = { caja: 'Caja (efectivo)', banco: 'Banco', tuu: 'TUU' };
 const CANALES = ['Tienda', 'Evento', 'Instagram', 'WhatsApp', 'Otro'];
 const MEDIOS_PAGO = { efectivo: 'Efectivo', transferencia: 'Transferencia', debito: 'Débito', credito: 'Crédito', otro: 'Otro' };
 /**
- * Comisión de la máquina POS (TUU, comisión mixta con abono a 2 días): % sobre la venta + monto fijo por venta.
+ * Comisión de la máquina POS (TUU, comisión mixta con abono a 2 días): % sobre la venta + monto fijo por venta,
+ * más IVA sobre la comisión. Calza con el informe de abonos de TUU: $55.000 → 488 + 93 IVA = $581.
  * Es un gasto (GAV) y se descuenta de la ganancia de la venta.
  */
 const COMISIONES_PAGO = {
-  debito: { pct: 0.0077, fijo: 65 },
-  credito: { pct: 0.0077, fijo: 65 },
+  debito: { pct: 0.0077, fijo: 65, iva: 0.19 },
+  credito: { pct: 0.0077, fijo: 65, iva: 0.19 },
 };
 
 /** Tipos de producto y su factor de conversión por defecto (unidades del proveedor por unidad comercial). */
