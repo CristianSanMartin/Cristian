@@ -493,13 +493,20 @@ const Ventas = {
     const fechaCompra = {};
     Db.all('Compras').forEach((c) => { fechaCompra[c.id] = c.fecha; });
     Db.all('Tomas').forEach((t) => { fechaCompra[t.id] = t.fecha; });   // lotes de ajuste por sobrantes
-    return Db.all('Compras_Lineas').map((l) => ({
+    const lotes = Db.all('Compras_Lineas').map((l) => ({
       id: l.id,
       productoId: l.productoId,
       fecha: fechaCompra[l.compraId] || '',
       costo: l.cantidad ? l.costoNeto + l.despacho / l.cantidad : l.costoNeto,
       disponible: l.cantidad - (vendidas[l.id] || 0),
     })).sort((a, b) => (a.fecha + a.id).localeCompare(b.fecha + b.id));
+    // Las unidades reservadas en la caja del día no están disponibles (se toman de los lotes más antiguos).
+    const res = Cajas.reservas();
+    lotes.forEach((l) => {
+      const n = Math.min(res[l.productoId] || 0, Math.max(0, l.disponible));
+      if (n) { l.disponible -= n; res[l.productoId] -= n; }
+    });
+    return lotes;
   },
 
   /** Unidades que ya salieron de cada lote: vendidas (ventas no anuladas) + salidas (premios, aperturas…). */

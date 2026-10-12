@@ -15,7 +15,7 @@
 
 const APP = {
   nombre: 'GS Prime ERP',
-  version: '2.14.5',
+  version: '2.15.0',
   tz: 'America/Santiago',
   iva: 0.19,
 };
@@ -171,6 +171,20 @@ const SCHEMA = {
     }, AUDIT_COLS),
   },
   /** Hallazgos de la Validación de datos que el administrador revisó (clave = regla|registro). */
+  /** Caja del día: una por fecha (CJ-20261012). Se abre, se registran tickets y al cerrarla pasa todo a Ventas y Finanzas. */
+  Cajas: {
+    key: 'id',
+    cols: Object.assign({
+      id: 's', fecha: 'd', estado: 's', tuuTotal: 'n', depositoTuu: 'n', comisionTuu: 'n', tuuDocs: 's', cerradaEn: 't', cerradaPor: 's', notas: 's',
+    }, AUDIT_COLS),
+  },
+  /** Tickets de la caja (TK-20261012-01): una atención. Líneas y pagos en JSON; documentos = lo que generó al cerrar. */
+  Caja_Tickets: {
+    key: 'id',
+    cols: Object.assign({
+      id: 's', cajaId: 's', tipo: 's', estado: 's', cliente: 's', canal: 's', evento: 's', lineas: 's', pagos: 's', total: 'n', cuenta: 's', documentos: 's', notas: 's',
+    }, AUDIT_COLS),
+  },
   Validaciones: {
     key: 'clave',
     cols: { clave: 's', firma: 's', estado: 's', nota: 's', actualizadoEn: 't', actualizadoPor: 's' },
@@ -188,6 +202,15 @@ const IDIOMAS = ['ENG', 'ESP', 'JPN', 'Otro'];
 
 /** Motivos de salida de stock que no son venta. */
 const MOTIVOS_SALIDA = { premio: 'Premio', apertura: 'Caja abierta', interno: 'Uso interno', perdida: 'Pérdida' };
+
+/** Caja del día: medios de pago de un ticket (puede haber varios) y tipos de salida de plata. */
+const MEDIOS_CAJA = { efectivo: 'Efectivo', transferencia: 'Transferencia', debito: 'TUU débito', credito: 'TUU crédito', pendiente: 'Pendiente (deuda)' };
+const EGRESOS_CAJA = {
+  compra_singles: { label: 'Compra de singles', categoria: 'compra', prefijo: 'Singles · ' },
+  gav: { label: 'Gasto (GAV)', categoria: 'gav', prefijo: '' },
+  gopm: { label: 'Gasto puesta en marcha (GOPM)', categoria: 'gopm', prefijo: '' },
+  otro_egreso: { label: 'Otro egreso', categoria: 'otro_egreso', prefijo: '' },
+};
 
 /** Ventas por monto (sin unidades del inventario). Torneo = ingreso por servicio. */
 const CATEGORIAS_VENTA = ['Singles', 'Torneo', 'Sobres sueltos', 'Bazar', 'Accesorios', 'Ajuste', 'Otro'];

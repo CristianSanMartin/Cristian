@@ -1421,3 +1421,70 @@ test("movimiento con factura: guarda el IVA (crédito fiscal) y no supera el mon
   const sinIva = s.ok("guardarMovimiento", { fecha: "2026-10-01", tipo: "egreso", categoria: "compra", subcategoria: "Singles · lote", monto: 5000 }).result;
   assert.equal(s.ok("bootstrap").data.movimientos.find(x => x.id === sinIva.id).iva, 0);
 });
+
+test("caja del día: tickets con reserva, pago mixto y pendiente, cierre que reparte en OC/SGL y Finanzas", () => {
+  const s = createServer();
+  const { prods } = conInventario(s);   // Mini Tin: 10 unidades
+  const caja = s.ok("abrirCaja", { fecha: "2026-10-12" }).result;
+  assert.equal(caja.id, "CJ-20261012");
+  assert.equal(s.ok("abrirCaja", { fecha: "2026-10-12" }).result.id, caja.id, "la misma caja");
+  const disp = (d) => d.lotes.filter(l => l.productoId === prods.miniTin.id).reduce((t, l) => t + l.disponible, 0);
+  // Ticket 1: 2 Mini Tin + singles, pagado con efectivo y TUU débito
+  const precio = s.ok("bootstrap").data.productos.find(p => p.id === prods.miniTin.id).precio;
+  const total1 = precio * 2 + 20000;
+  assert.match(errorDe(s.call("guardarTicket", { cajaId: caja.id, lineas: [{ productoId: prods.miniTin.id, cantidad: 2 }, { categoria: "Singles", monto: 20000 }], pagos: [{ medio: "efectivo", monto: 1 }] })), /Los pagos suman/);
+  const t1 = s.ok("guardarTicket", { cajaId: caja.id, cliente: "Juan Pérez", lineas: [{ productoId: prods.miniTin.id, cantidad: 2 }, { categoria: "Singles", descripcion: "Charizard", monto: 20000 }],
+    pagos: [{ medio: "efectivo", monto: 10000 }, { medio: "debito", monto: total1 - 10000 }] }).result;
+  assert.equal(t1.id, "TK-20261012-01");
+  let d = s.ok("bootstrap").data;
+  assert.equal(disp(d), 8, "reservadas: no disponibles");
+  assert.match(errorDe(s.call("crearVenta", { fecha: "2026-10-12", lineas: [{ productoId: prods.miniTin.id, cantidad: 9 }] })), /quedan 8/);
+  assert.match(errorDe(s.call("guardarTicket", { cajaId: caja.id, lineas: [{ productoId: prods.miniTin.id, cantidad: 9 }], pagos: [{ medio: "efectivo", monto: precio * 9 }] })), /quedan 8 sin reservar/);
+  // Editar el mismo ticket no choca con su propia reserva
+  s.ok("guardarTicket", { id: t1.id, cajaId: caja.id, cliente: "Juan Pérez", lineas: [{ productoId: prods.miniTin.id, cantidad: 2 }, { categoria: "Singles", descripcion: "Charizard", monto: 20000 }],
+    pagos: [{ medio: "efectivo", monto: 10000 }, { medio: "debito", monto: total1 - 10000 }] });
+  // Ticket 2: torneo con pago pendiente (requiere cliente)
+  assert.match(errorDe(s.call("guardarTicket", { cajaId: caja.id, lineas: [{ categoria: "Torneo", monto: 5000 }], pagos: [{ medio: "pendiente", monto: 5000 }] })), /necesita el nombre del cliente/);
+  s.ok("guardarTicket", { cajaId: caja.id, cliente: "Ana Rojas", lineas: [{ categoria: "Torneo", monto: 5000 }], pagos: [{ medio: "pendiente", monto: 5000 }] });
+  // Ticket 3: compra de singles (sale plata)
+  s.ok("guardarTicket", { cajaId: caja.id, tipo: "egreso", lineas: [{ categoria: "compra_singles", descripcion: "lote Pedro", monto: 15000 }] });
+  // Ticket 4: anulado (libera la reserva)
+  const t4 = s.ok("guardarTicket", { cajaId: caja.id, lineas: [{ productoId: prods.miniTin.id, cantidad: 1 }], pagos: [{ medio: "efectivo", monto: precio }] }).result;
+  s.ok("anularTicket", { id: t4.id });
+  assert.equal(disp(s.ok("bootstrap").data), 8);
+  // Cerrar (solo admin) con el depósito de TUU
+  s.ok("guardarUsuario", { email: "socio@gsprime.cl", nombre: "Socio", rol: "operador" });
+  assert.equal(s.as("socio@gsprime.cl").call("cerrarCaja", { id: caja.id }).code, "SIN_PERMISO");
+  const tuu = total1 - 10000;
+  const r = s.as("admin@gsprime.cl").ok("cerrarCaja", { id: caja.id, depositoTuu: tuu - 900 }).result;
+  assert.deepEqual([r.ventas, r.movimientos, r.comisionTuu], [3, 1, 900]);
+  d = s.ok("bootstrap").data;
+  assert.equal(disp(d), 8, "las 2 reservadas pasaron a venta");
+  const delTicket = d.ventas.filter(v => /Ticket TK-20261012-01/.test(v.notas));
+  const oc = delTicket.find(v => /^OC-/.test(v.id)), sgl = delTicket.find(v => /^SGL-/.test(v.id));
+  assert.ok(oc && sgl, "OC con los sellados y SGL con los singles");
+  assert.deepEqual([oc.total + sgl.total, oc.comision + sgl.comision], [total1, 900]);
+  assert.deepEqual([oc.estadoPago, sgl.estadoPago], ["pagada", "pagada"]);
+  assert.ok(oc.cobros.length === 1 && oc.cobros[0].medioPago !== oc.medioPago, "el segundo medio queda como abono del día");
+  const tor = d.ventas.find(v => /^TOR-/.test(v.id));
+  assert.deepEqual([tor.estadoPago, tor.saldo, tor.cliente], ["pendiente", 5000, "Ana Rojas"]);
+  const mov = d.movimientos.find(m => m.referencia === "TK-20261012-03");
+  assert.deepEqual([mov.categoria, mov.subcategoria, mov.monto, mov.cuenta], ["compra", "Singles · lote Pedro", 15000, "caja"]);
+  const c = d.cajas.find(x => x.id === caja.id);
+  assert.deepEqual([c.estado, c.tickets.map(t => t.estado)], ["cerrada", ["pasado", "pasado", "pasado", "anulado"]]);
+  assert.match(errorDe(s.call("guardarTicket", { cajaId: caja.id, lineas: [{ categoria: "Singles", monto: 1 }], pagos: [{ medio: "efectivo", monto: 1 }] })), /ya está cerrada/);
+  // Conciliar después con otro depósito
+  s.ok("conciliarTuuCaja", { id: caja.id, depositoTuu: tuu - 1000 });
+  d = s.ok("bootstrap").data;
+  assert.equal(d.ventas.filter(v => /Ticket TK-20261012-01/.test(v.notas)).reduce((t, v) => t + v.comision, 0), 1000);
+});
+
+test("caja del día sin depósito de TUU: comisión estimada", () => {
+  const s = createServer();
+  conInventario(s);
+  const caja = s.ok("abrirCaja", { fecha: "2026-10-13" }).result;
+  s.ok("guardarTicket", { cajaId: caja.id, lineas: [{ categoria: "Singles", monto: 10000 }], pagos: [{ medio: "credito", monto: 10000 }] });
+  s.ok("cerrarCaja", { id: caja.id });
+  const v = s.ok("bootstrap").data.ventas.find(x => /^SGL-/.test(x.id));
+  assert.equal(v.comision, Math.round(10000 * 0.0077 + 65));
+});

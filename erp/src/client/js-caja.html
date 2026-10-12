@@ -1,0 +1,287 @@
+<script>
+/* =========================================================
+   Caja del día: abrir la caja, registrar tickets (ventas con
+   sellados reservados y líneas por monto, pagos mixtos o
+   pendientes; compras de singles y gastos) y cerrarla, que
+   pasa todo a Ventas, Inventario y Finanzas.
+========================================================= */
+(function () {
+  'use strict';
+  const { fmt, esc } = GS;
+  const data = () => GS.state.data;
+  const kpi = (l, v, sub) => '<div class="kpi-card"><div class="kpi-label">' + l + '</div><div class="kpi-value small">' + v + '</div><div class="kpi-sub">' + sub + '</div></div>';
+  const DEF = { caja: '' };
+  const TUU = ['debito', 'credito'];
+
+  const cajas = () => data().cajas || [];
+  const abiertas = () => cajas().filter((c) => c.estado === 'abierta');
+  /** La caja que se muestra: la elegida, la de hoy o la última abierta. */
+  const actual = () => {
+    const f = GS.filters('caja', DEF);
+    const hoy = 'CJ-' + data().hoy.replace(/-/g, '');
+    return cajas().find((c) => c.id === f.caja) || cajas().find((c) => c.id === hoy) || abiertas()[0] || null;
+  };
+  const vivos = (c) => c.tickets.filter((t) => t.estado !== 'anulado');
+  const resumenCaja = (c) => {
+    const r = { ventas: 0, salidas: 0, medios: {}, nVentas: 0, nSalidas: 0 };
+    vivos(c).forEach((t) => {
+      if (t.tipo === 'egreso') { r.salidas += t.total; r.nSalidas++; return; }
+      r.ventas += t.total; r.nVentas++;
+      t.pagos.forEach((p) => { r.medios[p.medio] = (r.medios[p.medio] || 0) + p.monto; });
+    });
+    r.tuu = TUU.reduce((s, m) => s + (r.medios[m] || 0), 0);
+    return r;
+  };
+  const lineaTexto = (l) => (l.productoId ? l.cantidad + ' × ' + l.producto : l.categoria ? (data().catalogos.egresosCaja[l.categoria] ? data().catalogos.egresosCaja[l.categoria].label : l.categoria) + (l.descripcion ? ' · ' + l.descripcion : '') : '');
+  const pagosTexto = (t) => (t.tipo === 'egreso' ? (data().catalogos.cuentas[t.cuenta] || 'Caja') : t.pagos.map((p) => data().catalogos.mediosCaja[p.medio] + ' ' + fmt.money(p.monto)).join(' + '));
+
+  GS.views.caja = {
+    title: 'Caja del día',
+    render(el) {
+      const c = actual();
+      const hoyId = 'CJ-' + data().hoy.replace(/-/g, '');
+      const op = GS.puede('operador');
+      const atrasadas = abiertas().filter((x) => x.id < hoyId);
+      el.innerHTML =
+        '<div class="page-head"><div><h1>Caja del día</h1><p>Registra cada atención como un ticket durante el día. Al cerrar la caja, todo pasa a Ventas, Inventario y Finanzas.</p></div>' +
+        '<div class="btn-row"><div class="select-input"><select data-filter="caja.caja" aria-label="Caja">' +
+          GS.options(cajas().map((x) => ({ value: x.id, label: fmt.date(x.fecha) + (x.estado === 'abierta' ? ' · abierta' : ' · cerrada') })), c ? c.id : '') + '</select></div>' +
+        (op && !cajas().some((x) => x.id === hoyId) ? '<button class="btn" data-action="abrirCaja">' + GS.icon('plus', 2.4) + 'Abrir caja de hoy</button>' : '') + '</div></div>' +
+        (atrasadas.length ? '<div class="notice warn">Hay ' + (atrasadas.length === 1 ? 'una caja sin cerrar' : atrasadas.length + ' cajas sin cerrar') + ': ' +
+          atrasadas.map((x) => '<a href="#" data-action="verCaja" data-id="' + esc(x.id) + '">' + fmt.date(x.fecha) + ' (' + vivos(x).length + ' tickets)</a>').join(', ') +
+          '. Sus productos siguen reservados hasta que se cierre.</div>' : '') +
+        '<div id="caja-cuerpo"></div>';
+      this.update();
+    },
+    update() {
+      const el = document.getElementById('caja-cuerpo');
+      if (!el) return;
+      const c = actual();
+      const op = GS.puede('operador');
+      const admin = GS.puede('admin');
+      if (!c) {
+        el.innerHTML = GS.empty('No hay caja abierta', 'Abre la caja de hoy para empezar a registrar ventas, compras de singles y gastos.', 'caja');
+        return;
+      }
+      const r = resumenCaja(c);
+      const abierta = c.estado === 'abierta';
+      const medios = data().catalogos.mediosCaja;
+      el.innerHTML = '<div class="kpi-grid">' +
+        kpi('Ventas', fmt.money(r.ventas), r.nVentas + (r.nVentas === 1 ? ' ticket' : ' tickets')) +
+        kpi('Por medio de pago', Object.keys(medios).filter((m) => r.medios[m]).map((m) => '<div style="font-size:13px;">' + esc(medios[m]) + ' <strong>' + fmt.money(r.medios[m]) + '</strong></div>').join('') || '—', '') +
+        kpi('Compras y gastos', fmt.money(r.salidas), r.nSalidas + (r.nSalidas === 1 ? ' salida' : ' salidas')) +
+        kpi(abierta ? 'Cobrado con TUU' : 'TUU: comisión', abierta ? fmt.money(r.tuu) : fmt.money(c.comisionTuu),
+          abierta ? 'el depósito llega en 2 días hábiles' : (c.depositoTuu ? 'depósito ' + fmt.money(c.depositoTuu) + ' de ' + fmt.money(c.tuuTotal) : c.tuuTotal ? 'estimada (falta el depósito)' : 'sin pagos con TUU')) + '</div>' +
+        '<div class="btn-row" style="margin:6px 0 14px;">' +
+        (abierta && op ? '<button class="btn" data-action="nuevoTicket">' + GS.icon('plus', 2.4) + 'Venta</button>' +
+          '<button class="btn secondary" data-action="nuevaSalidaCaja">' + GS.icon('plus', 2.4) + 'Compra / gasto</button>' : '') +
+        (abierta && admin ? '<button class="btn ghost" data-action="cerrarCaja" data-id="' + esc(c.id) + '" style="margin-left:auto;">Cerrar caja</button>' : '') +
+        (!abierta && admin && c.tuuTotal ? '<button class="btn ghost" data-action="conciliarTuuCaja" data-id="' + esc(c.id) + '">' + (c.depositoTuu ? 'Corregir depósito TUU' : 'Registrar depósito TUU') + '</button>' : '') +
+        '<span class="muted" style="align-self:center;">' + esc(c.id) + ' · ' + (abierta ? 'abierta' : 'cerrada ' + (c.cerradaEn ? fmt.date(String(c.cerradaEn).slice(0, 10)) : '')) + '</span></div>' +
+        '<div class="table-wrap"><table class="data-table"><thead><tr><th>Ticket</th><th>Hora</th><th>Cliente</th><th>Detalle</th><th>Pago</th><th class="right">Total</th><th>Registró</th><th></th></tr></thead><tbody>' +
+        (c.tickets.length ? c.tickets.slice().reverse().map((t) => '<tr class="' + (t.estado === 'anulado' ? 'row-muted' : '') + '">' +
+          '<td class="cell-strong nowrap">' + esc(t.id.slice(-2)) + (t.tipo === 'egreso' ? ' <span class="badge st-pedido">Salida</span>' : '') + (t.estado === 'anulado' ? ' <span class="badge">Anulado</span>' : '') + '</td>' +
+          '<td class="cell-dim nowrap">' + esc(String(t.creadoEn || '').slice(11, 16)) + '</td>' +
+          '<td>' + esc(t.cliente || (t.tipo === 'egreso' ? '—' : 'Cliente general')) + (t.canal && t.canal !== 'Tienda' ? '<div class="cell-dim">' + esc(t.canal + (t.evento ? ' · ' + t.evento : '')) + '</div>' : '') + '</td>' +
+          '<td>' + t.lineas.map((l) => '<div>' + esc(lineaTexto(l)) + (l.productoId && l.precio < l.precioLista ? ' <span class="cell-dim">(−' + fmt.money((l.precioLista - l.precio) * l.cantidad) + ')</span>' : '') + '</div>').join('') +
+            (t.documentos.length ? '<div class="cell-dim">→ ' + t.documentos.map(esc).join(', ') + '</div>' : '') + (t.notas ? '<div class="cell-dim">' + esc(t.notas) + '</div>' : '') + '</td>' +
+          '<td class="cell-dim">' + esc(pagosTexto(t)) + '</td>' +
+          '<td class="cell-num right"><strong>' + (t.tipo === 'egreso' ? '−' : '') + fmt.money(t.total) + '</strong></td>' +
+          '<td class="cell-dim">' + esc(String(t.creadoPor || '').split('@')[0]) + '</td>' +
+          '<td><div class="row-actions">' + (abierta && op && t.estado === 'abierto' ? GS.iconBtn('editarTicket', t.id, 'edit', 'Editar') + GS.iconBtn('anularTicket', t.id, 'trash', 'Anular', 'danger') : '') + '</div></td></tr>').join('')
+          : '<tr><td colspan="8">' + GS.empty('Sin tickets', abierta ? 'Registra la primera venta con "Venta".' : 'Esta caja no tuvo movimientos.', 'caja') + '</td></tr>') +
+        '</tbody></table></div>' +
+        '<p class="table-note">Los productos sellados de los tickets abiertos quedan <strong>reservados</strong>: no se pueden vender en otro lado hasta cerrar la caja (o anular el ticket). ' +
+        'Al cerrar: los sellados pasan a una OC, cada tipo por monto a su venta (SGL, TOR…) y las compras/gastos a Finanzas; el pago y la comisión de TUU se reparten en proporción.</p>';
+    },
+  };
+
+  GS.actions.verCaja = (id) => { GS.filters('caja', DEF).caja = id; GS.render(); };
+  GS.actions.abrirCaja = () => GS.mutate('abrirCaja', { fecha: data().hoy }, (r) => { GS.filters('caja', DEF).caja = r.id; return 'Caja de hoy abierta'; });
+
+  /* ---------- ticket de venta ---------- */
+
+  function formTicket(t) {
+    const c = actual();
+    const d = data();
+    const medios = d.catalogos.mediosCaja;
+    // Stock sin reservar (+ lo que ya reservó este ticket, si se está editando).
+    const stock = {};
+    d.lotes.forEach((l) => { if (l.disponible > 0) stock[l.productoId] = (stock[l.productoId] || 0) + l.disponible; });
+    if (t) t.lineas.forEach((l) => { if (l.productoId) stock[l.productoId] = (stock[l.productoId] || 0) + l.cantidad; });
+    const prods = d.productos.filter((p) => stock[p.id]).sort((a, b) => a.nombreCompleto.localeCompare(b.nombreCompleto));
+    const porNombre = {};
+    prods.forEach((p) => { porNombre[GS.norm(p.nombreCompleto)] = p; });
+    const cats = d.catalogos.categoriasVenta.filter((x) => x !== 'Ajuste');
+    const filaProd = (l) => '<tr data-tk-prod><td><input name="tkProd" list="tk-prods" autocomplete="off" style="min-width:260px" placeholder="Producto sellado…" value="' + esc(l ? l.producto : '') + '"></td>' +
+      '<td><input class="qty-input" style="width:64px" type="number" min="1" step="1" name="tkCant" value="' + esc(l ? l.cantidad : 1) + '"></td>' +
+      '<td><input class="qty-input price-input" style="width:100px" type="number" min="0" step="1" name="tkPrecio" value="' + esc(l ? l.precio : '') + '"></td>' +
+      '<td class="cell-num right" data-tk-sub>—</td><td><button type="button" class="btn small ghost" data-tk-quitar title="Quitar">✕</button></td></tr>';
+    const filaMonto = (l) => '<tr data-tk-monto><td><div class="field-row"><select name="tkCat">' + GS.options(cats, l ? l.categoria : 'Singles') + '</select>' +
+      '<input name="tkDesc" placeholder="Detalle (opcional)" value="' + esc(l ? l.descripcion : '') + '"></div></td><td class="cell-dim">por monto</td>' +
+      '<td><input class="qty-input price-input" style="width:100px" type="number" min="1" step="1" name="tkMonto" value="' + esc(l ? l.monto : '') + '"></td>' +
+      '<td class="cell-num right" data-tk-sub>—</td><td><button type="button" class="btn small ghost" data-tk-quitar title="Quitar">✕</button></td></tr>';
+    const filaPago = (p) => '<div class="field-row" data-tk-pago style="margin-bottom:6px;"><select name="tkMedio">' + GS.options(Object.keys(medios).map((k) => ({ value: k, label: medios[k] })), p ? p.medio : 'efectivo') + '</select>' +
+      '<input class="price-input" type="number" min="0" step="1" name="tkPagoMonto" value="' + esc(p ? p.monto : '') + '" placeholder="Monto"><button type="button" class="btn small ghost" data-tk-quitar-pago title="Quitar">✕</button></div>';
+    GS.formModal({
+      title: t ? 'Editar ticket ' + t.id : 'Nueva venta · caja ' + fmt.date(c.fecha),
+      submitLabel: t ? 'Guardar ticket' : 'Registrar venta',
+      size: 'wide',
+      fields: () => '<div class="form-grid">' +
+        '<div class="form-field"><label>Cliente</label><input name="cliente" list="tk-clientes" autocomplete="off" value="' + esc(t ? t.cliente : '') + '" placeholder="Cliente general"><datalist id="tk-clientes">' + d.clientes.map((x) => '<option value="' + esc(x.nombre) + '">').join('') + '</datalist></div>' +
+        '<div class="form-field"><label>Canal</label><select name="canal">' + GS.options(d.catalogos.canales, t ? t.canal : 'Tienda') + '</select></div>' +
+        '<div class="form-field"><label>Evento</label><input name="evento" value="' + esc(t ? t.evento : '') + '"></div>' +
+        '<div class="form-field full"><label>Productos y líneas</label><div class="table-wrap"><table class="data-table" style="min-width:0"><thead><tr><th>Producto / concepto</th><th>Cant.</th><th>Precio</th><th class="right">Subtotal</th><th></th></tr></thead>' +
+        '<tbody data-tk-lineas>' + (t ? t.lineas.map((l) => (l.productoId ? filaProd(l) : filaMonto(l))).join('') : '') + '</tbody></table></div>' +
+        '<datalist id="tk-prods">' + prods.map((p) => '<option value="' + esc(p.nombreCompleto) + '">' + stock[p.id] + ' disp.</option>').join('') + '</datalist>' +
+        '<div class="btn-row" style="margin-top:8px;"><button type="button" class="btn small secondary" data-tk-add-prod>' + GS.icon('plus', 2.4) + 'Producto sellado</button>' +
+        '<button type="button" class="btn small secondary" data-tk-add-monto>' + GS.icon('plus', 2.4) + 'Singles, torneo, bazar…</button></div></div>' +
+        '<div class="form-field full"><label>Pago</label><div data-tk-pagos>' + (t ? t.pagos.map(filaPago).join('') : filaPago(null)) + '</div>' +
+        '<button type="button" class="btn small ghost" data-tk-add-pago>' + GS.icon('plus', 2.4) + 'Otro medio de pago</button><p class="table-note" data-tk-cuadre></p></div>' +
+        '<div class="form-field full"><label>Notas</label><input name="notas" maxlength="300" value="' + esc(t ? t.notas : '') + '"></div></div>' +
+        '<p class="hint">Si lo cobras más barato, cambia el precio: queda como descuento. "Pendiente" = el cliente queda debiendo (requiere su nombre). El precio de los sellados parte en el precio de venta.</p>',
+      onMount: (form) => {
+        const cuerpo = form.querySelector('[data-tk-lineas]');
+        const pagos = form.querySelector('[data-tk-pagos]');
+        let pagoTocado = !!t;
+        const total = () => Array.from(cuerpo.children).reduce((s, tr) => {
+          let sub = 0;
+          if (tr.hasAttribute('data-tk-prod')) {
+            const p = porNombre[GS.norm(tr.querySelector('[name="tkProd"]').value)];
+            sub = p ? (Number(tr.querySelector('[name="tkCant"]').value) || 0) * (Number(tr.querySelector('[name="tkPrecio"]').value) || 0) : 0;
+          } else sub = Number(tr.querySelector('[name="tkMonto"]').value) || 0;
+          tr.querySelector('[data-tk-sub]').textContent = sub ? fmt.money(sub) : '—';
+          return s + sub;
+        }, 0);
+        const upd = () => {
+          const tot = total();
+          const filas = pagos.querySelectorAll('[data-tk-pago]');
+          if (!pagoTocado && filas.length === 1) filas[0].querySelector('[name="tkPagoMonto"]').value = tot || '';
+          const suma = Array.from(filas).reduce((s, f) => s + (Number(f.querySelector('[name="tkPagoMonto"]').value) || 0), 0);
+          form.querySelector('[data-tk-cuadre]').innerHTML = '<strong>Total ' + fmt.money(tot) + '</strong>' +
+            (suma === tot ? ' · <span class="text-success">pagos cuadrados</span>' : suma < tot ? ' · <span class="text-gold">faltan ' + fmt.money(tot - suma) + '</span>' : ' · <span class="text-danger">sobran ' + fmt.money(suma - tot) + '</span>');
+        };
+        form.addEventListener('click', (e) => {
+          if (e.target.closest('[data-tk-add-prod]')) { cuerpo.insertAdjacentHTML('beforeend', filaProd(null)); cuerpo.lastElementChild.querySelector('input').focus(); }
+          else if (e.target.closest('[data-tk-add-monto]')) { cuerpo.insertAdjacentHTML('beforeend', filaMonto(null)); cuerpo.lastElementChild.querySelector('[name="tkMonto"]').focus(); }
+          else if (e.target.closest('[data-tk-quitar]')) e.target.closest('tr').remove();
+          else if (e.target.closest('[data-tk-add-pago]')) { pagoTocado = true; pagos.insertAdjacentHTML('beforeend', filaPago({ medio: 'debito', monto: '' })); }
+          else if (e.target.closest('[data-tk-quitar-pago]') && pagos.children.length > 1) e.target.closest('[data-tk-pago]').remove();
+          else return;
+          upd();
+        });
+        form.addEventListener('input', (e) => {
+          if (e.target.name === 'tkPagoMonto') pagoTocado = true;
+          if (e.target.name === 'tkProd') {
+            const p = porNombre[GS.norm(e.target.value)];
+            const precio = e.target.closest('tr').querySelector('[name="tkPrecio"]');
+            if (p && !precio.value) precio.value = p.precio;
+          }
+          upd();
+        });
+        form.addEventListener('change', upd);
+        if (!t) cuerpo.insertAdjacentHTML('beforeend', filaProd(null));
+        upd();
+      },
+      onSubmit: (v, form) => {
+        const lineas = Array.from(form.querySelector('[data-tk-lineas]').children).map((tr) => {
+          if (tr.hasAttribute('data-tk-prod')) {
+            const nombre = tr.querySelector('[name="tkProd"]').value.trim();
+            if (!nombre) return null;
+            const p = porNombre[GS.norm(nombre)];
+            if (!p) throw new Error('"' + nombre + '" no es un producto con stock. Elígelo de la lista.');
+            return { productoId: p.id, cantidad: tr.querySelector('[name="tkCant"]').value, precio: tr.querySelector('[name="tkPrecio"]').value };
+          }
+          const monto = tr.querySelector('[name="tkMonto"]').value;
+          return monto ? { categoria: tr.querySelector('[name="tkCat"]').value, descripcion: tr.querySelector('[name="tkDesc"]').value, monto: monto } : null;
+        }).filter(Boolean);
+        const pagos = Array.from(form.querySelectorAll('[data-tk-pago]')).map((f) => ({ medio: f.querySelector('[name="tkMedio"]').value, monto: f.querySelector('[name="tkPagoMonto"]').value }));
+        return GS.mutate('guardarTicket', { id: t ? t.id : '', cajaId: c.id, tipo: 'venta', cliente: v.cliente, canal: v.canal, evento: v.evento, notas: v.notas, lineas: lineas, pagos: pagos },
+          (r) => (t ? 'Ticket ' + r.id + ' actualizado' : 'Ticket ' + r.id + ' registrado'));
+      },
+    });
+  }
+
+  /* ---------- compra de singles / gasto ---------- */
+
+  function formSalida(t) {
+    const c = actual();
+    const tipos = data().catalogos.egresosCaja;
+    const l = t ? t.lineas[0] : { categoria: 'compra_singles', descripcion: '', monto: '' };
+    GS.formModal({
+      title: t ? 'Editar ' + t.id : 'Compra / gasto · caja ' + fmt.date(c.fecha),
+      submitLabel: 'Guardar',
+      fields: () => '<div class="form-grid">' +
+        '<div class="form-field"><label>Qué fue *</label><select name="categoria">' + GS.options(Object.keys(tipos).map((k) => ({ value: k, label: tipos[k].label })), l.categoria) + '</select></div>' +
+        '<div class="form-field"><label>Monto *</label><input type="number" name="monto" min="1" step="1" value="' + esc(l.monto) + '"></div>' +
+        '<div class="form-field"><label>Detalle</label><input name="descripcion" maxlength="120" value="' + esc(l.descripcion) + '" placeholder="Ej: lote de Pedro, bolsas, cloro"></div>' +
+        '<div class="form-field"><label>Pagado desde</label><select name="cuenta">' + GS.options([{ value: 'caja', label: 'Caja (efectivo)' }, { value: 'banco', label: 'Banco (transferencia)' }], t ? t.cuenta : 'caja') + '</select></div>' +
+        '<div class="form-field full"><label>Notas</label><input name="notas" maxlength="300" value="' + esc(t ? t.notas : '') + '"></div></div>' +
+        '<p class="hint">Al cerrar la caja queda en Finanzas: la compra de singles como "Compra por monto · Singles …" y los gastos en su categoría.</p>',
+      onSubmit: (v) => GS.mutate('guardarTicket', { id: t ? t.id : '', cajaId: c.id, tipo: 'egreso', cuenta: v.cuenta, notas: v.notas, lineas: [{ categoria: v.categoria, descripcion: v.descripcion, monto: v.monto }] },
+        (r) => 'Ticket ' + r.id + (t ? ' actualizado' : ' registrado')),
+    });
+  }
+
+  const ticket = (id) => { for (const c of cajas()) { const t = c.tickets.find((x) => x.id === id); if (t) return t; } return null; };
+  GS.actions.nuevoTicket = () => formTicket(null);
+  GS.actions.nuevaSalidaCaja = () => formSalida(null);
+  GS.actions.editarTicket = (id) => { const t = ticket(id); if (t.tipo === 'egreso') formSalida(t); else formTicket(t); };
+  GS.actions.anularTicket = (id) => {
+    const t = ticket(id);
+    GS.confirm({
+      title: 'Anular ticket ' + id,
+      message: 'El ticket de ' + fmt.money(t.total) + ' queda anulado' + (t.lineas.some((l) => l.productoId) ? ' y sus productos dejan de estar reservados' : '') + '. No pasa a Ventas ni a Finanzas al cerrar.',
+      confirmLabel: 'Sí, anular',
+      danger: true,
+      onConfirm: () => GS.mutate('anularTicket', { id: id }, 'Ticket anulado'),
+    });
+  };
+
+  /* ---------- cierre ---------- */
+
+  GS.actions.cerrarCaja = (id) => {
+    const c = cajas().find((x) => x.id === id);
+    const r = resumenCaja(c);
+    const medios = data().catalogos.mediosCaja;
+    const docs = vivos(c).reduce((s, t) => {
+      if (t.tipo === 'egreso') return s;
+      const k = new Set(t.lineas.map((l) => (l.productoId ? 'OC' : l.categoria)));
+      return s + k.size;
+    }, 0);
+    GS.formModal({
+      title: 'Cerrar caja del ' + fmt.date(c.fecha),
+      submitLabel: 'Cerrar y pasar',
+      fields: () => '<p class="hint" style="margin-top:0;"><strong>' + r.nVentas + '</strong> tickets de venta (' + fmt.money(r.ventas) + ') → ~' + docs + ' ventas en Ventas · <strong>' + r.nSalidas + '</strong> compras/gastos (' + fmt.money(r.salidas) + ') → Finanzas.</p>' +
+        '<div class="table-wrap"><table class="data-table" style="min-width:0"><tbody>' +
+        Object.keys(medios).filter((m) => r.medios[m]).map((m) => '<tr><td>' + esc(medios[m]) + '</td><td class="cell-num right">' + fmt.money(r.medios[m]) + '</td></tr>').join('') +
+        '</tbody></table></div>' +
+        (r.tuu ? '<div class="form-grid" style="margin-top:12px;"><div class="form-field"><label>Depósito de TUU (si ya llegó)</label><input type="number" name="depositoTuu" min="0" max="' + r.tuu + '" step="1" placeholder="Opcional"></div>' +
+          '<div class="form-field full" data-cc-com></div></div>' : '') +
+        '<p class="hint">Se crean las OC (el stock reservado se rebaja), las ventas SGL/TOR/… y los movimientos de Finanzas. ' +
+        (r.tuu ? 'TUU deposita en 2 días hábiles: si aún no llega, déjalo vacío (la comisión se estima) y regístralo después con "Registrar depósito TUU". ' : '') + 'La caja cerrada ya no se edita: las correcciones se hacen en cada venta.</p>',
+      onMount: (form) => {
+        const inp = form.elements.depositoTuu;
+        if (!inp) return;
+        const upd = () => {
+          const dep = Number(inp.value);
+          form.querySelector('[data-cc-com]').innerHTML = inp.value ? '<p class="table-note">Comisión real: <strong>' + fmt.money(r.tuu - dep) + '</strong> (' + (r.tuu ? ((r.tuu - dep) / r.tuu * 100).toFixed(2) : 0) + '% de ' + fmt.money(r.tuu) + ')</p>' : '';
+        };
+        inp.addEventListener('input', upd);
+      },
+      onSubmit: (v) => GS.mutate('cerrarCaja', { id: id, depositoTuu: v.depositoTuu || '' }, (res) => 'Caja cerrada: ' + res.ventas + ' ventas y ' + res.movimientos + ' movimientos creados'),
+    });
+  };
+
+  GS.actions.conciliarTuuCaja = (id) => {
+    const c = cajas().find((x) => x.id === id);
+    GS.formModal({
+      title: 'Depósito TUU · caja del ' + fmt.date(c.fecha),
+      submitLabel: 'Guardar depósito',
+      fields: () => '<p class="hint" style="margin-top:0;">Cobrado con TUU ese día: <strong>' + fmt.money(c.tuuTotal) + '</strong>. La comisión real (cobrado − depositado) se reparte entre sus ventas en proporción.</p>' +
+        '<div class="form-field"><label>Depósito de TUU *</label><input type="number" name="depositoTuu" min="0" max="' + c.tuuTotal + '" step="1" value="' + esc(c.depositoTuu || '') + '"></div>',
+      onSubmit: (v) => GS.mutate('conciliarTuuCaja', { id: id, depositoTuu: v.depositoTuu }, (r) => 'Comisión TUU de la caja: ' + fmt.money(r.comisionTuu)),
+    });
+  };
+})();
+</script>

@@ -338,3 +338,21 @@ hasta presionar "Importar".
 - El sistema lee todas las tablas en cada carga. Eso anda bien hasta unos miles de
   filas por hoja; si el volumen crece mucho, conviene archivar años anteriores o
   migrar a una base de datos.
+
+## Caja del día
+
+Menú **Caja del día**. Se abre una caja por fecha (`CJ-20261012`) y cada atención es un ticket
+(`TK-20261012-01`):
+
+- **Venta:** productos sellados del inventario (quedan **reservados**: no se pueden vender en otro
+  lado hasta cerrar la caja o anular el ticket) y líneas por monto (singles, torneo, sobres, bazar,
+  accesorios). Descuento = precio cambiado. Pago con uno o varios medios: efectivo, transferencia,
+  TUU débito/crédito o **pendiente** (deuda del cliente; requiere su nombre).
+- **Compra / gasto:** compra de singles, GAV, GOPM u otro egreso, pagado desde caja o banco.
+- **Cerrar caja** (administrador): cada ticket pasa a su lugar. Los sellados a una OC (se rebaja el
+  stock), cada tipo por monto a su venta (SGL, TOR…), las compras/gastos a Finanzas. El pago y la
+  comisión de TUU se reparten en proporción al monto de cada documento. Con el depósito de TUU la
+  comisión es la real (cobrado − depositado); si aún no llega, se estima y se corrige después con
+  "Registrar depósito TUU".
+- Si queda una caja sin cerrar, se avisa al abrir la del día siguiente (sus productos siguen reservados).
+- Requiere "Instalar / actualizar hojas" (hojas nuevas `Cajas` y `Caja_Tickets`).

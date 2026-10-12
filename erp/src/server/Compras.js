@@ -375,6 +375,21 @@ const Compras = {
       return lote;
     });
 
+    // Reservas de la caja del día: salen de lo disponible de los lotes más antiguos.
+    const res = Cajas.reservas();
+    if (Object.keys(res).length) {
+      lotes.slice().sort((a, b) => (a.fecha + a.id).localeCompare(b.fecha + b.id)).forEach((l) => {
+        const n = Math.min(res[l.productoId] || 0, Math.max(0, l.disponible));
+        if (!n) return;
+        res[l.productoId] -= n;
+        l.reservado = n;
+        l.disponible -= n;
+        l.valorInventario = l.disponible * l.costo;
+        l.gananciaProyectada = l.disponible * l.gananciaUnidad;
+        l.ventaProyectada = l.disponible * l.precioVenta;
+      });
+    }
+
     const pagosPorCompra = {};
     Compras.pagos().forEach((x) => { (pagosPorCompra[x.compraId] = pagosPorCompra[x.compraId] || []).push(x); });
     compras.forEach((c) => {

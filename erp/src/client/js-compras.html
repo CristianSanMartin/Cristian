@@ -430,6 +430,7 @@
       r.vendidas += l.vendidas;
       r.salidas = (r.salidas || 0) + (l.salidas || 0);
       r.disponible += l.disponible;
+      r.reservado = (r.reservado || 0) + (l.reservado || 0);
       r.valorInventario += l.valorInventario;
       r.gananciaProyectada += l.gananciaProyectada;
       r.gananciaAcumulada += l.gananciaAcumulada || 0;
@@ -455,7 +456,7 @@
     { id: 'producto', label: 'Producto', clase: 'col-prod', valor: (r) => r.ref.productoNombre, texto: (r) => r.ref.productoNombre + ' ' + r.ref.idioma, celda: (r) => producto(r.ref) },
     { id: 'cantidad', label: 'Comprado', right: true, valor: (r) => r.cantidad, celda: (r) => fmt.num(r.cantidad) },
     { id: 'vendidas', label: 'Vendidas', right: true, valor: (r) => r.vendidas, celda: (r) => (r.vendidas ? fmt.num(r.vendidas) : '—') + (r.salidas ? '<div class="cell-dim">+' + fmt.num(r.salidas) + ' salidas</div>' : '') },
-    { id: 'disponible', label: 'Disponible', right: true, valor: (r) => r.disponible, celda: (r) => '<strong class="stock-num">' + fmt.num(r.disponible) + '</strong>' },
+    { id: 'disponible', label: 'Disponible', right: true, valor: (r) => r.disponible, celda: (r) => '<strong class="stock-num">' + fmt.num(r.disponible) + '</strong>' + (r.reservado ? '<div class="cell-dim" title="Reservadas en tickets de la caja del día">+' + r.reservado + ' reserv.</div>' : '') },
     // Costo con IVA (comparable con el precio de venta) y su desglose: neto + despacho + IVA.
     { id: 'costo', label: 'Costo u. c/IVA', right: true, valor: (r) => r.costo, texto: (r) => fmt.money(r.costo * (1 + data().app.iva)),
       celda: (r) => {
@@ -486,13 +487,15 @@
       for (let i = 1; i <= l.cantidad; i++) {
         n++;
         const u = l.unidadesVendidas[i - 1];
+        // Las primeras unidades libres del lote están reservadas en la caja del día.
+        const reservada = !u && i - l.unidadesVendidas.length <= (l.reservado || 0);
         const clave = l.id + '|' + i;
-        const marcable = !u && GS.puede('operador');
+        const marcable = !u && !reservada && GS.puede('operador');
         const precio = u ? u.precio : l.precioVenta;
         filas.push('<tr' + (u ? '' : ' class="unidad-libre' + (selUnidades.has(clave) ? ' row-selected' : '') + '"') + '>' +
           '<td>' + (marcable ? '<input type="checkbox" class="row-check" data-sel-unidad="' + esc(clave) + '"' + (selUnidades.has(clave) ? ' checked' : '') + ' aria-label="Seleccionar unidad ' + n + '">' : '') + '</td>' +
           '<td class="cell-num right">' + n + '<span class="cell-dim"> / ' + r.cantidad + '</span></td>' +
-          '<td>' + (u ? (u.salida ? '<span class="badge st-pedido">' + esc(u.oc) + '</span>' : '<span class="badge st-parcial">Vendida</span>') : '<span class="badge st-ok">Disponible</span>') +
+          '<td>' + (u ? (u.salida ? '<span class="badge st-pedido">' + esc(u.oc) + '</span>' : '<span class="badge st-parcial">Vendida</span>') : reservada ? '<span class="badge st-parcial">Reservada (caja)</span>' : '<span class="badge st-ok">Disponible</span>') +
             (u && u.salidaId && GS.puede('admin') ? ' <a href="#" class="cell-dim" data-action="anularSalida" data-id="' + esc(u.salidaId) + '" title="Devolver la unidad al stock">anular</a>' : '') + '</td>' +
           '<td>' + (u && !u.salida ? '<span class="cell-strong">' + esc(u.oc) + '</span>' : '—') + '</td><td>' + (u ? esc(u.cliente) : '—') + '</td>' +
           m(l.valorUnitario) + m(l.costo) + m(l.credito) + m(precio) + m(precio / iva) + m(precio - precio / iva) + m(precio - precio / iva - l.credito) +
