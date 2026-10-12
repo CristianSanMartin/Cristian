@@ -356,3 +356,19 @@ Menú **Caja del día**. Se abre una caja por fecha (`CJ-20261012`) y cada atenc
   "Registrar depósito TUU".
 - Si queda una caja sin cerrar, se avisa al abrir la del día siguiente (sus productos siguen reservados).
 - Requiere "Instalar / actualizar hojas" (hojas nuevas `Cajas` y `Caja_Tickets`).
+
+### Abonos TUU, cuotas y GSTin
+
+- **Fecha de abono:** TUU abona 2 días hábiles después de la venta (jueves → lunes; viernes, sábado y
+  domingo → martes). Los feriados (hoja `Feriados`, precargados 2026–2027) corren la fecha; se editan en
+  Caja del día → Abonos TUU.
+- **Cuotas:** en el ticket, TUU crédito acepta cuotas. Al cerrar la caja la venta queda "Cuotas TUU"
+  (lo debe TUU, no el cliente) y se crea el calendario en `Cuotas_TUU`: la cuota k llega en el abono de
+  (fecha de venta + k−1 meses).
+- **Informe de abono:** en Abonos TUU se sube el Excel "Detalle de transacciones abonadas" de TUU. Cada
+  transacción se cuadra con su pago en la caja de su fecha (mismo medio y monto) y su comisión real
+  reemplaza la estimada; las cuotas que llegan quedan como abono de su venta. Lo ya procesado no se repite
+  (`Abonos_TUU`) y lo que no calza se lista para revisarlo.
+- **GSTin:** al entrar, la mascota avisa una vez al día los abonos de TUU esperados hoy y los atrasados.
+- Comisión TUU: 0,77% + $65 + IVA sobre la comisión (calza con el informe). Las ventas desde el
+  01-10-2026 con la fórmula anterior se corrigen al ejecutar "Instalar / actualizar hojas".

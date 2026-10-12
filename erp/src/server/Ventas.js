@@ -581,6 +581,13 @@ const Ventas = {
       for (let i = 0; i < x.cantidad; i++) r.unidades.push({ oc: MOTIVOS_SALIDA[x.motivo] || x.motivo, cliente: x.notas, fecha: x.fecha, precio: 0, salida: x.motivo, salidaId: x.id });
     });
 
+    // Cuotas de TUU aún no abonadas: lo debe TUU, no el cliente.
+    const porTuu = {};
+    Db.all('Cuotas_TUU').filter((c) => c.estado === 'pendiente').forEach((c) => {
+      let partes = [];
+      try { partes = JSON.parse(c.ventas || '[]'); } catch (e) { partes = []; }
+      partes.forEach((q) => { porTuu[q.ventaId] = (porTuu[q.ventaId] || 0) + q.monto; });
+    });
     ventas.forEach((v) => {
       v.total = v.lineas.reduce((t, l) => t + l.subtotal, 0);
       v.unidades = v.lineas.reduce((t, l) => t + l.cantidad, 0);
@@ -590,8 +597,9 @@ const Ventas = {
       v.ganancia = v.lineas.reduce((t, l) => t + l.ganancia, 0);
       v.gananciaNeta = v.ganancia - v.comision;
       v.cobrado = v.abono + v.cobros.reduce((t, c) => t + c.monto, 0);
-      v.saldo = v.anulada ? 0 : v.total - v.cobrado;
-      v.estadoPago = v.anulada ? 'anulada' : v.saldo <= 0 ? 'pagada' : v.cobrado > 0 ? 'abonada' : 'pendiente';
+      v.porCobrarTuu = v.anulada ? 0 : Math.min(porTuu[v.id] || 0, Math.max(0, v.total - v.cobrado));
+      v.saldo = v.anulada ? 0 : v.total - v.cobrado - v.porCobrarTuu;   // lo que debe el cliente
+      v.estadoPago = v.anulada ? 'anulada' : v.saldo > 0 ? (v.cobrado > 0 ? 'abonada' : 'pendiente') : v.porCobrarTuu > 0 ? 'cuotas' : 'pagada';
     });
     ventas.sort((a, b) => (b.fecha + b.id).localeCompare(a.fecha + a.id));
     Object.keys(porLote).forEach((k) => porLote[k].unidades.sort((a, b) => (a.fecha + a.oc).localeCompare(b.fecha + b.oc)));

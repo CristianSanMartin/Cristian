@@ -1497,3 +1497,38 @@ test("comisión TUU con IVA: calza con el informe de abonos de TUU", () => {
     assert.equal(v.comision, comision, "venta de $" + monto);
   });
 });
+
+test("TUU: abono en 2 días hábiles (con feriado), cuotas por cobrar e informe de abonos", () => {
+  const s = createServer();
+  const caja = s.ok("abrirCaja", { fecha: "2026-10-08" }).result;   // jueves; el lunes 12-10 es feriado
+  s.ok("guardarTicket", { cajaId: caja.id, lineas: [{ categoria: "Singles", monto: 55000 }], pagos: [{ medio: "debito", monto: 55000 }] });
+  s.ok("guardarTicket", { cajaId: caja.id, cliente: "Ana Rojas", lineas: [{ categoria: "Accesorios", monto: 60000 }], pagos: [{ medio: "credito", monto: 60000, cuotas: 3 }] });
+  const r = s.ok("cerrarCaja", { id: caja.id }).result;
+  assert.equal(r.cuotas, 3);
+  let d = s.ok("bootstrap").data;
+  const ventaA = d.ventas.find(v => /^SGL-/.test(v.id)), ventaB = d.ventas.find(v => /^ACC-/.test(v.id));
+  assert.equal(ventaA.comision, 581, "estimada con IVA");
+  assert.deepEqual([ventaB.estadoPago, ventaB.saldo, ventaB.porCobrarTuu], ["cuotas", 0, 60000], "lo debe TUU, no el cliente");
+  assert.deepEqual(d.tuu.cuotas.map(c => [c.numero, c.monto, c.fechaEsperada]), [[1, 20000, "2026-10-13"], [2, 20000, "2026-11-10"], [3, 20000, "2026-12-10"]]);
+  assert.deepEqual(d.tuu.esperados.filter(e => e.tipo === "ventas").map(e => [e.fecha, e.monto]), [["2026-10-13", 55000]], "jueves → martes por el feriado del lunes");
+  // Informe de TUU: la venta al contado, la cuota 1/3 y una transacción que no está en ninguna caja
+  const filas = [
+    { idTransaccion: "T1", fechaVenta: "2026-10-08", tipo: "Debito", monto: 55000, cuota: 1, de: 1, montoCuota: 55000, comision: 600, fechaAbono: "2026-10-13", abonado: 54400 },
+    { idTransaccion: "T2", fechaVenta: "2026-10-08", tipo: "Credito", monto: 60000, cuota: 1, de: 3, montoCuota: 20000, comision: 300, fechaAbono: "2026-10-13", abonado: 19700 },
+    { idTransaccion: "T3", fechaVenta: "2026-10-08", tipo: "Debito", monto: 999, cuota: 1, de: 1, montoCuota: 999, comision: 10, fechaAbono: "2026-10-13", abonado: 989 },
+  ];
+  const imp = s.ok("importarAbonosTuu", { filas }).result;
+  assert.deepEqual([imp.nuevas, imp.cuotas, imp.sinVenta.length, imp.abonado], [2, 1, 1, 74100]);
+  d = s.ok("bootstrap").data;
+  const a = d.ventas.find(v => v.id === ventaA.id), b = d.ventas.find(v => v.id === ventaB.id);
+  assert.equal(a.comision, 600, "la comisión real del informe reemplaza la estimada");
+  const est = 219 + 42;   // 0,77% de 20.000 + 65 = 219, + IVA 42
+  assert.deepEqual([b.cobros.length, b.porCobrarTuu, b.comision], [1, 40000, 300 + 2 * est]);
+  assert.equal(d.tuu.esperados.filter(e => e.tipo === "ventas").length, 0, "la caja ya llegó en el informe");
+  assert.equal(s.ok("importarAbonosTuu", { filas }).result.repetidas, 2, "no se procesa dos veces");
+  // Cuota 2 recibida a mano
+  const c2 = d.tuu.cuotas.find(c => c.numero === 2);
+  s.ok("recibirCuotaTuu", { id: c2.id, fecha: "2026-11-10" });
+  d = s.ok("bootstrap").data;
+  assert.equal(d.ventas.find(v => v.id === ventaB.id).porCobrarTuu, 20000);
+});

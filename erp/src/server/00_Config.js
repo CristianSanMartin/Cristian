@@ -15,7 +15,7 @@
 
 const APP = {
   nombre: 'GS Prime ERP',
-  version: '2.15.4',
+  version: '2.16.0',
   tz: 'America/Santiago',
   iva: 0.19,
 };
@@ -185,6 +185,30 @@ const SCHEMA = {
       id: 's', cajaId: 's', tipo: 's', estado: 's', cliente: 's', canal: 's', evento: 's', lineas: 's', pagos: 's', total: 'n', cuenta: 's', documentos: 's', notas: 's',
     }, AUDIT_COLS),
   },
+  /** Feriados (Chile): TUU no abona en feriados ni fines de semana. */
+  Feriados: {
+    key: 'fecha',
+    cols: { fecha: 'd', nombre: 's' },
+  },
+  /**
+   * Cuotas de ventas con TUU crédito en cuotas: TUU abona una por mes. ventas = JSON [{ ventaId, monto }]
+   * (la cuota repartida entre los documentos del ticket). comision = real (del informe) o estimada.
+   */
+  Cuotas_TUU: {
+    key: 'id',
+    cols: Object.assign({
+      id: 's', ticketId: 's', cajaId: 's', pago: 'n', numero: 'n', de: 'n', monto: 'n', ventas: 's', fechaEsperada: 'd', estado: 's',
+      fechaRecibida: 'd', comisionEstimada: 'n', comision: 'n', comisionReal: 'b', idTransaccion: 's',
+    }, AUDIT_COLS),
+  },
+  /** Transacciones del informe de abonos de TUU ya procesadas (una por transacción y cuota). */
+  Abonos_TUU: {
+    key: 'id',
+    cols: Object.assign({
+      id: 's', idTransaccion: 's', fechaVenta: 'd', tipo: 's', monto: 'n', cuota: 'n', de: 'n', montoCuota: 'n', comision: 'n',
+      fechaAbono: 'd', abonado: 'n', ticketId: 's', pago: 'n', cuotaId: 's',
+    }, AUDIT_COLS),
+  },
   Validaciones: {
     key: 'clave',
     cols: { clave: 's', firma: 's', estado: 's', nota: 's', actualizadoEn: 't', actualizadoPor: 's' },
@@ -204,6 +228,8 @@ const IDIOMAS = ['ENG', 'ESP', 'JPN', 'Otro'];
 const MOTIVOS_SALIDA = { premio: 'Premio', apertura: 'Caja abierta', interno: 'Uso interno', perdida: 'Pérdida' };
 
 /** Caja del día: medios de pago de un ticket (puede haber varios) y tipos de salida de plata. */
+/** Medios de pago que pasan por la máquina TUU (cobran comisión y se abonan en 2 días hábiles). */
+const TUU_MEDIOS = ['debito', 'credito'];
 const MEDIOS_CAJA = { efectivo: 'Efectivo', transferencia: 'Transferencia', debito: 'TUU débito', credito: 'TUU crédito', pendiente: 'Pendiente (deuda)' };
 const EGRESOS_CAJA = {
   compra_singles: { label: 'Compra de singles', categoria: 'compra', prefijo: 'Singles · ' },

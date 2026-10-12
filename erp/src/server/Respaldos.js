@@ -47,6 +47,42 @@ const MIGRACIONES = [
       if (Object.keys(cambios).length) Db.actualizarVarios('Finanzas', cambios);
     },
   },
+  {
+    id: '2026-10-12-feriados-chile',
+    descripcion: 'Feriados de Chile 2026 y 2027 (TUU no abona en feriados ni fines de semana); se editan en Caja del día → Abonos TUU',
+    fn: () => {
+      const lista = [
+        ['2026-01-01', 'Año Nuevo'], ['2026-04-03', 'Viernes Santo'], ['2026-04-04', 'Sábado Santo'], ['2026-05-01', 'Día del Trabajo'],
+        ['2026-05-21', 'Glorias Navales'], ['2026-06-21', 'Día de los Pueblos Indígenas'], ['2026-06-29', 'San Pedro y San Pablo'],
+        ['2026-07-16', 'Virgen del Carmen'], ['2026-08-15', 'Asunción de la Virgen'], ['2026-09-18', 'Independencia Nacional'],
+        ['2026-09-19', 'Glorias del Ejército'], ['2026-10-12', 'Encuentro de Dos Mundos'], ['2026-10-31', 'Iglesias Evangélicas y Protestantes'],
+        ['2026-11-01', 'Todos los Santos'], ['2026-12-08', 'Inmaculada Concepción'], ['2026-12-25', 'Navidad'],
+        ['2027-01-01', 'Año Nuevo'], ['2027-03-26', 'Viernes Santo'], ['2027-03-27', 'Sábado Santo'], ['2027-05-01', 'Día del Trabajo'],
+        ['2027-05-21', 'Glorias Navales'], ['2027-06-21', 'Día de los Pueblos Indígenas'], ['2027-06-28', 'San Pedro y San Pablo'],
+        ['2027-07-16', 'Virgen del Carmen'], ['2027-08-15', 'Asunción de la Virgen'], ['2027-09-18', 'Independencia Nacional'],
+        ['2027-09-19', 'Glorias del Ejército'], ['2027-10-11', 'Encuentro de Dos Mundos'], ['2027-10-31', 'Iglesias Evangélicas y Protestantes'],
+        ['2027-11-01', 'Todos los Santos'], ['2027-12-08', 'Inmaculada Concepción'], ['2027-12-25', 'Navidad'],
+      ];
+      const ya = {};
+      Db.all('Feriados').forEach((f) => { ya[f.fecha] = true; });
+      const nuevos = lista.filter((x) => !ya[x[0]]).map((x) => ({ fecha: x[0], nombre: x[1] }));
+      if (nuevos.length) Db.insertMany('Feriados', nuevos);
+    },
+  },
+  {
+    id: '2026-10-12-comision-tuu-iva',
+    descripcion: 'Comisión TUU con IVA en las ventas desde el 01-10-2026 que tenían la comisión de la fórmula anterior (sin IVA)',
+    fn: () => {
+      const cambios = {};
+      Db.all('Ventas').forEach((v) => {
+        if (v.anulada || v.fecha < '2026-10-01' || TUU_MEDIOS.indexOf(v.medioPago) === -1 || !v.abono) return;
+        const r = COMISIONES_PAGO[v.medioPago];
+        if (v.comision !== Math.round(v.abono * r.pct + r.fijo)) return;   // ajustada a mano o real: no se toca
+        cambios[v.id] = { comision: Economia.comisionPago(v.medioPago, v.abono) };
+      });
+      if (Object.keys(cambios).length) Db.actualizarVarios('Ventas', cambios);
+    },
+  },
 ];
 
 const Respaldos = {

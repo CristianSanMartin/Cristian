@@ -50,6 +50,10 @@ function rutas_() {
     anularTicket: { rol: 'operador', write: true, fn: Cajas.anularTicket },
     cerrarCaja: { rol: 'admin', write: true, fn: Cajas.cerrar },
     conciliarTuuCaja: { rol: 'admin', write: true, fn: Cajas.conciliarTuu },
+    importarAbonosTuu: { rol: 'admin', write: true, fn: Cajas.importarAbonos },
+    recibirCuotaTuu: { rol: 'admin', write: true, fn: Cajas.recibirCuota },
+    guardarFeriado: { rol: 'admin', write: true, fn: Cajas.guardarFeriado },
+    quitarFeriado: { rol: 'admin', write: true, fn: Cajas.quitarFeriado },
     registrarSalida: { rol: 'operador', write: true, fn: Salidas.registrar },
     anularSalida: { rol: 'admin', write: true, fn: Salidas.anular },
     cerrarMigracion: { rol: 'admin', write: true, fn: (p, u) => Migracion.cerrar(p, u) },
@@ -266,6 +270,12 @@ const Snapshot = {
       pagosFacturas: Compras.pagos(),
       salidas: Salidas.vista(),
       cajas: Cajas.vista(),
+      tuu: {
+        esperados: Cajas.abonosEsperados(),
+        cuotas: Db.all('Cuotas_TUU').map((c) => Object.assign({}, c, { ventas: undefined })),
+        abonos: Db.all('Abonos_TUU').slice(-200),
+        feriados: Db.all('Feriados').sort((a, b) => String(a.fecha).localeCompare(String(b.fecha))),
+      },
       // Filas de la caja diaria aún sin migrar, por glosa (para avisarlo en Finanzas).
       cajaPendiente: Auth.puede(user, 'admin') ? Db.all('Migracion_Caja').filter((f) => !f.migrada && !f.descartada)
         .reduce((o, f) => { const k = f.glosa || 'Sin glosa'; o[k] = (o[k] || 0) + 1; return o; }, {}) : {},

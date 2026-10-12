@@ -622,6 +622,7 @@
       document.getElementById('boot').classList.add('hidden');
       document.getElementById('app').classList.remove('hidden');
       GS.render();
+      if (GS.avisoInicio) GS.avisoInicio();
     } catch (err) {
       const denied = err.code === 'NO_AUTORIZADO';
       const notInstalled = err.code === 'NO_INSTALADO';

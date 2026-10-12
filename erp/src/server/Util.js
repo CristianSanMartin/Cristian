@@ -4,6 +4,23 @@ const Util = {
     return Utilities.formatDate(new Date(), APP.tz, 'yyyy-MM-dd');
   },
 
+  /** Suma días a una fecha yyyy-MM-dd. */
+  sumarDias(fecha, n) {
+    const d = new Date(fecha + 'T12:00:00Z');
+    d.setUTCDate(d.getUTCDate() + n);
+    return d.toISOString().slice(0, 10);
+  },
+
+  /** Suma meses a una fecha yyyy-MM-dd (el mismo día; si el mes es más corto, su último día). */
+  sumarMeses(fecha, n) {
+    const [a, m, dia] = fecha.split('-').map(Number);
+    const total = a * 12 + (m - 1) + n;
+    const y = Math.floor(total / 12);
+    const mes = total % 12;
+    const ultimo = new Date(Date.UTC(y, mes + 1, 0)).getUTCDate();
+    return y + '-' + String(mes + 1).padStart(2, '0') + '-' + String(Math.min(dia, ultimo)).padStart(2, '0');
+  },
+
   ahora() {
     return Util.fechaHora(new Date());
   },
