@@ -128,12 +128,13 @@
   const colsMov = [
     { id: 'fecha', label: 'Fecha', clase: 'nowrap', valor: (m) => m.fecha, texto: (m) => fmt.date(m.fecha), celda: (m) => fmt.date(m.fecha) },
     { id: 'tipo', label: 'Tipo', valor: (m) => tipoLabel[m.tipo], celda: (m) => '<span class="badge ' + (m.tipo === 'ingreso' ? 'st-ok' : 'st-pedido') + '">' + tipoLabel[m.tipo] + '</span>' },
-    { id: 'categoria', label: 'Categoría', valor: (m) => m.categoriaLabel, celda: (m) => '<span class="cell-strong">' + esc(m.categoriaLabel) + '</span>' },
+    { id: 'categoria', label: 'Categoría', valor: (m) => m.categoriaLabel, celda: (m) => '<span class="cell-strong">' + esc(m.categoriaLabel) + '</span>' +
+      (m.estadoLabel ? '<div><span class="badge ' + (m.porAbonar ? 'st-parcial' : 'st-ok') + '" title="' + (m.porAbonar ? 'Venta con TUU: aún no llega el abono (no suma al saldo). Se confirma al subir el informe de TUU.' : 'Confirmado con el informe de TUU') + '">' + esc(m.estadoLabel) + '</span></div>' : '') },
     { id: 'detalle', label: 'Detalle', valor: (m) => m.subcategoria || '', celda: (m) => esc(m.subcategoria || '—') + (m.notas ? '<div class="cell-dim">' + esc(m.notas) + '</div>' : '') },
     { id: 'cuenta', label: 'Cuenta', valor: (m) => m.cuentaLabel || 'Sin cuenta', celda: (m) => esc(m.cuentaLabel || '—') },
     { id: 'ref', label: 'Referencia', valor: (m) => m.referencia || '', celda: (m) => '<span class="cell-dim">' + esc(m.referencia || '') + '</span>' },
     { id: 'monto', label: 'Monto', right: true, valor: (m) => (m.tipo === 'ingreso' ? m.monto : -m.monto), texto: (m) => fmt.money(m.monto),
-      celda: (m) => '<strong class="' + (m.anulado ? 'muted' : m.tipo === 'ingreso' ? 'text-success' : '') + '">' + (m.tipo === 'ingreso' ? '+' : '−') + fmt.money(m.monto) + '</strong>' + (m.anulado ? '<div class="cell-dim">anulado</div>' : '') },
+      celda: (m) => '<strong class="' + (m.anulado || m.porAbonar ? 'muted' : m.tipo === 'ingreso' ? 'text-success' : '') + '">' + (m.tipo === 'ingreso' ? '+' : '−') + fmt.money(m.monto) + '</strong>' + (m.anulado ? '<div class="cell-dim">anulado</div>' : '') },
   ];
   /** Ingresos de ventas como filas del libro (solo lectura): lo pagado al vender (neto de la comisión del medio de pago) y los abonos. */
   const CUENTA_MEDIO = { efectivo: 'Caja (efectivo)', transferencia: 'Banco', debito: 'TUU', credito: 'TUU' };
@@ -143,11 +144,15 @@
       const base = { tipo: 'ingreso', referencia: v.id, venta: v.id, cuentaLabel: CUENTA_MEDIO[v.medioPago] || '', notas: '' };
       // La comisión del medio de pago va dentro de la venta: el monto es lo que entra a la cuenta (neto).
       const conCom = v.abono && v.comision && v.comision < v.abono;
+      // Venta con TUU de la caja del día: "por abonar" hasta que el informe de TUU la confirma (no suma al saldo).
+      const tuu = v.tuuAbono;
+      const estadoTuu = (medio) => (tuu && ['debito', 'credito'].indexOf(medio) !== -1
+        ? (tuu.porAbonar ? { porAbonar: true, estadoLabel: 'Por abonar · ' + fmt.date(tuu.fechaAbono) } : { estadoLabel: 'Abonado · ' + fmt.date(tuu.abonadoEl) }) : {});
       if (v.abono) res.push(Object.assign({}, base, { id: v.id + '·v', fecha: v.fecha, categoriaLabel: 'Venta', subcategoria: v.cliente + ' · ' + v.medioPagoLabel,
         monto: conCom ? v.abono - v.comision : v.abono, bruto: v.abono, comision: conCom ? v.comision : 0,
-        notas: conCom ? 'venta ' + fmt.money(v.abono) + ' − comisión ' + fmt.money(v.comision) : '' }));
+        notas: conCom ? 'venta ' + fmt.money(v.abono) + ' − comisión ' + fmt.money(v.comision) : '' }, estadoTuu(v.medioPago)));
       v.cobros.forEach((c) => res.push(Object.assign({}, base, { id: c.id, fecha: c.fecha, categoriaLabel: 'Abono de venta', subcategoria: v.cliente + ' · ' + (data().catalogos.mediosPago[c.medioPago] || c.medioPago), monto: c.monto,
-        cuentaLabel: CUENTA_MEDIO[c.medioPago] || '' })));
+        cuentaLabel: CUENTA_MEDIO[c.medioPago] || '' }, /^Ticket /.test(c.notas || '') ? estadoTuu(c.medioPago) : {})));
       if (v.comision && !conCom) res.push(Object.assign({}, base, { id: v.id + '·c', tipo: 'egreso', fecha: v.fecha, categoriaLabel: 'Comisión ' + v.medioPagoLabel, subcategoria: v.cliente, monto: v.comision }));
     });
     // Pagos de facturas de compra: registrados en Compras o conciliados desde la caja diaria.
@@ -191,11 +196,11 @@
     const rows = GS.tablaAplicar('movimientos', movsBuscados(), colsMov).slice().sort((a, b) => (a.fecha + a.id).localeCompare(b.fecha + b.id));
     let saldo = 0;
     const filas = rows.map((m) => {
-      const signo = m.anulado ? 0 : m.tipo === 'ingreso' ? m.monto : -m.monto;
+      const signo = m.anulado || m.porAbonar ? 0 : m.tipo === 'ingreso' ? m.monto : -m.monto;
       saldo += signo;
       return [m.fecha, m.id, m.tipo === 'ingreso' ? 'Ingreso' : 'Egreso', m.categoriaLabel, m.subcategoria || '', m.cuentaLabel || '', m.referencia || '',
         m.venta ? 'Venta' : m.compra ? 'Pago de factura' : 'Movimiento', m.bruto || '', m.comision || '', m.iva || '',
-        m.tipo === 'ingreso' && !m.anulado ? m.monto : '', m.tipo === 'egreso' && !m.anulado ? m.monto : '', saldo, m.anulado ? 'Anulado' : 'Vigente', m.notas || ''];
+        m.tipo === 'ingreso' && !m.anulado && !m.porAbonar ? m.monto : '', m.tipo === 'egreso' && !m.anulado ? m.monto : '', saldo, m.anulado ? 'Anulado' : m.porAbonar ? 'Por abonar (TUU)' : m.estadoLabel || 'Vigente', m.notas || ''];
     });
     GS.downloadCsv('movimientos-' + data().hoy + '.csv',
       ['Fecha', 'ID', 'Tipo', 'Categoría', 'Detalle', 'Cuenta', 'Referencia', 'Origen', 'Venta bruta', 'Comisión', 'IVA (factura)', 'Ingreso', 'Egreso', 'Saldo acumulado', 'Estado', 'Notas'], filas);
@@ -243,7 +248,10 @@
         const admin = GS.puede('admin');
         const nv = rows.filter((m) => m.venta).length;
         // Resumen de lo visible (respeta el buscador y los filtros de columna); los anulados no cuentan.
-        const vivos = rows.filter((m) => !m.anulado);
+        // Lo que TUU aún no abona (ventas de la caja sin informe) no suma al saldo: va en su propia casilla.
+        const porAbonar = rows.filter((m) => !m.anulado && m.porAbonar);
+        const cuotasTuu = ((data().tuu || {}).cuotas || []).filter((c) => c.estado === 'pendiente').reduce((s, c) => s + c.monto, 0);
+        const vivos = rows.filter((m) => !m.anulado && !m.porAbonar);
         const suma = (t) => vivos.filter((m) => m.tipo === t).reduce((a, m) => a + m.monto, 0);
         const ing = suma('ingreso');
         const egr = suma('egreso');
@@ -257,7 +265,8 @@
           : '') + '<div class="kpi-grid">' +
           kpi('Ingresos', '<span class="text-success">+' + fmt.money(ing) + '</span>', vivos.filter((m) => m.tipo === 'ingreso').length + ' movimientos') +
           kpi('Egresos', '−' + fmt.money(egr), vivos.filter((m) => m.tipo === 'egreso').length + ' movimientos') +
-          kpi('Saldo', '<span class="' + (ing - egr < 0 ? 'text-danger' : 'text-gold') + '">' + fmt.money(ing - egr) + '</span>', 'Ingresos − egresos de lo que se ve') + '</div>' +
+          kpi('Saldo', '<span class="' + (ing - egr < 0 ? 'text-danger' : 'text-gold') + '">' + fmt.money(ing - egr) + '</span>', 'Ingresos − egresos de lo que se ve') +
+          kpi('Por abonar (TUU)', fmt.money(porAbonar.reduce((s, m) => s + m.monto, 0)), porAbonar.length + (porAbonar.length === 1 ? ' venta' : ' ventas') + ' sin confirmar' + (cuotasTuu ? ' · + ' + fmt.money(cuotasTuu) + ' en cuotas' : '') + ' · no suma al saldo') + '</div>' +
           '<p class="table-note" style="margin:0 0 12px;">El saldo es lo que debería haber entre caja, banco y TUU <strong>si todo está registrado</strong>: aportes, ventas, gastos, pagos al SII y pagos de facturas. ' +
           (f.ventas && sinPago ? 'Ojo: ' + sinPago + (sinPago === 1 ? ' factura de compra no tiene' : ' facturas de compra no tienen') + ' pago registrado y no se restan. ' : '') +
           'Para el efectivo de la caja, filtra la columna Cuenta por "Caja (efectivo)" (los depósitos al banco no se registran como traspaso, así que el saldo por cuenta es solo referencial).</p>';

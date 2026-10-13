@@ -218,6 +218,9 @@ const Snapshot = {
     const preventas = Preventas.vista(productos, proveedores);
     const clientes = Db.all('Clientes');
     const ventas = Ventas.vista(productos, clientes);
+    // Ventas con TUU de la caja del día: por abonar hasta que llega el informe de TUU.
+    const abonos = Cajas.estadoAbonos();
+    ventas.ventas.forEach((v) => { if (abonos[v.id]) v.tuuAbono = abonos[v.id]; });
     const compras = Compras.vista(productos, proveedores, ventas.porLote);
     // Factura en la que quedó cada preventa recibida.
     const facturaDe = {};

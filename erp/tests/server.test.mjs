@@ -1517,11 +1517,13 @@ test("TUU: abono en 2 días hábiles (con feriado), cuotas por cobrar e informe 
     { idTransaccion: "T2", fechaVenta: "2026-10-08", tipo: "Credito", monto: 60000, cuota: 1, de: 3, montoCuota: 20000, comision: 300, fechaAbono: "2026-10-13", abonado: 19700 },
     { idTransaccion: "T3", fechaVenta: "2026-10-08", tipo: "Debito", monto: 999, cuota: 1, de: 1, montoCuota: 999, comision: 10, fechaAbono: "2026-10-13", abonado: 989 },
   ];
+  assert.deepEqual(d.ventas.find(v => v.id === ventaA.id).tuuAbono, { porAbonar: true, fechaAbono: "2026-10-13", abonadoEl: "" }, "por abonar hasta el informe");
   const imp = s.ok("importarAbonosTuu", { filas }).result;
   assert.deepEqual([imp.nuevas, imp.cuotas, imp.sinVenta.length, imp.abonado], [2, 1, 1, 74100]);
   d = s.ok("bootstrap").data;
   const a = d.ventas.find(v => v.id === ventaA.id), b = d.ventas.find(v => v.id === ventaB.id);
   assert.equal(a.comision, 600, "la comisión real del informe reemplaza la estimada");
+  assert.deepEqual([a.tuuAbono.porAbonar, a.tuuAbono.abonadoEl], [false, "2026-10-13"]);
   const est = 219 + 42;   // 0,77% de 20.000 + 65 = 219, + IVA 42
   assert.deepEqual([b.cobros.length, b.porCobrarTuu, b.comision], [1, 40000, 300 + 2 * est]);
   assert.equal(d.tuu.esperados.filter(e => e.tipo === "ventas").length, 0, "la caja ya llegó en el informe");

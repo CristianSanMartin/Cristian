@@ -543,6 +543,27 @@ const Cajas = {
   },
 
   /**
+   * Estado del abono de TUU de las ventas que salieron de una caja (pagos al contado con la máquina):
+   * { ventaId: { porAbonar, fechaAbono, abonadoEl } }. Se confirma con el informe de TUU (o el depósito
+   * registrado a mano en la caja); mientras tanto la venta está "por abonar".
+   */
+  estadoAbonos() {
+    const feriados = Cajas._feriados();
+    const abonadoEl = {};
+    Db.all('Abonos_TUU').forEach((a) => { if (a.ticketId && !a.cuotaId) abonadoEl[a.ticketId + '|' + a.pago] = a.fechaAbono; });
+    const res = {};
+    Db.all('Cajas').filter((c) => c.estado === 'cerrada').forEach((c) => {
+      const fecha = Cajas.fechaAbono(c.fecha, feriados);
+      Cajas._docs(c).filter((d) => !(d.cuotas > 1)).forEach((d) => {
+        const r = res[d.ventaId] = res[d.ventaId] || { porAbonar: false, fechaAbono: fecha, abonadoEl: '' };
+        const el = abonadoEl[d.ticketId + '|' + d.pago] || (c.depositoTuu ? fecha : '');
+        if (el) r.abonadoEl = r.abonadoEl || el; else r.porAbonar = true;
+      });
+    });
+    return res;
+  },
+
+  /**
    * Abonos de TUU que vienen (para el calendario y el aviso de GSTin): las ventas al contado de cada caja
    * que aún no aparecen en un informe y las cuotas pendientes, con su fecha esperada.
    */
