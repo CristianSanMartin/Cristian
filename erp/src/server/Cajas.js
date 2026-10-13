@@ -25,7 +25,7 @@ const Cajas = {
     const id = Cajas.idDe(fecha);
     const existe = Db.get('Cajas', id);
     if (existe) {
-      if (existe.estado === 'cerrada') throw new AppError('La caja del ' + fecha + ' ya está cerrada.');
+      if (existe.estado === 'cerrada') throw new AppError('La caja del ' + fecha + ' ya está cerrada. Para agregarle tickets, ábrela y usa "Reabrir caja".');
       return existe;
     }
     const caja = Object.assign({ id: id, fecha: fecha, estado: 'abierta', tuuTotal: 0, depositoTuu: 0, comisionTuu: 0, tuuDocs: '', notas: '' }, Util.sello(user, true));
@@ -207,7 +207,10 @@ const Cajas = {
       plan.push({ ticket: t, docs: docs });
     });
     const tuuContado = plan.reduce((s, x) => s + x.ticket.pagos.filter((g) => TUU_MEDIOS.indexOf(g.medio) !== -1 && !(g.cuotas > 1)).reduce((a, g) => a + g.monto, 0), 0);
-    if (deposito != null && deposito > tuuContado) throw new AppError('El depósito de TUU ($' + deposito + ') es mayor que lo cobrado con TUU en la caja ($' + tuuContado + ').');
+    // Una caja reabierta suma lo nuevo a lo que ya se había pasado.
+    const previos = Cajas._docs(caja);
+    const tuuTotal = (caja.tuuTotal || 0) + tuuContado;
+    if (deposito != null && deposito > tuuTotal) throw new AppError('El depósito de TUU ($' + deposito + ') es mayor que lo cobrado con TUU en la caja ($' + tuuTotal + ').');
 
     // Stock: lo que piden todos los tickets debe estar disponible (sin contar las reservas de esta caja).
     const pedido = {};
@@ -278,10 +281,10 @@ const Cajas = {
         nMovs++;
       });
       Db.update('Cajas', caja.id, Object.assign({
-        estado: 'cerrada', tuuTotal: tuuContado, depositoTuu: deposito || 0, tuuDocs: JSON.stringify(tuuDocs),
+        estado: 'cerrada', tuuTotal: tuuTotal, depositoTuu: deposito != null ? deposito : (caja.depositoTuu || 0), tuuDocs: JSON.stringify(previos.concat(tuuDocs)),
         cerradaEn: Util.ahora(), cerradaPor: user.email,
       }, Util.sello(user)));
-      const comisionTuu = Cajas._recalcularComisiones(ventaIds, user);
+      const comisionTuu = Cajas._recalcularComisiones(Array.from(new Set(previos.map((d) => d.ventaId).concat(ventaIds))), user);
       Db.update('Cajas', caja.id, { comisionTuu: comisionTuu });
       Audit.log(user, 'cerrar', 'Caja', caja.id, { tickets: tickets.length, ventas: ventaIds.length, movimientos: nMovs, tuu: tuuContado, deposito: deposito, comision: comisionTuu, cuotas: cuotas.length });
       return { ventas: ventaIds.length, movimientos: nMovs, tickets: tickets.length, comisionTuu: comisionTuu, cuotas: cuotas.length };
@@ -357,6 +360,19 @@ const Cajas = {
   /** Ventas que salieron de una caja (las que tienen pagos con TUU). */
   _ventasDe(caja) {
     return Array.from(new Set(Cajas._docs(caja).map((d) => d.ventaId)));
+  },
+
+  /**
+   * Reabre una caja cerrada (se cerró antes de tiempo o faltaron tickets). Lo ya pasado a Ventas y
+   * Finanzas queda como está; al volver a cerrarla solo pasan los tickets nuevos.
+   */
+  reabrir(p, user) {
+    const caja = Db.get('Cajas', String(p.id || ''));
+    if (!caja) throw new AppError('La caja no existe.', 'NO_ENCONTRADO');
+    if (caja.estado !== 'cerrada') throw new AppError('La caja ' + caja.id + ' ya está abierta.');
+    Db.update('Cajas', caja.id, Object.assign({ estado: 'abierta' }, Util.sello(user)));
+    Audit.log(user, 'reabrir', 'Caja', caja.id, { fecha: caja.fecha });
+    return { id: caja.id };
   },
 
   /** Caja cerrada sin el informe de TUU: con el depósito real se corrige la comisión de sus ventas (al contado). */

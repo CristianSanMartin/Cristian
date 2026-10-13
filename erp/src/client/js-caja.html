@@ -81,6 +81,7 @@
         (abierta && op ? '<button class="btn" data-action="nuevoTicket">' + GS.icon('plus', 2.4) + 'Venta</button>' +
           '<button class="btn secondary" data-action="nuevaSalidaCaja">' + GS.icon('plus', 2.4) + 'Compra / gasto</button>' : '') +
         (abierta && admin ? '<button class="btn ghost" data-action="cerrarCaja" data-id="' + esc(c.id) + '" style="margin-left:auto;">Cerrar caja</button>' : '') +
+        (!abierta && admin ? '<button class="btn secondary" data-action="reabrirCaja" data-id="' + esc(c.id) + '" title="Se cerró antes de tiempo o faltan ventas: agregar tickets">Reabrir caja</button>' : '') +
         (!abierta && admin && c.tuuTotal ? '<button class="btn ghost" data-action="conciliarTuuCaja" data-id="' + esc(c.id) + '">' + (c.depositoTuu ? 'Corregir depósito TUU' : 'Registrar depósito TUU') + '</button>' : '') +
         '<span class="muted" style="align-self:center;">' + esc(c.id) + ' · ' + (abierta ? 'abierta' : 'cerrada ' + (c.cerradaEn ? fmt.date(String(c.cerradaEn).slice(0, 10)) : '')) + '</span></div>' +
         '<div class="table-wrap"><table class="data-table"><thead><tr><th>Ticket</th><th>Hora</th><th>Cliente</th><th>Detalle</th><th>Pago</th><th class="right">Total</th><th>Registró</th><th></th></tr></thead><tbody>' +
@@ -329,6 +330,16 @@
     });
   };
 
+  GS.actions.reabrirCaja = (id) => {
+    const c = cajas().find((x) => x.id === id);
+    GS.confirm({
+      title: 'Reabrir la caja del ' + fmt.date(c.fecha),
+      message: 'La caja vuelve a quedar abierta para agregar los tickets que faltaron. Lo que ya se pasó a Ventas, Inventario y Finanzas <strong>queda como está</strong>: ' +
+        'al cerrarla de nuevo solo pasan los tickets nuevos (los N° siguen la numeración del día). Las ventas ya pasadas se corrigen en Ventas.',
+      confirmLabel: 'Reabrir caja',
+      onConfirm: () => GS.mutate('reabrirCaja', { id: id }, 'Caja del ' + fmt.date(c.fecha) + ' reabierta'),
+    });
+  };
   GS.actions.conciliarTuuCaja = (id) => {
     const c = cajas().find((x) => x.id === id);
     GS.formModal({

@@ -1532,3 +1532,23 @@ test("TUU: abono en 2 días hábiles (con feriado), cuotas por cobrar e informe 
   d = s.ok("bootstrap").data;
   assert.equal(d.ventas.find(v => v.id === ventaB.id).porCobrarTuu, 20000);
 });
+
+test("reabrir una caja cerrada: se agregan tickets y al cerrar solo pasan los nuevos", () => {
+  const s = createServer();
+  const caja = s.ok("abrirCaja", { fecha: "2026-10-09" }).result;
+  s.ok("guardarTicket", { cajaId: caja.id, lineas: [{ categoria: "Singles", monto: 10000 }], pagos: [{ medio: "debito", monto: 10000 }] });
+  s.ok("cerrarCaja", { id: caja.id });
+  assert.match(errorDe(s.call("abrirCaja", { fecha: "2026-10-09" })), /Reabrir caja/);
+  s.ok("guardarUsuario", { email: "socio@gsprime.cl", nombre: "Socio", rol: "operador" });
+  assert.equal(s.as("socio@gsprime.cl").call("reabrirCaja", { id: caja.id }).code, "SIN_PERMISO");
+  s.as("admin@gsprime.cl").ok("reabrirCaja", { id: caja.id });
+  const t = s.ok("guardarTicket", { cajaId: caja.id, lineas: [{ categoria: "Torneo", monto: 5000 }], pagos: [{ medio: "credito", monto: 5000 }] }).result;
+  assert.equal(t.id, "TK-20261009-02", "sigue la numeración");
+  const r = s.ok("cerrarCaja", { id: caja.id }).result;
+  assert.equal(r.ventas, 1, "solo el ticket nuevo");
+  const d = s.ok("bootstrap").data;
+  assert.equal(d.ventas.filter(v => /TK-20261009/.test(v.notas)).length, 2);
+  const c = d.cajas.find(x => x.id === caja.id);
+  assert.deepEqual([c.estado, c.tuuTotal], ["cerrada", 15000]);
+  assert.equal(d.tuu.esperados.find(e => e.cajaId === caja.id).monto, 15000);
+});
