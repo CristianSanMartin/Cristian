@@ -17,7 +17,7 @@
     const r = GS.resumenDinero();
     const a = r.abierta;
     const neg = (n) => (n < 0 ? 'text-danger' : '');
-    return '<div class="dash-titulo"><h3>Dinero</h3><a href="#" data-nav="finanzas">Ver movimientos →</a></div>' +
+    return '<div class="dash-titulo"><h3>Dinero</h3></div>' +
       '<div class="kpi-grid dinero">' +
       kpi('Saldo disponible', '<span class="' + (neg(r.saldo) || 'text-gold') + '">' + fmt.money(r.saldo) + '</span>', 'Ingresos − egresos registrados' + (a ? ' + caja abierta' : '')) +
       kpi('Por abonar (TUU)', fmt.money(r.porAbonar), r.nPorAbonar + (r.nPorAbonar === 1 ? ' pago' : ' pagos') + ' sin confirmar' + (r.cuotas ? ' · + ' + fmt.money(r.cuotas) + ' en cuotas' : '')) +
