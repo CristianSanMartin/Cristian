@@ -18,9 +18,8 @@
     const a = r.abierta;
     const neg = (n) => (n < 0 ? 'text-danger' : '');
     return '<div class="dash-titulo"><h3>Dinero</h3><a href="#" data-nav="finanzas">Ver movimientos →</a></div>' +
-      '<div class="kpi-grid seis">' +
+      '<div class="kpi-grid cinco">' +
       kpi('Saldo disponible', '<span class="' + (neg(r.saldo) || 'text-gold') + '">' + fmt.money(r.saldo) + '</span>', 'Ingresos − egresos registrados' + (a ? ' + caja abierta' : '')) +
-      kpi('Efectivo en caja', '<span class="' + neg(r.caja) + '">' + fmt.money(r.caja) + '</span>', a ? 'Incluye ' + fmt.money(a.efectivo) + ' de la caja abierta' : 'Referencial: los depósitos al banco no se registran') +
       kpi('Banco', '<span class="' + neg(r.banco) + '">' + fmt.money(r.banco) + '</span>', 'Transferencias y abonos TUU confirmados') +
       kpi('Por abonar (TUU)', fmt.money(r.porAbonar), r.nPorAbonar + (r.nPorAbonar === 1 ? ' pago' : ' pagos') + ' sin confirmar' + (r.cuotas ? ' · + ' + fmt.money(r.cuotas) + ' en cuotas' : '')) +
       kpi('Facturas por pagar', '<span class="' + (r.porPagar ? 'text-danger' : '') + '">' + fmt.money(r.porPagar) + '</span>', r.nPorPagar
