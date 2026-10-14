@@ -522,12 +522,11 @@ table.data-table{width:100%;border-collapse:collapse;min-width:920px;}
 .menu-toggle{display:none;background:none;border:none;color:var(--white);cursor:pointer;padding:6px;}
 .menu-toggle svg{width:22px;height:22px;stroke:currentColor;}
 
-.kpi-grid.cinco{grid-template-columns:repeat(5,1fr);}
 .dash-titulo{display:flex;align-items:center;justify-content:space-between;margin:0 0 10px;}
 .dash-titulo h3{margin:0;font-family:var(--font-display);font-size:15px;text-transform:uppercase;letter-spacing:.4px;font-weight:600;}
 .dash-titulo a{font-size:12px;color:var(--text-faint);}
 @media (max-width:1080px){
-  .kpi-grid,.kpi-grid.cinco{grid-template-columns:repeat(2,1fr);}
+  .kpi-grid{grid-template-columns:repeat(2,1fr);}
   .dash-grid{grid-template-columns:1fr;}
 }
 @media (max-width:860px){
@@ -544,7 +543,7 @@ table.data-table{width:100%;border-collapse:collapse;min-width:920px;}
   .topbar{padding:0 16px;}
 }
 @media (max-width:520px){
-  .kpi-grid,.kpi-grid.cinco{grid-template-columns:1fr;}
+  .kpi-grid{grid-template-columns:1fr;}
 }
 
 /* ================= v2: componentes adicionales ================= */
