@@ -396,7 +396,7 @@ test("venta por monto, Finanzas y migración de la caja diaria", { skip }, async
       return Number(t.replace(/[^\d-]/g, ""));
     };
     const efectivoAntes = await efectivo();
-    assert.match(await page.locator(".kpi-grid.cinco").textContent(), /Saldo disponible.*Banco.*Por abonar \(TUU\).*Por cobrar a clientes/s);
+    assert.match(await page.locator(".kpi-grid.seis").textContent(), /Saldo disponible.*Banco.*Por abonar \(TUU\).*Facturas por pagar.*Por cobrar a clientes/s);
     // Venta por monto desde Inventario: no toca el stock
     await page.click('[data-nav="inventario"]');
     const antes = await page.locator(".kpi-card").first().textContent();

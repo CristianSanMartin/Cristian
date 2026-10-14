@@ -185,6 +185,9 @@
     });
     r.cuotas = ((data().tuu || {}).cuotas || []).filter((c) => c.estado === 'pendiente').reduce((s, c) => s + c.monto, 0);
     data().ventas.forEach((v) => { if (!v.anulada && v.saldo > 0) { r.porCobrar += v.saldo; r.nPorCobrar++; } });
+    // Facturas de compra con saldo por pagar al proveedor (total con IVA − pagos registrados).
+    r.porPagar = 0; r.nPorPagar = 0; r.pagarDesde = '';
+    data().compras.forEach((c) => { if (c.porPagar > 1) { r.porPagar += c.porPagar; r.nPorPagar++; if (!r.pagarDesde || c.fecha < r.pagarDesde) r.pagarDesde = c.fecha; } });
     (data().cajas || []).filter((c) => c.estado === 'abierta').forEach((c) => {
       const a = r.abierta || (r.abierta = { fechas: [], efectivo: 0, banco: 0, tuu: 0, tickets: 0 });
       a.fechas.push(c.fecha);
