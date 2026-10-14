@@ -12,6 +12,22 @@
       '<div class="kpi-value">' + value + '</div><div class="kpi-sub">' + (sub || '') + '</div></div>';
   }
 
+  // Dinero: saldo de Finanzas por cuenta, lo que TUU aún no abona, cuotas y deudas de clientes.
+  function dinero() {
+    const r = GS.resumenDinero();
+    const a = r.abierta;
+    const neg = (n) => (n < 0 ? 'text-danger' : '');
+    return '<div class="dash-titulo"><h3>Dinero</h3><a href="#" data-nav="finanzas">Ver movimientos →</a></div>' +
+      '<div class="kpi-grid cinco">' +
+      kpi('Saldo disponible', '<span class="' + (neg(r.saldo) || 'text-gold') + '">' + fmt.money(r.saldo) + '</span>', 'Ingresos − egresos registrados' + (a ? ' + caja abierta' : '')) +
+      kpi('Efectivo en caja', '<span class="' + neg(r.caja) + '">' + fmt.money(r.caja) + '</span>', a ? 'Incluye ' + fmt.money(a.efectivo) + ' de la caja abierta' : 'Referencial: los depósitos al banco no se registran') +
+      kpi('Banco', '<span class="' + neg(r.banco) + '">' + fmt.money(r.banco) + '</span>', 'Transferencias y abonos TUU confirmados') +
+      kpi('Por abonar (TUU)', fmt.money(r.porAbonar), r.nPorAbonar + (r.nPorAbonar === 1 ? ' pago' : ' pagos') + ' sin confirmar' + (r.cuotas ? ' · + ' + fmt.money(r.cuotas) + ' en cuotas' : '')) +
+      kpi('Por cobrar a clientes', fmt.money(r.porCobrar), r.nPorCobrar ? r.nPorCobrar + (r.nPorCobrar === 1 ? ' venta con deuda' : ' ventas con deuda') : 'Nadie debe') +
+      '</div>' +
+      (a ? '<p class="table-note" style="margin:-4px 0 12px;">Caja abierta del ' + a.fechas.map(fmt.date).join(', ') + ': ' + a.tickets + ' tickets aún no pasan a Finanzas (efectivo ' + fmt.money(a.efectivo) + ', banco ' + fmt.money(a.banco) + ', TUU neto estimado ' + fmt.money(a.tuu) + ').</p>' : '');
+  }
+
   GS.views.dashboard = {
     title: 'Dashboard',
     render(el, d) {
@@ -50,6 +66,8 @@
 
       el.innerHTML =
         '<div class="page-head"><div><h1>Dashboard</h1><p>Resumen de la operación de GS Prime.</p></div></div>' +
+        dinero() +
+        '<div class="dash-titulo"><h3>Preventas</h3></div>' +
         '<div class="kpi-grid">' +
         kpi('Productos en preventa', activas.length, porAsignar.length ? '<span class="text-gold">' + porAsignar.length + ' esperando asignación</span>' : 'Todos asignados') +
         kpi('Unidades por comprar', fmt.num(asignadas.reduce((s, p) => s + p.asignado, 0)), 'Asignadas, aún sin compra') +

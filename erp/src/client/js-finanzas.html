@@ -172,6 +172,43 @@
     return (data().movimientos || []).concat(f.ventas ? movsVentas() : []).filter((m) => !q || GS.norm(m.categoriaLabel + ' ' + m.subcategoria + ' ' + m.notas + ' ' + m.referencia + ' ' + m.id + ' ' + m.fecha).includes(q))
       .sort((a, b) => (b.fecha + b.id).localeCompare(a.fecha + a.id));
   };
+  // Resumen del dinero para el Dashboard: todo lo registrado en Finanzas (con ventas y pagos de facturas)
+  // más los tickets de la caja abierta, que pasan a Finanzas recién al cerrarla.
+  GS.resumenDinero = function () {
+    const r = { saldo: 0, caja: 0, banco: 0, porAbonar: 0, nPorAbonar: 0, cuotas: 0, porCobrar: 0, nPorCobrar: 0, abierta: null };
+    const sumar = (cuenta, s) => { r.saldo += s; if (cuenta === 'caja') r.caja += s; else if (cuenta === 'banco') r.banco += s; };
+    const CUENTA = { 'Caja (efectivo)': 'caja', Banco: 'banco', TUU: 'banco' };
+    (data().movimientos || []).concat(movsVentas()).forEach((m) => {
+      if (m.anulado) return;
+      if (m.porAbonar) { r.porAbonar += m.monto; r.nPorAbonar++; return; }
+      sumar(CUENTA[m.cuentaLabel], m.tipo === 'ingreso' ? m.monto : -m.monto);
+    });
+    r.cuotas = ((data().tuu || {}).cuotas || []).filter((c) => c.estado === 'pendiente').reduce((s, c) => s + c.monto, 0);
+    data().ventas.forEach((v) => { if (!v.anulada && v.saldo > 0) { r.porCobrar += v.saldo; r.nPorCobrar++; } });
+    (data().cajas || []).filter((c) => c.estado === 'abierta').forEach((c) => {
+      const a = r.abierta || (r.abierta = { fechas: [], efectivo: 0, banco: 0, tuu: 0, tickets: 0 });
+      a.fechas.push(c.fecha);
+      (c.tickets || []).filter((t) => t.estado === 'abierto').forEach((t) => {
+        a.tickets++;
+        if (t.tipo === 'egreso') {
+          sumar(t.cuenta === 'banco' ? 'banco' : 'caja', -t.total);
+          a[t.cuenta === 'banco' ? 'banco' : 'efectivo'] -= t.total;
+          return;
+        }
+        t.pagos.forEach((p) => {
+          if (p.medio === 'efectivo') { sumar('caja', p.monto); a.efectivo += p.monto; }
+          else if (p.medio === 'transferencia') { sumar('banco', p.monto); a.banco += p.monto; }
+          else if (p.medio === 'pendiente') { r.porCobrar += p.monto; r.nPorCobrar++; }
+          else {
+            const neto = p.monto - GS.comisionPago(data().catalogos.comisiones[p.medio], p.monto);
+            r.porAbonar += neto; r.nPorAbonar++; a.tuu += neto;
+          }
+        });
+      });
+    });
+    return r;
+  };
+
   GS.tablaRegistrar('movimientos', { filas: movsBuscados, columnas: colsMov, alCambiar: () => GS.views.finanzas.update() });
 
   // "Ver OC-…" / "Ver CP-…" despliega el detalle debajo de la fila, sin cambiar de página.

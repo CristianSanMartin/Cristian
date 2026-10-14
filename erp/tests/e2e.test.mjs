@@ -389,6 +389,14 @@ test("venta por monto, Finanzas y migración de la caja diaria", { skip }, async
   const browser = await chromium.launch();
   try {
     const { page, errores } = await abrir(browser);
+    // Dashboard: resumen del dinero (el efectivo sube con la venta en efectivo)
+    const efectivo = async () => {
+      await page.click('[data-nav="dashboard"]');
+      const t = await page.locator(".kpi-card", { hasText: "Efectivo en caja" }).locator(".kpi-value").textContent();
+      return Number(t.replace(/[^\d-]/g, ""));
+    };
+    const efectivoAntes = await efectivo();
+    assert.match(await page.locator(".kpi-grid.cinco").textContent(), /Saldo disponible.*Banco.*Por abonar \(TUU\).*Por cobrar a clientes/s);
     // Venta por monto desde Inventario: no toca el stock
     await page.click('[data-nav="inventario"]');
     const antes = await page.locator(".kpi-card").first().textContent();
@@ -402,6 +410,7 @@ test("venta por monto, Finanzas y migración de la caja diaria", { skip }, async
     await panel.locator('button[type="submit"]').click();
     await toast(page, /registrada · \$12\.000/);
     assert.equal(await page.locator(".kpi-card").first().textContent(), antes);
+    assert.equal(await efectivo(), efectivoAntes + 12000);
 
     // Finanzas: movimiento nuevo y resumen
     await page.click('[data-nav="finanzas"]');
