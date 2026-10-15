@@ -40,3 +40,20 @@ Cruza el registro de operaciones (FECHA, CUENTA, ID RUTA) con las proformas guar
 - Solo se marca "Pendiente" dentro del periodo que pagan las proformas cargadas (se sugiere solo y se puede ajustar en el panel lateral).
 - Filas del registro con ID "-" (bonos y descuentos) no se consideran. Del geosort se descartan las rutas planificadas que no salieron.
 - "Descargar cruce Excel" genera Resumen, Rutas y Pagado sin registro.
+
+## Perú (Sodimac)
+Pestaña "Perú (Sodimac)": arma la liquidación de cobro a Sodimac Perú - Lurin desde el reporte de visitas de SIMPLI, con la misma lógica que el script `peru_v2.py` de control de gestión.
+
+| Botón | Qué hace |
+|---|---|
+| Reporte de visitas SIMPLI (uno o varios, 15 días cada uno) | Calcula una ruta por placa y fecha y la guarda en la hoja PERU RUTAS. Los días repetidos entre archivos se cuentan una vez; volver a cargar reemplaza los días del archivo. |
+| Liquidación enviada (opcional) | Compara ruta por ruta con lo que se mandó a Sodimac. No se guarda. |
+
+"Descargar liquidación" genera el Excel con el mismo formato que se envía (FECHA, RAZÓN SOCIAL, PLACA, TIPO UNIDAD, PUNTOS, DISTRITOS, ZONA, TARIFA REGULAR, ADICIONAL, DETALLE ADICIONAL, VALOR TOTAL).
+
+Reglas (montos en soles sin IGV):
+- Tarifa por día: F13 Metropolitana 420 / Periferia 610; F20 Metropolitana 460 / Periferia 640. Domingo o feriado: +30% como adicional.
+- 10 y 13 m³ se cobran como F13; 15 y 20 (m³ o TN) como F20.
+- Distrito: el último tramo de la dirección después de la coma, para no confundir calles como "JR SANTA ROSA, COMAS" con el distrito Santa Rosa.
+- Zona: la del punto más lejano efectivamente entregado. Las visitas fallidas no definen la zona; si una visita fallida estaba en periferia, la ruta lo indica en Observación.
+- Tarifas, distritos y feriados están al inicio de la sección "Perú (Sodimac)" de `index.html`.
