@@ -169,7 +169,7 @@
     const f = GS.filters('finanzas', DEF);
     const q = GS.norm((f.q || '').trim());
     // Todos los movimientos, de todos los años (el año elegido solo cambia el resumen), los más recientes primero.
-    return (data().movimientos || []).concat(movsVentas()).filter((m) => !q || GS.norm(m.categoriaLabel + ' ' + m.subcategoria + ' ' + m.notas + ' ' + m.referencia + ' ' + m.id + ' ' + m.fecha).includes(q))
+    return movsVivos().concat(movsVentas()).filter((m) => !q || GS.norm(m.categoriaLabel + ' ' + m.subcategoria + ' ' + m.notas + ' ' + m.referencia + ' ' + m.id + ' ' + m.fecha).includes(q))
       .sort((a, b) => (b.fecha + b.id).localeCompare(a.fecha + a.id));
   };
   // Resumen del dinero para el Dashboard: todo lo registrado en Finanzas (con ventas y pagos de facturas)
@@ -433,7 +433,7 @@
     const m = data().movimientos.find((x) => x.id === id);
     GS.confirm({
       title: 'Anular ' + m.id,
-      message: '<strong>' + esc(m.categoriaLabel) + '</strong> por ' + fmt.money(m.monto) + ' deja de contar en el resumen. Queda en la lista como anulado y en la auditoría.',
+      message: '<strong>' + esc(m.categoriaLabel) + '</strong> por ' + fmt.money(m.monto) + ' deja de contar y desaparece de la lista. Queda registrado en la auditoría.',
       confirmLabel: 'Sí, anular',
       danger: true,
       onConfirm: () => GS.mutate('anularMovimiento', { id: id }, 'Movimiento anulado'),
