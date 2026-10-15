@@ -1,2 +1,5 @@
 node_modules/
 *.xlsx
+publicar/.clasp.json
+publicar/.implementacion
+publicar/src/
