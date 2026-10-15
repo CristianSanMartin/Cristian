@@ -8,7 +8,7 @@
   <style>
     * { box-sizing: border-box; }
     body { margin:0; background:#f4f6f8; font-family:Arial,Helvetica,sans-serif; color:#1f2937; }
-    .container { width:95%; max-width:1500px; margin:28px auto; }
+    .container { width:95%; max-width:1700px; margin:28px auto; }
     .header { background:#111827; color:#fff; padding:24px 28px; border-radius:12px; margin-bottom:18px; }
     .header h1 { margin:0; font-size:27px; }
     .header p { margin:7px 0 0; opacity:.8; }
@@ -49,6 +49,16 @@
     .tab { border:0; background:none; color:var(--muted,#6b7280); padding:10px 16px; font-size:14px; font-weight:bold; cursor:pointer; border-bottom:3px solid transparent; margin-bottom:-1px; }
     .tab.active { color:var(--accent,#2563eb); border-bottom-color:var(--accent,#2563eb); }
     .tab:focus-visible { outline:3px solid var(--accent-line,#bfdbfe); outline-offset:2px; }
+    /* Navegación como panel lateral */
+    .app-layout { display:grid; grid-template-columns:210px minmax(0,1fr); gap:18px; align-items:start; }
+    .app-main { min-width:0; }
+    .tabs { flex-direction:column; gap:2px; margin-bottom:0; border-bottom:0; position:sticky; top:12px; background:var(--surface,#fff); border-radius:12px; padding:12px 10px; box-shadow:0 2px 8px rgba(0,0,0,.06); }
+    .tab { text-align:left; border-bottom:0; border-left:3px solid transparent; margin-bottom:0; border-radius:6px; padding:9px 12px; }
+    .tab:hover { background:var(--hover,#f9fafb); }
+    .tab.active { border-left-color:var(--accent,#2563eb); background:var(--accent-soft,#eff6ff); }
+    .nav-grupo { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted,#6b7280); padding:12px 12px 4px; }
+    .nav-grupo:first-child { padding-top:2px; }
+    @media (max-width:1100px){ .app-layout { grid-template-columns:1fr; } .tabs { position:static; flex-direction:row; flex-wrap:wrap; align-items:center; } .nav-grupo { padding:4px 8px; } }
     .rutas-layout { display:grid; grid-template-columns:320px minmax(0,1fr); gap:18px; align-items:start; }
     .rutas-panel { position:sticky; top:12px; max-height:calc(100vh - 24px); overflow:auto; }
     .rutas-panel h3 { font-size:13px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted,#6b7280); margin:18px 0 8px; }
@@ -112,11 +122,15 @@
     <p>Procesa proformas en bruto y revisa DELIVERY, SERVICE, TRANSFERENCIA y TL. Liquidación de Perú (Sodimac) desde SIMPLI.</p>
   </div>
 
-  <div class="tabs">
+  <div class="app-layout">
+  <nav class="tabs" aria-label="Secciones">
+    <span class="nav-grupo">Falabella Chile</span>
     <button class="tab active" data-vista="proforma" onclick="mostrarVista('proforma')">Revisión de proforma</button>
     <button class="tab" data-vista="rutas" onclick="mostrarVista('rutas')">Control de rutas</button>
-    <button class="tab" data-vista="peru" onclick="mostrarVista('peru')">Perú (Sodimac)</button>
-  </div>
+    <span class="nav-grupo">Perú</span>
+    <button class="tab" data-vista="peru" onclick="mostrarVista('peru')">Liquidación Sodimac</button>
+  </nav>
+  <div class="app-main">
   <div id="errorArea" class="card hidden"><div id="errorText" class="error-box"></div></div>
 
   <div id="vistaProforma">
@@ -405,6 +419,8 @@
         </div>
       </main>
     </div>
+  </div>
+  </div>
   </div>
 </div>
 
