@@ -254,7 +254,16 @@ const Compras = {
     if (!pago) throw new AppError('El pago no existe.', 'NO_ENCONTRADO');
     if (pago.anulado) throw new AppError('El pago ' + pago.id + ' ya está anulado.');
     Db.update('Pagos_Facturas', pago.id, Object.assign({ anulado: true }, Util.sello(user)));
-    Audit.log(user, 'anular pago', 'Compra', pago.compraId, { pago: pago.id, monto: pago.monto });
+    // Pago que vino de un egreso de Finanzas ("→ Factura"): el egreso vuelve a contar como antes.
+    const m = /^Desde (MOV-\d+)/.exec(pago.notas || '');
+    const mov = m ? Db.get('Finanzas', m[1]) : null;
+    const restaurado = mov && mov.anulado ? mov.id : '';
+    if (restaurado) {
+      const notas = String(mov.notas || '').split(' · ').filter((x) => x.indexOf('Pasado a pago de la factura') !== 0).join(' · ');
+      Db.update('Finanzas', mov.id, Object.assign({ anulado: false, notas: notas }, Util.sello(user)));
+    }
+    Audit.log(user, 'anular pago', 'Compra', pago.compraId, { pago: pago.id, monto: pago.monto, restaurado: restaurado });
+    return { restaurado: restaurado };
   },
 
   /**

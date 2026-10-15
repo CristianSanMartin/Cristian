@@ -1379,6 +1379,12 @@ test("un egreso de Finanzas pasa a ser pago de una factura (y se anula para no c
   assert.ok(mov.anulado && /Pasado a pago de la factura/.test(mov.notas));
   assert.equal(d.compras.find(x => x.id === c.id).porPagar, Math.round(c.total) - 477000);
   assert.match(errorDe(s.call("movimientoAPagoFactura", { id: m.id, compraId: c.id })), /anulado/);
+  // Enlace equivocado: al anular ese pago, el egreso vuelve a quedar vigente.
+  assert.equal(s.ok("anularPagoCompra", { id: r.pago }).result.restaurado, m.id);
+  const d2 = s.ok("bootstrap").data;
+  const mov2 = d2.movimientos.find(x => x.id === m.id);
+  assert.ok(!mov2.anulado && !/Pasado a pago/.test(mov2.notas));
+  assert.equal(d2.compras.find(x => x.id === c.id).porPagar, Math.round(c.total));
 });
 
 test("compra directa de sellados sin preventa: entra al inventario con su costo y despacho", () => {

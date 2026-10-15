@@ -161,10 +161,11 @@
     const p = c.pagos.find((x) => x.id === id);
     GS.confirm({
       title: 'Anular el pago ' + id,
-      message: 'El pago de ' + fmt.money(p.monto) + ' del ' + fmt.date(p.fecha) + ' a la factura ' + esc(c.factura) + ' deja de contar. Queda en la auditoría.',
+      message: 'El pago de ' + fmt.money(p.monto) + ' del ' + fmt.date(p.fecha) + ' a la factura ' + esc(c.factura) + ' deja de contar. Queda en la auditoría.' +
+        (/^Desde MOV-/.test(p.notas || '') ? ' Vino de un egreso de Finanzas: ese movimiento vuelve a quedar vigente.' : ''),
       confirmLabel: 'Sí, anular',
       danger: true,
-      onConfirm: () => GS.mutate('anularPagoCompra', { id: id }, 'Pago anulado'),
+      onConfirm: () => GS.mutate('anularPagoCompra', { id: id }, (r) => 'Pago anulado' + (r.restaurado ? ' · ' + r.restaurado + ' vuelve a Finanzas' : '')),
     });
   };
 
