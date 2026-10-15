@@ -1387,6 +1387,26 @@ test("un egreso de Finanzas pasa a ser pago de una factura (y se anula para no c
   assert.equal(d2.compras.find(x => x.id === c.id).porPagar, Math.round(c.total));
 });
 
+test("un ingreso de Finanzas pasa a ser abono de una OC con deuda", () => {
+  const s = createServer();
+  const { prods } = conInventario(s);
+  const v = s.ok("crearVenta", { fecha: "2026-10-10", cliente: "Pedro", pagada: false, abono: 0, lineas: [{ productoId: prods.miniTin.id, cantidad: 1 }] }).result;
+  const deuda = s.ok("bootstrap").data.ventas.find(x => x.id === v.id).saldo;
+  assert.ok(deuda > 1000);
+  const m = s.ok("guardarMovimiento", { fecha: "2026-10-14", tipo: "ingreso", categoria: "otro_ingreso", subcategoria: "Transferencia Pedro", monto: 1000, cuenta: "banco" }).result;
+  const grande = s.ok("guardarMovimiento", { fecha: "2026-10-14", tipo: "ingreso", categoria: "otro_ingreso", monto: deuda + 1 }).result;
+  assert.match(errorDe(s.call("movimientoACobroVenta", { id: grande.id, ventaId: v.id })), /debe/);
+  const r = s.ok("movimientoACobroVenta", { id: m.id, ventaId: v.id }).result;
+  const d = s.ok("bootstrap").data;
+  const vv = d.ventas.find(x => x.id === v.id);
+  assert.equal(vv.saldo, deuda - 1000);
+  const c = vv.cobros.find(x => x.id === r.cobro);
+  assert.deepEqual([c.fecha, c.monto, c.medioPago], ["2026-10-14", 1000, "transferencia"]);
+  const mov = d.movimientos.find(x => x.id === m.id);
+  assert.ok(mov.anulado && /Pasado a abono de/.test(mov.notas));
+  assert.match(errorDe(s.call("movimientoACobroVenta", { id: m.id, ventaId: v.id })), /anulado/);
+});
+
 test("compra directa de sellados sin preventa: entra al inventario con su costo y despacho", () => {
   const s = createServer();
   const prov = s.ok("bootstrap").data.proveedores[0];

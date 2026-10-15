@@ -48,6 +48,28 @@ const Finanzas = {
    * Un egreso que en realidad fue el pago (total o parcial) de una factura de compra: se registra como
    * pago de esa factura (misma fecha, monto y cuenta) y el movimiento queda anulado, para no contarlo dos veces.
    */
+  /**
+   * Un ingreso que en realidad fue el abono de una venta con saldo pendiente: se registra como abono de esa
+   * venta (misma fecha y monto) y el movimiento queda anulado, para no contarlo dos veces.
+   */
+  aCobroVenta(p, user) {
+    const mov = Finanzas.requerir(p.id);
+    if (mov.anulado) throw new AppError('El movimiento ' + mov.id + ' está anulado.');
+    if (mov.tipo !== 'ingreso') throw new AppError('Solo un ingreso puede ser el abono de una venta.');
+    const v = Ventas.requerir(p.ventaId);
+    const saldo = v.anulada ? 0 : Ventas.saldo(v);
+    if (saldo <= 0) throw new AppError('La venta ' + v.id + ' no tiene saldo pendiente.');
+    if (mov.monto > saldo) throw new AppError('El ingreso es de $' + mov.monto + ' y ' + v.id + ' debe $' + saldo + '.');
+    const cobro = Ventas.registrarCobro({
+      ventaId: v.id, fecha: mov.fecha, monto: mov.monto, medioPago: { caja: 'efectivo', tuu: 'debito' }[mov.cuenta] || 'transferencia',
+      notas: ('Desde ' + mov.id + (mov.subcategoria ? ' · ' + mov.subcategoria : '') + (mov.referencia ? ' · ' + mov.referencia : '')).slice(0, 300),
+    }, user);
+    const nota = 'Pasado a abono de ' + v.id + ' (' + cobro.id + ')';
+    Db.update('Finanzas', mov.id, Object.assign({ anulado: true, notas: [mov.notas, nota].filter(Boolean).join(' · ').slice(-300) }, Util.sello(user)));
+    Audit.log(user, 'a abono de venta', 'Movimiento', mov.id, { venta: v.id, cobro: cobro.id, monto: mov.monto });
+    return { cobro: cobro.id, ventaId: v.id };
+  },
+
   aPagoFactura(p, user) {
     const mov = Finanzas.requerir(p.id);
     if (mov.anulado) throw new AppError('El movimiento ' + mov.id + ' está anulado.');

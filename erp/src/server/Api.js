@@ -72,6 +72,7 @@ function rutas_() {
     renumerarOc: { rol: 'admin', write: true, fn: (p, u) => Ventas.numerosOriginales({ aplicar: true }, u) },
     guardarMovimiento: { rol: 'operador', write: true, fn: Finanzas.guardar },
     anularMovimiento: { rol: 'admin', write: true, fn: Finanzas.anular },
+    movimientoACobroVenta: { rol: 'admin', write: true, fn: Finanzas.aCobroVenta },
     movimientoAPagoFactura: { rol: 'admin', write: true, fn: Finanzas.aPagoFactura },
     iniciarToma: { rol: 'operador', write: true, fn: Tomas.iniciar },
     guardarToma: { rol: 'operador', write: true, fn: Tomas.guardar },

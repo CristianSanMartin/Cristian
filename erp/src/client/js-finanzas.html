@@ -231,6 +231,23 @@
       onSubmit: (v) => GS.mutate('movimientoAPagoFactura', { id: id, compraId: v.compraId }, (r) => 'Pago ' + r.pago + ' registrado en ' + r.compraId),
     });
   };
+  // Un ingreso que fue el abono de una venta con deuda (ej. transferencia del cliente): pasa a ser abono de esa OC.
+  GS.actions.movimientoACobroVenta = (id) => {
+    const m = data().movimientos.find((x) => x.id === id);
+    const opciones = data().ventas.filter((v) => !v.anulada && v.saldo > 0).sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)))
+      .map((v) => ({ value: v.id, label: v.id + ' · ' + v.cliente + ' · ' + fmt.date(v.fecha) + ' · debe ' + fmt.money(v.saldo) }));
+    GS.formModal({
+      title: 'Pasar ' + id + ' a abono de una OC',
+      submitLabel: 'Registrar como abono',
+      fields: () => '<p class="hint">' + fmt.date(m.fecha) + ' · ' + esc(m.categoriaLabel) + ' · ' + esc(m.subcategoria || '') + ' · <strong>' + fmt.money(m.monto) + '</strong></p>' +
+        (opciones.length
+          ? '<div class="form-field"><label>OC con saldo pendiente *</label><select name="ventaId">' + GS.options([{ value: '', label: 'Elige la OC…' }].concat(opciones), '') + '</select></div>'
+          : '<div class="notice warn">No hay ventas con saldo pendiente.</div>') +
+        '<p class="hint">Se registra como abono de esa OC con la misma fecha y monto (se ve en la venta y aquí como "Abono de venta"). ' +
+        'El movimiento ' + esc(id) + ' queda anulado para no contar el ingreso dos veces.</p>',
+      onSubmit: (v) => GS.mutate('movimientoACobroVenta', { id: id, ventaId: v.ventaId }, (r) => 'Abono ' + r.cobro + ' registrado en ' + r.ventaId),
+    });
+  };
   // Informe detallado de los movimientos visibles (buscador y filtros de columna aplicados), en orden cronológico con saldo.
   GS.actions.exportarMovimientos = () => {
     const rows = GS.tablaAplicar('movimientos', movsBuscados(), colsMov).slice().sort((a, b) => (a.fecha + a.id).localeCompare(b.fecha + b.id));
@@ -318,6 +335,7 @@
             ? '<button class="btn small ghost" data-action="finVer" data-id="' + esc(m.id) + '" title="Ver el detalle aquí mismo">' + (abiertosMov.has(m.id) ? '▾ ' : '▸ ') + esc(m.venta || m.compra) + '</button>'
               + (admin && m.pago ? GS.iconBtn('reenlazarPagoCompra', m.pago, 'edit', 'Cambiar la factura de este pago') : '')
             : (op && !m.anulado ? GS.iconBtn('editarMovimiento', m.id, 'edit', 'Editar') : '') +
+              (admin && !m.anulado && m.tipo === 'ingreso' ? '<button class="btn small ghost" data-action="movimientoACobroVenta" data-id="' + esc(m.id) + '" title="Este ingreso fue el abono de una venta con deuda: registrarlo en esa OC">→ OC</button>' : '') +
               (admin && !m.anulado && m.tipo === 'egreso' ? '<button class="btn small ghost" data-action="movimientoAPagoFactura" data-id="' + esc(m.id) + '" title="Este egreso fue el pago de una factura de compra: registrarlo en esa factura">→ Factura</button>' : '') +
               (admin && !m.anulado ? GS.iconBtn('anularMovimiento', m.id, 'trash', 'Anular', 'danger') : '')) + '</div></td></tr>' +
           (abiertosMov.has(m.id) ? '<tr class="detalle-row"><td colspan="' + (colsMov.length + 1) + '">' + detalleMov(m) + '</td></tr>' : '')).join('')
