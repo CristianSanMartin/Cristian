@@ -35,5 +35,5 @@ Doble clic en `actualizar.cmd`. Nada más.
   queda reemplazado por `Code.gs`).
 - Tu `appsscript.json` (zona horaria, permisos, acceso de la web) se copia de tu proyecto la
   primera vez y no se toca después.
-- Usa la rama más nueva (`claude/proformas-peru`) y, cuando esa ya se haya integrado, la
-  rama principal. Al final muestra qué versión publicó.
+- Usa la rama más nueva que exista (la lista está al inicio de `actualizar.ps1`) y, cuando ya
+  se hayan integrado, la rama principal. Al final muestra qué versión publicó.

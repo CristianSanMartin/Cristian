@@ -9,7 +9,7 @@ $ErrorActionPreference = 'Stop'
 $repo = 'CristianSanMartin/Cristian'
 # Se usa la primera rama que exista: la más nueva primero y, cuando ya se haya
 # integrado y borrado, la rama principal del repositorio.
-$ramas = @('claude/proformas-peru', 'claude/falabella-proformas-app-06xjdy')
+$ramas = @('claude/peru-pago-transporte', 'claude/publicar-web', 'claude/proformas-peru', 'claude/falabella-proformas-app-06xjdy')
 
 $carpeta = $PSScriptRoot
 $archivoClasp = Join-Path $carpeta '.clasp.json'
