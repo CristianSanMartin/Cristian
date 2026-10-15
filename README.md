@@ -42,7 +42,7 @@ Cruza el registro de operaciones (FECHA, CUENTA, ID RUTA) con las proformas guar
 - "Descargar cruce Excel" genera Resumen, Rutas y Pagado sin registro.
 
 ## Perú (Sodimac)
-Pestaña "Perú (Sodimac)": arma la liquidación de cobro a Sodimac Perú - Lurin desde el reporte de visitas de SIMPLI, con la misma lógica que el script `peru_v2.py` de control de gestión.
+Sección "Liquidación Sodimac" (grupo Perú del panel lateral): arma la liquidación de cobro a Sodimac Perú - Lurin desde el reporte de visitas de SIMPLI, con la misma lógica que el script `peru_v2.py` de control de gestión.
 
 | Botón | Qué hace |
 |---|---|
