@@ -336,10 +336,6 @@
           <b>Reporte de visitas SIMPLI</b><span id="txtSimpli">Uno o varios reportes de 15 días (Excel). Los días repetidos entre archivos se cuentan una vez. Hoja PERU RUTAS.</span>
           <input id="inSimpli" type="file" accept=".xlsx,.xls" multiple>
         </div>
-        <div id="cargaLiqPeru" class="carga" onclick="document.getElementById('inLiqPeru').click()">
-          <b>Liquidación enviada (opcional)</b><span id="txtLiqPeru">La liquidación que se mandó a Sodimac, para compararla ruta por ruta.</span>
-          <input id="inLiqPeru" type="file" accept=".xlsx,.xls,.xlsm">
-        </div>
         <p id="estadoPeru" class="nota" role="status"></p>
 
         <h3>Mes</h3>
@@ -385,8 +381,6 @@
           <div class="summary-box"><div class="summary-title">A cobrar sin IGV</div><div id="pTotal" class="summary-value okc">S/ 0</div></div>
           <div class="summary-box"><div class="summary-title">A pagar transporte</div><div id="pPago" class="summary-value">S/ 0</div></div>
           <div class="summary-box"><div class="summary-title">Margen</div><div id="pMargen" class="summary-value">S/ 0</div></div>
-          <div class="summary-box"><div class="summary-title">Liquidación enviada</div><div id="pLiq" class="summary-value">—</div></div>
-          <div class="summary-box"><div class="summary-title">Calculado − enviado</div><div id="pDif" class="summary-value">—</div></div>
         </div>
         <div class="card">
           <h2>Liquidación por ruta</h2>
@@ -394,29 +388,19 @@
             <select id="pFiltro" onchange="renderPeru()">
               <option value="">Todas las rutas</option>
               <option value="obs">Con observación</option>
-              <option value="dif">Con diferencia vs liquidación</option>
               <option value="per">Solo periferia</option>
             </select>
             <input id="pBuscar" type="search" placeholder="Buscar placa o distrito" oninput="renderPeru()">
           </div>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>Fecha</th><th>Placa</th><th>Unidad</th><th>Puntos</th><th>Entregados</th><th>Distrito</th><th>Zona</th><th>Tarifa</th><th>Adicional</th><th>Valor total</th><th>Pago transporte</th><th>Margen</th><th>Liquidación</th><th>Dif.</th><th>Observación</th></tr></thead>
-              <tbody id="peruBody"><tr><td colspan="15">Carga los reportes de visitas de SIMPLI.</td></tr></tbody>
+              <thead><tr><th>Fecha</th><th>Placa</th><th>Unidad</th><th>Puntos</th><th>Entregados</th><th>Distrito</th><th>Zona</th><th>Tarifa</th><th>Adicional</th><th>Valor total</th><th>Pago transporte</th><th>Margen</th><th>Observación</th></tr></thead>
+              <tbody id="peruBody"><tr><td colspan="13">Carga los reportes de visitas de SIMPLI.</td></tr></tbody>
             </table>
           </div>
           <div class="actions">
             <button class="button green" onclick="descargarLiquidacionPeru()">Descargar liquidación</button>
             <button class="button" onclick="descargarPagoTransportePeru()">Descargar pago transportista</button>
-          </div>
-        </div>
-        <div id="peruSoloLiq" class="card hidden">
-          <h2>En la liquidación y no en SIMPLI</h2>
-          <div class="table-wrap">
-            <table>
-              <thead><tr><th>Fecha</th><th>Placa</th><th>Zona</th><th>Valor total</th></tr></thead>
-              <tbody id="peruSoloLiqBody"></tbody>
-            </table>
           </div>
         </div>
       </main>
@@ -1726,7 +1710,7 @@ const ALIAS_DISTRITO_PE={"LIMA":"CERCADO DE LIMA","CARMEN DE LA LEGUA":"CARMEN D
 const DISTRITOS_PE_RE=Object.keys(DISTRITOS_PE).sort((a,b)=>b.length-a.length)
   .map(d=>[d,new RegExp(`(^|[^A-Z0-9])${d.replace(/[()]/g,"\\$&")}([^A-Z0-9]|$)`)]);
 const H_PERU=["FECHA","PLACA","VEHICULO","TIPO UNIDAD","PUNTOS","ENTREGADOS","DISTRITO","ZONA","PUNTOS PERIFERIA","TARIFA REGULAR","ADICIONAL","DETALLE ADICIONAL","VALOR TOTAL","OBSERVACION"];
-const peruDatos={rutas:[],liq:null,liqNombre:""};
+const peruDatos={rutas:[]};
 
 function soles(v){ return v===null||v===undefined||v===""?"":"S/ "+Number(v).toLocaleString("es-PE",{minimumFractionDigits:0,maximumFractionDigits:2}); }
 function distritoPeru(dir){
@@ -1801,32 +1785,15 @@ function peruDesdeHoja(m){
     adicional:n(v(r,"ADICIONAL")),detalle:v(r,"DETALLE ADICIONAL"),total:n(v(r,"VALOR TOTAL")),obs:String(v(r,"OBSERVACION")??"")}))
     .filter(r=>r.fecha&&r.placa).sort((a,b)=>a.fecha.localeCompare(b.fecha)||a.placa.localeCompare(b.placa));
 }
-// Liquidación enviada: FECHA, PLACA, ZONA, TARIFA REGULAR, ADICIONAL, VALOR TOTAL (la fila "Total" se ignora)
-function parseLiqPeru(wb){
-  const m=hojaConColumnas(wb,["FECHA","PLACA","TARIFA REGULAR"]);
-  if(!m) throw new Error("La liquidación no tiene las columnas FECHA, PLACA y TARIFA REGULAR.");
-  const h=m[0], c={fecha:idx(h,["FECHA"]),placa:idx(h,["PLACA"]),zona:idx(h,["ZONA"]),tarifa:idx(h,["TARIFA REGULAR"]),adic:idx(h,["ADICIONAL"]),puntos:idx(h,["PUNTOS"])};
-  const filas=[];
-  for(const r of m.slice(1)){
-    const fecha=fechaISO(r[c.fecha]), placa=nt(r[c.placa]).replace(/\s/g,""); if(!fecha||!placa) continue;
-    // VALOR TOTAL suele ser fórmula sin valor guardado: se recalcula como tarifa + adicional
-    filas.push({fecha,placa,zona:c.zona>=0?r[c.zona]:"",puntos:c.puntos>=0?num(r[c.puntos]):null,total:num(r[c.tarifa])+(c.adic>=0?num(r[c.adic]):0)});
-  }
-  return filas;
-}
 function mesesPeru(){ return [...new Set(peruDatos.rutas.map(r=>r.fecha.slice(0,7)))].sort().reverse(); }
 function nombreMes(ym){ const [y,m]=ym.split("-"); return ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"][+m-1]+" "+y; }
 function rutasMesPeru(){
   const mes=document.getElementById("pMes").value;
-  const liq=new Map((peruDatos.liq||[]).map(l=>[l.fecha+"|"+l.placa,l]));
   const rutas=peruDatos.rutas.filter(r=>r.fecha.slice(0,7)===mes).map(r=>{
-    const l=liq.get(r.fecha+"|"+r.placa);
     const tr=pagoTransportePeru(r);
-    return {...r,...tr,margen:r.total!==null&&tr.pago!==null?r.total-tr.pago:null,liq:peruDatos.liq?(l?l.total:null):undefined,dif:peruDatos.liq?(l?(r.total||0)-l.total:r.total||0):null};
+    return {...r,...tr,margen:r.total!==null&&tr.pago!==null?r.total-tr.pago:null};
   });
-  const claves=new Set(rutas.map(r=>r.fecha+"|"+r.placa));
-  const soloLiq=(peruDatos.liq||[]).filter(l=>l.fecha.slice(0,7)===mes&&!claves.has(l.fecha+"|"+l.placa));
-  return {mes,rutas,soloLiq};
+  return {mes,rutas};
 }
 function renderPeru(){
   const sel=document.getElementById("pMes"), meses=mesesPeru(), prev=sel.value;
@@ -1835,8 +1802,8 @@ function renderPeru(){
   document.getElementById("peruTarifasTr").innerHTML=Object.entries(PAGO_TR_PE).flatMap(([tipo,us])=>Object.entries(us).map(([u,t])=>
     `<tr><td>${u}</td><td>${tipo==="DOMINGO"?"Domingo":"Regular"}</td><td>${soles(t.URBANO)}</td><td>${soles(t["PERIFERIA/LEJANO"])}</td></tr>`)).join("");
   document.getElementById("peruTarifas").innerHTML=Object.entries(TARIFAS_PE).map(([u,t])=>`<tr><td>${u}</td><td>${soles(t.URBANO)}</td><td>${soles(t["PERIFERIA/LEJANO"])}</td></tr>`).join("");
-  const {rutas,soloLiq}=rutasMesPeru(), hayLiq=!!peruDatos.liq;
-  const total=rutas.reduce((s,r)=>s+(r.total||0),0), totLiq=hayLiq?rutas.reduce((s,r)=>s+(r.liq||0),0)+soloLiq.reduce((s,l)=>s+l.total,0):null;
+  const {rutas}=rutasMesPeru();
+  const total=rutas.reduce((s,r)=>s+(r.total||0),0);
   document.getElementById("pRutas").textContent=rutas.length;
   document.getElementById("pPeriferia").textContent=rutas.filter(r=>r.zona==="Periferia").length;
   document.getElementById("pDomingo").textContent=rutas.filter(r=>r.detalle).length;
@@ -1844,24 +1811,16 @@ function renderPeru(){
   const pago=rutas.reduce((s,r)=>s+(r.pago||0),0), margen=total-pago;
   document.getElementById("pPago").textContent=soles(pago);
   const eM=document.getElementById("pMargen"); eM.textContent=soles(margen)+(total?` (${Math.round(margen/total*100)}%)`:""); eM.className="summary-value "+(margen<0?"errc":"okc");
-  document.getElementById("pLiq").textContent=hayLiq?soles(totLiq):"—";
-  const dif=hayLiq?total-totLiq:null, eDif=document.getElementById("pDif");
-  eDif.textContent=hayLiq?soles(dif):"—"; eDif.className="summary-value "+(dif<0?"warnc":dif>0?"errc":"");
   const f=document.getElementById("pFiltro").value, q=nt(document.getElementById("pBuscar").value);
-  const vis=rutas.filter(r=>(!f||(f==="obs"&&r.obs)||(f==="dif"&&r.dif)||(f==="per"&&r.zona==="Periferia"))&&(!q||nt(r.placa+" "+r.distrito).includes(q)));
+  const vis=rutas.filter(r=>(!f||(f==="obs"&&r.obs)||(f==="per"&&r.zona==="Periferia"))&&(!q||nt(r.placa+" "+r.distrito).includes(q)));
   const tb=document.getElementById("peruBody");
-  if(!peruDatos.rutas.length){ tb.innerHTML=`<tr><td colspan="15">Carga los reportes de visitas de SIMPLI.</td></tr>`; }
+  if(!peruDatos.rutas.length){ tb.innerHTML=`<tr><td colspan="13">Carga los reportes de visitas de SIMPLI.</td></tr>`; }
   else tb.innerHTML=vis.map(r=>{
     const zona=r.zona==="Periferia"?`<span class="badge badge-warning">Periferia</span>`:r.zona==="SIN TARIFA"?`<span class="badge badge-error">Sin tarifa</span>`:esc(r.zona);
-    const dif=r.dif?`<td class="n ${r.dif>0?"dif-neg":"dif-pos"}">${soles(r.dif)}</td>`:"<td></td>";
-    const obs=[r.obs,hayLiq&&r.liq===null?"No está en la liquidación enviada":"",r.dif>0&&r.liq!==null?"Se cobró de menos":r.dif<0?"Se cobró de más":""].filter(Boolean).join("; ");
-    return `<tr class="${obs?"obs":""}"><td>${fechaCL(r.fecha)}</td><td>${esc(r.placa)}</td><td>${esc(r.unidad)}</td><td class="n">${r.puntos}</td><td class="n">${r.entregados}</td>
+    return `<tr class="${r.obs?"obs":""}"><td>${fechaCL(r.fecha)}</td><td>${esc(r.placa)}</td><td>${esc(r.unidad)}</td><td class="n">${r.puntos}</td><td class="n">${r.entregados}</td>
       <td>${esc(r.distrito)}</td><td>${zona}</td><td class="n">${soles(r.tarifa)}</td><td class="n">${r.adicional?soles(r.adicional):""}</td><td class="n"><b>${soles(r.total)}</b></td>
-      <td class="n">${soles(r.pago)}</td><td class="n ${r.margen<0?"dif-neg":""}">${soles(r.margen)}</td>
-      <td class="n">${hayLiq?soles(r.liq):""}</td>${dif}<td>${esc(obs)}</td></tr>`;
-  }).join("")||`<tr><td colspan="15">Ninguna ruta con ese filtro.</td></tr>`;
-  document.getElementById("peruSoloLiq").classList.toggle("hidden",!soloLiq.length);
-  document.getElementById("peruSoloLiqBody").innerHTML=soloLiq.map(l=>`<tr><td>${fechaCL(l.fecha)}</td><td>${esc(l.placa)}</td><td>${esc(l.zona)}</td><td class="n">${soles(l.total)}</td></tr>`).join("");
+      <td class="n">${soles(r.pago)}</td><td class="n ${r.margen<0?"dif-neg":""}">${soles(r.margen)}</td><td>${esc(r.obs)}</td></tr>`;
+  }).join("")||`<tr><td colspan="13">Ninguna ruta con ese filtro.</td></tr>`;
   const fr=peruDatos.rutas.map(r=>r.fecha);
   document.getElementById("txtSimpli").textContent=fr.length?`En la hoja: ${fr.length} rutas del ${fechaCL(fr[0])} al ${fechaCL(fr[fr.length-1])}`
     :"Uno o varios reportes de 15 días (Excel). Los días repetidos entre archivos se cuentan una vez. Hoja PERU RUTAS.";
@@ -1927,18 +1886,6 @@ document.getElementById("inSimpli").addEventListener("change",async e=>{
     avisoPeru(EN_APPS_SCRIPT?`Guardado en Google Sheets.${urlLibro?` <a href="${esc(urlLibro)}" target="_blank" rel="noopener">Abrir planilla</a>`:""}`
       :"Vista previa: los datos se guardan solo mientras la página esté abierta.");
   }catch(err){ avisoPeru(""); mostrarError(err.message||String(err)); }
-});
-document.getElementById("inLiqPeru").addEventListener("change",async e=>{
-  const f=e.target.files?.[0]; e.target.value=""; if(!f) return; ocultarError();
-  try{
-    const {wb}=await leerLibroP(f); if(!wb) throw new Error("La liquidación debe ser un Excel.");
-    peruDatos.liq=parseLiqPeru(wb); peruDatos.liqNombre=f.name;
-    document.getElementById("txtLiqPeru").textContent=`${f.name}: ${peruDatos.liq.length} rutas`;
-    document.getElementById("cargaLiqPeru").classList.add("lista");
-    const meses=[...new Set(peruDatos.liq.map(l=>l.fecha.slice(0,7)))];
-    if(meses.length===1&&mesesPeru().includes(meses[0])) document.getElementById("pMes").value=meses[0];
-    renderPeru();
-  }catch(err){ mostrarError(err.message||String(err)); }
 });
 async function recargarPeru(){
   const d=await llamar("leerDatos"); urlLibro=d.url||urlLibro;

@@ -47,7 +47,6 @@ Pestaña "Perú (Sodimac)": arma la liquidación de cobro a Sodimac Perú - Luri
 | Botón | Qué hace |
 |---|---|
 | Reporte de visitas SIMPLI (uno o varios, 15 días cada uno) | Calcula una ruta por placa y fecha y la guarda en la hoja PERU RUTAS. Los días repetidos entre archivos se cuentan una vez; volver a cargar reemplaza los días del archivo. |
-| Liquidación enviada (opcional) | Compara ruta por ruta con lo que se mandó a Sodimac. No se guarda. |
 
 "Descargar liquidación" genera el Excel con el mismo formato que se envía (FECHA, RAZÓN SOCIAL, PLACA, TIPO UNIDAD, PUNTOS, DISTRITOS, ZONA, TARIFA REGULAR, ADICIONAL, DETALLE ADICIONAL, VALOR TOTAL).
 
