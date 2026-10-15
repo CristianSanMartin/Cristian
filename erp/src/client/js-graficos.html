@@ -1,0 +1,107 @@
+<script>
+/* =========================================================
+   Gráficos simples en SVG (sin librerías): barras agrupadas
+   sobre UN solo eje, con tooltip al pasar el mouse, y listas
+   de barras horizontales para rankings y desgloses.
+   Colores validados sobre el fondo oscuro (#17171a):
+   ventas = dorado #c98500, compras = azul #3987e5.
+========================================================= */
+(function () {
+  'use strict';
+  const { fmt, esc } = GS;
+  GS.COLORES = { ventas: '#c98500', compras: '#3987e5' };
+
+  /** $1,2M · $850k · $900 — para el eje. */
+  GS.moneyCorto = (n) => {
+    const a = Math.abs(n);
+    if (a >= 1e6) return '$' + (n / 1e6).toLocaleString('es-CL', { maximumFractionDigits: 1 }) + 'M';
+    if (a >= 1e3) return '$' + Math.round(n / 1e3).toLocaleString('es-CL') + 'k';
+    return fmt.money(n);
+  };
+
+  function tope(max) {
+    if (max <= 0) return 1;
+    // Paso "redondo" más chico que alcanza el máximo en 4 líneas.
+    const p = Math.pow(10, Math.floor(Math.log10(max / 4)));
+    const paso = [1, 2, 2.5, 5, 10].map((m) => m * p).find((x) => max <= x * 4) || 10 * p;
+    return paso * 4;
+  }
+
+  /**
+   * Barras verticales agrupadas.
+   * opts: { categorias: [texto], series: [{ nombre, color, valores: [n] }], alto?, detalle?(i) → html extra del tooltip }
+   */
+  GS.graficoBarras = function (opts) {
+    const W = opts.ancho || 1000;
+    const H = opts.alto || 280;
+    const m = { t: 12, r: 8, b: 28, l: 56 };
+    const pw = W - m.l - m.r;
+    const ph = H - m.t - m.b;
+    const n = opts.categorias.length;
+    const max = tope(Math.max(0, ...opts.series.flatMap((s) => s.valores)));
+    const y = (v) => m.t + ph - (Math.max(0, v) / max) * ph;
+    const grupo = pw / Math.max(n, 1);
+    const ancho = Math.max(3, Math.min(26, (grupo * 0.72 - 2 * (opts.series.length - 1)) / opts.series.length));
+    let svg = '';
+    for (let k = 0; k <= 4; k++) {
+      const v = (max / 4) * k;
+      const yy = y(v);
+      svg += '<line x1="' + m.l + '" x2="' + (W - m.r) + '" y1="' + yy + '" y2="' + yy + '" class="g-grid' + (k === 0 ? ' g-base' : '') + '"/>' +
+        '<text x="' + (m.l - 8) + '" y="' + (yy + 4) + '" class="g-eje" text-anchor="end">' + GS.moneyCorto(v) + '</text>';
+    }
+    const cada = Math.ceil(n / 16);
+    opts.categorias.forEach((c, i) => {
+      const x0 = m.l + i * grupo;
+      const total = opts.series.length * ancho + (opts.series.length - 1) * 2;
+      let x = x0 + (grupo - total) / 2;
+      opts.series.forEach((s) => {
+        const v = s.valores[i] || 0;
+        const top = y(v);
+        const h = m.t + ph - top;
+        if (h > 0.5) {
+          const r = Math.min(4, h, ancho / 2);
+          // Barra con esquinas superiores redondeadas, apoyada en la base.
+          svg += '<path fill="' + s.color + '" d="M' + x + ',' + (m.t + ph) + 'V' + (top + r) + 'Q' + x + ',' + top + ' ' + (x + r) + ',' + top +
+            'H' + (x + ancho - r) + 'Q' + (x + ancho) + ',' + top + ' ' + (x + ancho) + ',' + (top + r) + 'V' + (m.t + ph) + 'Z"/>';
+        }
+        x += ancho + 2;
+      });
+      if (i % cada === 0) svg += '<text x="' + (x0 + grupo / 2) + '" y="' + (H - 8) + '" class="g-eje" text-anchor="middle">' + esc(c) + '</text>';
+      const tip = '<strong>' + esc(opts.tituloTip ? opts.tituloTip(i) : c) + '</strong>' +
+        opts.series.map((s) => '<div><span class="g-dot" style="background:' + s.color + '"></span>' + esc(s.nombre) + ' <b>' + fmt.money(s.valores[i] || 0) + '</b></div>').join('') +
+        (opts.detalle ? opts.detalle(i) : '');
+      svg += '<rect class="g-hit" x="' + x0 + '" y="' + m.t + '" width="' + grupo + '" height="' + ph + '" data-tip="' + esc(tip) + '"/>';
+    });
+    const leyenda = opts.series.length > 1
+      ? '<div class="g-leyenda">' + opts.series.map((s) => '<span><span class="g-dot" style="background:' + s.color + '"></span>' + esc(s.nombre) + '</span>').join('') + '</div>'
+      : '';
+    return leyenda + '<svg class="grafico" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc(opts.aria || '') + '">' + svg + '</svg>';
+  };
+
+  /** Lista de barras horizontales: [{ etiqueta (html), valor, extra (html) }], ordenada por quien llama. */
+  GS.barrasH = function (items, opts) {
+    opts = opts || {};
+    if (!items.length) return '<p class="muted">Sin datos en este período.</p>';
+    const max = Math.max(...items.map((x) => x.valor), 1);
+    return '<div class="hbars">' + items.map((x, i) => '<div class="hbar">' +
+      (opts.ranking ? '<span class="hbar-pos">' + (i + 1) + '</span>' : '') +
+      '<div class="hbar-body"><div class="hbar-top"><span class="hbar-label">' + x.etiqueta + '</span><span class="hbar-valor">' + (opts.formato || fmt.money)(x.valor) + '</span></div>' +
+      '<div class="hbar-track"><span style="width:' + Math.max(2, (100 * x.valor) / max) + '%;background:' + (opts.color || GS.COLORES.ventas) + '"></span></div>' +
+      (x.extra ? '<div class="cell-dim">' + x.extra + '</div>' : '') + '</div></div>').join('') + '</div>';
+  };
+
+  // Tooltip compartido para todos los gráficos.
+  let tipEl = null;
+  document.addEventListener('mousemove', (e) => {
+    const t = e.target.closest && e.target.closest('[data-tip]');
+    if (!t) { if (tipEl) tipEl.hidden = true; return; }
+    if (!tipEl) { tipEl = document.createElement('div'); tipEl.className = 'g-tooltip'; document.body.appendChild(tipEl); }
+    tipEl.innerHTML = t.getAttribute('data-tip');
+    tipEl.hidden = false;
+    const w = tipEl.offsetWidth;
+    const x = e.clientX + 14 + w > window.innerWidth ? e.clientX - w - 14 : e.clientX + 14;
+    tipEl.style.left = x + 'px';
+    tipEl.style.top = (e.clientY + 14) + 'px';
+  });
+})();
+</script>

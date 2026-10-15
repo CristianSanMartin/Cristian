@@ -1,0 +1,375 @@
+<script>
+/* =========================================================
+   Catálogos: productos y proveedores.
+========================================================= */
+(function () {
+  'use strict';
+  const { fmt, esc } = GS;
+  const data = () => GS.state.data;
+  const findProd = (id) => data().productos.find((p) => p.id === id);
+  const findProv = (id) => data().proveedores.find((p) => p.id === id);
+
+  /* ---------- nombre del proveedor → producto ---------- */
+
+  /** Misma interpretación que el servidor (Nombres.js), entregada por index.html. */
+  GS.interpretarNombre = window.interpretarNombre;
+
+  /* ---------- productos ---------- */
+
+  const DEF_PROD = { q: '', edicion: '', idioma: '', tipo: '', estado: 'activos', rapido: '' };
+
+  /** Stock disponible por producto y productos que llegaron con la migración del Excel. */
+  function infoStock() {
+    const notas = {};
+    data().compras.forEach((c) => { notas[c.id] = c.notas || ''; });
+    const stock = {};
+    const migrados = new Set();
+    data().lotes.forEach((l) => {
+      stock[l.productoId] = (stock[l.productoId] || 0) + l.disponible;
+      if (/^Migración/.test(notas[l.compraId] || '')) migrados.add(l.productoId);
+    });
+    return { stock: stock, migrados: migrados };
+  }
+  const RAPIDOS = [
+    { value: '', label: 'Todos' },
+    { value: 'sinImagen', label: 'Sin imagen' },
+    { value: 'sinIdioma', label: 'Sin idioma' },
+    { value: 'migracion', label: 'Creados en la migración' },
+    { value: 'conStock', label: 'Con stock' },
+    { value: 'sinStock', label: 'Sin stock' },
+  ];
+
+  function productosFiltrados() {
+    const f = GS.filters('productos', DEF_PROD);
+    const q = GS.norm(f.q.trim());
+    const info = infoStock();
+    return data().productos
+      .filter((p) => {
+        const st = info.stock[p.id] || 0;
+        if (f.rapido === 'sinImagen' && p.imagen) return false;
+        if (f.rapido === 'sinIdioma' && p.idioma) return false;
+        if (f.rapido === 'migracion' && !info.migrados.has(p.id)) return false;
+        if (f.rapido === 'conStock' && !st) return false;
+        if (f.rapido === 'sinStock' && st) return false;
+        if (f.estado === 'activos' ? !p.activo : f.estado === 'archivados' ? p.activo : false) return false;
+        if (f.edicion && p.edicion !== f.edicion) return false;
+        if (f.idioma && p.idioma !== f.idioma) return false;
+        if (f.tipo && p.tipo !== f.tipo) return false;
+        return !q || GS.norm(p.id + ' ' + p.nombreCompleto + ' ' + p.tipo + ' ' + p.codigoProveedor).includes(q);
+      })
+      .map((p) => Object.assign(p, { stock: info.stock[p.id] || 0, migrado: info.migrados.has(p.id) }))
+      .sort((a, b) => a.nombreCompleto.localeCompare(b.nombreCompleto));
+  }
+
+  /** URL visible de una imagen: enlace https o archivo de Drive ("drive:<id>"). */
+  GS.imagenUrl = (v) => {
+    const m = /^drive:([\w-]+)$/.exec(v || '');
+    if (!m) return v || '';
+    return window.previewImagen ? window.previewImagen(m[1]) : 'https://drive.google.com/thumbnail?sz=w400&id=' + m[1];
+  };
+  GS.thumb = (url) => (url ? '<img class="thumb" src="' + esc(GS.imagenUrl(url)) + '" alt="" loading="lazy">' : '<span class="thumb empty"></span>');
+
+  /** Lee una imagen elegida en el navegador, la reduce a 800 px y la entrega como JPG en base64 para subirla. */
+  GS.leerImagen = function (file) {
+    return new Promise((resolve, reject) => {
+      if (!file) return resolve(null);
+      if (!/^image\//.test(file.type)) return reject(new Error('El archivo elegido no es una imagen.'));
+      const lector = new FileReader();
+      lector.onerror = () => reject(new Error('No se pudo leer la imagen.'));
+      lector.onload = () => {
+        const img = new Image();
+        img.onerror = () => reject(new Error('No se pudo abrir la imagen.'));
+        img.onload = () => {
+          const escala = Math.min(1, 800 / Math.max(img.width, img.height));
+          const c = document.createElement('canvas');
+          c.width = Math.round(img.width * escala);
+          c.height = Math.round(img.height * escala);
+          const ctx = c.getContext('2d');
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, c.width, c.height);
+          ctx.drawImage(img, 0, 0, c.width, c.height);
+          const dataUrl = c.toDataURL('image/jpeg', 0.85);
+          resolve({ mime: 'image/jpeg', base64: dataUrl.split(',')[1], vista: dataUrl });
+        };
+        img.src = lector.result;
+      };
+      lector.readAsDataURL(file);
+    });
+  };
+
+  /** Campo "Imagen": elegir archivo, ver la miniatura y quitarla antes de guardar. */
+  GS.campoImagen = (id, actual) =>
+    '<div class="img-picker"><span class="img-preview" data-img-preview>' + (actual ? '<img src="' + esc(GS.imagenUrl(actual)) + '" alt="">' : GS.icon('box', 1.6)) + '</span>' +
+    '<label class="btn secondary small" for="' + id + '">' + GS.icon('download') + 'Subir imagen</label>' +
+    '<input id="' + id + '" type="file" accept="image/*" data-img-input class="visually-hidden">' +
+    '<span class="hint" data-img-hint>' + (actual ? 'Imagen actual. Sube otra para reemplazarla.' : 'JPG o PNG. Se guarda en Google Drive.') + '</span></div>';
+
+  /** Conecta un campo de imagen: al elegir archivo lo procesa y lo deja en onImagen(img). */
+  GS.conectarImagen = (root, onImagen) => {
+    const input = root.querySelector('[data-img-input]');
+    if (!input) return;
+    input.addEventListener('change', async () => {
+      const hint = root.querySelector('[data-img-hint]');
+      try {
+        const img = await GS.leerImagen(input.files[0]);
+        if (!img) return;
+        root.querySelector('[data-img-preview]').innerHTML = '<img src="' + img.vista + '" alt="">';
+        hint.textContent = input.files[0].name + ' · lista para guardar';
+        onImagen({ mime: img.mime, base64: img.base64, vista: img.vista });
+      } catch (e) {
+        hint.textContent = e.message;
+      }
+    });
+  };
+
+  const colsProd = [
+    { id: 'img', label: '', sinMenu: true, valor: () => '', celda: (p) => GS.thumb(p.imagen) },
+    { id: 'sku', label: 'SKU', clase: 'nowrap', valor: (p) => p.id, celda: (p) => '<span class="cell-dim">' + esc(p.id) + '</span>' },
+    { id: 'producto', label: 'Producto', clase: 'col-prod', valor: (p) => p.nombre, celda: (p) => {
+      const extra = [p.factor > 1 ? p.factor + ' u. proveedor' : '', p.activo ? '' : 'archivado', p.migrado ? 'migración' : ''].filter(Boolean).join(' · ');
+      return '<span class="cell-strong">' + esc(p.nombre) + '</span>' + (extra ? '<div class="cell-dim">' + esc(extra) + '</div>' : '');
+    } },
+    { id: 'edicion', label: 'Edición', valor: (p) => p.edicion || '', texto: (p) => p.edicion || 'Sin edición', celda: (p) => esc(p.edicion || '—') },
+    { id: 'idioma', label: 'Idioma', valor: (p) => p.idioma || '', texto: (p) => p.idioma || 'Sin idioma', celda: (p) => GS.langPill(p.idioma) },
+    { id: 'tipo', label: 'Tipo', valor: (p) => p.tipo, celda: (p) => esc(p.tipo) },
+    { id: 'foto', label: 'Foto', valor: (p) => (p.imagen ? 'Con foto' : 'Sin foto'), celda: (p) => (p.imagen ? '<span class="text-success">✓</span>' : '<span class="muted">—</span>') },
+    { id: 'pvp', label: 'PVP', right: true, valor: (p) => p.pvp, texto: (p) => fmt.money(p.pvp), celda: (p) => (p.pvp ? fmt.money(p.pvp) : '—') },
+    { id: 'precio', label: 'Precio venta', right: true, valor: (p) => p.precio, texto: (p) => fmt.money(p.precio),
+      celda: (p) => '<strong>' + (p.precio ? fmt.money(p.precio) : '—') + '</strong>' + (p.precioManual ? '<div><span class="pill soon">manual</span></div>' : '') },
+    { id: 'stock', label: 'Stock', right: true, valor: (p) => p.stock, celda: (p) => (p.stock ? '<strong>' + fmt.num(p.stock) + '</strong>' : '—') },
+    { id: 'costo', label: 'Último costo neto', right: true, valor: (p) => p.ultimoCosto, texto: (p) => fmt.money(p.ultimoCosto), celda: (p) => (p.ultimoCosto ? fmt.cost(p.ultimoCosto) : '—') },
+  ];
+  GS.tablaRegistrar('productos', { filas: productosFiltrados, columnas: colsProd, alCambiar: () => GS.views.productos.update() });
+
+  function filaProducto(p) {
+    const operador = GS.puede('operador');
+    return '<tr class="' + (p.activo ? '' : 'row-muted') + '">' +
+      colsProd.map((c) => '<td class="' + (c.right ? 'cell-num right ' : '') + (c.clase || '') + '">' + c.celda(p) + '</td>').join('') +
+      '<td><div class="row-actions">' +
+      (operador ? GS.iconBtn('editarProducto', p.id, 'edit', 'Editar') : '') +
+      (GS.puede('admin') ? GS.iconBtn('unirProducto', p.id, 'move', 'Unir con otro producto (duplicado)') : '') +
+      (operador ? GS.iconBtn('archivarProducto', p.id, 'archive', p.activo ? 'Archivar' : 'Reactivar') : '') +
+      '</div></td></tr>';
+  }
+
+  GS.views.productos = {
+    title: 'Productos',
+    /** opts.embebido: dentro de Inventario (sin encabezado de página). */
+    render(el, d, opts) {
+      const f = GS.filters('productos', DEF_PROD);
+      const botones = '<div class="btn-row">' +
+        '<button class="btn ghost" data-action="exportarProductos">' + GS.icon('download') + 'Exportar</button>' +
+        (GS.puede('operador') ? '<button class="btn" data-action="nuevoProducto">' + GS.icon('plus', 2.4) + 'Nuevo producto</button>' : '') +
+        '</div>';
+      el.innerHTML =
+        (opts && opts.embebido
+          ? '<div class="btn-row" style="justify-content:space-between;margin-bottom:12px;"><p class="muted" style="margin:0;font-size:13px;">Edita nombre, edición, idioma, tipo, precio y foto de cada producto. Con "Unir" juntas dos productos que son el mismo.</p>' + botones + '</div>'
+          : '<div class="page-head"><div><h1>Productos</h1><p>Catálogo: cada producto es nombre + edición + idioma.</p></div>' + botones + '</div>') +
+        '<div class="filters-bar">' +
+        '<div class="select-input"><select data-filter="productos.rapido" aria-label="Filtro rápido">' + GS.options(RAPIDOS, f.rapido) + '</select></div>' +
+        '<div class="search-box">' + GS.icon('search') + '<input type="text" data-filter="productos.q" value="' + esc(f.q) + '" placeholder="Buscar por nombre, SKU o código..."></div>' +
+        '<div class="select-input"><select data-filter="productos.estado">' + GS.options([{ value: 'activos', label: 'Activos' }, { value: 'archivados', label: 'Archivados' }, { value: '', label: 'Todos' }], f.estado) + '</select></div>' +
+        '<span class="count" id="prod-count"></span></div>' +
+        '<div class="table-wrap"><table class="data-table compacta"><thead><tr id="prod-thead"></tr></thead><tbody id="prod-tbody"></tbody></table></div>' +
+        '<p class="table-note">Stock = unidades disponibles en Inventario. Último costo neto = el de su preventa más reciente.</p>';
+      this.update();
+    },
+    update() {
+      const rows = GS.tablaAplicar('productos', productosFiltrados(), colsProd);
+      document.getElementById('prod-count').textContent = rows.length + ' productos';
+      document.getElementById('prod-thead').innerHTML = GS.tablaEncabezado('productos', colsProd) + '<th class="right">Acciones</th>';
+      document.getElementById('prod-tbody').innerHTML = rows.length
+        ? rows.map(filaProducto).join('')
+        : '<tr><td colspan="' + (colsProd.length + 1) + '">' + GS.empty('No hay productos para mostrar', 'Crea un producto o ajusta los filtros.', 'productos') + '</td></tr>';
+    },
+  };
+
+  GS.actions.exportarProductos = () => {
+    GS.downloadCsv('productos-' + data().hoy + '.csv',
+      ['SKU', 'Nombre', 'Edición', 'Idioma', 'Tipo', 'Factor', 'Código proveedor', 'PVP', 'Precio venta', 'Precio manual', 'Último costo neto', 'Stock mínimo', 'Activo'],
+      productosFiltrados().map((p) => [p.id, p.nombre, p.edicion, p.idioma, p.tipo, p.factor, p.codigoProveedor, p.pvp, p.precio, p.precioManual ? 'Sí' : 'No', p.ultimoCosto, p.stockMinimo, p.activo ? 'Sí' : 'No']));
+  };
+
+  /** Formulario de producto. También lo usa Preventas para crear un producto sin salir de la línea. */
+  GS.editarProducto = function (prod, onSaved, sugerido) {
+    const c = data().catalogos;
+    const p = prod || Object.assign({ nombre: '', edicion: '', idioma: '', tipo: 'Booster Box', factor: '', pvp: '', precioManual: false, precioVenta: '', stockMinimo: '', imagen: '', codigoProveedor: '', notas: '' }, sugerido || {});
+    const ediciones = Array.from(new Set(data().productos.map((x) => x.edicion).filter(Boolean))).sort();
+    let imagenNueva = null;
+    GS.formModal({
+      title: prod ? 'Editar producto ' + prod.id : 'Nuevo producto',
+      submitLabel: 'Guardar producto',
+      fields: () =>
+        (prod ? '' :
+          '<div class="form-field full"><label>Nombre como viene del proveedor (opcional)</label><div class="field-row">' +
+          '<input name="_raw" placeholder="Ej: POKEMON TCG 30TH CELEBRATION - BINDER COLLECTION ENGLISH">' +
+          '<button type="button" class="btn secondary small" data-completar>Completar</button></div>' +
+          '<span class="hint">Pega el nombre de la planilla o factura y se completan edición, nombre, idioma y tipo.</span></div>') +
+        '<div class="form-grid">' +
+        '<div class="form-field"><label>Edición / colección</label><input name="edicion" list="dl-ediciones" value="' + esc(p.edicion) + '" placeholder="Ej: 30th Celebration">' +
+        '<datalist id="dl-ediciones">' + ediciones.map((x) => '<option value="' + esc(x) + '">').join('') + '</datalist></div>' +
+        '<div class="form-field"><label>Nombre *</label><input name="nombre" value="' + esc(p.nombre) + '" placeholder="Ej: Binder Collection"></div>' +
+        '<div class="form-field"><label>Idioma</label><select name="idioma">' + GS.options([{ value: '', label: 'Sin idioma' }].concat(c.idiomas), p.idioma) + '</select></div>' +
+        '<div class="form-field"><label>Tipo</label><select name="tipo">' + GS.options(Object.keys(c.tipos), p.tipo) + '</select></div>' +
+        '<div class="form-field"><label>Unidades del proveedor por unidad</label><input name="factor" type="number" min="1" step="1" value="' + esc(p.factor || c.tipos[p.tipo] || 1) + '">' +
+        '<span class="hint">Booster Box = 36 (el proveedor factura sobres).</span></div>' +
+        '<div class="form-field"><label>Código del proveedor</label><input name="codigoProveedor" value="' + esc(p.codigoProveedor) + '" placeholder="Opcional"></div>' +
+        '<div class="form-field"><label>PVP sugerido (con IVA)</label><input name="pvp" type="number" min="0" step="1" value="' + esc(p.pvp || '') + '" placeholder="Ej: 43990"></div>' +
+        '<div class="form-field"><label class="check" style="margin-top:22px;"><input type="checkbox" name="precioManual"' + (p.precioManual ? ' checked' : '') + '> Precio de venta propio (distinto al PVP)</label></div>' +
+        '<div class="form-field" data-precio><label>Precio de venta (con IVA) *</label><input name="precioVenta" type="number" min="1" step="1" value="' + esc(p.precioManual ? p.precioVenta : '') + '" placeholder="Ej: 49990"></div>' +
+        '<div class="form-field"><label>Stock mínimo</label><input name="stockMinimo" type="number" min="0" step="1" value="' + esc(p.stockMinimo || '') + '" placeholder="0"></div>' +
+        '<div class="form-field full"><label for="pf-imagen">Imagen</label>' + GS.campoImagen('pf-imagen', p.imagen) +
+        '<input type="hidden" name="imagen" value="' + esc(p.imagen) + '">' +
+        (p.imagen ? '<a class="link small-link" data-quitar-imagen>Quitar imagen</a>' : '') + '</div>' +
+        '<div class="form-field full"><label>Notas</label><textarea name="notas" rows="2">' + esc(p.notas) + '</textarea></div>' +
+        '</div>',
+      onMount: (form) => {
+        GS.conectarImagen(form, (img) => { imagenNueva = img; });
+        const quitar = form.querySelector('[data-quitar-imagen]');
+        if (quitar) {
+          quitar.addEventListener('click', () => {
+            form.elements.imagen.value = '';
+            imagenNueva = null;
+            form.querySelector('[data-img-preview]').innerHTML = GS.icon('box', 1.6);
+            form.querySelector('[data-img-hint]').textContent = 'Se quitará la imagen al guardar.';
+            quitar.remove();
+          });
+        }
+        const sync = () => {
+          const manual = form.elements.precioManual.checked;
+          form.querySelector('[data-precio]').classList.toggle('hidden', !manual);
+          form.elements.precioVenta.disabled = !manual;
+        };
+        form.elements.precioManual.addEventListener('change', sync);
+        form.elements.tipo.addEventListener('change', () => { form.elements.factor.value = c.tipos[form.elements.tipo.value] || 1; });
+        const completar = form.querySelector('[data-completar]');
+        if (completar) {
+          completar.addEventListener('click', () => {
+            const r = GS.interpretarNombre(form.elements._raw.value);
+            if (r.edicion) form.elements.edicion.value = r.edicion;
+            if (r.nombre) form.elements.nombre.value = r.nombre;
+            if (r.idioma) form.elements.idioma.value = r.idioma;
+            form.elements.tipo.value = r.tipo;
+            form.elements.factor.value = c.tipos[r.tipo] || 1;
+            form.elements.nombre.focus();
+          });
+        }
+        sync();
+      },
+      onSubmit: async (v) => {
+        delete v._raw;
+        if (imagenNueva) v.imagenArchivo = { mime: imagenNueva.mime, base64: imagenNueva.base64 };
+        const saved = await GS.mutate('guardarProducto', Object.assign({ id: prod ? prod.id : '' }, v),
+          (r) => (prod ? 'Producto actualizado' : 'Producto ' + r.id + ' creado'));
+        if (onSaved) onSaved(saved);
+      },
+    });
+  };
+
+  /** Une un producto duplicado con otro: el stock y el historial pasan al que se conserva. */
+  GS.actions.unirProducto = (id) => {
+    const origen = findProd(id);
+    const n = (x) => GS.norm(x.nombre);
+    const otros = data().productos.filter((p) => p.id !== id).sort((a, b) => a.nombreCompleto.localeCompare(b.nombreCompleto));
+    const parecidos = otros.filter((p) => n(p) === n(origen) || (p.edicion === origen.edicion && (n(p).includes(n(origen)) || n(origen).includes(n(p)))));
+    const opcion = (p) => '<option value="' + esc(p.id) + '">' + esc(p.nombreCompleto + ' (' + p.id + ')') + '</option>';
+    GS.formModal({
+      title: 'Unir producto duplicado',
+      submitLabel: 'Unir productos',
+      danger: true,
+      fields: () =>
+        '<p class="confirm-text" style="padding:0 0 12px;"><strong>' + esc(origen.nombreCompleto) + '</strong> (' + esc(origen.id) + ') se elimina y todo lo suyo pasa al producto que elijas: ' +
+        'stock, preventas, ventas, premios y conteos. Si al elegido le falta foto o precio sugerido, toma los de este. Queda en la auditoría.</p>' +
+        '<div class="form-field"><label>Conservar este producto *</label><select name="destinoId"><option value="">Elige el producto…</option>' +
+        (parecidos.length ? '<optgroup label="Parecidos">' + parecidos.map(opcion).join('') + '</optgroup>' : '') +
+        '<optgroup label="Todos">' + otros.map(opcion).join('') + '</optgroup></select></div>',
+      onSubmit: async (v) => {
+        if (!v.destinoId) throw new Error('Elige el producto que se conserva.');
+        await GS.mutate('unirProductos', { origenId: id, destinoId: v.destinoId }, 'Productos unidos');
+      },
+    });
+  };
+
+  GS.actions.nuevoProducto = () => GS.editarProducto(null);
+  GS.actions.editarProducto = (id) => GS.editarProducto(findProd(id));
+
+  GS.actions.archivarProducto = (id) => {
+    const p = findProd(id);
+    if (!p.activo) return GS.mutate('archivarProducto', { id: id, activo: true }, 'Producto reactivado').catch((e) => GS.toast(e.message, true));
+    GS.confirm({
+      title: 'Archivar producto',
+      message: '<strong>' + esc(p.nombreCompleto) + '</strong> dejará de aparecer al agregar productos a preventas. Puedes reactivarlo cuando quieras.' +
+        (GS.puede('admin') ? '<br><br>Si nunca se usó en una preventa, también puedes <a class="link" data-action="eliminarProducto" data-id="' + esc(p.id) + '">eliminarlo definitivamente</a>.' : ''),
+      confirmLabel: 'Archivar',
+      onConfirm: () => GS.mutate('archivarProducto', { id: id, activo: false }, 'Producto archivado'),
+    });
+  };
+
+  GS.actions.eliminarProducto = async (id) => {
+    try {
+      await GS.mutate('eliminarProducto', { id: id }, 'Producto eliminado');
+      GS.closeModals();
+    } catch (e) {
+      GS.toast(e.message, true);
+    }
+  };
+
+  /* ---------- proveedores ---------- */
+
+  GS.reglaDespacho = (p) => (!p.despachoMonto ? 'Sin cobro de despacho'
+    : fmt.money(p.despachoMonto) + ' neto' + (p.despachoUmbral ? ' · gratis desde ' + fmt.money(p.despachoUmbral) + ' neto' : ''));
+
+  const colsProv = [
+    { id: 'id', label: 'ID', valor: (p) => p.id, celda: (p) => '<span class="cell-dim">' + esc(p.id) + '</span>' },
+    { id: 'nombre', label: 'Proveedor', valor: (p) => p.nombre, celda: (p) => '<span class="cell-strong">' + esc(p.nombre) + '</span>' + (p.activo ? '' : ' <span class="pill">archivado</span>') },
+    { id: 'rut', label: 'RUT', valor: (p) => p.rut || '', celda: (p) => esc(p.rut || '—') },
+    { id: 'contacto', label: 'Contacto', valor: (p) => p.contacto || '', celda: (p) => esc(p.contacto || '—') },
+    { id: 'despacho', label: 'Despacho', valor: (p) => GS.reglaDespacho(p), celda: (p) => esc(GS.reglaDespacho(p)) },
+    { id: 'estado', label: 'Estado', valor: (p) => (p.activo ? 'Activo' : 'Archivado'), celda: (p) => (p.activo ? '<span class="badge st-ok">Activo</span>' : '<span class="badge st-cancelada">Archivado</span>') },
+  ];
+  const proveedoresOrdenados = () => data().proveedores.slice().sort((a, b) => (b.activo - a.activo) || a.nombre.localeCompare(b.nombre));
+  GS.tablaRegistrar('proveedores', { filas: proveedoresOrdenados, columnas: colsProv, alCambiar: () => GS.render() });
+
+  GS.views.proveedores = {
+    title: 'Proveedores',
+    render(el) {
+      const operador = GS.puede('operador');
+      const rows = GS.tablaAplicar('proveedores', proveedoresOrdenados(), colsProv);
+      el.innerHTML =
+        '<div class="page-head"><div><h1>Proveedores</h1><p>Datos de contacto y regla de despacho de cada proveedor.</p></div>' +
+        (operador ? '<button class="btn" data-action="nuevoProveedor">' + GS.icon('plus', 2.4) + 'Nuevo proveedor</button>' : '') + '</div>' +
+        '<div class="table-wrap"><table class="data-table" style="min-width:760px;"><thead><tr>' + GS.tablaEncabezado('proveedores', colsProv) + '<th class="right">Acciones</th></tr></thead><tbody>' +
+        (rows.length ? rows.map((p) => '<tr class="' + (p.activo ? '' : 'row-muted') + '">' +
+          colsProv.map((c) => '<td>' + c.celda(p) + '</td>').join('') +
+          '<td><div class="row-actions">' + (operador ? GS.iconBtn('editarProveedor', p.id, 'edit', 'Editar') + GS.iconBtn('archivarProveedor', p.id, 'archive', p.activo ? 'Archivar' : 'Reactivar') : '') + '</div></td></tr>').join('')
+          : '<tr><td colspan="' + (colsProv.length + 1) + '">' + GS.empty('Sin proveedores', '', 'proveedores') + '</td></tr>') +
+        '</tbody></table></div>';
+    },
+  };
+
+  function proveedorForm(prov) {
+    const p = prov || { nombre: '', rut: '', contacto: '', despachoMonto: '', despachoUmbral: '', notas: '' };
+    GS.formModal({
+      title: prov ? 'Editar proveedor' : 'Nuevo proveedor',
+      submitLabel: 'Guardar proveedor',
+      fields: () =>
+        '<div class="form-grid">' +
+        '<div class="form-field full"><label>Nombre *</label><input name="nombre" value="' + esc(p.nombre) + '"></div>' +
+        '<div class="form-field"><label>RUT</label><input name="rut" value="' + esc(p.rut) + '" placeholder="Opcional"></div>' +
+        '<div class="form-field"><label>Contacto</label><input name="contacto" value="' + esc(p.contacto) + '" placeholder="Correo, teléfono o ejecutivo"></div>' +
+        '<div class="form-field"><label>Costo de despacho (neto)</label><input name="despachoMonto" type="number" min="0" step="1" value="' + esc(p.despachoMonto || '') + '" placeholder="0 = no cobra"></div>' +
+        '<div class="form-field"><label>Despacho gratis desde (neto)</label><input name="despachoUmbral" type="number" min="0" step="1" value="' + esc(p.despachoUmbral || '') + '" placeholder="0 = siempre cobra"></div>' +
+        '<div class="form-field full"><label>Notas</label><textarea name="notas" rows="2">' + esc(p.notas) + '</textarea></div>' +
+        '</div>',
+      onSubmit: (v) => GS.mutate('guardarProveedor', Object.assign({ id: prov ? prov.id : '' }, v), 'Proveedor guardado'),
+    });
+  }
+
+  GS.actions.nuevoProveedor = () => proveedorForm(null);
+  GS.actions.editarProveedor = (id) => proveedorForm(findProv(id));
+  GS.actions.archivarProveedor = (id) => {
+    const p = findProv(id);
+    GS.mutate('archivarProveedor', { id: id, activo: !p.activo }, p.activo ? 'Proveedor archivado' : 'Proveedor reactivado').catch((e) => GS.toast(e.message, true));
+  };
+})();
+</script>
