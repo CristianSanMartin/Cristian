@@ -10,7 +10,7 @@
   const data = () => GS.state.data;
   const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
   const kpi = (l, v, sub) => '<div class="kpi-card"><div class="kpi-label">' + l + '</div><div class="kpi-value small">' + v + '</div><div class="kpi-sub">' + sub + '</div></div>';
-  const DEF = { tab: 'movimientos', anio: '', q: '', ventas: true };
+  const DEF = { tab: 'movimientos', anio: '', q: '' };
 
   const movsVivos = () => (data().movimientos || []).filter((m) => !m.anulado);
   const anios = () => {
@@ -169,7 +169,7 @@
     const f = GS.filters('finanzas', DEF);
     const q = GS.norm((f.q || '').trim());
     // Todos los movimientos, de todos los años (el año elegido solo cambia el resumen), los más recientes primero.
-    return (data().movimientos || []).concat(f.ventas ? movsVentas() : []).filter((m) => !q || GS.norm(m.categoriaLabel + ' ' + m.subcategoria + ' ' + m.notas + ' ' + m.referencia + ' ' + m.id + ' ' + m.fecha).includes(q))
+    return (data().movimientos || []).concat(movsVentas()).filter((m) => !q || GS.norm(m.categoriaLabel + ' ' + m.subcategoria + ' ' + m.notas + ' ' + m.referencia + ' ' + m.id + ' ' + m.fecha).includes(q))
       .sort((a, b) => (b.fecha + b.id).localeCompare(a.fecha + a.id));
   };
   // Resumen del dinero para el Dashboard: todo lo registrado en Finanzas (con ventas y pagos de facturas)
@@ -295,7 +295,7 @@
       if (f.tab === 'movimientos') {
         if (!document.getElementById('mov-tbody')) {
           cuerpo.innerHTML = '<div class="filters-bar"><div class="search-box">' + GS.icon('search') + '<input type="text" data-filter="finanzas.q" value="' + esc(f.q || '') + '" placeholder="Buscar categoría, detalle o referencia..."></div>' +
-            '<label class="check"><input type="checkbox" data-filter="finanzas.ventas"' + (f.ventas ? ' checked' : '') + '> Incluir ventas y pagos de facturas</label><span class="count" id="mov-count"></span>' +
+            '<span class="count" id="mov-count"></span>' +
             '<button class="btn ghost small" data-action="exportarMovimientos" title="Descarga en Excel (CSV) los movimientos que se ven, con filtros y buscador aplicados">' + GS.icon('download') + 'Descargar informe</button></div>' +
             '<div id="mov-resumen"></div>' +
             '<div class="table-wrap"><table class="data-table"><thead><tr id="mov-thead"></tr></thead><tbody id="mov-tbody"></tbody></table></div>';
@@ -325,7 +325,7 @@
           kpi('Saldo', '<span class="' + (ing - egr < 0 ? 'text-danger' : 'text-gold') + '">' + fmt.money(ing - egr) + '</span>', 'Ingresos − egresos de lo que se ve') +
           kpi('Por abonar (TUU)', fmt.money(porAbonar.reduce((s, m) => s + m.monto, 0)), porAbonar.length + (porAbonar.length === 1 ? ' venta' : ' ventas') + ' sin confirmar' + (cuotasTuu ? ' · + ' + fmt.money(cuotasTuu) + ' en cuotas' : '') + ' · no suma al saldo') + '</div>' +
           '<p class="table-note" style="margin:0 0 12px;">El saldo es lo que debería haber entre caja, banco y TUU <strong>si todo está registrado</strong>: aportes, ventas, gastos, pagos al SII y pagos de facturas. ' +
-          (f.ventas && sinPago ? 'Ojo: ' + sinPago + (sinPago === 1 ? ' factura de compra no tiene' : ' facturas de compra no tienen') + ' pago registrado y no se restan. ' : '') +
+          (sinPago ? 'Ojo: ' + sinPago + (sinPago === 1 ? ' factura de compra no tiene' : ' facturas de compra no tienen') + ' pago registrado y no se restan. ' : '') +
           'Para el efectivo de la caja, filtra la columna Cuenta por "Caja (efectivo)" (los depósitos al banco no se registran como traspaso, así que el saldo por cuenta es solo referencial).</p>';
         document.getElementById('mov-count').textContent = rows.length + ' movimientos' + (nv ? ' · ' + nv + ' de ventas' : '');
         document.getElementById('mov-thead').innerHTML = GS.tablaEncabezado('movimientos', colsMov) + '<th></th>';
