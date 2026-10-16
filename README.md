@@ -56,3 +56,5 @@ Reglas (montos en soles sin IGV):
 - Distrito: el último tramo de la dirección después de la coma, para no confundir calles como "JR SANTA ROSA, COMAS" con el distrito Santa Rosa.
 - Zona: la del punto más lejano efectivamente entregado. Las visitas fallidas no definen la zona; si una visita fallida estaba en periferia, la ruta lo indica en Observación.
 - Tarifas, distritos y feriados están al inicio de la sección "Perú (Sodimac)" de `index.html`.
+
+Para publicar la web en tu Apps Script con doble clic: ver [publicar/LEEME.md](publicar/LEEME.md).
