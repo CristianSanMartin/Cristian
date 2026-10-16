@@ -89,7 +89,15 @@
     .tab.active { border-left-color:var(--accent,#2563eb); background:var(--accent-soft,#eff6ff); color:var(--primary-dark); font-weight:600; }
     .nav-grupo { font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.09em; color:var(--muted,#6b7280); padding:12px 12px 4px; }
     .nav-grupo:first-child { padding-top:2px; }
-    @media (max-width:1100px){ .app-layout { grid-template-columns:1fr; } .tabs { position:static; flex-direction:row; flex-wrap:wrap; align-items:center; } .nav-grupo { padding:4px 8px; } }
+    .nav-desplegable { display:flex; align-items:center; justify-content:space-between; width:100%; border:0; background:none; font-family:inherit; text-align:left; cursor:pointer; border-radius:8px; }
+    .nav-desplegable:hover { color:var(--fg); background:var(--hover); }
+    .nav-desplegable:focus-visible { outline:3px solid var(--accent-line); outline-offset:1px; }
+    .nav-desplegable .flecha { width:7px; height:7px; border-right:2px solid currentColor; border-bottom:2px solid currentColor; transform:rotate(-45deg); transition:transform .15s; margin-right:4px; }
+    .nav-desplegable[aria-expanded="true"] .flecha { transform:rotate(45deg); }
+    .nav-sub { display:flex; flex-direction:column; gap:2px; }
+    .nav-sub.cerrado { display:none; }
+    .nav-sub .tab { padding-left:20px; }
+    @media (max-width:1100px){ .app-layout { grid-template-columns:1fr; } .tabs { position:static; flex-direction:row; flex-wrap:wrap; align-items:center; } .nav-grupo { padding:4px 8px; } .nav-desplegable { width:auto; gap:8px; } .nav-sub { flex-direction:row; flex-wrap:wrap; } .nav-sub .tab { padding-left:12px; } }
     .rutas-layout { display:grid; grid-template-columns:320px minmax(0,1fr); gap:18px; align-items:start; }
     .rutas-panel { position:sticky; top:12px; max-height:calc(100vh - 24px); overflow:auto; }
     .rutas-panel h3 { font-size:13px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted,#6b7280); margin:18px 0 8px; }
@@ -188,11 +196,13 @@
     <span class="nav-grupo">Falabella Chile</span>
     <button class="tab active" data-vista="proforma" onclick="mostrarVista('proforma')">Revisión de proforma</button>
     <button class="tab" data-vista="rutas" onclick="mostrarVista('rutas')">Control de rutas</button>
-    <span class="nav-grupo">Perú</span>
-    <button class="tab" data-vista="peru" onclick="mostrarVista('peru')">Cobro Sodimac</button>
-    <button class="tab" data-vista="peruPago" onclick="mostrarVista('peruPago')">Pago transporte</button>
-    <button class="tab" data-vista="peruCuadre" onclick="mostrarVista('peruCuadre')">Cuadre y KPI</button>
-    <button class="tab" data-vista="peruTarifas" onclick="mostrarVista('peruTarifas')">Tarifas</button>
+    <button class="nav-grupo nav-desplegable" type="button" aria-expanded="false" aria-controls="navPeru" onclick="alternarGrupoNav(this)">Perú<span class="flecha" aria-hidden="true"></span></button>
+    <div id="navPeru" class="nav-sub cerrado">
+      <button class="tab" data-vista="peru" onclick="mostrarVista('peru')">Cobro Sodimac</button>
+      <button class="tab" data-vista="peruPago" onclick="mostrarVista('peruPago')">Pago transporte</button>
+      <button class="tab" data-vista="peruCuadre" onclick="mostrarVista('peruCuadre')">Cuadre y KPI</button>
+      <button class="tab" data-vista="peruTarifas" onclick="mostrarVista('peruTarifas')">Tarifas</button>
+    </div>
   </nav>
   <div class="app-main">
   <div id="errorArea" class="card hidden"><div id="errorText" class="error-box"></div></div>
@@ -1227,6 +1237,14 @@ function mostrarVista(v){
   document.getElementById("vistaPeruPago").classList.toggle("hidden",v!=="peruPago");
   document.getElementById("vistaPeruCuadre").classList.toggle("hidden",v!=="peruCuadre");
   document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("active",t.dataset.vista===v));
+  const g=document.querySelector(`.nav-sub .tab[data-vista="${v}"]`)?.closest(".nav-sub");
+  if(g) alternarGrupoNav(document.querySelector(`[aria-controls="${g.id}"]`),true);
+}
+// Grupo del menú que se despliega (Perú)
+function alternarGrupoNav(btn,abrir){
+  const sub=document.getElementById(btn.getAttribute("aria-controls"));
+  const abierto=abrir??sub.classList.contains("cerrado");
+  sub.classList.toggle("cerrado",!abierto); btn.setAttribute("aria-expanded",String(abierto));
 }
 
 // ---------- Rutas pendientes ----------
