@@ -1407,6 +1407,21 @@ test("un ingreso de Finanzas pasa a ser abono de una OC con deuda", () => {
   assert.match(errorDe(s.call("movimientoACobroVenta", { id: m.id, ventaId: v.id })), /anulado/);
 });
 
+test("preventas: varios productos a la vez, todo o nada", () => {
+  const s = createServer();
+  const prov = asmodee(s).id;
+  const antes = s.ok("bootstrap").data.preventas.length;
+  const a = { producto: "POKEMON TCG SURGING SPARKS - BOOSTER BOX ENGLISH", proveedorId: prov, lanzamiento: "2030-11-08", solicitado: 20, costoNeto: 120000, pvp: 189990 };
+  const b = { producto: "POKEMON TCG SURGING SPARKS - ELITE TRAINER BOX ESP", proveedorId: prov, lanzamiento: "2030-11-08", solicitado: 10, costoNeto: 40000 };
+  assert.match(errorDe(s.call("guardarPreventas", { lineas: [a, { ...b, costoNeto: "" }] })), /Producto 2 .*costo neto unitario es obligatorio/);
+  assert.equal(s.ok("bootstrap").data.preventas.length, antes, "si una fila falla no se guarda ninguna");
+  const r = s.ok("guardarPreventas", { lineas: [a, b] }).result;
+  assert.equal(r.ids.length, 2);
+  const d = s.ok("bootstrap").data;
+  assert.equal(d.preventas.length, antes + 2);
+  assert.deepEqual(r.ids.map(id => d.preventas.find(x => x.id === id).solicitado), [20, 10]);
+});
+
 test("compra directa de sellados sin preventa: entra al inventario con su costo y despacho", () => {
   const s = createServer();
   const prov = s.ok("bootstrap").data.proveedores[0];

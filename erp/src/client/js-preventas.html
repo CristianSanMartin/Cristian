@@ -16,6 +16,8 @@
 
   /* Estado local de la pantalla (sobrevive a los redibujos). */
   const borrador = { producto: '', pvp: '', imagen: null, proveedorId: '', lanzamiento: '', solicitado: '', costoNeto: '' };
+  // Productos en la lista, aún sin guardar: se guardan todos juntos con "Guardar".
+  const lista = [];
   const asigPendiente = {};   // id -> valor escrito en "Nuevo cant." aún sin guardar
   const precioPendiente = {}; // productoId -> precio de venta escrito aún sin guardar ('' = usar el sugerido)
   const seleccion = new Set();
@@ -47,7 +49,7 @@
     const provs = d.proveedores.filter((x) => x.activo);
     if (!borrador.proveedorId) borrador.proveedorId = (provs.find((x) => x.nombre === 'Asmodee') || provs[0] || {}).id || '';
     return '<div class="panel inline-panel" id="agregar-preventa"><form novalidate>' +
-      '<div class="inline-panel-head"><h3>Agregar producto a preventas</h3><span class="muted">Cada producto queda como un registro propio. Proveedor y fecha de lanzamiento se mantienen para el siguiente.</span></div>' +
+      '<div class="inline-panel-head"><h3>Agregar productos a preventas</h3><span class="muted">Arma la lista con uno o varios productos y guárdalos juntos. Proveedor y fecha de lanzamiento se mantienen para el siguiente.</span></div>' +
       '<div class="add-grid">' +
       '<div class="form-field span-2"><label for="ap-producto">Producto *</label>' +
       '<div class="input-lang"><input id="ap-producto" name="producto" autocomplete="off" value="' + esc(borrador.producto) + '" placeholder="Ej: POKEMON TCG 30TH CELEBRATION - BINDER COLLECTION ENG">' +
@@ -57,7 +59,7 @@
       '<div class="form-field"><label for="ap-cant">Cant. solicitada *</label><input id="ap-cant" type="number" min="0" step="1" name="solicitado" value="' + esc(borrador.solicitado) + '"></div>' +
       '<div class="form-field"><label for="ap-costo">Precio neto *</label><input id="ap-costo" type="number" min="0" step="0.01" name="costoNeto" value="' + esc(borrador.costoNeto) + '"></div>' +
       '<div class="form-field"><label for="ap-pvp">Precio sugerido</label><input id="ap-pvp" type="number" min="0" step="1" name="pvp" value="' + esc(borrador.pvp) + '" placeholder="Con IVA"></div>' +
-      '<div class="form-field add-submit"><button type="submit" class="btn">' + GS.icon('plus', 2.4) + 'Agregar</button></div>' +
+      '<div class="form-field add-submit"><button type="submit" class="btn secondary">' + GS.icon('plus', 2.4) + 'A la lista</button></div>' +
       '</div>' +
       '<div class="add-extra">' +
       '<div class="img-picker"><span class="img-preview" data-img-preview>' +
@@ -68,8 +70,42 @@
       '<div class="add-extra-info"><div class="add-calc" data-producto></div><div class="add-calc" data-calc></div></div>' +
       '</div>' +
       '<div class="form-error"></div>' +
-      '</form></div>';
+      '</form>' + tablaLista(d) + '</div>';
   }
+
+  /** Lista de productos por agregar, con totales y el botón para guardarlos todos. */
+  function tablaLista(d) {
+    if (!lista.length) return '';
+    const prov = (id) => (d.proveedores.find((x) => x.id === id) || {}).nombre || '—';
+    const neto = lista.reduce((t, x) => t + Number(x.solicitado) * Number(x.costoNeto), 0);
+    return '<div class="pv-lista"><table class="mini-table"><thead><tr><th>Producto</th><th>Proveedor</th><th>Lanzamiento</th><th class="right">Cant.</th><th class="right">Precio neto</th><th class="right">Total neto</th><th></th></tr></thead><tbody>' +
+      lista.map((x, i) => {
+        const r = productoDeTexto(x.producto);
+        const nombre = r && r.prod ? r.prod.nombreCompleto : r ? [r.nuevo.edicion, r.nuevo.nombre].filter(Boolean).join(' – ') + (r.nuevo.idioma ? ' ' + r.nuevo.idioma : '') : x.producto;
+        return '<tr><td class="prod-cell"><div class="name">' + esc(nombre) + '</div><div class="prov">' + (r && r.prod ? esc(r.prod.id) : 'producto nuevo') + (x.imagen ? ' · con imagen' : '') + '</div></td>' +
+          '<td>' + esc(prov(x.proveedorId)) + '</td><td class="nowrap">' + fmt.date(x.lanzamiento) + '</td>' +
+          '<td class="cell-num right">' + fmt.num(Number(x.solicitado)) + '</td><td class="cell-num right">' + fmt.money(Number(x.costoNeto)) + '</td>' +
+          '<td class="cell-num right">' + fmt.money(Number(x.solicitado) * Number(x.costoNeto)) + '</td>' +
+          '<td class="right">' + GS.iconBtn('quitarDeListaPv', String(i), 'trash', 'Quitar de la lista', 'danger') + '</td></tr>';
+      }).join('') +
+      '</tbody></table>' +
+      '<div class="pv-lista-pie"><span class="muted">' + lista.length + (lista.length === 1 ? ' producto' : ' productos') + ' · total neto ' + fmt.money(neto) + ' · con IVA ' + fmt.money(iva(neto)) + '</span>' +
+      '<button type="button" class="btn" data-action="guardarListaPv">' + GS.icon('check', 2.4) + 'Guardar ' + (lista.length === 1 ? '1 producto' : lista.length + ' productos') + '</button></div></div>';
+  }
+
+  GS.actions.quitarDeListaPv = (i) => { lista.splice(Number(i), 1); GS.render(); };
+  GS.actions.guardarListaPv = async (id, btn) => {
+    btn.disabled = true;
+    try {
+      const datos = lista.map((x) => Object.assign({}, x, { imagen: x.imagen ? { mime: x.imagen.mime, base64: x.imagen.base64 } : undefined }));
+      await GS.mutate('guardarPreventas', { lineas: datos }, (r) => (r.ids.length === 1 ? r.ids[0] + ' agregada' : r.ids.length + ' productos agregados a preventas'));
+      lista.length = 0;
+      GS.render();
+    } catch (e) {
+      GS.toast(e.message, true);
+      if (btn.isConnected) btn.disabled = false;
+    }
+  };
 
   /** Producto del catálogo que corresponde al texto escrito (misma regla que el servidor), o la interpretación si es nuevo. */
   function productoDeTexto(texto) {
@@ -135,13 +171,17 @@
     });
     GS.conectarImagen(form, (img) => { borrador.imagen = img; });
     GS.bindForm(form, async (v) => {
-      if (borrador.imagen) v.imagen = { mime: borrador.imagen.mime, base64: borrador.imagen.base64 };
-      const r = await GS.mutate('guardarPreventa', v, (x) => x.id + ' agregada');
+      // Se revisa lo básico al agregar a la lista; el servidor vuelve a validar todo al guardar.
+      if (!String(v.producto || '').trim()) throw new Error('El producto es obligatorio.');
+      if (!v.proveedorId) throw new Error('El proveedor es obligatorio.');
+      if (!v.lanzamiento) throw new Error('La fecha de lanzamiento es obligatoria.');
+      if (v.solicitado === '' || !(Number(v.solicitado) >= 0)) throw new Error('La cantidad solicitada es obligatoria.');
+      if (v.costoNeto === '' || !(Number(v.costoNeto) >= 0)) throw new Error('El precio neto es obligatorio.');
+      lista.push({ producto: v.producto.trim(), proveedorId: v.proveedorId, lanzamiento: v.lanzamiento, solicitado: v.solicitado, costoNeto: v.costoNeto, pvp: v.pvp, imagen: borrador.imagen });
       Object.assign(borrador, { producto: '', pvp: '', imagen: null, solicitado: '', costoNeto: '' });
       GS.render();
       const sel = document.getElementById('ap-producto');
       if (sel) sel.focus();
-      return r;
     });
     calcAgregar(form);
   }

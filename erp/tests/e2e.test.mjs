@@ -59,9 +59,10 @@ test("preventas como carrito: agregar productos uno a uno, asignar en la tabla y
       buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64") });
     await form.locator("[data-img-hint]", { hasText: "lista para guardar" }).waitFor();
     assert.match(await form.locator("[data-calc]").textContent(), /Total neto \$2\.400\.000.*Ganancia real \$39\.655/);
+    // Varios productos a la vez: se arma la lista y se guardan juntos
     await form.locator('button[type="submit"]').click();
-    await toast(page, /PVI-\d{6} agregada/);
-    const PV1 = (await page.textContent("#toast-msg")).match(/PVI-\d{6}/)[0];
+    await form.locator(".pv-lista tbody tr").waitFor();
+    assert.match(await form.locator(".pv-lista").textContent(), /Surging Sparks – Booster Box ENG.*producto nuevo · con imagen.*08-11-2030.*\$2\.400\.000/s);
 
     // La fecha se mantiene para el siguiente producto; no hay campo proforma
     assert.equal(await form.locator('[name="proforma"]').count(), 0);
@@ -76,8 +77,20 @@ test("preventas como carrito: agregar productos uno a uno, asignar en la tabla y
     await form.locator('[name="solicitado"]').fill("5");
     await form.locator('[name="costoNeto"]').fill("118000");
     await form.locator('button[type="submit"]').click();
-    await page.waitForFunction((a) => /PVI-\d{6} agregada/.test(document.getElementById("toast-msg").textContent) && !document.getElementById("toast-msg").textContent.includes(a), PV1);
-    const PV2 = (await page.textContent("#toast-msg")).match(/PVI-\d{6}/)[0];
+    assert.equal(await form.locator(".pv-lista tbody tr").count(), 2);
+    // Quitar de la lista y volver a agregar
+    await form.locator('.pv-lista [data-action="quitarDeListaPv"]').nth(1).click();
+    assert.equal(await form.locator(".pv-lista tbody tr").count(), 1);
+    await form.locator('[name="producto"]').fill("Destined Rivals – Booster Box · ENG");
+    await form.locator('[name="producto"]').dispatchEvent("change");
+    await form.locator('[name="solicitado"]').fill("5");
+    await form.locator('[name="costoNeto"]').fill("118000");
+    await form.locator('button[type="submit"]').click();
+    assert.match(await form.locator('[data-action="guardarListaPv"]').textContent(), /Guardar 2 productos/);
+    await form.locator('[data-action="guardarListaPv"]').click();
+    await toast(page, /2 productos agregados a preventas/);
+    assert.equal(await form.locator(".pv-lista").count(), 0);
+    const [PV1, PV2] = await page.evaluate(() => GS.state.data.preventas.map((p) => p.id).sort().slice(-2));
     // La tabla no muestra el PVI: solo el nombre y, debajo, la edición
     assert.doesNotMatch(await page.locator("#pv-tbody").textContent(), /PVI-0000/);
 

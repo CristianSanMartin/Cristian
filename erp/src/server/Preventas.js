@@ -46,6 +46,32 @@ const Preventas = {
     return nuevo;
   },
 
+  /**
+   * Agrega varios productos a preventas de una vez (la lista del panel "Agregar producto").
+   * Se validan todas las filas antes de guardar: si una falla, no se guarda ninguna.
+   * p: { lineas: [{ producto, proveedorId, lanzamiento, solicitado, costoNeto, pvp, imagen }] }
+   */
+  guardarVarios(p, user) {
+    const lineas = Array.isArray(p.lineas) ? p.lineas : [];
+    if (!lineas.length) throw new AppError('Agrega al menos un producto a la lista.');
+    if (lineas.length > 50) throw new AppError('Máximo 50 productos por vez.');
+    lineas.forEach((x, i) => {
+      const fila = (e) => { throw new AppError('Producto ' + (i + 1) + (x.producto ? ' (' + String(x.producto).slice(0, 60) + ')' : '') + ': ' + e.message); };
+      try {
+        if (x.id || x.productoId) throw new AppError('Solo productos nuevos en la lista.');
+        const prov = Proveedores.requerir(x.proveedorId);
+        if (!prov.activo) throw new AppError('El proveedor está archivado.');
+        Util.texto(x.producto, 'El producto', { requerido: true, max: 200 });
+        Imagenes.validar(x.imagen);
+        Util.fecha(x.lanzamiento, 'La fecha de lanzamiento', { requerido: true });
+        Util.entero(x.solicitado, 'La cantidad solicitada', { requerido: true });
+        Util.monto(x.costoNeto, 'El costo neto unitario', { requerido: true });
+      } catch (e) { fila(e); }
+    });
+    const ids = lineas.map((x) => Preventas.guardar(x, user).id);
+    return { ids: ids };
+  },
+
   eliminar(p, user) {
     const pv = Preventas.requerir(p.id);
     Preventas._validarEditable(pv);
