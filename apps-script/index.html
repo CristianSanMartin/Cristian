@@ -177,6 +177,7 @@
     .barra-campo + .button { align-self:flex-end; }
     .barra-info { flex:1 1 260px; margin:0; align-self:flex-end; padding-bottom:9px; }
     .barra-estado { flex-basis:100%; margin:0; }
+    .conductores-card summary { cursor:pointer; }
     .barra-estado:empty { display:none; }
     @media (max-width:900px){ .rutas-layout { grid-template-columns:1fr; } .rutas-panel { position:static; max-height:none; } }
   </style>
@@ -417,23 +418,12 @@
     </div>
   </div>
   <div id="vistaPeruPago" class="hidden">
-    <div class="rutas-layout">
-      <aside class="card rutas-panel">
-        <h3>Quincena</h3>
-        <select id="qSel" onchange="renderPagoPeru()" style="width:100%"><option value="">Sin datos</option></select>
-        <h3>Estado</h3>
-        <select id="qEstado" onchange="cambiarEstadoQuincenaPe(this.value)" style="width:100%">
-          <option>Borrador</option><option>Enviado al transporte</option><option>Validado</option><option>Pagado</option>
-        </select>
-        <p id="qEstadoFecha" class="nota"></p>
-        <p id="estadoPagoPe" class="nota" role="status"></p>
-        <p id="qTc" class="nota"></p>
-
-        <h3>Conductores</h3>
-        <p class="nota" style="margin-top:0">SIMPLI no trae el conductor: se registra una vez por placa y va en el detalle.</p>
-        <div class="table-wrap"><table><thead><tr><th>Placa</th><th>Conductor</th><th>Documento</th></tr></thead><tbody id="qConductores"></tbody></table></div>
-        <button class="button secondary" style="margin:8px 0 0" onclick="guardarConductoresPe()">Guardar conductores</button>
-      </aside>
+    <div>
+      <div class="card barra-vista">
+        <label class="barra-campo">Quincena<select id="qSel" onchange="renderPagoPeru()"><option value="">Sin datos</option></select></label>
+        <p id="qTc" class="nota barra-info"></p>
+        <p id="estadoPagoPe" class="nota barra-estado" role="status"></p>
+      </div>
 
       <main style="min-width:0">
         <div class="summary" style="margin-bottom:18px">
@@ -495,6 +485,11 @@
           <textarea id="qCorreo" readonly rows="16" style="width:100%;font-family:inherit;font-size:13px;line-height:1.5"></textarea>
           <div class="actions"><button class="button" onclick="copiarCorreoPe()">Copiar texto</button></div>
         </div>
+        <details class="card conductores-card">
+          <summary><b>Conductores</b> <span class="nota-inline">SIMPLI no trae el conductor: se registra una vez por placa y va en el detalle.</span></summary>
+          <div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>Placa</th><th>Conductor</th><th>Documento</th></tr></thead><tbody id="qConductores"></tbody></table></div>
+          <div class="actions"><button class="button secondary" onclick="guardarConductoresPe()">Guardar conductores</button></div>
+        </details>
       </main>
     </div>
   </div>
@@ -2305,8 +2300,8 @@ function renderPagoPeru(){
   sel.innerHTML=qs.length?qs.map(q=>`<option value="${q}">${nombreQuincena(q)}</option>`).join(""):`<option value="">Sin datos</option>`;
   sel.value=qs.includes(prev)?prev:(qs[0]||"");
   const d=quincenaPe(), est=quincenasPe[d.q]||{estado:"Borrador",fecha:""};
-  document.getElementById("qEstado").value=est.estado; document.getElementById("qEstado").disabled=!d.q;
-  document.getElementById("qEstadoFecha").textContent=est.fecha?`Desde el ${fechaCL(est.fecha)}.`:"";
+  const qEst=document.getElementById("qEstado"); if(qEst){ qEst.value=est.estado; qEst.disabled=!d.q; }
+  const qEstF=document.getElementById("qEstadoFecha"); if(qEstF) qEstF.textContent=est.fecha?`Desde el ${fechaCL(est.fecha)}.`:"";
   document.getElementById("qRutas").textContent=d.rutas.length;
   document.getElementById("qNeto").textContent=solesQ(d.neto);
   document.getElementById("qIgv").textContent=solesQ(d.conIgv);
