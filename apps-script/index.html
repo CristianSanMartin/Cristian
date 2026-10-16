@@ -178,6 +178,13 @@
     .barra-info { flex:1 1 260px; margin:0; align-self:flex-end; padding-bottom:9px; }
     .barra-estado { flex-basis:100%; margin:0; }
     .conductores-card summary { cursor:pointer; }
+    .registro td { white-space:nowrap; vertical-align:middle; } .registro td.n { text-align:right; font-variant-numeric:tabular-nums; }
+    .registro td.det { white-space:normal; min-width:240px; }
+    .registro tr.banda td { background:var(--hover); }
+    .registro tr.liq td { font-weight:600; }
+    .registro tr.total td { font-weight:700; background:var(--chip); border-top:2px solid var(--dark); }
+    .registro input.in-reg { width:120px; padding:4px 8px; font-size:12px; }
+    .registro input.in-reg[type=date] { width:140px; }
     .barra-estado:empty { display:none; }
     @media (max-width:900px){ .rutas-layout { grid-template-columns:1fr; } .rutas-panel { position:static; max-height:none; } }
   </style>
@@ -506,6 +513,26 @@
           <div class="summary-box"><div class="summary-title">Costo neto</div><div id="cCosto" class="summary-value">S/ 0.00</div><div class="nota">Transporte, descuentos y otros pagos</div></div>
           <div class="summary-box"><div class="summary-title">Margen real</div><div id="cMargen" class="summary-value">S/ 0.00</div></div>
           <div class="summary-box"><div class="summary-title">Pendiente de cobro</div><div id="cPendiente" class="summary-value warnc">S/ 0.00</div><div id="cPendienteDet" class="nota">Facturas a Sodimac sin fecha de pago.</div></div>
+        </div>
+        <div class="card registro">
+          <h2>Registro de entradas y salidas</h2>
+          <p class="nota" style="margin-top:-6px">Una línea por liquidación y por orden de compra de cada quincena, todos los periodos. Montos sin IGV. Escribe el N° de factura y la fecha de llegada en cada línea; se guardan solos.</p>
+          <div id="cRegistro" class="table-wrap" style="max-height:560px"></div>
+          <div class="filters" style="margin-top:12px">
+            <select id="rgPeriodo"></select>
+            <select id="rgTipo" onchange="presetRegistroPe()">
+              <option value="ENTRADA|Estibas y salvatruncos">Estibas y salvatruncos (entrada)</option>
+              <option value="SALIDA|Villamuzio (contadora)">Villamuzio, contadora (salida)</option>
+              <option value="SALIDA|Prontopago 1,5%">Prontopago 1,5% (salida)</option>
+              <option value="ENTRADA|">Otra entrada</option>
+              <option value="SALIDA|">Otra salida</option>
+            </select>
+            <input id="rgDetalle" placeholder="Detalle" value="Estibas y salvatruncos" style="flex:1 1 200px">
+            <input id="rgMonto" type="number" step="any" placeholder="Monto S/" style="width:110px">
+            <input id="rgFactura" placeholder="N° factura" style="width:110px">
+            <label>Llegada <input id="rgFecha" type="date"></label>
+            <button class="button" style="margin:0" onclick="agregarRegistroPe()">Agregar</button>
+          </div>
         </div>
         <div class="tarifas-grid">
           <div class="card cuadre"><h2>Cuadre del cobro</h2><div id="cCuadreCobro"></div></div>
@@ -1754,7 +1781,7 @@ const almacenLocal={
   hojas:{},
   guardarLote(ops){ const res={}; for(const op of ops){ this.hojas[op.hoja]=combinarHoja(this.hojas[op.hoja]||[],op); res[op.hoja]=Math.max(this.hojas[op.hoja].length-1,0); } return res; },
   tipoCambioPeru(){ return (this.hojas["PERU TIPO CAMBIO"]||[]).slice(1); },
-  leerDatos(){ const h={}; for(const n of ["REGISTRO","GEOSORT","VIAJES PAGADOS","PERU RUTAS","PERU TARIFAS","PERU DISTRITOS","PERU FERIADOS","PERU AJUSTES","PERU MOVIMIENTOS","PERU CONDUCTORES","PERU QUINCENAS","PERU COSTOS FIJOS","PERU FACTURAS"]) h[n]=JSON.parse(JSON.stringify(this.hojas[n]||[])); return {hojas:h,url:""}; }
+  leerDatos(){ const h={}; for(const n of ["REGISTRO","GEOSORT","VIAJES PAGADOS","PERU RUTAS","PERU TARIFAS","PERU DISTRITOS","PERU FERIADOS","PERU AJUSTES","PERU MOVIMIENTOS","PERU CONDUCTORES","PERU QUINCENAS","PERU COSTOS FIJOS","PERU FACTURAS","PERU REGISTRO"]) h[n]=JSON.parse(JSON.stringify(this.hojas[n]||[])); return {hojas:h,url:""}; }
 };
 function llamar(fn,...args){
   return new Promise((ok,mal)=>{
@@ -2455,11 +2482,13 @@ function mesCuadrePe(mes){
       dias:fp&&fp.pago?diasEntre(finQuincena(q),fp.pago):null,estado:(quincenasPe[q]||{}).estado||"Borrador"};
   }).filter(d=>d.rutas.length);
   const pago=qs.reduce((s,d)=>s+d.neto,0), desc=r2(qs.reduce((s,d)=>s+d.totDesc,0)/(1+IGV_PE)), otros=qs.reduce((s,d)=>s+d.totOtros,0);
-  const costo=pago-desc+otros, margen=cobrado-costo;
+  const man=registroPe.filter(x=>x.id.startsWith("M")&&x.periodo===mes);
+  const extEnt=man.filter(x=>x.tipo==="ENTRADA").reduce((s,x)=>s+(x.monto||0),0), extSal=man.filter(x=>x.tipo==="SALIDA").reduce((s,x)=>s+(x.monto||0),0);
+  const costo=pago-desc+otros+extSal, margen=cobrado+extEnt-costo;
   const placas={}; rutas.forEach(r=>placas[r.placa]=(placas[r.placa]||0)+1);
   const puntos=rutas.reduce((s,r)=>s+(r.puntos||0),0), ent=rutas.reduce((s,r)=>s+(r.entregados||0),0), n=rutas.length;
   const dias=qs.map(d=>d.dias).filter(x=>x!==null);
-  return {mes,rutas,calc,liq,ajustes:rutas.filter(r=>r.ajuste&&r.total!==r.totalCalc),fc,cobrado,difCobro:fc&&fc.monto!==null?r2(fc.monto-liq):null,qs,pago,desc,otros,costo,margen,
+  return {mes,extEnt,extSal,rutas,calc,liq,ajustes:rutas.filter(r=>r.ajuste&&r.total!==r.totalCalc),fc,cobrado,difCobro:fc&&fc.monto!==null?r2(fc.monto-liq):null,qs,pago,desc,otros,costo,margen,
     kpi:{rutas:n,placas,perif:n?rutas.filter(r=>r.zonaCobro==="Periferia").length/n:0,dom:n?rutas.filter(r=>r.detalle).length/n:0,ptsRuta:n?puntos/n:0,entrega:puntos?ent/puntos:0,
       ingresoRuta:n?cobrado/n:0,costoRuta:n?costo/n:0,margenRuta:n?margen/n:0,margenPct:cobrado?margen/cobrado:0,diasPago:dias.length?dias.reduce((a,b)=>a+b,0)/dias.length:null}};
 }
@@ -2473,6 +2502,7 @@ function renderCuadrePeru(){
   document.getElementById("cPendiente").textContent=solesQ(pend.reduce((s,[,f])=>s+f.monto,0));
   document.getElementById("cPendienteDet").textContent=pend.length?pend.map(([k,f])=>`${nombreMes(k.split("|")[1])}${f.numero?" (F "+f.numero+")":""}`).join(", "):"Sin facturas pendientes de cobro.";
   const mes=sel.value;
+  renderRegistroPe(meses);
   if(!mes){ ["cCobrado","cCosto","cMargen"].forEach(id=>document.getElementById(id).textContent="S/ 0.00"); document.getElementById("cCuadreCobro").innerHTML=""; document.getElementById("cCuadrePago").innerHTML=""; document.getElementById("cKpi").innerHTML=""; document.getElementById("cTendencia").innerHTML=""; return; }
   const d=mesCuadrePe(mes);
   document.getElementById("cCobrado").textContent=solesQ(d.cobrado);
@@ -2549,6 +2579,88 @@ async function guardarFacturaPe(tipo,periodo,id){
     av.textContent=`Factura ${tipo==="COBRO"?"a Sodimac de "+nombreMes(periodo):"del transporte, "+nombreQuincena(periodo)} guardada.`+(EN_APPS_SCRIPT?" Guardado en Google Sheets.":" Vista previa: se guarda solo mientras la página esté abierta.");
   }catch(err){ av.textContent=""; mostrarError("No se pudo guardar en Google Sheets.\n\n"+(err.message||err)); }
 }
+// ---------- Perú: registro de entradas y salidas (hoja PERU REGISTRO) ----------
+// Líneas automáticas por mes: liquidación a Sodimac (factura COBRO), y por quincena la OC de transporte (factura PAGO, neto
+// sin IGV) y los otros pagos (seguimiento). Líneas manuales (ID M…): estibas y salvatruncos, contadora, prontopago, etc.
+// En PERU REGISTRO también se guarda el N° de factura y la fecha de llegada de las líneas de otros pagos (ID A|OTRO|…).
+const H_REG_PE=["ID","PERIODO","TIPO","DETALLE","MONTO","FACTURA","FECHA LLEGADA"];
+let registroPe=[];
+function registroDesdeHoja(h){
+  registroPe=tablaPe(h["PERU REGISTRO"],H_REG_PE).filter(x=>String(x.ID).trim()).map(x=>({id:String(x.ID).trim(),periodo:String(x.PERIODO).trim(),tipo:nt(x.TIPO),
+    detalle:String(x.DETALLE).trim(),monto:x.MONTO===""?null:num(x.MONTO),factura:String(x.FACTURA).trim(),fecha:fechaISO(x["FECHA LLEGADA"])}));
+}
+const filasRegPe=()=>[H_REG_PE,...registroPe.map(x=>[x.id,x.periodo,x.tipo,x.detalle,x.monto??"",x.factura,x.fecha])];
+const ocQuincenaPe=q=>{ const [y,m,n]=q.split("-"); return `OC ${n==="Q1"?"1":"2"}°Q ${["ENE","FEB","MAR","ABR","MAY","JUN","JUL","AGO","SEP","OCT","NOV","DIC"][+m-1]} ${y.slice(2)}`; };
+function lineasRegistroPe(meses){
+  const out=[], dato=id=>registroPe.find(x=>x.id===id)||{};
+  [...meses].sort().forEach((mes,b)=>{
+    const d=mesCuadrePe(mes), fc=d.fc||{};
+    out.push({id:"A|COBRO|"+mes,mes,b,liq:true,detalle:"LIQUIDACIÓN "+nombreMes(mes).toUpperCase(),ent:d.cobrado,sal:0,factura:fc.numero||"",fecha:fc.fecha||"",fuente:"COBRO",periodo:mes});
+    d.qs.forEach(q=>{
+      q.otros.forEach((o,i)=>{ const id=`A|OTRO|${q.q}|${i}`, e=dato(id);
+        out.push({id,mes,b,detalle:`${ocQuincenaPe(q.q)} | ${o.concepto}`,ent:0,sal:o.monto,factura:e.factura||"",fecha:e.fecha||"",fuente:"REG",periodo:q.q}); });
+      const fp=q.fact||{};
+      out.push({id:"A|PAGO|"+q.q,mes,b,detalle:`${ocQuincenaPe(q.q)} | Transporte`,ent:0,sal:r2(q.total/(1+IGV_PE)),factura:fp.numero||"",fecha:fp.fecha||"",fuente:"PAGO",periodo:q.q});
+    });
+    registroPe.filter(x=>x.id.startsWith("M")&&x.periodo===mes).forEach(x=>out.push({id:x.id,mes,b,manual:true,detalle:x.detalle,
+      ent:x.tipo==="ENTRADA"?x.monto||0:0,sal:x.tipo==="SALIDA"?x.monto||0:0,factura:x.factura,fecha:x.fecha,fuente:"REG",periodo:mes}));
+  });
+  return out;
+}
+function renderRegistroPe(meses){
+  const ls=lineasRegistroPe(meses), mesCorto=m=>{ const [y,mm]=m.split("-"); return `${["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"][+mm-1]}-${y.slice(2)}`; };
+  const te=ls.reduce((s,l)=>s+l.ent,0), ts=ls.reduce((s,l)=>s+l.sal,0);
+  document.getElementById("cRegistro").innerHTML=ls.length?`<table><thead><tr><th>Fecha llegada</th><th>Periodo</th><th>Detalle</th><th>Entrada</th><th>Salida</th><th>Factura</th><th></th></tr></thead><tbody>
+    ${ls.map(l=>`<tr class="${l.b%2?"banda":""} ${l.liq?"liq":""}">
+      <td><input class="in-reg" type="date" value="${l.fecha}" onchange="editarRegistroPe('${esc(l.id)}','fecha',this.value)"></td>
+      <td>${mesCorto(l.mes)}</td><td class="det">${esc(l.detalle)}</td>
+      <td class="n">${l.ent?solesQ(l.ent):""}</td><td class="n">${l.sal?solesQ(l.sal):""}</td>
+      <td><input class="in-reg" value="${esc(l.factura)}" placeholder="N° factura" onchange="editarRegistroPe('${esc(l.id)}','factura',this.value)"></td>
+      <td>${l.manual?`<button class="btn-mini" title="Quitar" onclick="quitarRegistroPe('${esc(l.id)}')">✕</button>`:""}</td></tr>`).join("")}
+    <tr class="total"><td colspan="3">Total</td><td class="n">${solesQ(te)}</td><td class="n">${solesQ(ts)}</td><td class="n" colspan="2">${solesQ(te-ts)}</td></tr>
+    </tbody></table>`:`<p class="nota" style="padding:10px">Carga rutas de SIMPLI para armar el registro.</p>`;
+  const sel=document.getElementById("rgPeriodo"), prev=sel.value;
+  sel.innerHTML=meses.map(m=>`<option value="${m}">${nombreMes(m)}</option>`).join("");
+  sel.value=meses.includes(prev)?prev:(document.getElementById("cMes").value||meses[0]||"");
+}
+function presetRegistroPe(){
+  const [,det]=document.getElementById("rgTipo").value.split("|");
+  document.getElementById("rgDetalle").value=det;
+  if(det.startsWith("Prontopago")){ const m=document.getElementById("rgPeriodo").value; if(m) document.getElementById("rgMonto").value=r2(mesCuadrePe(m).cobrado*0.015); }
+}
+async function guardarRegistroPe(hojas,msg){
+  ocultarError(); const av=document.getElementById("estadoCuadrePe"); av.textContent="Guardando…";
+  try{
+    await llamar("guardarLote",hojas.map(n=>n==="PERU FACTURAS"?{hoja:n,filas:filasFactPe(),llave:{todo:true}}:{hoja:n,filas:filasRegPe(),llave:{todo:true}}));
+    renderCuadrePeru();
+    av.textContent=msg+(EN_APPS_SCRIPT?" Guardado en Google Sheets.":"");
+  }catch(err){ av.textContent=""; mostrarError("No se pudo guardar en Google Sheets.\n\n"+(err.message||err)); }
+}
+function editarRegistroPe(id,campo,valor){
+  valor=String(valor||"").trim();
+  const [,fuente,periodo]=id.split("|");
+  if(fuente==="COBRO"||fuente==="PAGO"){
+    const k=claveFact(fuente,periodo), f=facturasPe[k]||{numero:"",fecha:"",monto:null,pago:""};
+    f[campo==="factura"?"numero":"fecha"]=valor; facturasPe[k]=f;
+    return guardarRegistroPe(["PERU FACTURAS"],"Registro actualizado.");
+  }
+  let x=registroPe.find(r=>r.id===id);
+  if(!x){ x={id,periodo,tipo:"SALIDA",detalle:"",monto:null,factura:"",fecha:""}; registroPe.push(x); }
+  x[campo]=valor;
+  guardarRegistroPe(["PERU REGISTRO"],"Registro actualizado.");
+}
+function agregarRegistroPe(){
+  const v=id=>document.getElementById(id).value.trim(), [tipo]=v("rgTipo").split("|"), monto=Number(v("rgMonto"));
+  if(!v("rgPeriodo")) return mostrarError("Primero carga rutas para tener un periodo.");
+  if(!v("rgDetalle")||!(monto>0)) return mostrarError("Escribe el detalle y un monto mayor a cero.");
+  registroPe.push({id:"M"+Date.now(),periodo:v("rgPeriodo"),tipo,detalle:v("rgDetalle"),monto,factura:v("rgFactura"),fecha:v("rgFecha")});
+  ["rgMonto","rgFactura","rgFecha"].forEach(i=>document.getElementById(i).value="");
+  guardarRegistroPe(["PERU REGISTRO"],`Agregado: ${v("rgDetalle")}.`);
+}
+function quitarRegistroPe(id){
+  const i=registroPe.findIndex(x=>x.id===id); if(i<0) return;
+  const x=registroPe.splice(i,1)[0]; guardarRegistroPe(["PERU REGISTRO"],`Quitado: ${x.detalle}.`);
+}
 // ---------- Perú: montos en pesos chilenos (solo resúmenes y KPI) ----------
 // Tipo de cambio diario de la hoja PERU TIPO CAMBIO (Code.gs: tipoCambioPeru). Todos los montos se convierten al
 // tipo de cambio del día en que se revisa (el último disponible), sin importar el periodo (pedido de Cristian, 16-10).
@@ -2600,7 +2712,7 @@ async function recargarPeru(){
   const d=await llamar("leerDatos"); urlLibro=d.url||urlLibro;
   const h=d.hojas||{};
   await configPeruDesdeHojas(h);
-  pagoPeruDesdeHojas(h); facturasDesdeHoja(h);
+  pagoPeruDesdeHojas(h); facturasDesdeHoja(h); registroDesdeHoja(h);
   peruDatos.rutas=peruDesdeHoja(h["PERU RUTAS"]).map(tarificarPeru);
   renderTodoPeru();
 }
