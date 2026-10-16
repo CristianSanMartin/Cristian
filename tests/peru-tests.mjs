@@ -43,6 +43,7 @@ const errors = [];
 page.on("pageerror", e => errors.push(e.message));
 await page.route("**/xlsx.full.min.js", r => r.fulfill({ path: XLSX_JS, contentType: "application/javascript" }));
 await page.goto("file://" + HTML);
+await page.click(".nav-desplegable"); // Perú parte plegado en el menú
 await page.click("button.tab[data-vista=peru]");
 const vistaVisible = await page.isVisible("#vistaPeru");
 await page.setInputFiles("#inSimpli", [f1, f2]);
@@ -74,6 +75,7 @@ const resumenQ1 = await resumenQ();
 await page.selectOption("#qFiltro", "fal");
 const conFallidos = await page.$$eval("#qBody tr", trs => trs.map(t => [t.children[0].textContent, t.children[1].textContent, t.children[5].textContent]));
 await page.selectOption("#qFiltro", "");
+await page.click("#vistaPeruPago .conductores-card summary");
 await page.fill('#qConductores input[data-p=AAA111][data-k=nombre]', "JUAN PEREZ");
 await page.fill('#qConductores input[data-p=AAA111][data-k=doc]', "DNI 123");
 await page.click("text=Guardar conductores"); await page.waitForTimeout(200);
@@ -90,7 +92,7 @@ await page.click("text=Guardar ajuste"); await page.waitForTimeout(200);
 const ajustada = await page.evaluate(`(r=>[r.zonaCobro,r.total,r.pago,r.totalCalc,r.pagoCalc,r.obsTarifa,r.llave])(peruDatos.rutas.find(r=>r.fecha==="2026-09-12"&&r.placa==="AAA111"))`);
 const hojaAj = await page.evaluate(`almacenLocal.hojas["PERU AJUSTES"]`);
 const resumenQ1b = await resumenQ();
-await page.selectOption("#qEstado", "Enviado al transporte"); await page.waitForTimeout(200);
+await page.evaluate(`cambiarEstadoQuincenaPe("Enviado al transporte")`); await page.waitForTimeout(200);
 const hojaQuin = await page.evaluate(`almacenLocal.hojas["PERU QUINCENAS"].slice(1).map(r=>r.slice(0,2))`);
 const correo = await page.inputValue("#qCorreo");
 const [dlQ] = await Promise.all([page.waitForEvent("download"), page.click("text=Descargar detalle quincena")]);
@@ -98,7 +100,7 @@ const outQ = path.join(tmp, "q_out.xlsx"); await dlQ.saveAs(outQ);
 const nombreQ = dlQ.suggestedFilename();
 // Recargar desde las hojas conserva ajustes, descuentos, conductores y estado
 await page.evaluate("recargarPeru()"); await page.waitForTimeout(200);
-const trasRecargarPago = [await resumenQ(), await page.inputValue("#qEstado"), await page.evaluate(`peruDatos.rutas.find(r=>r.fecha==="2026-09-12"&&r.placa==="AAA111").pago`)];
+const trasRecargarPago = [await resumenQ(), await page.evaluate(`quincenasPe["2026-09-Q1"].estado`), await page.evaluate(`peruDatos.rutas.find(r=>r.fecha==="2026-09-12"&&r.placa==="AAA111").pago`)];
 
 // ---------- Cuadre y KPI ----------
 await page.click("button.tab[data-vista=peruCuadre]");
