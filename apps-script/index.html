@@ -130,6 +130,7 @@
     #cKpi .summary-box .nota { margin-top:6px; }
     #cTendencia tr.sel td { background:var(--accent-soft,#eff6ff); }
     .barra { height:10px; border-radius:5px; background:var(--ok,#059669); min-width:2px; } .barra.neg { background:var(--err,#b91c1c); }
+    .clp { font-size:12px; color:var(--muted,#6b7280); margin-top:2px; font-variant-numeric:tabular-nums; }
     .btn-mini:hover { color:var(--err,#b91c1c); border-color:currentColor; }
     @media (max-width:900px){ .rutas-layout { grid-template-columns:1fr; } .rutas-panel { position:static; max-height:none; } }
   </style>
@@ -375,6 +376,7 @@
         </select>
         <p id="qEstadoFecha" class="nota"></p>
         <p id="estadoPagoPe" class="nota" role="status"></p>
+        <p id="qTc" class="nota"></p>
 
         <h3>Conductores</h3>
         <p class="nota" style="margin-top:0">SIMPLI no trae el conductor: se registra una vez por placa y va en el detalle.</p>
@@ -451,6 +453,7 @@
         <h3>Mes</h3>
         <select id="cMes" onchange="renderCuadrePeru()" style="width:100%"><option value="">Sin datos</option></select>
         <p id="estadoCuadrePe" class="nota" role="status"></p>
+        <p id="cTc" class="nota"></p>
         <h3>Pendiente de cobro</h3>
         <div id="cPendiente" class="summary-value warnc">S/ 0.00</div>
         <p id="cPendienteDet" class="nota">Facturas a Sodimac sin fecha de pago.</p>
@@ -536,6 +539,7 @@
           <input id="inSimpli" type="file" accept=".xlsx,.xls" multiple>
         </div>
         <p id="estadoPeru" class="nota" role="status"></p>
+        <p id="pTc" class="nota"></p>
 
         <h3>Mes</h3>
         <select id="pMes" onchange="renderPeru()" style="width:100%"><option value="">Sin datos</option></select>
@@ -1728,6 +1732,7 @@ function combinarHoja(actual, op){
 const almacenLocal={
   hojas:{},
   guardarLote(ops){ const res={}; for(const op of ops){ this.hojas[op.hoja]=combinarHoja(this.hojas[op.hoja]||[],op); res[op.hoja]=Math.max(this.hojas[op.hoja].length-1,0); } return res; },
+  tipoCambioPeru(){ return (this.hojas["PERU TIPO CAMBIO"]||[]).slice(1); },
   leerDatos(){ const h={}; for(const n of ["REGISTRO","GEOSORT","VIAJES PAGADOS","PERU RUTAS","PERU TARIFAS","PERU DISTRITOS","PERU FERIADOS","PERU AJUSTES","PERU MOVIMIENTOS","PERU CONDUCTORES","PERU QUINCENAS","PERU COSTOS FIJOS","PERU FACTURAS"]) h[n]=JSON.parse(JSON.stringify(this.hojas[n]||[])); return {hojas:h,url:""}; }
 };
 function llamar(fn,...args){
@@ -2032,6 +2037,9 @@ function renderPeru(){
   const pago=rutas.reduce((s,r)=>s+(r.pago||0),0), margen=total-pago;
   document.getElementById("pPago").textContent=soles(pago);
   const eM=document.getElementById("pMargen"); eM.textContent=soles(margen)+(total?` (${Math.round(margen/total*100)}%)`:""); eM.className="summary-value "+(margen<0?"errc":"okc");
+  const rgM=document.getElementById("pMes").value?rangoMesPe(document.getElementById("pMes").value):null;
+  clpPe("pTotal",total,rgM); clpPe("pPago",pago,rgM); clpPe("pMargen",margen,rgM);
+  document.getElementById("pTc").textContent=rgM?textoTcPe(rgM):"";
   const f=document.getElementById("pFiltro").value, q=nt(document.getElementById("pBuscar").value);
   const vis=rutas.filter(r=>(!f||(f==="obs"&&(r.obs||r.obsTarifa))||(f==="per"&&r.zonaCobro==="Periferia"))&&(!q||nt(r.placa+" "+r.distrito).includes(q)));
   const tb=document.getElementById("peruBody");
@@ -2267,6 +2275,9 @@ function renderPagoPeru(){
   document.getElementById("qDesc").textContent=solesQ(d.totDesc);
   document.getElementById("qTotal").textContent=solesQ(d.total);
   document.getElementById("qOtros").textContent=solesQ(d.totOtros);
+  const rgQ=d.q?rangoQuincenaPe(d.q):null;
+  clpPe("qNeto",d.neto,rgQ); clpPe("qIgv",d.conIgv,rgQ); clpPe("qDesc",d.totDesc,rgQ); clpPe("qTotal",d.total,rgQ); clpPe("qOtros",d.totOtros,rgQ);
+  document.getElementById("qTc").textContent=rgQ?textoTcPe(rgQ):"";
   const f=document.getElementById("qFiltro").value;
   const vis=d.rutas.filter(r=>!f||(f==="fal"&&r.fallidos)||(f==="aj"&&r.ajuste));
   document.getElementById("qBody").innerHTML=!peruDatos.rutas.length?`<tr><td colspan="13">Carga los reportes de visitas de SIMPLI en Cobro Sodimac.</td></tr>`
@@ -2447,6 +2458,8 @@ function renderCuadrePeru(){
   document.getElementById("cCobradoDet").textContent=d.fc&&d.fc.monto!==null?"Facturado a Sodimac":"Liquidado (sin factura registrada)";
   document.getElementById("cCosto").textContent=solesQ(d.costo);
   const eM=document.getElementById("cMargen"); eM.textContent=`${solesQ(d.margen)} (${pctPe(d.kpi.margenPct)})`; eM.className="summary-value "+(d.margen<0?"errc":"okc");
+  const rgC=rangoMesPe(mes); clpPe("cCobrado",d.cobrado,rgC); clpPe("cCosto",d.costo,rgC); clpPe("cMargen",d.margen,rgC);
+  document.getElementById("cTc").textContent=textoTcPe(rgC);
   // Cuadre de cobro
   const dif=v=>v===null?`<span class="nota-inline">sin factura</span>`:v===0?`<span class="okc">Cuadra</span>`:`<span class="${d.ajustes.length&&false?"":"dif-neg"}">${solesQ(v)}</span>`;
   const fc=d.fc||{numero:"",fecha:"",monto:null,pago:""};
@@ -2488,18 +2501,20 @@ function renderCuadrePeru(){
     </div>`;
   }).join("")||`<p class="nota">Sin rutas este mes.</p>`;
   // KPI del mes
-  const k=d.kpi, caja=(t,v,s="")=>`<div class="summary-box"><div class="summary-title">${t}</div><div class="summary-value">${v}</div>${s?`<div class="nota">${s}</div>`:""}</div>`;
+  const k=d.kpi, tcM=tcPeriodoPe(rgC[0],rgC[1]), clpK=v=>tcM?`<div class="clp">≈ ${pesosPe(v*tcM.tc)} CLP</div>`:"";
+  const caja=(t,v,s="",clp="")=>`<div class="summary-box"><div class="summary-title">${t}</div><div class="summary-value">${v}</div>${clp}${s?`<div class="nota">${s}</div>`:""}</div>`;
   document.getElementById("cKpi").innerHTML=[
     caja("Rutas",k.rutas,Object.entries(k.placas).sort((a,b)=>b[1]-a[1]).map(([p,n])=>`${p}: ${n}`).join(" · ")),
     caja("% periferia",pctPe(k.perif)),caja("% domingo o feriado",pctPe(k.dom)),
     caja("Puntos por ruta",(Math.round(k.ptsRuta*10)/10).toLocaleString("es-PE")),caja("% entrega efectiva",pctPe(k.entrega)),
-    caja("Ingreso por ruta",solesQ(k.ingresoRuta)),caja("Costo por ruta",solesQ(k.costoRuta)),caja("Margen por ruta",solesQ(k.margenRuta)),
+    caja("Ingreso por ruta",solesQ(k.ingresoRuta),"",clpK(k.ingresoRuta)),caja("Costo por ruta",solesQ(k.costoRuta),"",clpK(k.costoRuta)),caja("Margen por ruta",solesQ(k.margenRuta),"",clpK(k.margenRuta)),
     caja("Margen %",pctPe(k.margenPct)),caja("Días cierre a pago",k.diasPago===null?"–":Math.round(k.diasPago),"Promedio de las quincenas con fecha de pago")].join("");
   // Tendencia de los últimos 6 meses
   const ult=meses.slice(0,6).reverse().map(mesCuadrePe), maxM=Math.max(...ult.map(x=>Math.abs(x.margen)),1);
-  document.getElementById("cTendencia").innerHTML=`<table><thead><tr><th>Mes</th><th>Rutas</th><th>% periferia</th><th>% entrega</th><th>Cobrado</th><th>Costo</th><th>Margen</th><th>Margen %</th><th></th></tr></thead><tbody>
+  document.getElementById("cTendencia").innerHTML=`<table><thead><tr><th>Mes</th><th>Rutas</th><th>% periferia</th><th>% entrega</th><th>Cobrado</th><th>Costo</th><th>Margen</th><th>Margen %</th><th>Margen CLP</th><th></th></tr></thead><tbody>
     ${ult.map(x=>`<tr${x.mes===mes?' class="sel"':""}><td>${nombreMes(x.mes)}</td><td class="n">${x.kpi.rutas}</td><td class="n">${pctPe(x.kpi.perif)}</td><td class="n">${pctPe(x.kpi.entrega)}</td>
       <td class="n">${solesQ(x.cobrado)}</td><td class="n">${solesQ(x.costo)}</td><td class="n ${x.margen<0?"dif-neg":""}">${solesQ(x.margen)}</td><td class="n">${pctPe(x.kpi.margenPct)}</td>
+      <td class="n">${(t=>t?pesosPe(x.margen*t.tc):"–")(tcPeriodoPe(...rangoMesPe(x.mes)))}</td>
       <td style="width:140px"><div class="barra ${x.margen<0?"neg":""}" style="width:${Math.round(Math.abs(x.margen)/maxM*100)}%"></div></td></tr>`).join("")}</tbody></table>`;
 }
 async function guardarFacturaPe(tipo,periodo,id){
@@ -2512,6 +2527,39 @@ async function guardarFacturaPe(tipo,periodo,id){
     renderCuadrePeru();
     av.textContent=`Factura ${tipo==="COBRO"?"a Sodimac de "+nombreMes(periodo):"del transporte, "+nombreQuincena(periodo)} guardada.`+(EN_APPS_SCRIPT?" Guardado en Google Sheets.":" Vista previa: se guarda solo mientras la página esté abierta.");
   }catch(err){ av.textContent=""; mostrarError("No se pudo guardar en Google Sheets.\n\n"+(err.message||err)); }
+}
+// ---------- Perú: montos en pesos chilenos (solo resúmenes y KPI) ----------
+// Tipo de cambio diario de la hoja PERU TIPO CAMBIO (Code.gs: tipoCambioPeru). Para un periodo se usa el promedio de sus días;
+// si el periodo aún no tiene datos, el último disponible.
+let tcPe=[];
+function tcPeriodoPe(desde,hasta){
+  if(!tcPe.length) return null;
+  const en=tcPe.filter(([f])=>f>=desde&&f<=hasta);
+  if(en.length) return {tc:en.reduce((s,[,v])=>s+v,0)/en.length,dias:en.length};
+  const prev=tcPe.filter(([f])=>f<=hasta); const u=(prev.length?prev:tcPe)[prev.length?prev.length-1:0];
+  return {tc:u[1],dias:0,fecha:u[0]};
+}
+const rangoMesPe=ym=>[ym+"-01",ym+"-"+String(new Date(+ym.slice(0,4),+ym.slice(5,7),0).getDate()).padStart(2,"0")];
+const rangoQuincenaPe=q=>{ const [y,m,n]=q.split("-"); return [`${y}-${m}-${n==="Q1"?"01":"16"}`,finQuincena(q)]; };
+const pesosPe=v=>(v<0?"-":"")+"$ "+Math.abs(Math.round(v)).toLocaleString("es-CL");
+// Agrega bajo el valor de un resumen la línea "≈ $ X CLP"
+function clpPe(id,soles,rango){
+  const el=document.getElementById(id); if(!el) return;
+  let c=el.parentNode.querySelector(".clp");
+  if(!c){ c=document.createElement("div"); c.className="clp"; el.after(c); }
+  const t=rango&&soles!==null&&soles!==undefined?tcPeriodoPe(rango[0],rango[1]):null;
+  c.textContent=t?`≈ ${pesosPe(soles*t.tc)} CLP`:"";
+}
+function textoTcPe(rango){
+  const t=tcPeriodoPe(rango[0],rango[1]); if(!t) return "Sin tipo de cambio todavía: se llena desde Google Finance al abrir la web publicada.";
+  const u=tcPe[tcPe.length-1];
+  return (t.dias?`Pesos chilenos al promedio del periodo: 1 S/ = ${pesosPe2(t.tc)} (${t.dias} días).`:`Pesos chilenos al último tipo de cambio disponible: 1 S/ = ${pesosPe2(t.tc)}.`)+` Último: ${pesosPe2(u[1])} al ${fechaCL(u[0])}.`;
+}
+const pesosPe2=v=>"$ "+v.toLocaleString("es-CL",{minimumFractionDigits:2,maximumFractionDigits:2});
+async function cargarTipoCambioPe(){
+  try{ const f=await llamar("tipoCambioPeru"); tcPe=(f||[]).map(([d,v])=>[fechaISO(d),Number(v)]).filter(([d,v])=>d&&v>0).sort((a,b)=>a[0].localeCompare(b[0])); }
+  catch(e){ tcPe=[]; }
+  renderTodoPeru();
 }
 function avisoPeru(t){ document.getElementById("estadoPeru").innerHTML=t; }
 document.getElementById("inSimpli").addEventListener("change",async e=>{
@@ -2540,7 +2588,7 @@ async function recargarPeru(){
   renderTodoPeru();
 }
 function renderTodoPeru(){ renderPeru(); renderTarifasPeru(); renderPagoPeru(); renderCuadrePeru(); }
-recargarPeru().catch(()=>renderTodoPeru());
+recargarPeru().catch(()=>renderTodoPeru()).then(cargarTipoCambioPe);
 
 function mostrarError(m){ document.getElementById("errorText").textContent=m; document.getElementById("errorArea").classList.remove("hidden"); }
 function ocultarError(){ document.getElementById("errorArea").classList.add("hidden"); }
