@@ -20,7 +20,7 @@ function libro_() {
 }
 
 // Hojas que la app lee para armar el control de rutas y la liquidación de Perú
-const HOJAS_LECTURA = ['REGISTRO', 'GEOSORT', 'VIAJES PAGADOS', 'PERU RUTAS'];
+const HOJAS_LECTURA = ['REGISTRO', 'GEOSORT', 'VIAJES PAGADOS', 'PERU RUTAS', 'PERU TARIFAS', 'PERU DISTRITOS', 'PERU FERIADOS'];
 
 function norm_(v) {
   return String(v == null ? '' : v).trim().normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();

@@ -66,6 +66,50 @@ const nombrePago = dlPago.suggestedFilename();
 const [dl] = await Promise.all([page.waitForEvent("download"), page.click("text=Descargar liquidación")]);
 const out = path.join(tmp, "liq_out.xlsx"); await dl.saveAs(out);
 const nombre = dl.suggestedFilename();
+
+// ---------- Tarifas (vigencias, feriados, distritos) ----------
+page.on("dialog", d => d.accept());
+const ruta = (f, p) => page.evaluate(`(r=>r&&[r.tarifa,r.adicional,r.detalle,r.total,r.pago])(peruDatos.rutas.find(r=>r.fecha==="${f}"&&r.placa==="${p}"))`);
+const hojasConfig = await page.evaluate(`["PERU TARIFAS","PERU DISTRITOS","PERU FERIADOS"].map(h=>(almacenLocal.hojas[h]||[]).length-1)`);
+const encTarifas = await page.evaluate(`almacenLocal.hojas["PERU TARIFAS"][0]`);
+await page.click("button.tab[data-vista=peruTarifas]");
+const vistaTarifas = await page.isVisible("#vistaPeruTarifas");
+const tablaCobro = await page.$$eval("#peTar_COBRO tbody tr", trs => trs.map(t => [...t.children].map(c => c.textContent.trim())));
+// Nueva vigencia del cobro desde el 13-09-2026: F13 Metropolitana 450 / 585
+await page.click("#peTar_COBRO >> text=Nueva vigencia");
+await page.fill("#peDesde_COBRO", "2026-09-13");
+await page.fill('#peTar_COBRO .in-tarifa[data-u=F13][data-c=URBANO][data-k=regular]', "450");
+await page.fill('#peTar_COBRO .in-tarifa[data-u=F13][data-c=URBANO][data-k=domingo]', "585");
+await page.click("#peTar_COBRO >> text=Guardar vigencia");
+await page.waitForFunction(`vigenciasPe("COBRO").length===2`);
+await page.waitForTimeout(200);
+const conVigencia = [await ruta("2026-09-10", "AAA111"), await ruta("2026-09-13", "CCC333"), await ruta("2026-09-15", "AAA111")];
+const filasTar = await page.evaluate(`almacenLocal.hojas["PERU TARIFAS"].length-1`);
+const opcionesVig = await page.$$eval("#peVig_COBRO option", os => os.map(o => o.textContent));
+// Se lee de la hoja al recargar
+await page.evaluate("recargarPeru()"); await page.waitForTimeout(200);
+const trasRecargar = [await page.evaluate(`tarifasPe.length`), await ruta("2026-09-15", "AAA111")];
+await page.click("#peTar_COBRO >> text=Eliminar esta vigencia");
+await page.waitForFunction(`vigenciasPe("COBRO").length===1`); await page.waitForTimeout(200);
+const sinVigencia = await ruta("2026-09-15", "AAA111");
+const sinTarifa = await page.evaluate(`(r=>[r.tarifa,r.pago,r.obsTarifa])(tarificarPeru({fecha:"2024-12-31",unidad:"F13",zona:"Metropolitana",obs:""}))`);
+// Feriado nuevo: cobro con adicional "Tarifa Feriado" y pago con tarifa de domingo
+await page.fill("#peNuevoFer", "2026-09-10"); await page.fill("#peNombreFer", "Prueba");
+await page.click("#vistaPeruTarifas >> text=Agregar >> nth=1");
+await page.waitForFunction(`FERIADOS_PE.has("2026-09-10")`); await page.waitForTimeout(200);
+const conFeriado = await ruta("2026-09-10", "AAA111");
+const feriadoEnHoja = await page.evaluate(`almacenLocal.hojas["PERU FERIADOS"].some(r=>String(r[0]).startsWith("2026-09-10")&&r[1]==="Prueba")`);
+const feriados2025 = await page.$$eval("#peAnioFer option", os => os.map(o => o.value));
+await page.evaluate(`quitarFeriadoPe("2026-09-10")`); await page.waitForTimeout(200);
+const sinFeriado = await ruta("2026-09-10", "AAA111");
+// Distrito: COMAS a Periferia se aplica al volver a cargar SIMPLI
+await page.fill("#peBuscarDist", "COMAS");
+await page.selectOption("#peDistritos select", "PERIFERIA/LEJANO"); await page.waitForTimeout(200);
+const comasHoja = await page.evaluate(`almacenLocal.hojas["PERU DISTRITOS"].find(r=>r[0]==="COMAS")[1]`);
+const antesRecarga = await page.evaluate(`peruDatos.rutas.find(r=>r.fecha==="2026-09-10"&&r.placa==="AAA111").zona`);
+await page.setInputFiles("#inSimpli", [f1, f2]);
+await page.waitForFunction(`peruDatos.rutas.find(r=>r.fecha==="2026-09-10"&&r.placa==="AAA111").zona==="Periferia"`);
+const trasRecargaSimpli = await ruta("2026-09-10", "AAA111");
 await browser.close();
 
 const wb = XLSX.readFile(out, { cellDates: true }), ws = wb.Sheets[wb.SheetNames[0]];
@@ -99,6 +143,17 @@ const wbP = XLSX.readFile(outPago, { cellDates: true }), wsP = wbP.Sheets[wbP.Sh
 const salidaP = XLSX.utils.sheet_to_json(wsP, { header: 1, defval: "" });
 check("Excel pago transportista", [nombrePago, wbP.SheetNames[0], salidaP[0].length, salidaP[1].slice(1, 4), salidaP[1][9], salidaP.length, wsP["J8"].f],
   ["Pago transportista CT ATLANTIS SODIMAC - SEPTIEMBRE 2026.xlsx", "PAGO TRANSPORTE", 10, ["CT ATLANTIS SODIMAC", "AAA111", "F13"], 380, 8, "SUM(J2:J7)"]);
+check("Hojas de tarifas, distritos y feriados creadas al abrir", hojasConfig, [8, 55, 32]);
+check("Encabezado PERU TARIFAS", encTarifas, ["TARIFARIO", "TIPO", "VIGENTE DESDE", "UNIDAD", "ZONA", "REGULAR", "DOMINGO"]);
+check("Vista Tarifas", [vistaTarifas, tablaCobro[0], tablaCobro[3]], [true, ["F13", "Metropolitana", "S/ 420", "S/ 546 +30%"], ["F20", "Periferia", "S/ 640", "S/ 832 +30%"]]);
+check("Nueva vigencia solo cambia desde su fecha", conVigencia, [[420, null, "", 420, 380], [450, 135, "Tarifa Domingo", 585, 494], [450, null, "", 450, 380]]);
+check("Vigencia guardada con historial", [filasTar, opcionesVig], [12, ["Desde 13-09-2026 (vigente)", "Desde 01-01-2025"]]);
+check("Tarifas leídas desde la hoja", trasRecargar, [12, [450, null, "", 450, 380]]);
+check("Eliminar vigencia vuelve a la anterior", sinVigencia, [420, null, "", 420, 380]);
+check("Fecha sin tarifa vigente", sinTarifa, [null, null, "Sin tarifa de cobro ni de pago vigente al 31-12-2024"]);
+check("Feriado nuevo", [conFeriado, feriadoEnHoja, feriados2025], [[420, 126, "Tarifa Feriado", 546, 494], true, ["2026", "2025"]]);
+check("Quitar feriado", sinFeriado, [420, null, "", 420, 380]);
+check("Distrito cambia de zona al recargar SIMPLI", [comasHoja, antesRecarga, trasRecargaSimpli], ["Periferia", "Metropolitana", [610, null, "", 610, 500]]);
 check("Sin errores JS", errors, []);
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(ok ? "\nTodas las pruebas pasaron" : "\nHay pruebas con fallas");

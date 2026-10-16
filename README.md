@@ -42,7 +42,7 @@ Cruza el registro de operaciones (FECHA, CUENTA, ID RUTA) con las proformas guar
 - "Descargar cruce Excel" genera Resumen, Rutas y Pagado sin registro.
 
 ## Perú (Sodimac)
-Sección "Liquidación Sodimac" (grupo Perú del panel lateral): arma la liquidación de cobro a Sodimac Perú - Lurin desde el reporte de visitas de SIMPLI, con la misma lógica que el script `peru_v2.py` de control de gestión.
+Sección "Cobro Sodimac" (grupo Perú del panel lateral): arma la liquidación de cobro a Sodimac Perú - Lurin desde el reporte de visitas de SIMPLI, con la misma lógica que el script `peru_v2.py` de control de gestión.
 
 | Botón | Qué hace |
 |---|---|
@@ -51,11 +51,31 @@ Sección "Liquidación Sodimac" (grupo Perú del panel lateral): arma la liquida
 "Descargar liquidación" genera el Excel con el mismo formato que se envía (FECHA, RAZÓN SOCIAL, PLACA, TIPO UNIDAD, PUNTOS, DISTRITOS, ZONA, TARIFA REGULAR, ADICIONAL, DETALLE ADICIONAL, VALOR TOTAL).
 
 Reglas (montos en soles sin IGV):
-- Tarifa por día: F13 Metropolitana 420 / Periferia 610; F20 Metropolitana 460 / Periferia 640. Domingo o feriado: +30% como adicional.
+- Tarifa por día según la sección **Tarifas**. Domingo o feriado: tarifa de domingo, que en el cobro va como adicional "Tarifa Domingo" o "Tarifa Feriado".
 - 10 y 13 m³ se cobran como F13; 15 y 20 (m³ o TN) como F20.
 - Distrito: el último tramo de la dirección después de la coma, para no confundir calles como "JR SANTA ROSA, COMAS" con el distrito Santa Rosa.
 - Zona: la del punto más lejano efectivamente entregado. Las visitas fallidas no definen la zona; si una visita fallida estaba en periferia, la ruta lo indica en Observación.
-- **Pago al transportista** (tarifario CT ATLANTIS SODIMAC): F13 urbano 380 / periferia 500; F20 urbano 410 / periferia 540; domingo F13 494 / 650 y F20 533 / 702. Los feriados se pagan como domingo. Se calcula desde la unidad, zona y día de cada ruta (no se guarda) y la pestaña muestra el pago y el margen por ruta y del mes. "Descargar pago transportista" genera el detalle con la llave del tarifario.
-- Tarifas, distritos y feriados están al inicio de la sección "Perú (Sodimac)" de `index.html`.
+- **Pago al transportista** (tarifario CT ATLANTIS SODIMAC): la sección muestra el pago y el margen por ruta y del mes. "Descargar pago transportista" genera el detalle con la llave del tarifario.
+
+### Tarifas
+Sección "Tarifas" del grupo Perú. Se guarda en tres hojas del Google Sheet, que la app crea con los valores iniciales la primera vez que se abre:
+
+| Hoja | Contenido |
+|---|---|
+| PERU TARIFAS | TARIFARIO, TIPO (COBRO o PAGO), VIGENTE DESDE, UNIDAD, ZONA, REGULAR, DOMINGO |
+| PERU DISTRITOS | DISTRITO, ZONA (Metropolitana o Periferia) |
+| PERU FERIADOS | FECHA, NOMBRE (feriados nacionales 2025 y 2026) |
+
+- Cada tarifario (cobro a Sodimac y pago al transportista) tiene vigencias. Cada ruta usa la vigencia más reciente con fecha igual o anterior a la ruta, así un cambio de tarifa no recalcula los meses ya liquidados. "Nueva vigencia" copia la tarifa actual para editarla y pide desde qué fecha rige.
+- Valores iniciales, vigentes desde el 01-01-2025 (regular / domingo o feriado):
+
+| Unidad | Zona | Cobro | Pago |
+|---|---|---|---|
+| F13 | Metropolitana | 420 / 546 | 380 / 494 |
+| F13 | Periferia | 610 / 793 | 500 / 650 |
+| F20 | Metropolitana | 460 / 598 | 410 / 533 |
+| F20 | Periferia | 640 / 832 | 540 / 702 |
+
+- Tarifas y feriados se aplican de inmediato a las rutas ya cargadas. Un cambio de distrito se aplica al volver a cargar los reportes SIMPLI de esas fechas, porque la zona de cada ruta se define al cargarla.
 
 Para publicar la web en tu Apps Script con doble clic: ver [publicar/LEEME.md](publicar/LEEME.md).
