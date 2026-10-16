@@ -7,9 +7,8 @@ $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 $repo = 'CristianSanMartin/Cristian'
-# Se usa la primera rama que exista: la más nueva primero y, cuando ya se haya
-# integrado y borrado, la rama principal del repositorio.
-$ramas = @('claude/proformas-peru', 'claude/falabella-proformas-app-06xjdy')
+# Versión de este actualizador: solo se reemplaza por uno descargado con número mayor.
+$versionActualizador = 2
 
 $carpeta = $PSScriptRoot
 $archivoClasp = Join-Path $carpeta '.clasp.json'
@@ -40,31 +39,47 @@ if ($clasp.rootDir -ne 'src') {
 if (-not (Test-Path $src)) { New-Item -ItemType Directory -Path $src | Out-Null }
 
 Paso 1 'Buscando la última versión en GitHub...'
-$rama = $null
-foreach ($r in $ramas) {
-  try {
-    $info = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/branches/$r" -UseBasicParsing
-    $rama = $r
-    break
-  } catch { }
+# Se publica la rama con el cambio más reciente en la carpeta apps-script (la web),
+# así no hay que decirle al programa cuál es la rama nueva.
+$api = "https://api.github.com/repos/$repo"
+# (el "| ForEach-Object" separa la lista: en PowerShell 7 Invoke-RestMethod la entrega como un solo objeto)
+try { $todas = @(Invoke-RestMethod -Uri "$api/branches?per_page=100" -UseBasicParsing | ForEach-Object { $_ }) }
+catch { throw 'No pude leer el repositorio en GitHub. Revisa tu conexión a internet.' }
+$mejor = $null
+foreach ($b in $todas) {
+  $c = @(Invoke-RestMethod -Uri "$api/commits?sha=$([uri]::EscapeDataString($b.name))&path=apps-script&per_page=1" -UseBasicParsing | ForEach-Object { $_ })
+  if ($c.Count -eq 0 -or -not $c[0].sha) { continue }
+  $f = [datetime]$c[0].commit.committer.date
+  if (-not $mejor -or $f -gt $mejor.Fecha) { $mejor = [pscustomobject]@{ Rama = $b.name; Sha = $b.commit.sha; Fecha = $f; Mensaje = $c[0].commit.message } }
 }
-if (-not $rama) { throw 'No pude leer el repositorio en GitHub. Revisa tu conexión a internet.' }
-$sha = $info.commit.sha
-$fecha = ([datetime]$info.commit.commit.committer.date).ToLocalTime().ToString('yyyy-MM-dd HH:mm')
-$version = "$fecha $($sha.Substring(0, 7))"
+if (-not $mejor) { throw 'No encontré la carpeta apps-script en ninguna rama del repositorio.' }
+$rama = $mejor.Rama
+$sha = $mejor.Sha
+$version = "$($mejor.Fecha.ToLocalTime().ToString('yyyy-MM-dd HH:mm')) $($sha.Substring(0, 7))"
 Write-Host "    Rama: $rama"
-Write-Host "    Versión: $version - $(($info.commit.commit.message -split "`n")[0])"
+Write-Host "    Versión: $version - $(($mejor.Mensaje -split "`n")[0])"
 
 Paso 2 'Descargando...'
 $tmp = Join-Path $env:TEMP ('proformas-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $tmp | Out-Null
 Invoke-WebRequest -Uri "https://github.com/$repo/archive/$sha.zip" -OutFile (Join-Path $tmp 'web.zip') -UseBasicParsing
 Expand-Archive -Path (Join-Path $tmp 'web.zip') -DestinationPath $tmp
-$nuevo = Join-Path (Get-ChildItem $tmp -Directory | Select-Object -First 1).FullName 'apps-script'
+$raiz = (Get-ChildItem $tmp -Directory | Select-Object -First 1).FullName
+$nuevo = Join-Path $raiz 'apps-script'
 if (-not (Test-Path (Join-Path $nuevo 'index.html'))) { throw 'La descarga no trae la carpeta apps-script.' }
 # src queda idéntico a apps-script del repo; solo se conserva tu appsscript.json.
 robocopy $nuevo $src /MIR /XF appsscript.json /NFL /NDL /NJH /NJS /NP | Out-Null
 if ($LASTEXITCODE -ge 8) { throw 'No se pudieron copiar los archivos.' }
+# El actualizador se actualiza solo si la rama trae uno más nuevo (sirve desde la próxima vez).
+$nuevoPs1 = Join-Path $raiz 'publicar\actualizar.ps1'
+if (Test-Path $nuevoPs1) {
+  $texto = Get-Content $nuevoPs1 -Raw
+  $v = if ($texto -match '\$versionActualizador\s*=\s*(\d+)') { [int]$Matches[1] } else { 0 }
+  if ($v -gt $versionActualizador) {
+    Copy-Item $nuevoPs1 (Join-Path $carpeta 'actualizar.ps1') -Force
+    Write-Host "    El actualizador también se actualizó (versión $v)."
+  }
+}
 Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
 
 Push-Location $carpeta
