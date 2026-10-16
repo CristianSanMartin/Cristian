@@ -164,6 +164,15 @@
     #cTendencia tr.sel td { background:var(--accent-soft,#eff6ff); }
     .barra { height:10px; border-radius:5px; background:var(--ok,#059669); min-width:2px; } .barra.neg { background:var(--err,#b91c1c); }
     .btn-mini:hover { color:var(--err,#b91c1c); border-color:currentColor; }
+    .barra-vista { display:flex; flex-wrap:wrap; align-items:center; gap:12px 18px; padding:14px 18px; }
+    .barra-campo { display:flex; flex-direction:column; gap:4px; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); }
+    .barra-campo select { min-width:180px; text-transform:none; letter-spacing:0; font-weight:400; }
+    .carga-barra { flex:1 1 320px; margin:0; display:flex; align-items:center; gap:4px 12px; flex-wrap:wrap; padding:9px 14px; }
+    .carga-barra b::before { content:"⬆"; display:inline-block; margin-right:8px; color:var(--primary); }
+    .barra-reglas { flex:none; position:relative; }
+    .barra-reglas[open] ul { position:absolute; right:0; top:28px; z-index:40; width:min(460px,90vw); background:var(--surface); border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow); padding:12px 16px 12px 30px; }
+    .barra-estado { flex-basis:100%; margin:0; }
+    .barra-estado:empty { display:none; }
     @media (max-width:900px){ .rutas-layout { grid-template-columns:1fr; } .rutas-panel { position:static; max-height:none; } }
   </style>
 </head>
@@ -564,19 +573,14 @@
     </div>
   </div>
   <div id="vistaPeru" class="hidden">
-    <div class="rutas-layout">
-      <aside class="card rutas-panel">
-        <div id="cargaSimpli" class="carga" onclick="document.getElementById('inSimpli').click()">
-          <b>Reporte de visitas SIMPLI</b><span id="txtSimpli">Uno o varios reportes de 15 días (Excel). Los días repetidos entre archivos se cuentan una vez. Hoja PERU RUTAS.</span>
+    <div>
+      <div class="card barra-vista">
+        <label class="barra-campo">Mes<select id="pMes" onchange="renderPeru()"><option value="">Sin datos</option></select></label>
+        <div id="cargaSimpli" class="carga carga-barra" onclick="document.getElementById('inSimpli').click()">
+          <b>Cargar reporte de visitas SIMPLI</b><span id="txtSimpli">Uno o varios reportes de 15 días (Excel). Los días repetidos entre archivos se cuentan una vez. Hoja PERU RUTAS.</span>
           <input id="inSimpli" type="file" accept=".xlsx,.xls" multiple>
         </div>
-        <p id="estadoPeru" class="nota" role="status"></p>
-
-        <h3>Mes</h3>
-        <select id="pMes" onchange="renderPeru()" style="width:100%"><option value="">Sin datos</option></select>
-
-        <h3>Reglas</h3>
-        <details class="reglas">
+        <details class="reglas barra-reglas">
           <summary>Cómo se calcula cada ruta</summary>
           <ul>
             <li><b>Ruta:</b> una por placa y fecha planificada, solo vehículos JOINT.</li>
@@ -587,7 +591,8 @@
             <li>Una ruta queda <b>sin tarifa</b> si ningún punto entregado tiene distrito conocido o si la unidad no se reconoce.</li>
           </ul>
         </details>
-      </aside>
+        <p id="estadoPeru" class="nota barra-estado" role="status"></p>
+      </div>
 
       <main style="min-width:0">
         <div class="summary" style="margin-bottom:18px">
