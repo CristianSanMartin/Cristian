@@ -116,13 +116,13 @@ const kpi = await page.evaluate(`(k=>[k.rutas,k.placas,Math.round(k.perif*1000)/
 const cajasKpi = await page.$$eval("#cKpi .summary-title", e => e.map(x => x.textContent));
 const tendencia = await page.$$eval("#cTendencia tbody tr", trs => trs.map(t => t.children[0].textContent));
 const hojaFijos = await page.evaluate(`almacenLocal.hojas["PERU COSTOS FIJOS"]`);
-// Pesos chilenos: tipo de cambio de la hoja PERU TIPO CAMBIO, promedio del periodo, solo en resúmenes
+// Pesos chilenos: tipo de cambio de la hoja PERU TIPO CAMBIO, al tipo de cambio de hoy (último), solo en resúmenes
 const sinTc = await page.evaluate(`document.getElementById("cCobrado").parentNode.querySelector(".clp").textContent`);
 await page.evaluate(`almacenLocal.hojas["PERU TIPO CAMBIO"]=[["FECHA","CLP POR SOL"],["2026-09-01",250],["2026-09-15",260],["2026-10-01",270]]; cargarTipoCambioPe()`);
 await page.waitForTimeout(200);
 const clp = await page.evaluate(`[document.getElementById("cCobrado").parentNode.querySelector(".clp").textContent, document.getElementById("cTc").textContent,
   [...document.querySelectorAll("#cKpi .clp")].length, document.querySelector("#cTendencia tbody tr").children[8].textContent,
-  (r=>[r.tc,r.dias])(tcPeriodoPe("2026-09-16","2026-09-30")), tcPeriodoPe("2026-11-01","2026-11-30").tc]`);
+  tcPeriodoPe().tc]`);
 await page.click("button.tab[data-vista=peruPago]"); await page.selectOption("#qSel", "2026-09-Q1");
 const clpPago = await page.evaluate(`[document.getElementById("qTotal").parentNode.querySelector(".clp").textContent, document.querySelectorAll("#qBody .clp").length]`);
 await page.click("button.tab[data-vista=peruCuadre]");
@@ -232,9 +232,9 @@ check("Cajas KPI", cajasKpi, ["Rutas", "% periferia", "% domingo o feriado", "Pu
 check("Tendencia", tendencia, ["Septiembre 2026"]);
 check("Costo fijo de seguimiento", hojaFijos, [["CONCEPTO", "BENEFICIARIO", "DOCUMENTO", "VIGENTE DESDE", "MONTO NETO"], ["Personal de seguimiento", "", "", "2025-01-01", 847.46]]);
 check("Sin tipo de cambio no muestra pesos", sinTc, "");
-check("Pesos chilenos en el cuadre (promedio de sep: 255)", clp,
-  ["≈ $ 779.280 CLP", "Pesos chilenos al promedio del periodo: 1 S/ = $ 255,00 (2 días). Último: $ 270,00 al 01-10-2026.", 3, "-$ 352.081", [260, 0], 270]);
-check("Pesos chilenos en el resumen de la quincena (1ª quincena: 255) y no en la tabla", clpPago, ["≈ $ 664.765 CLP", 0]);
+check("Pesos chilenos en el cuadre (tipo de cambio de hoy: 270)", clp,
+  ["≈ $ 825.120 CLP", "Pesos chilenos al tipo de cambio de hoy: 1 S/ = $ 270,00 (Google Finance, 01-10-2026).", 3, "-$ 372.792", 270]);
+check("Pesos chilenos en el resumen de la quincena (hoy: 270) y no en la tabla", clpPago, ["≈ $ 703.868 CLP", 0]);
 check("Hojas de tarifas, distritos y feriados creadas al abrir", hojasConfig, [8, 55, 32]);
 check("Encabezado PERU TARIFAS", encTarifas, ["TARIFARIO", "TIPO", "VIGENTE DESDE", "UNIDAD", "ZONA", "REGULAR", "DOMINGO"]);
 check("Vista Tarifas", [vistaTarifas, tablaCobro[0], tablaCobro[3]], [true, ["F13", "Metropolitana", "S/ 420", "S/ 546 +30%"], ["F20", "Periferia", "S/ 640", "S/ 832 +30%"]]);

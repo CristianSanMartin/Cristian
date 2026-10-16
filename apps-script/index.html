@@ -2529,15 +2529,12 @@ async function guardarFacturaPe(tipo,periodo,id){
   }catch(err){ av.textContent=""; mostrarError("No se pudo guardar en Google Sheets.\n\n"+(err.message||err)); }
 }
 // ---------- Perú: montos en pesos chilenos (solo resúmenes y KPI) ----------
-// Tipo de cambio diario de la hoja PERU TIPO CAMBIO (Code.gs: tipoCambioPeru). Para un periodo se usa el promedio de sus días;
-// si el periodo aún no tiene datos, el último disponible.
+// Tipo de cambio diario de la hoja PERU TIPO CAMBIO (Code.gs: tipoCambioPeru). Todos los montos se convierten al
+// tipo de cambio del día en que se revisa (el último disponible), sin importar el periodo (pedido de Cristian, 16-10).
 let tcPe=[];
-function tcPeriodoPe(desde,hasta){
+function tcPeriodoPe(){
   if(!tcPe.length) return null;
-  const en=tcPe.filter(([f])=>f>=desde&&f<=hasta);
-  if(en.length) return {tc:en.reduce((s,[,v])=>s+v,0)/en.length,dias:en.length};
-  const prev=tcPe.filter(([f])=>f<=hasta); const u=(prev.length?prev:tcPe)[prev.length?prev.length-1:0];
-  return {tc:u[1],dias:0,fecha:u[0]};
+  const u=tcPe[tcPe.length-1]; return {tc:u[1],fecha:u[0]};
 }
 const rangoMesPe=ym=>[ym+"-01",ym+"-"+String(new Date(+ym.slice(0,4),+ym.slice(5,7),0).getDate()).padStart(2,"0")];
 const rangoQuincenaPe=q=>{ const [y,m,n]=q.split("-"); return [`${y}-${m}-${n==="Q1"?"01":"16"}`,finQuincena(q)]; };
@@ -2550,10 +2547,9 @@ function clpPe(id,soles,rango){
   const t=rango&&soles!==null&&soles!==undefined?tcPeriodoPe(rango[0],rango[1]):null;
   c.textContent=t?`≈ ${pesosPe(soles*t.tc)} CLP`:"";
 }
-function textoTcPe(rango){
-  const t=tcPeriodoPe(rango[0],rango[1]); if(!t) return "Sin tipo de cambio todavía: se llena desde Google Finance al abrir la web publicada.";
-  const u=tcPe[tcPe.length-1];
-  return (t.dias?`Pesos chilenos al promedio del periodo: 1 S/ = ${pesosPe2(t.tc)} (${t.dias} días).`:`Pesos chilenos al último tipo de cambio disponible: 1 S/ = ${pesosPe2(t.tc)}.`)+` Último: ${pesosPe2(u[1])} al ${fechaCL(u[0])}.`;
+function textoTcPe(){
+  const t=tcPeriodoPe(); if(!t) return "Sin tipo de cambio todavía: se llena desde Google Finance al abrir la web publicada.";
+  return `Pesos chilenos al tipo de cambio de hoy: 1 S/ = ${pesosPe2(t.tc)} (Google Finance, ${fechaCL(t.fecha)}).`;
 }
 const pesosPe2=v=>"$ "+v.toLocaleString("es-CL",{minimumFractionDigits:2,maximumFractionDigits:2});
 async function cargarTipoCambioPe(){
