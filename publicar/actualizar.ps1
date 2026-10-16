@@ -87,8 +87,14 @@ try {
   }
 
   Paso 4 'Subiendo el código a Apps Script (clasp push)...'
-  & clasp push -f
-  if ($LASTEXITCODE -ne 0) { throw 'clasp push falló. Si dice que no has iniciado sesión, ejecuta: clasp login' }
+  $salida = (& clasp push -f 2>&1 | Out-String); Write-Host $salida
+  if ($LASTEXITCODE -ne 0 -and $salida -match 'invalid_grant|invalid_rapt|reauth|login') {
+    # Google pide volver a iniciar sesión cada cierto tiempo: se abre el navegador y se reintenta una vez
+    Write-Host 'Tu sesión de Google venció. Se abrirá el navegador para iniciar sesión de nuevo con la cuenta dueña del Apps Script...' -ForegroundColor Yellow
+    & clasp login
+    & clasp push -f
+  }
+  if ($LASTEXITCODE -ne 0) { throw 'clasp push falló. Ejecuta clasp login con la cuenta dueña del proyecto y vuelve a intentar.' }
 
   Paso 5 'Publicando la nueva versión en la aplicación web...'
   $id = if (Test-Path $archivoImpl) { (Get-Content $archivoImpl -Raw).Trim() } else { '' }
