@@ -55,6 +55,7 @@ Reglas (montos en soles sin IGV):
 - 10 y 13 m³ se cobran como F13; 15 y 20 (m³ o TN) como F20.
 - Distrito: el último tramo de la dirección después de la coma, para no confundir calles como "JR SANTA ROSA, COMAS" con el distrito Santa Rosa.
 - Zona: la del punto más lejano efectivamente entregado. Las visitas fallidas no definen la zona; si una visita fallida estaba en periferia, la ruta lo indica en Observación.
+- **Pago al transportista** (tarifario CT ATLANTIS SODIMAC): F13 urbano 380 / periferia 500; F20 urbano 410 / periferia 540; domingo F13 494 / 650 y F20 533 / 702. Los feriados se pagan como domingo. Se calcula desde la unidad, zona y día de cada ruta (no se guarda) y la pestaña muestra el pago y el margen por ruta y del mes. "Descargar pago transportista" genera el detalle con la llave del tarifario.
 - Tarifas, distritos y feriados están al inicio de la sección "Perú (Sodimac)" de `index.html`.
 
 Para publicar la web en tu Apps Script con doble clic: ver [publicar/LEEME.md](publicar/LEEME.md).

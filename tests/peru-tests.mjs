@@ -58,6 +58,11 @@ const resumen = await page.evaluate(`["pRutas","pPeriferia","pDomingo","pTotal"]
 await page.selectOption("#pFiltro", "obs");
 const conObs = await page.$$eval("#peruBody tr", trs => trs.map(t => [t.children[0].textContent, t.children[1].textContent]));
 await page.selectOption("#pFiltro", "");
+const pagos = await page.evaluate(`Object.fromEntries(rutasMesPeru().rutas.map(r=>[r.fecha+" "+r.placa,[r.pago,r.margen,r.llave]]))`);
+const resumenPago = await page.evaluate(`["pPago","pMargen"].map(id=>document.getElementById(id).textContent)`);
+const [dlPago] = await Promise.all([page.waitForEvent("download"), page.click("text=Descargar pago transportista")]);
+const outPago = path.join(tmp, "pago_out.xlsx"); await dlPago.saveAs(outPago);
+const nombrePago = dlPago.suggestedFilename();
 const [dl] = await Promise.all([page.waitForEvent("download"), page.click("text=Descargar liquidación")]);
 const out = path.join(tmp, "liq_out.xlsx"); await dl.saveAs(out);
 const nombre = dl.suggestedFilename();
@@ -86,6 +91,14 @@ check("Filtro con observación", conObs, [["12-09-2026", "AAA111"]]);
 check("Nombre de la liquidación", nombre, "Liquidacion JOINT PERU S.A.C. UM SODIMAC - 09SEPTIEMBRE - 2026.xlsx");
 check("Formato de la liquidación", [wb.SheetNames[0], salida[0], salida[2].slice(1, 9), salida.length, ws["K2"].f, ws["K8"].f],
   ["LIQUIDACIÓN SERVICIOS", LH, ["JOINT PERU S.A.C.", "AAA111", "F13", 2, "COMAS", "Metropolitana", 420, ""], 8, "SUM(H2:I2)", "SUM(K2:K7)"]);
+check("Pago transportista regular urbano", pagos["2026-09-10 AAA111"], [380, 40, "CT ATLANTIS SODIMAC;RUTA REGULAR;13m3;URBANO"]);
+check("Pago transportista F20 periferia", pagos["2026-09-12 BBB222"], [540, 100, "CT ATLANTIS SODIMAC;RUTA REGULAR;20m3;PERIFERIA/LEJANO"]);
+check("Pago transportista domingo", pagos["2026-09-13 CCC333"], [494, 52, "CT ATLANTIS SODIMAC;RUTA DOMINGO;13m3;URBANO"]);
+check("Resumen pago y margen", resumenPago, ["S/ 2,554", "S/ 312 (11%)"]);
+const wbP = XLSX.readFile(outPago, { cellDates: true }), wsP = wbP.Sheets[wbP.SheetNames[0]];
+const salidaP = XLSX.utils.sheet_to_json(wsP, { header: 1, defval: "" });
+check("Excel pago transportista", [nombrePago, wbP.SheetNames[0], salidaP[0].length, salidaP[1].slice(1, 4), salidaP[1][9], salidaP.length, wsP["J8"].f],
+  ["Pago transportista CT ATLANTIS SODIMAC - SEPTIEMBRE 2026.xlsx", "PAGO TRANSPORTE", 10, ["CT ATLANTIS SODIMAC", "AAA111", "F13"], 380, 8, "SUM(J2:J7)"]);
 check("Sin errores JS", errors, []);
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(ok ? "\nTodas las pruebas pasaron" : "\nHay pruebas con fallas");
