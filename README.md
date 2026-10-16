@@ -73,6 +73,11 @@ Sección "Cuadre y KPI" del grupo Perú, por mes (hoja PERU FACTURAS para las fa
 - **Margen real** (neto): cobrado (factura o liquidado) menos pago al transporte, más descuentos recuperados sin IGV, menos otros pagos.
 - **KPI:** rutas y rutas por placa, % periferia, % domingo o feriado, puntos por ruta, % entrega efectiva, ingreso, costo y margen por ruta, margen % y días del cierre de quincena al pago; tendencia de los últimos 6 meses.
 
+### Pesos chilenos
+Los resúmenes y KPI de Perú (Cobro Sodimac, Pago transporte y Cuadre y KPI) muestran también el monto en pesos chilenos. La data gestionada, las tablas por ruta y los Excel siguen en soles.
+- El tipo de cambio diario sol a peso se guarda en la hoja PERU TIPO CAMBIO. Al abrir la web, `tipoCambioPeru` (Code.gs) completa los días que faltan con `GOOGLEFINANCE("CURRENCY:PENCLP")`, sin permisos nuevos.
+- Cada periodo (mes o quincena) usa el promedio de sus días; si aún no tiene datos, el último disponible.
+
 ### Tarifas
 Sección "Tarifas" del grupo Perú. Se guarda en tres hojas del Google Sheet, que la app crea con los valores iniciales la primera vez que se abre:
 
