@@ -8,7 +8,7 @@ $ErrorActionPreference = 'Stop'
 
 $repo = 'CristianSanMartin/Cristian'
 # Versión de este actualizador: solo se reemplaza por uno descargado con número mayor.
-$versionActualizador = 2
+$versionActualizador = 3
 
 $carpeta = $PSScriptRoot
 $archivoClasp = Join-Path $carpeta '.clasp.json'
@@ -18,7 +18,7 @@ $src = Join-Path $carpeta 'src'
 function Paso($n, $texto) { Write-Host ''; Write-Host "[$n/5] $texto" -ForegroundColor Cyan }
 
 if (-not (Get-Command clasp -ErrorAction SilentlyContinue)) {
-  throw 'No encuentro clasp. Instálalo con: npm install -g @google/clasp  y luego: clasp login'
+  throw 'No encuentro clasp. Instálalo con: npm install -g @google/clasp  y luego: clasp.cmd login'
 }
 
 # La primera vez pide el ID del proyecto de Apps Script y crea .clasp.json.
@@ -93,7 +93,7 @@ try {
     Push-Location $tmpPull
     try { & clasp pull | Out-Null } finally { Pop-Location }
     if (-not (Test-Path (Join-Path $tmpPull 'appsscript.json'))) {
-      throw 'No pude leer tu proyecto de Apps Script. Revisa el ID en .clasp.json, ejecuta clasp login con la cuenta dueña del proyecto y activa la API en https://script.google.com/home/usersettings'
+      throw 'No pude leer tu proyecto de Apps Script. Revisa el ID en .clasp.json, ejecuta clasp.cmd login con la cuenta dueña del proyecto y activa la API en https://script.google.com/home/usersettings'
     }
     Copy-Item (Join-Path $tmpPull 'appsscript.json') $src
     Remove-Item $tmpPull -Recurse -Force -ErrorAction SilentlyContinue
@@ -102,8 +102,16 @@ try {
   }
 
   Paso 4 'Subiendo el código a Apps Script (clasp push)...'
-  & clasp push -f
-  if ($LASTEXITCODE -ne 0) { throw 'clasp push falló. Si dice que no has iniciado sesión, ejecuta: clasp login' }
+  # stderr de clasp se junta con la salida; con 'Stop', Windows PowerShell lo trataría como error.
+  $ErrorActionPreference = 'Continue'
+  $salida = (& clasp push -f 2>&1 | Out-String); Write-Host $salida
+  if ($LASTEXITCODE -ne 0 -and $salida -match 'invalid_grant|invalid_rapt|reauth|login') {
+    Write-Host 'Tu sesión de Google venció. Se abrirá el navegador para iniciar sesión de nuevo con la cuenta dueña del Apps Script...' -ForegroundColor Yellow
+    & clasp login
+    & clasp push -f
+  }
+  $ErrorActionPreference = 'Stop'
+  if ($LASTEXITCODE -ne 0) { throw 'clasp push falló. Ejecuta clasp.cmd login con la cuenta dueña del proyecto y vuelve a intentar.' }
 
   Paso 5 'Publicando la nueva versión en la aplicación web...'
   $id = if (Test-Path $archivoImpl) { (Get-Content $archivoImpl -Raw).Trim() } else { '' }
