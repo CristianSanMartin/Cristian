@@ -60,12 +60,45 @@ const conObs = await page.$$eval("#peruBody tr", trs => trs.map(t => [t.children
 await page.selectOption("#pFiltro", "");
 const pagos = await page.evaluate(`Object.fromEntries(rutasMesPeru().rutas.map(r=>[r.fecha+" "+r.placa,[r.pago,r.margen,r.llave]]))`);
 const resumenPago = await page.evaluate(`["pPago","pMargen"].map(id=>document.getElementById(id).textContent)`);
-const [dlPago] = await Promise.all([page.waitForEvent("download"), page.click("text=Descargar pago transportista")]);
-const outPago = path.join(tmp, "pago_out.xlsx"); await dlPago.saveAs(outPago);
-const nombrePago = dlPago.suggestedFilename();
 const [dl] = await Promise.all([page.waitForEvent("download"), page.click("text=Descargar liquidación")]);
 const out = path.join(tmp, "liq_out.xlsx"); await dl.saveAs(out);
 const nombre = dl.suggestedFilename();
+
+// ---------- Pago transporte por quincena ----------
+await page.click("button.tab[data-vista=peruPago]");
+const vistaPago = await page.isVisible("#vistaPeruPago");
+const quincenas = await page.$$eval("#qSel option", os => os.map(o => o.textContent));
+await page.selectOption("#qSel", "2026-09-Q1");
+const resumenQ = () => page.evaluate(`["qRutas","qNeto","qIgv","qDesc","qTotal","qOtros"].map(id=>document.getElementById(id).textContent)`);
+const resumenQ1 = await resumenQ();
+await page.selectOption("#qFiltro", "fal");
+const conFallidos = await page.$$eval("#qBody tr", trs => trs.map(t => [t.children[0].textContent, t.children[1].textContent, t.children[5].textContent]));
+await page.selectOption("#qFiltro", "");
+await page.fill('#qConductores input[data-p=AAA111][data-k=nombre]', "JUAN PEREZ");
+await page.fill('#qConductores input[data-p=AAA111][data-k=doc]', "DNI 123");
+await page.click("text=Guardar conductores"); await page.waitForTimeout(200);
+const hojaCond = await page.evaluate(`almacenLocal.hojas["PERU CONDUCTORES"]`);
+await page.fill("#dConcepto", "Pagos en exceso periodos anteriores"); await page.fill("#dMonto", "100");
+await page.click("#vistaPeruPago >> text=Agregar >> nth=0"); await page.waitForTimeout(200);
+await page.fill("#opConcepto", "Personal de seguimiento"); await page.fill("#opBenef", "MARIA X"); await page.fill("#opDoc", "DNI 9"); await page.fill("#opMonto", "1000");
+await page.click("#vistaPeruPago >> text=Agregar >> nth=1"); await page.waitForTimeout(200);
+const hojaMov = await page.evaluate(`almacenLocal.hojas["PERU MOVIMIENTOS"].length-1`);
+// Ajuste: 12-09 AAA111 se cobró y pagó como Periferia
+await page.click('#qBody button[data-k="2026-09-12|AAA111"]');
+await page.selectOption("#ajCobro", "PERIFERIA/LEJANO"); await page.selectOption("#ajPago", "PERIFERIA/LEJANO"); await page.fill("#ajMotivo", "Validado por Sodimac");
+await page.click("text=Guardar ajuste"); await page.waitForTimeout(200);
+const ajustada = await page.evaluate(`(r=>[r.zonaCobro,r.total,r.pago,r.totalCalc,r.pagoCalc,r.obsTarifa,r.llave])(peruDatos.rutas.find(r=>r.fecha==="2026-09-12"&&r.placa==="AAA111"))`);
+const hojaAj = await page.evaluate(`almacenLocal.hojas["PERU AJUSTES"]`);
+const resumenQ1b = await resumenQ();
+await page.selectOption("#qEstado", "Enviado al transporte"); await page.waitForTimeout(200);
+const hojaQuin = await page.evaluate(`almacenLocal.hojas["PERU QUINCENAS"].slice(1).map(r=>r.slice(0,2))`);
+const correo = await page.inputValue("#qCorreo");
+const [dlQ] = await Promise.all([page.waitForEvent("download"), page.click("text=Descargar detalle quincena")]);
+const outQ = path.join(tmp, "q_out.xlsx"); await dlQ.saveAs(outQ);
+const nombreQ = dlQ.suggestedFilename();
+// Recargar desde las hojas conserva ajustes, descuentos, conductores y estado
+await page.evaluate("recargarPeru()"); await page.waitForTimeout(200);
+const trasRecargarPago = [await resumenQ(), await page.inputValue("#qEstado"), await page.evaluate(`peruDatos.rutas.find(r=>r.fecha==="2026-09-12"&&r.placa==="AAA111").pago`)];
 
 // ---------- Tarifas (vigencias, feriados, distritos) ----------
 page.on("dialog", d => d.accept());
@@ -135,14 +168,31 @@ check("Filtro con observación", conObs, [["12-09-2026", "AAA111"]]);
 check("Nombre de la liquidación", nombre, "Liquidacion JOINT PERU S.A.C. UM SODIMAC - 09SEPTIEMBRE - 2026.xlsx");
 check("Formato de la liquidación", [wb.SheetNames[0], salida[0], salida[2].slice(1, 9), salida.length, ws["K2"].f, ws["K8"].f],
   ["LIQUIDACIÓN SERVICIOS", LH, ["JOINT PERU S.A.C.", "AAA111", "F13", 2, "COMAS", "Metropolitana", 420, ""], 8, "SUM(H2:I2)", "SUM(K2:K7)"]);
-check("Pago transportista regular urbano", pagos["2026-09-10 AAA111"], [380, 40, "CT ATLANTIS SODIMAC;RUTA REGULAR;13m3;URBANO"]);
-check("Pago transportista F20 periferia", pagos["2026-09-12 BBB222"], [540, 100, "CT ATLANTIS SODIMAC;RUTA REGULAR;20m3;PERIFERIA/LEJANO"]);
-check("Pago transportista domingo", pagos["2026-09-13 CCC333"], [494, 52, "CT ATLANTIS SODIMAC;RUTA DOMINGO;13m3;URBANO"]);
+check("Pago transportista regular urbano", pagos["2026-09-10 AAA111"], [380, 40, "CT ATLANTIS SODIMAC;RUTA REGULAR;13M3;URBANO"]);
+check("Pago transportista F20 periferia", pagos["2026-09-12 BBB222"], [540, 100, "CT ATLANTIS SODIMAC;RUTA REGULAR;20M3;PERIFERIA/LEJANO"]);
+check("Pago transportista domingo", pagos["2026-09-13 CCC333"], [494, 52, "CT ATLANTIS SODIMAC;RUTA DOMINGO;13M3;URBANO"]);
 check("Resumen pago y margen", resumenPago, ["S/ 2,554", "S/ 312 (11%)"]);
-const wbP = XLSX.readFile(outPago, { cellDates: true }), wsP = wbP.Sheets[wbP.SheetNames[0]];
-const salidaP = XLSX.utils.sheet_to_json(wsP, { header: 1, defval: "" });
-check("Excel pago transportista", [nombrePago, wbP.SheetNames[0], salidaP[0].length, salidaP[1].slice(1, 4), salidaP[1][9], salidaP.length, wsP["J8"].f],
-  ["Pago transportista CT ATLANTIS SODIMAC - SEPTIEMBRE 2026.xlsx", "PAGO TRANSPORTE", 10, ["CT ATLANTIS SODIMAC", "AAA111", "F13"], 380, 8, "SUM(J2:J7)"]);
+check("Vista pago transporte y quincenas", [vistaPago, quincenas], [true, ["2ª quincena septiembre 2026 (16 al 30)", "1ª quincena septiembre 2026 (01 al 15)"]]);
+check("Resumen 1ª quincena", resumenQ1, ["5", "S/ 2,174.00", "S/ 2,565.32", "S/ 0.00", "S/ 2,565.32", "S/ 0.00"]);
+check("Rutas con puntos fallidos", conFallidos, [["12-09-2026", "AAA111", "1"]]);
+check("Conductor guardado", hojaCond, [["PLACA", "CONDUCTOR", "DOCUMENTO"], ["AAA111", "JUAN PEREZ", "DNI 123"]]);
+check("Descuento y otro pago guardados", hojaMov, 2);
+check("Ajuste cambia cobro y pago y guarda lo calculado", ajustada, ["Periferia", 610, 500, 420, 380,
+  "Punto en PUENTE PIEDRA no entregado (Distrito errado): se cobra Metropolitana; Ajuste: cobrada como Periferia y pagada como Periferia (Validado por Sodimac)".split("; ").slice(1).join("; "),
+  "CT ATLANTIS SODIMAC;RUTA REGULAR;13M3;PERIFERIA/LEJANO"]);
+check("Hoja PERU AJUSTES", hojaAj, [["FECHA", "PLACA", "ZONA COBRO", "ZONA PAGO", "MOTIVO"], ["2026-09-12", "AAA111", "Periferia", "Periferia", "Validado por Sodimac"]]);
+check("Resumen con ajuste, descuento y otros pagos", resumenQ1b, ["5", "S/ 2,294.00", "S/ 2,706.92", "S/ 100.00", "S/ 2,606.92", "S/ 1,000.00"]);
+check("Estado de la quincena", hojaQuin, [["2026-09-Q1", "Enviado al transporte"]]);
+check("Correo", [correo.includes("entre los días 01 al 15 de Septiembre del año 2026"), correo.includes("PAGOS EN EXCESO PERIODOS ANTERIORES    S/. 100,00"),
+  correo.includes("TOTAL DESC. S/. 100,00"), correo.includes("asciende a: S/. 2.606,92 IGV incluido"), correo.includes("S/. 1.000,00 MARIA X DNI 9"), correo.includes("1ª Q SEP 26")],
+  [true, true, true, true, true, true]);
+const wbQ = XLSX.readFile(outQ), wsQ = wbQ.Sheets[wbQ.SheetNames[0]];
+const salidaQ = XLSX.utils.sheet_to_json(wsQ, { header: 1, defval: "" });
+check("Excel detalle quincena", [nombreQ, salidaQ[0], salidaQ[1], wsQ["L7"].f, wsQ["M9"].v, wsQ["K10"].v, wsQ["M10"].v],
+  ["1Q SEP 2026.xlsx", ["Fecha", "CtOrigen", "Motivo", "Patente", "Distrito", "Capacidad", "PUNTOS", "Tipo", "Usuario", "NoDocumentoUsuario", "Tarifario", "Neto", "IGVInc"],
+   ["jueves, 10 de septiembre de 2026", "CT ATLANTIS SODIMAC", "RUTA REGULAR", "AAA111", "COMAS", "13M3", 2, "URBANO", "JUAN PEREZ", "DNI 123", "CT ATLANTIS SODIMAC;RUTA REGULAR;13M3;URBANO", 380, 448.4],
+   "SUM(L2:L6)", -100, "Total a facturar", 2606.92]);
+check("Pago se lee desde las hojas", trasRecargarPago, [["5", "S/ 2,294.00", "S/ 2,706.92", "S/ 100.00", "S/ 2,606.92", "S/ 1,000.00"], "Enviado al transporte", 500]);
 check("Hojas de tarifas, distritos y feriados creadas al abrir", hojasConfig, [8, 55, 32]);
 check("Encabezado PERU TARIFAS", encTarifas, ["TARIFARIO", "TIPO", "VIGENTE DESDE", "UNIDAD", "ZONA", "REGULAR", "DOMINGO"]);
 check("Vista Tarifas", [vistaTarifas, tablaCobro[0], tablaCobro[3]], [true, ["F13", "Metropolitana", "S/ 420", "S/ 546 +30%"], ["F20", "Periferia", "S/ 640", "S/ 832 +30%"]]);

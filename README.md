@@ -55,7 +55,16 @@ Reglas (montos en soles sin IGV):
 - 10 y 13 m³ se cobran como F13; 15 y 20 (m³ o TN) como F20.
 - Distrito: el último tramo de la dirección después de la coma, para no confundir calles como "JR SANTA ROSA, COMAS" con el distrito Santa Rosa.
 - Zona: la del punto más lejano efectivamente entregado. Las visitas fallidas no definen la zona; si una visita fallida estaba en periferia, la ruta lo indica en Observación.
-- **Pago al transportista** (tarifario CT ATLANTIS SODIMAC): la sección muestra el pago y el margen por ruta y del mes. "Descargar pago transportista" genera el detalle con la llave del tarifario.
+- La sección también muestra el pago al transportista y el margen por ruta y del mes.
+
+### Pago transporte
+Sección "Pago transporte" del grupo Perú: el pago a CT ATLANTIS SODIMAC por quincena (1 al 15 y 16 a fin de mes), con las mismas rutas del cobro.
+
+- Muestra cada ruta con su tarifa de pago (neto y con IGV 18%) y marca las rutas con puntos fallidos.
+- **Ajustes** (hoja PERU AJUSTES): cuando una ruta se cobró o pagó con otra zona, se registra la zona real y el motivo. Cobro, pago y liquidación usan la zona ajustada y se guarda lo calculado para el cuadre.
+- **Descuentos y otros pagos** (hoja PERU MOVIMIENTOS): los descuentos se restan del total con IGV; los otros pagos (personal de seguimiento) no van en la factura del transporte.
+- **Conductores** (hoja PERU CONDUCTORES) y **estado de la quincena** (hoja PERU QUINCENAS: Borrador, Enviado al transporte, Validado, Pagado).
+- "Descargar detalle quincena" genera el Excel con el formato que se envía al transporte (Fecha, CtOrigen, Motivo, Patente, Distrito, Capacidad, PUNTOS, Tipo, Usuario, NoDocumentoUsuario, Tarifario, Neto, IGVInc) y la sección arma el texto del correo.
 
 ### Tarifas
 Sección "Tarifas" del grupo Perú. Se guarda en tres hojas del Google Sheet, que la app crea con los valores iniciales la primera vez que se abre:
