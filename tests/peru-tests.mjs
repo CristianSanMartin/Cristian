@@ -190,7 +190,7 @@ check("Pago transportista F20 periferia", pagos["2026-09-12 BBB222"], [540, 100,
 check("Pago transportista domingo", pagos["2026-09-13 CCC333"], [494, 52, "CT ATLANTIS SODIMAC;RUTA DOMINGO;13M3;URBANO"]);
 check("Resumen pago y margen", resumenPago, ["S/ 2,554", "S/ 312 (11%)"]);
 check("Vista pago transporte y quincenas", [vistaPago, quincenas], [true, ["2ª quincena septiembre 2026 (16 al 30)", "1ª quincena septiembre 2026 (01 al 15)"]]);
-check("Resumen 1ª quincena", resumenQ1, ["5", "S/ 2,174.00", "S/ 2,565.32", "S/ 0.00", "S/ 2,565.32", "S/ 847.00"]);
+check("Resumen 1ª quincena", resumenQ1, ["5", "S/ 2,174.00", "S/ 2,565.32", "S/ 0.00", "S/ 2,565.32", "S/ 847.46"]);
 check("Rutas con puntos fallidos", conFallidos, [["12-09-2026", "AAA111", "1"]]);
 check("Conductor guardado", hojaCond, [["PLACA", "CONDUCTOR", "DOCUMENTO"], ["AAA111", "JUAN PEREZ", "DNI 123"]]);
 check("Descuento y otro pago guardados", hojaMov, 2);
@@ -211,16 +211,16 @@ check("Excel detalle quincena", [nombreQ, salidaQ[0], salidaQ[1], wsQ["L7"].f, w
    "SUM(L2:L6)", -100, "Total a facturar", 2606.92]);
 check("Pago se lee desde las hojas", trasRecargarPago, [["5", "S/ 2,294.00", "S/ 2,706.92", "S/ 100.00", "S/ 2,606.92", "S/ 1,000.00"], "Enviado al transporte", 500]);
 check("Vista cuadre", vistaCuadre, true);
-// Sep: 6 rutas; 12-09 AAA111 ajustada a Periferia (+190 cobro, +120 pago). Q1: 5 rutas pago 2294, desc 100 con IGV, otro pago 1000 (reemplaza el fijo). Q2: 1 ruta 380, fijo 847.
-check("Cuadre sin facturas", cuadreSin, [2866, 3056, 1, null, 3056, 2674, 84.75, 1847, 4436.25, -1380.25]);
+// Sep: 6 rutas; 12-09 AAA111 ajustada a Periferia (+190 cobro, +120 pago). Q1: 5 rutas pago 2294, desc 100 con IGV, otro pago 1000 (reemplaza el fijo). Q2: 1 ruta 380, fijo 847,46.
+check("Cuadre sin facturas", cuadreSin, [2866, 3056, 1, null, 3056, 2674, 84.75, 1847.46, 4436.71, -1380.71]);
 check("Cuadre del cobro con factura", cuadreCobro, [["Calculado por la web", "S/ 2,866.00"], ["Ajuste 12-09-2026 AAA111: Validado por Sodimac", "S/ 190.00"], ["Liquidado", "S/ 3,056.00"],
   ["Facturado a Sodimac", "S/ 3,056.00"], ["Diferencia sin explicar", "Cuadra"]]);
 check("Pendiente de cobro", pendiente, ["S/ 3,056.00", "Septiembre 2026 (F F001-10)"]);
-check("Facturas del transporte, días a pago y cobro pagado", trasFacturas, [0, 0, 10, 3056, -1380.25, "S/ 0.00", 2]);
+check("Facturas del transporte, días a pago y cobro pagado", trasFacturas, [0, 0, 10, 3056, -1380.71, "S/ 0.00", 2]);
 check("KPI del mes", kpi, [6, { AAA111: 4, BBB222: 1, CCC333: 1 }, 33.3, 16.7, 90, 10]);
 check("Cajas KPI", cajasKpi, ["Rutas", "% periferia", "% domingo o feriado", "Puntos por ruta", "% entrega efectiva", "Ingreso por ruta", "Costo por ruta", "Margen por ruta", "Margen %", "Días cierre a pago"]);
 check("Tendencia", tendencia, ["Septiembre 2026"]);
-check("Costo fijo de seguimiento", hojaFijos, [["CONCEPTO", "BENEFICIARIO", "DOCUMENTO", "VIGENTE DESDE", "MONTO NETO"], ["Personal de seguimiento", "", "", "2025-01-01", 847]]);
+check("Costo fijo de seguimiento", hojaFijos, [["CONCEPTO", "BENEFICIARIO", "DOCUMENTO", "VIGENTE DESDE", "MONTO NETO"], ["Personal de seguimiento", "", "", "2025-01-01", 847.46]]);
 check("Hojas de tarifas, distritos y feriados creadas al abrir", hojasConfig, [8, 55, 32]);
 check("Encabezado PERU TARIFAS", encTarifas, ["TARIFARIO", "TIPO", "VIGENTE DESDE", "UNIDAD", "ZONA", "REGULAR", "DOMINGO"]);
 check("Vista Tarifas", [vistaTarifas, tablaCobro[0], tablaCobro[3]], [true, ["F13", "Metropolitana", "S/ 420", "S/ 546 +30%"], ["F20", "Periferia", "S/ 640", "S/ 832 +30%"]]);

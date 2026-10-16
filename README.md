@@ -62,7 +62,7 @@ Sección "Pago transporte" del grupo Perú: el pago a CT ATLANTIS SODIMAC por qu
 
 - Muestra cada ruta con su tarifa de pago (neto y con IGV 18%) y marca las rutas con puntos fallidos.
 - **Ajustes** (hoja PERU AJUSTES): cuando una ruta se cobró o pagó con otra zona, se registra la zona real y el motivo. Cobro, pago y liquidación usan la zona ajustada y se guarda lo calculado para el cuadre.
-- **Descuentos y otros pagos** (hoja PERU MOVIMIENTOS): los descuentos (con IGV) se restan del total a facturar; los otros pagos (netos) no van en la factura del transporte. El personal de seguimiento se carga solo con el costo fijo por quincena de Tarifas (hoja PERU COSTOS FIJOS, S/ 847 neto).
+- **Descuentos y otros pagos** (hoja PERU MOVIMIENTOS): los descuentos (con IGV) se restan del total a facturar; los otros pagos (netos) no van en la factura del transporte. El personal de seguimiento se carga solo con el costo fijo por quincena de Tarifas (hoja PERU COSTOS FIJOS, S/ 847,46 neto, S/ 1.000 con IGV).
 - **Conductores** (hoja PERU CONDUCTORES) y **estado de la quincena** (hoja PERU QUINCENAS: Borrador, Enviado al transporte, Validado, Pagado).
 - "Descargar detalle quincena" genera el Excel con el formato que se envía al transporte (Fecha, CtOrigen, Motivo, Patente, Distrito, Capacidad, PUNTOS, Tipo, Usuario, NoDocumentoUsuario, Tarifario, Neto, IGVInc) y la sección arma el texto del correo.
 

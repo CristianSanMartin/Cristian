@@ -2374,7 +2374,7 @@ function descargarDetallePagoPe(){
 }
 // ---------- Perú: costos fijos por quincena (hoja PERU COSTOS FIJOS) ----------
 const H_FIJOS_PE=["CONCEPTO","BENEFICIARIO","DOCUMENTO","VIGENTE DESDE","MONTO NETO"];
-let fijosPe=[{concepto:"Personal de seguimiento",beneficiario:"",documento:"",desde:"2025-01-01",monto:847}];
+let fijosPe=[{concepto:"Personal de seguimiento",beneficiario:"",documento:"",desde:"2025-01-01",monto:847.46}];
 const filasFijosPe=()=>[H_FIJOS_PE,...[...fijosPe].sort((a,b)=>a.concepto.localeCompare(b.concepto)||a.desde.localeCompare(b.desde)).map(f=>[f.concepto,f.beneficiario,f.documento,f.desde,f.monto])];
 function fijosDesdeHoja(h,ops){
   const m=h["PERU COSTOS FIJOS"]||[];
