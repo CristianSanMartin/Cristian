@@ -35,5 +35,7 @@ Doble clic en `actualizar.cmd`. Nada más.
   queda reemplazado por `Code.gs`).
 - Tu `appsscript.json` (zona horaria, permisos, acceso de la web) se copia de tu proyecto la
   primera vez y no se toca después.
-- Usa la rama más nueva que exista (la lista está al inicio de `actualizar.ps1`) y, cuando ya
-  se hayan integrado, la rama principal. Al final muestra qué versión publicó.
+- Publica solo la versión más nueva: busca en GitHub la rama con el último cambio a la web
+  (carpeta `apps-script`) y muestra cuál publicó. No hay que configurar nada.
+- El actualizador se actualiza solo cuando hay una versión nueva de él, así que no hay que
+  volver a descargarlo.
