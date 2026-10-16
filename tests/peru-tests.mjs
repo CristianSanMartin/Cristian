@@ -100,6 +100,23 @@ const nombreQ = dlQ.suggestedFilename();
 await page.evaluate("recargarPeru()"); await page.waitForTimeout(200);
 const trasRecargarPago = [await resumenQ(), await page.inputValue("#qEstado"), await page.evaluate(`peruDatos.rutas.find(r=>r.fecha==="2026-09-12"&&r.placa==="AAA111").pago`)];
 
+// ---------- Cuadre y KPI ----------
+await page.click("button.tab[data-vista=peruCuadre]");
+const vistaCuadre = await page.isVisible("#vistaPeruCuadre");
+const cuadreSin = await page.evaluate(`(d=>[d.calc,d.liq,d.ajustes.length,d.difCobro,d.cobrado,d.pago,d.desc,d.otros,d.costo,d.margen])(mesCuadrePe("2026-09"))`);
+await page.fill("#fcNumero", "F001-10"); await page.fill("#fcFecha", "2026-10-05"); await page.fill("#fcMonto", "3056");
+await page.click("#cCuadreCobro >> text=Guardar factura"); await page.waitForTimeout(200);
+const cuadreCobro = await page.$$eval("#cCuadreCobro tr", trs => trs.map(t => [...t.children].map(c => c.textContent.trim())));
+const pendiente = await page.evaluate(`[document.getElementById("cPendiente").textContent,document.getElementById("cPendienteDet").textContent]`);
+await page.fill("#fpQ1Numero", "E001-5"); await page.fill("#fpQ1Monto", "2606.92"); await page.fill("#fpQ1Pago", "2026-09-25");
+await page.click("#cCuadrePago >> text=Guardar factura >> nth=0"); await page.waitForTimeout(200);
+await page.fill("#fcPago", "2026-10-20"); await page.click("#cCuadreCobro >> text=Guardar factura"); await page.waitForTimeout(200);
+const trasFacturas = await page.evaluate(`(d=>[d.difCobro,d.qs[0].dif,d.qs[0].dias,d.cobrado,Math.round(d.margen*100)/100,document.getElementById("cPendiente").textContent,almacenLocal.hojas["PERU FACTURAS"].length-1])(mesCuadrePe("2026-09"))`);
+const kpi = await page.evaluate(`(k=>[k.rutas,k.placas,Math.round(k.perif*1000)/10,Math.round(k.dom*1000)/10,Math.round(k.entrega*1000)/10,k.diasPago])(mesCuadrePe("2026-09").kpi)`);
+const cajasKpi = await page.$$eval("#cKpi .summary-title", e => e.map(x => x.textContent));
+const tendencia = await page.$$eval("#cTendencia tbody tr", trs => trs.map(t => t.children[0].textContent));
+const hojaFijos = await page.evaluate(`almacenLocal.hojas["PERU COSTOS FIJOS"]`);
+
 // ---------- Tarifas (vigencias, feriados, distritos) ----------
 page.on("dialog", d => d.accept());
 const ruta = (f, p) => page.evaluate(`(r=>r&&[r.tarifa,r.adicional,r.detalle,r.total,r.pago])(peruDatos.rutas.find(r=>r.fecha==="${f}"&&r.placa==="${p}"))`);
@@ -173,7 +190,7 @@ check("Pago transportista F20 periferia", pagos["2026-09-12 BBB222"], [540, 100,
 check("Pago transportista domingo", pagos["2026-09-13 CCC333"], [494, 52, "CT ATLANTIS SODIMAC;RUTA DOMINGO;13M3;URBANO"]);
 check("Resumen pago y margen", resumenPago, ["S/ 2,554", "S/ 312 (11%)"]);
 check("Vista pago transporte y quincenas", [vistaPago, quincenas], [true, ["2ª quincena septiembre 2026 (16 al 30)", "1ª quincena septiembre 2026 (01 al 15)"]]);
-check("Resumen 1ª quincena", resumenQ1, ["5", "S/ 2,174.00", "S/ 2,565.32", "S/ 0.00", "S/ 2,565.32", "S/ 0.00"]);
+check("Resumen 1ª quincena", resumenQ1, ["5", "S/ 2,174.00", "S/ 2,565.32", "S/ 0.00", "S/ 2,565.32", "S/ 847.00"]);
 check("Rutas con puntos fallidos", conFallidos, [["12-09-2026", "AAA111", "1"]]);
 check("Conductor guardado", hojaCond, [["PLACA", "CONDUCTOR", "DOCUMENTO"], ["AAA111", "JUAN PEREZ", "DNI 123"]]);
 check("Descuento y otro pago guardados", hojaMov, 2);
@@ -184,7 +201,7 @@ check("Hoja PERU AJUSTES", hojaAj, [["FECHA", "PLACA", "ZONA COBRO", "ZONA PAGO"
 check("Resumen con ajuste, descuento y otros pagos", resumenQ1b, ["5", "S/ 2,294.00", "S/ 2,706.92", "S/ 100.00", "S/ 2,606.92", "S/ 1,000.00"]);
 check("Estado de la quincena", hojaQuin, [["2026-09-Q1", "Enviado al transporte"]]);
 check("Correo", [correo.includes("entre los días 01 al 15 de Septiembre del año 2026"), correo.includes("PAGOS EN EXCESO PERIODOS ANTERIORES    S/. 100,00"),
-  correo.includes("TOTAL DESC. S/. 100,00"), correo.includes("asciende a: S/. 2.606,92 IGV incluido"), correo.includes("S/. 1.000,00 MARIA X DNI 9"), correo.includes("1ª Q SEP 26")],
+  correo.includes("TOTAL DESC. S/. 100,00"), correo.includes("asciende a: S/. 2.606,92 IGV incluido"), correo.includes("S/. 1.180,00 MARIA X DNI 9"), correo.includes("1ª Q SEP 26")],
   [true, true, true, true, true, true]);
 const wbQ = XLSX.readFile(outQ), wsQ = wbQ.Sheets[wbQ.SheetNames[0]];
 const salidaQ = XLSX.utils.sheet_to_json(wsQ, { header: 1, defval: "" });
@@ -193,6 +210,17 @@ check("Excel detalle quincena", [nombreQ, salidaQ[0], salidaQ[1], wsQ["L7"].f, w
    ["jueves, 10 de septiembre de 2026", "CT ATLANTIS SODIMAC", "RUTA REGULAR", "AAA111", "COMAS", "13M3", 2, "URBANO", "JUAN PEREZ", "DNI 123", "CT ATLANTIS SODIMAC;RUTA REGULAR;13M3;URBANO", 380, 448.4],
    "SUM(L2:L6)", -100, "Total a facturar", 2606.92]);
 check("Pago se lee desde las hojas", trasRecargarPago, [["5", "S/ 2,294.00", "S/ 2,706.92", "S/ 100.00", "S/ 2,606.92", "S/ 1,000.00"], "Enviado al transporte", 500]);
+check("Vista cuadre", vistaCuadre, true);
+// Sep: 6 rutas; 12-09 AAA111 ajustada a Periferia (+190 cobro, +120 pago). Q1: 5 rutas pago 2294, desc 100 con IGV, otro pago 1000 (reemplaza el fijo). Q2: 1 ruta 380, fijo 847.
+check("Cuadre sin facturas", cuadreSin, [2866, 3056, 1, null, 3056, 2674, 84.75, 1847, 4436.25, -1380.25]);
+check("Cuadre del cobro con factura", cuadreCobro, [["Calculado por la web", "S/ 2,866.00"], ["Ajuste 12-09-2026 AAA111: Validado por Sodimac", "S/ 190.00"], ["Liquidado", "S/ 3,056.00"],
+  ["Facturado a Sodimac", "S/ 3,056.00"], ["Diferencia sin explicar", "Cuadra"]]);
+check("Pendiente de cobro", pendiente, ["S/ 3,056.00", "Septiembre 2026 (F F001-10)"]);
+check("Facturas del transporte, días a pago y cobro pagado", trasFacturas, [0, 0, 10, 3056, -1380.25, "S/ 0.00", 2]);
+check("KPI del mes", kpi, [6, { AAA111: 4, BBB222: 1, CCC333: 1 }, 33.3, 16.7, 90, 10]);
+check("Cajas KPI", cajasKpi, ["Rutas", "% periferia", "% domingo o feriado", "Puntos por ruta", "% entrega efectiva", "Ingreso por ruta", "Costo por ruta", "Margen por ruta", "Margen %", "Días cierre a pago"]);
+check("Tendencia", tendencia, ["Septiembre 2026"]);
+check("Costo fijo de seguimiento", hojaFijos, [["CONCEPTO", "BENEFICIARIO", "DOCUMENTO", "VIGENTE DESDE", "MONTO NETO"], ["Personal de seguimiento", "", "", "2025-01-01", 847]]);
 check("Hojas de tarifas, distritos y feriados creadas al abrir", hojasConfig, [8, 55, 32]);
 check("Encabezado PERU TARIFAS", encTarifas, ["TARIFARIO", "TIPO", "VIGENTE DESDE", "UNIDAD", "ZONA", "REGULAR", "DOMINGO"]);
 check("Vista Tarifas", [vistaTarifas, tablaCobro[0], tablaCobro[3]], [true, ["F13", "Metropolitana", "S/ 420", "S/ 546 +30%"], ["F20", "Periferia", "S/ 640", "S/ 832 +30%"]]);

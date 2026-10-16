@@ -62,9 +62,16 @@ Sección "Pago transporte" del grupo Perú: el pago a CT ATLANTIS SODIMAC por qu
 
 - Muestra cada ruta con su tarifa de pago (neto y con IGV 18%) y marca las rutas con puntos fallidos.
 - **Ajustes** (hoja PERU AJUSTES): cuando una ruta se cobró o pagó con otra zona, se registra la zona real y el motivo. Cobro, pago y liquidación usan la zona ajustada y se guarda lo calculado para el cuadre.
-- **Descuentos y otros pagos** (hoja PERU MOVIMIENTOS): los descuentos se restan del total con IGV; los otros pagos (personal de seguimiento) no van en la factura del transporte.
+- **Descuentos y otros pagos** (hoja PERU MOVIMIENTOS): los descuentos (con IGV) se restan del total a facturar; los otros pagos (netos) no van en la factura del transporte. El personal de seguimiento se carga solo con el costo fijo por quincena de Tarifas (hoja PERU COSTOS FIJOS, S/ 847 neto).
 - **Conductores** (hoja PERU CONDUCTORES) y **estado de la quincena** (hoja PERU QUINCENAS: Borrador, Enviado al transporte, Validado, Pagado).
 - "Descargar detalle quincena" genera el Excel con el formato que se envía al transporte (Fecha, CtOrigen, Motivo, Patente, Distrito, Capacidad, PUNTOS, Tipo, Usuario, NoDocumentoUsuario, Tarifario, Neto, IGVInc) y la sección arma el texto del correo.
+
+### Cuadre y KPI
+Sección "Cuadre y KPI" del grupo Perú, por mes (hoja PERU FACTURAS para las facturas):
+- **Cuadre del cobro:** calculado por la web, ajustes con su motivo, liquidado, factura a Sodimac (sin IGV) y diferencia sin explicar. La fecha de pago de Sodimac alimenta el "Pendiente de cobro".
+- **Cuadre del pago:** por quincena, calculado, ajustes, total a facturar por el transporte (con IGV y descuentos) contra su factura.
+- **Margen real** (neto): cobrado (factura o liquidado) menos pago al transporte, más descuentos recuperados sin IGV, menos otros pagos.
+- **KPI:** rutas y rutas por placa, % periferia, % domingo o feriado, puntos por ruta, % entrega efectiva, ingreso, costo y margen por ruta, margen % y días del cierre de quincena al pago; tendencia de los últimos 6 meses.
 
 ### Tarifas
 Sección "Tarifas" del grupo Perú. Se guarda en tres hojas del Google Sheet, que la app crea con los valores iniciales la primera vez que se abre:
