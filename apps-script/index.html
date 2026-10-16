@@ -199,7 +199,7 @@
     <button class="tab" data-vista="rutas" onclick="mostrarVista('rutas')">Control de rutas</button>
     <button class="nav-grupo nav-desplegable" type="button" aria-expanded="false" aria-controls="navPeru" onclick="alternarGrupoNav(this)">Perú<span class="flecha" aria-hidden="true"></span></button>
     <div id="navPeru" class="nav-sub cerrado">
-      <button class="tab" data-vista="peru" onclick="mostrarVista('peru')">Cobro Sodimac</button>
+      <button class="tab" data-vista="peru" onclick="mostrarVista('peru')">Factura Sodimac</button>
       <button class="tab" data-vista="peruPago" onclick="mostrarVista('peruPago')">Pago transporte</button>
       <button class="tab" data-vista="peruCuadre" onclick="mostrarVista('peruCuadre')">Cuadre y KPI</button>
       <button class="tab" data-vista="peruTarifas" onclick="mostrarVista('peruTarifas')">Tarifas</button>
@@ -446,7 +446,7 @@
           <div class="table-wrap">
             <table>
               <thead><tr><th>Fecha</th><th>Placa</th><th>Conductor</th><th>Capacidad</th><th>Puntos</th><th>Fallidos</th><th>Distrito</th><th>Tipo</th><th>Motivo</th><th>Neto</th><th>Con IGV</th><th>Observación</th><th></th></tr></thead>
-              <tbody id="qBody"><tr><td colspan="13">Carga los reportes de visitas de SIMPLI en Cobro Sodimac.</td></tr></tbody>
+              <tbody id="qBody"><tr><td colspan="13">Carga los reportes de visitas de SIMPLI en Factura Sodimac.</td></tr></tbody>
             </table>
           </div>
           <div id="qAjuste" class="ajuste-box hidden"></div>
@@ -494,30 +494,18 @@
     </div>
   </div>
   <div id="vistaPeruCuadre" class="hidden">
-    <div class="rutas-layout">
-      <aside class="card rutas-panel">
-        <h3>Mes</h3>
-        <select id="cMes" onchange="renderCuadrePeru()" style="width:100%"><option value="">Sin datos</option></select>
-        <p id="estadoCuadrePe" class="nota" role="status"></p>
-        <p id="cTc" class="nota"></p>
-        <h3>Pendiente de cobro</h3>
-        <div id="cPendiente" class="summary-value warnc">S/ 0.00</div>
-        <p id="cPendienteDet" class="nota">Facturas a Sodimac sin fecha de pago.</p>
-        <h3>Cómo se calcula</h3>
-        <details class="reglas">
-          <summary>Margen y diferencias</summary>
-          <ul>
-            <li><b>Cobrado:</b> lo facturado a Sodimac (sin IGV); si no hay factura registrada, lo liquidado.</li>
-            <li><b>Costo:</b> pago neto al transporte, menos los descuentos recuperados (sin IGV), más otros pagos como el personal de seguimiento.</li>
-            <li><b>Diferencia sin explicar:</b> factura menos lo liquidado (cobro) o menos el total a facturar por el transporte (pago). Los ajustes con motivo ya están incluidos en lo liquidado.</li>
-          </ul>
-        </details>
-      </aside>
+    <div>
+      <div class="card barra-vista">
+        <label class="barra-campo">Mes<select id="cMes" onchange="renderCuadrePeru()"><option value="">Sin datos</option></select></label>
+        <p id="cTc" class="nota barra-info"></p>
+        <p id="estadoCuadrePe" class="nota barra-estado" role="status"></p>
+      </div>
       <main style="min-width:0">
         <div class="summary" style="margin-bottom:18px">
           <div class="summary-box"><div class="summary-title">Cobrado sin IGV</div><div id="cCobrado" class="summary-value okc">S/ 0.00</div><div id="cCobradoDet" class="nota"></div></div>
           <div class="summary-box"><div class="summary-title">Costo neto</div><div id="cCosto" class="summary-value">S/ 0.00</div><div class="nota">Transporte, descuentos y otros pagos</div></div>
           <div class="summary-box"><div class="summary-title">Margen real</div><div id="cMargen" class="summary-value">S/ 0.00</div></div>
+          <div class="summary-box"><div class="summary-title">Pendiente de cobro</div><div id="cPendiente" class="summary-value warnc">S/ 0.00</div><div id="cPendienteDet" class="nota">Facturas a Sodimac sin fecha de pago.</div></div>
         </div>
         <div class="tarifas-grid">
           <div class="card cuadre"><h2>Cuadre del cobro</h2><div id="cCuadreCobro"></div></div>
@@ -2313,7 +2301,7 @@ function renderPagoPeru(){
   document.getElementById("qTc").textContent=rgQ?textoTcPe(rgQ):"";
   const f=document.getElementById("qFiltro").value;
   const vis=d.rutas.filter(r=>!f||(f==="fal"&&r.fallidos)||(f==="aj"&&r.ajuste));
-  document.getElementById("qBody").innerHTML=!peruDatos.rutas.length?`<tr><td colspan="13">Carga los reportes de visitas de SIMPLI en Cobro Sodimac.</td></tr>`
+  document.getElementById("qBody").innerHTML=!peruDatos.rutas.length?`<tr><td colspan="13">Carga los reportes de visitas de SIMPLI en Factura Sodimac.</td></tr>`
     :vis.map(r=>{
       const tipo=r.clasPago==="PERIFERIA/LEJANO"?`<span class="badge badge-warning">PERIFERIA/LEJANO</span>`:esc(r.clasPago||"SIN TARIFA");
       const obs=[r.obs,r.obsTarifa].filter(Boolean).join("; ");
