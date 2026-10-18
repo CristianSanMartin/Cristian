@@ -332,7 +332,8 @@ test("inventario: se marcan unidades de un producto y se venden desde su lote", 
     const dispAntes = await disp();
     const oc = await page.evaluate(() => GS.state.data.ventas.find((v) => !v.anulada && v.lineas.some((l) => l.productoId)));
     await otro.locator('[data-action="agregarAVentaExistente"]').click();
-    await page.locator('.modal select[name="ventaId"]').selectOption(oc.id);
+    await page.locator('.modal input[name="buscarOc"]').fill(oc.id.replace(/^\D+-0*/, ""));
+    await page.locator(`.modal [data-oc="${oc.id}"]`).click();
     await page.locator('.modal input[name="precio"]').fill("25000");
     await page.locator('.modal button[type="submit"]').click();
     await toast(page, new RegExp("1 unidad agregada a " + oc.id));

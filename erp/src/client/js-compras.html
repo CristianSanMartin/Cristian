@@ -605,19 +605,50 @@
   GS.actions.agregarAVentaExistente = (id) => {
     const r = buscadasInv().find((x) => x.productoId === id);
     const prod = data().productos.find((x) => x.id === id);
-    const ventas = data().ventas.filter((v) => !v.anulada).sort((a, b) => (b.fecha + b.id).localeCompare(a.fecha + a.id)).slice(0, 300)
-      .map((v) => ({ value: v.id, label: v.id + ' · ' + fmt.date(v.fecha) + ' · ' + v.cliente + ' · ' + fmt.money(v.total) }));
+    const ventas = data().ventas.filter((v) => !v.anulada).sort((a, b) => (b.fecha + b.id).localeCompare(a.fecha + a.id));
+    // Buscador de OC: por N° (ej. "286"), cliente, boleta o fecha; muestra las coincidencias más recientes.
+    const resultados = (q) => {
+      const t = GS.norm(q.trim());
+      const num = /^\d+$/.test(t) ? String(Number(t)) : '';
+      return ventas.filter((v) => !t || GS.norm(v.id + ' ' + v.cliente + ' ' + (v.boleta || '') + ' ' + fmt.date(v.fecha)).includes(t) ||
+        (num && String(Number((v.id.match(/\d+/) || ['0'])[0])) === num)).slice(0, 8);
+    };
+    const filaOc = (v) => '<button type="button" class="oc-opcion" data-oc="' + esc(v.id) + '"><strong>' + esc(v.id) + '</strong> · ' + fmt.date(v.fecha) + ' · ' + esc(v.cliente) +
+      ' <span class="muted">· ' + fmt.money(v.total) + (v.boleta ? ' · boleta ' + esc(v.boleta) : '') + '</span></button>';
     GS.formModal({
       title: 'Agregar a una venta',
       submitLabel: 'Agregar a la venta',
       fields: () => '<p class="hint"><strong>' + esc(findProdInv(id)) + '</strong> · ' + r.disponible + (r.disponible === 1 ? ' unidad disponible' : ' unidades disponibles') + '</p>' +
         '<div class="form-grid">' +
-        '<div class="form-field full"><label>Venta (OC) *</label><select name="ventaId">' + GS.options([{ value: '', label: 'Elige la venta…' }].concat(ventas), '') + '</select></div>' +
+        '<div class="form-field full"><label>Venta (OC) *</label><input name="buscarOc" autocomplete="off" placeholder="Busca por N° (ej. 286), cliente, boleta o fecha">' +
+        '<input type="hidden" name="ventaId"><div class="oc-resultados" data-oc-resultados></div></div>' +
         '<div class="form-field"><label>Cantidad *</label><input type="number" name="cantidad" min="1" max="' + r.disponible + '" step="1" value="1"></div>' +
         '<div class="form-field"><label>Precio unidad</label><input type="number" name="precio" min="0" step="1" value="' + esc(prod ? prod.precio : '') + '"></div></div>' +
         '<p class="hint">La OC suma esta línea y su total sube. Si la venta estaba pagada, sigue pagada; si quieres que quede como deuda o cambiar el total, ajústalo en Ventas → Editar.</p>',
+      onMount: (form) => {
+        const caja = form.querySelector('[data-oc-resultados]');
+        const pintar = () => {
+          const lista = resultados(form.elements.buscarOc.value);
+          caja.innerHTML = lista.length ? lista.map(filaOc).join('') : '<div class="muted" style="padding:6px 2px;">Sin ventas que coincidan.</div>';
+          caja.querySelectorAll('[data-oc]').forEach((b) => b.classList.toggle('activa', b.dataset.oc === form.elements.ventaId.value));
+        };
+        form.elements.buscarOc.addEventListener('input', () => { form.elements.ventaId.value = ''; pintar(); });
+        caja.addEventListener('click', (e) => {
+          const b = e.target.closest('[data-oc]');
+          if (!b) return;
+          form.elements.ventaId.value = b.dataset.oc;
+          pintar();
+        });
+        pintar();
+        form.elements.buscarOc.focus();
+      },
       onSubmit: (v) => {
-        if (!v.ventaId) throw new Error('Elige la venta.');
+        if (!v.ventaId) {
+          // Enter con una sola coincidencia: se toma esa.
+          const unica = resultados(v.buscarOc || '');
+          if (v.buscarOc && unica.length === 1) v.ventaId = unica[0].id;
+          else throw new Error('Busca la venta y elígela de la lista.');
+        }
         const venta = data().ventas.find((x) => x.id === v.ventaId);
         return GS.mutate('editarVenta', { id: venta.id, fecha: venta.fecha, boleta: venta.boleta, notas: venta.notas, agregar: [{ productoId: id, cantidad: v.cantidad, precio: v.precio }] },
           v.cantidad + (Number(v.cantidad) === 1 ? ' unidad agregada a ' : ' unidades agregadas a ') + v.ventaId);
