@@ -325,6 +325,21 @@ test("inventario: se marcan unidades de un producto y se venden desde su lote", 
     const agotado = page.locator("#inv-tbody-ago tr[data-producto]", { hasText: "Stellar Crown" }).filter({ hasText: "Booster Bundle" });
     assert.match(await agotado.textContent(), /19.*19.*0.*obtenida/s);
     assert.equal(await agotado.locator("[data-cant-prod]").count(), 0);
+    // Agregar unidades a una venta ya creada (→ OC), con otro producto
+    const otro = page.locator('#inv-tbody tr[data-producto]').filter({ hasNotText: "Battle Deck" }).first();
+    const pid = await otro.getAttribute("data-producto");
+    const disp = async () => page.evaluate((id) => GS.state.data.lotes.filter((l) => l.productoId === id).reduce((t, l) => t + l.disponible, 0), pid);
+    const dispAntes = await disp();
+    const oc = await page.evaluate(() => GS.state.data.ventas.find((v) => !v.anulada && v.lineas.some((l) => l.productoId)));
+    await otro.locator('[data-action="agregarAVentaExistente"]').click();
+    await page.locator('.modal select[name="ventaId"]').selectOption(oc.id);
+    await page.locator('.modal input[name="precio"]').fill("25000");
+    await page.locator('.modal button[type="submit"]').click();
+    await toast(page, new RegExp("1 unidad agregada a " + oc.id));
+    const oc2 = await page.evaluate((id) => GS.state.data.ventas.find((v) => v.id === id), oc.id);
+    assert.equal(oc2.total, oc.total + 25000);
+    assert.deepEqual([oc2.fecha, oc2.boleta, oc2.notas], [oc.fecha, oc.boleta, oc.notas]);
+    assert.equal(await disp(), dispAntes - 1);
     assert.match(await page.locator("#inv-agotados-n").textContent(), /\(\d+\)/);
     await deckEng.click();
     const libres = page.locator("#inv-tbody .detalle-compra [data-sel-unidad]");
