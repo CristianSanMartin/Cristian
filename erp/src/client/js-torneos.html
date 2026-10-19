@@ -187,7 +187,7 @@
             '<td class="cell-num right">' + fmt.money(x.precio * x.cantidad) + '<div class="cell-dim">costo ' + fmt.money(x.costo * x.cantidad) + ' neto</div></td>' +
             '<td>' + (op ? '<div class="row-actions">' + GS.iconBtn('precioPremio', x.id, 'edit', 'Cambiar el precio al que el torneo compra el premio') + GS.iconBtn('quitarPremio', x.id, 'trash', 'Quitar: la unidad vuelve al inventario', 'danger') + '</div>' : '') + '</td></tr>').join('') +
           '</tbody></table>' : '<p class="muted">Sin premios registrados.</p>') +
-        (op ? '<button class="btn small secondary" data-action="agregarPremio" data-id="' + esc(t.id) + '" style="margin-top:8px;">' + GS.icon('plus', 2.4) + 'Premio del inventario</button>' : '') +
+        (op ? '<button class="btn small secondary" data-action="agregarPremio" data-id="' + esc(t.id) + '" style="margin-top:8px;">' + GS.icon('plus', 2.4) + 'Premios del inventario</button>' : '') +
       '</div></div></div>' +
       // Jugadores
       '<div class="table-wrap" style="margin-top:14px;"><table class="data-table"><thead><tr><th class="right">Lugar</th><th>Jugador</th><th>Cliente</th><th>Inscripción</th><th class="right">Monto</th><th>Ticket / venta</th><th></th></tr></thead><tbody>' +
@@ -254,30 +254,73 @@
     });
   };
 
+  // Premios: se eligen del inventario como en la caja (buscar y tocar para agregar), varios a la vez.
   GS.actions.agregarPremio = (id) => {
     const t = torneoDe(id);
     const d = data();
     const stock = {};
     d.lotes.forEach((l) => { if (l.disponible > 0) stock[l.productoId] = (stock[l.productoId] || 0) + l.disponible; });
     const prods = d.productos.filter((p) => stock[p.id]).sort((a, b) => a.nombreCompleto.localeCompare(b.nombreCompleto));
+    const porId = {};
+    prods.forEach((p) => { porId[p.id] = p; });
+    const sigla = (x) => String(x || '').split(/\s+/).filter((w) => /^[A-Za-zÁÉÍÓÚÑ]/.test(w)).map((w) => w[0]).join('');
+    const prodCelda = (p) => '<div class="prod-cell">' + GS.thumb(p.imagen) + '<div><span class="cell-strong">' + esc(p.nombre) + '</span> ' + GS.langPill(p.idioma) + '<div class="cell-dim">' + esc(p.edicion || '') + '</div></div></div>';
+    const fila = (pid) => '<tr data-pr="' + esc(pid) + '"><td>' + prodCelda(porId[pid]) + '</td>' +
+      '<td><input class="qty-input" style="width:64px" type="number" min="1" max="' + stock[pid] + '" step="1" name="prCant" value="1"></td>' +
+      '<td><input class="qty-input price-input" style="width:100px" type="number" min="0" step="1" name="prPrecio" value="' + esc(porId[pid].precio) + '"></td>' +
+      '<td class="cell-num right" data-pr-sub>—</td><td><button type="button" class="btn small ghost" data-pr-quitar title="Quitar">✕</button></td></tr>';
     GS.formModal({
-      title: 'Premio para ' + t.nombre,
-      submitLabel: 'Agregar premio',
-      fields: () => '<div class="form-grid">' +
-        '<div class="form-field full"><label>Producto *</label><select name="productoId">' + GS.options([{ value: '', label: 'Elige el producto…' }].concat(prods.map((p) => ({ value: p.id, label: p.nombreCompleto + ' (' + stock[p.id] + ' disp.)' }))), '') + '</select></div>' +
-        '<div class="form-field"><label>Cantidad *</label><input type="number" name="cantidad" min="1" step="1" value="1"></div>' +
-        '<div class="form-field"><label>Precio torneo (unidad)</label><input type="number" name="precio" min="0" step="1" placeholder="PVP"></div>' +
-        '<div class="form-field full"><label>Para</label><select name="lugar">' + GS.options([{ value: '', label: 'Sin lugar (ej. premio de participación)' }].concat(t.jugadores.filter((j) => j.lugar).map((j) => ({ value: String(j.lugar), label: j.lugar + 'º · ' + j.nombre }))), '') + '</select></div></div>' +
-        '<p class="hint">Sale del inventario como premio del torneo. El torneo lo "compra" a este precio (parte en el PVP): la factura del producto no pierde ganancia y el premio se descuenta del margen del torneo.</p>',
+      title: 'Premios para ' + t.nombre,
+      submitLabel: 'Agregar premios',
+      size: 'wide',
+      fields: () => '<div class="form-field full"><label>Premios</label><div class="table-wrap"><table class="data-table" style="min-width:0"><thead><tr><th>Producto</th><th>Cant.</th><th>Precio torneo</th><th class="right">Subtotal</th><th></th></tr></thead><tbody data-pr-lineas></tbody></table></div><p class="table-note" data-pr-total></p></div>' +
+        '<div class="panel" style="margin-top:10px;padding:12px;border:1px solid var(--gold, #f5b800);">' +
+          '<div class="search-box" style="margin-bottom:8px;">' + GS.icon('search') + '<input type="text" data-pr-buscar placeholder="Buscar producto, edición o idioma…" autocomplete="off"></div>' +
+          '<div style="max-height:320px;overflow:auto;"><table class="data-table" style="min-width:0"><thead><tr><th>Producto</th><th>Tipo</th><th class="right">Disponible</th><th class="right">PVP</th><th></th></tr></thead><tbody data-pr-lista></tbody></table></div>' +
+          '<p class="table-note" style="margin:6px 0 0;">Toca un producto para agregarlo; si ya está, suma una unidad.</p></div>' +
+        '<p class="hint">Salen del inventario como premios del torneo. El torneo los "compra" al precio indicado (parte en el PVP): la factura del producto no pierde ganancia y el premio se descuenta del margen del torneo.</p>',
       onMount: (form) => {
-        form.elements.productoId.addEventListener('change', () => {
-          const p = prods.find((x) => x.id === form.elements.productoId.value);
-          form.elements.precio.value = p ? p.precio : '';
-        });
+        const cuerpo = form.querySelector('[data-pr-lineas]');
+        const lista = form.querySelector('[data-pr-lista]');
+        const buscar = form.querySelector('[data-pr-buscar]');
+        const enLista = (pid) => { const tr = cuerpo.querySelector('[data-pr="' + CSS.escape(pid) + '"]'); return tr ? Number(tr.querySelector('[name="prCant"]').value) || 0 : 0; };
+        const upd = () => {
+          let tot = 0;
+          cuerpo.querySelectorAll('[data-pr]').forEach((tr) => {
+            const sub = (Number(tr.querySelector('[name="prCant"]').value) || 0) * (Number(tr.querySelector('[name="prPrecio"]').value) || 0);
+            tr.querySelector('[data-pr-sub]').textContent = sub ? fmt.money(sub) : '—';
+            tot += sub;
+          });
+          form.querySelector('[data-pr-total]').innerHTML = cuerpo.children.length ? '<strong>Total premios ' + fmt.money(tot) + '</strong> a precio torneo' : 'Elige los premios en la lista de abajo.';
+        };
+        const pintar = () => {
+          const q = GS.norm(buscar.value.trim());
+          const vis = prods.filter((p) => !q || GS.norm(p.nombreCompleto + ' ' + p.tipo + ' ' + p.edicion + ' ' + p.idioma + ' ' + sigla(p.tipo) + ' ' + sigla(p.nombre)).includes(q));
+          lista.innerHTML = vis.length ? vis.map((p) => {
+            const queda = stock[p.id] - enLista(p.id);
+            return '<tr data-pr-pick="' + esc(p.id) + '" style="cursor:' + (queda > 0 ? 'pointer' : 'not-allowed') + ';' + (queda > 0 ? '' : 'opacity:.5;') + '">' +
+              '<td>' + prodCelda(p) + '</td><td class="cell-dim">' + esc(p.tipo || '') + '</td><td class="cell-num right"><strong>' + queda + '</strong></td>' +
+              '<td class="cell-num right">' + fmt.money(p.precio) + '</td><td>' + (queda > 0 ? '<span class="btn small secondary">' + GS.icon('plus', 2.4) + '</span>' : '') + '</td></tr>';
+          }).join('') : '<tr><td colspan="5" class="muted center">' + (prods.length ? 'Ningún producto coincide.' : 'No hay productos con stock disponible.') + '</td></tr>';
+        };
+        const agregar = (pid) => {
+          if (enLista(pid) >= stock[pid]) return;
+          const tr = cuerpo.querySelector('[data-pr="' + CSS.escape(pid) + '"]');
+          if (tr) { const c = tr.querySelector('[name="prCant"]'); c.value = (Number(c.value) || 0) + 1; } else cuerpo.insertAdjacentHTML('beforeend', fila(pid));
+          pintar(); upd();
+        };
+        lista.addEventListener('click', (e) => { const tr = e.target.closest('[data-pr-pick]'); if (tr) agregar(tr.dataset.prPick); });
+        buscar.addEventListener('input', pintar);
+        buscar.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); const f = lista.querySelector('[data-pr-pick]'); if (f) agregar(f.dataset.prPick); } });
+        cuerpo.addEventListener('click', (e) => { if (e.target.closest('[data-pr-quitar]')) { e.target.closest('tr').remove(); pintar(); upd(); } });
+        cuerpo.addEventListener('input', () => { pintar(); upd(); });
+        pintar(); upd();
+        buscar.focus();
       },
-      onSubmit: (v) => {
-        if (!v.productoId) throw new Error('Elige el producto.');
-        return GS.mutate('premioTorneo', Object.assign({ id: id }, v), 'Premio agregado al torneo');
+      onSubmit: (v, form) => {
+        const premios = Array.from(form.querySelectorAll('[data-pr]')).map((tr) => ({ productoId: tr.dataset.pr, cantidad: tr.querySelector('[name="prCant"]').value, precio: tr.querySelector('[name="prPrecio"]').value }));
+        if (!premios.length) throw new Error('Elige al menos un premio.');
+        return GS.mutate('premiosTorneo', { id: id, premios: premios }, (r) => r.unidades + (r.unidades === 1 ? ' premio agregado' : ' premios agregados') + ' al torneo');
       },
     });
   };

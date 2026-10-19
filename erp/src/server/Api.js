@@ -64,6 +64,7 @@ function rutas_() {
     cobroJugador: { rol: 'operador', write: true, fn: Torneos.cambiarCobro },
     juezTorneo: { rol: 'operador', write: true, fn: Torneos.guardarJuez },
     premioTorneo: { rol: 'operador', write: true, fn: Torneos.agregarPremio },
+    premiosTorneo: { rol: 'operador', write: true, fn: Torneos.agregarPremios },
     precioPremio: { rol: 'operador', write: true, fn: Torneos.precioPremio },
     quitarPremio: { rol: 'operador', write: true, fn: Torneos.quitarPremio },
     unirTickets: { rol: 'operador', write: true, fn: Cajas.unirTickets },

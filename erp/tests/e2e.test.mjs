@@ -718,22 +718,27 @@ test("torneos: subir el .tdf, cuadrar clientes, cobrar juntos en la caja, premio
     assert.match(await fila.textContent(), /3.*\$24\.000.*\$24\.000/s);
     assert.equal(await page.locator(".detalle-row .badge", { hasText: "Por cobrar" }).count(), 3);
 
-    // Premio a PVP y juez
+    // Premios: varios a la vez, elegidos como en la caja (sin lugar), a PVP editable
     await page.click('.detalle-row [data-action="agregarPremio"]');
-    await modal(page).locator('select[name="productoId"]').selectOption({ index: 1 });
-    assert.notEqual(await modal(page).locator('input[name="precio"]').inputValue(), "");
-    await modal(page).locator('select[name="lugar"]').selectOption("1");
-    await modal(page).locator(".modal-head h3").click();
-    await modal(page).locator('button[type="submit"]').click();
-    await toast(page, /Premio agregado/);
+    const pm = modal(page);
+    await pm.locator("[data-pr-pick]").nth(0).click();
+    await pm.locator("[data-pr-pick]").nth(0).click();
+    await pm.locator("[data-pr-pick]").nth(1).click();
+    assert.equal(await pm.locator("[data-pr]").count(), 2);
+    assert.equal(await pm.locator('[data-pr] [name="prCant"]').first().inputValue(), "2");
+    await pm.locator('[data-pr] [name="prPrecio"]').nth(1).fill("10000");
+    await pm.locator(".modal-head h3").click();
+    await pm.locator('button[type="submit"]').click();
+    await toast(page, /3 premios agregados/);
     await page.locator(".detalle-row [data-juez]").fill("10000");
     await page.click('.detalle-row [data-action="guardarJuez"]');
     await toast(page, /Pago al juez registrado/);
-    assert.match(await page.locator(".detalle-row").textContent(), /Juez−\$10\.000.*1º lugar · Beto Díaz/s);
+    assert.match(await page.locator(".detalle-row").textContent(), /Juez−\$10\.000.*Chill 01-11.*\$10\.000/s);
 
     // Caja: Ana paga lo suyo y lo de Beto en efectivo
     await page.click('.detalle-row [data-action="irCajaTorneo"] >> nth=0');
     const caja = page.locator("#caja-cuerpo");
+    assert.equal(await caja.locator("tr.fila-por-cobrar").count(), 3, "inscripciones por cobrar resaltadas");
     await caja.locator("tr", { hasText: "Ana Rojas" }).locator("[data-sel-ticket]").check();
     await caja.locator("tr", { hasText: "Beto Díaz" }).locator("[data-sel-ticket]").check();
     await caja.locator('[data-action="cobrarJuntos"]').click();

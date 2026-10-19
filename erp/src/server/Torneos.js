@@ -202,6 +202,36 @@ const Torneos = {
     return { ids: r.ids, precio: precio };
   },
 
+  /**
+   * Varios premios de una vez (como agregar productos a un ticket). p: { id, premios: [{ productoId, cantidad, precio }] }.
+   * Se revisa el stock de todos antes de sacar ninguno.
+   */
+  agregarPremios(p, user) {
+    const t = Torneos.requerir(p.id);
+    const items = (Array.isArray(p.premios) ? p.premios : []).filter((x) => x && x.productoId);
+    if (!items.length) throw new AppError('Elige al menos un premio.');
+    const pedido = {};
+    const filas = items.map((x) => {
+      const prod = Productos.requerir(x.productoId);
+      const nombre = Productos.nombreCompleto(prod);
+      const cantidad = Util.entero(x.cantidad, 'La cantidad de ' + nombre, { requerido: true, min: 1 });
+      const precio = x.precio === '' || x.precio == null ? Productos.precio(prod) : Util.entero(x.precio, 'El precio de ' + nombre, { min: 0 });
+      pedido[prod.id] = (pedido[prod.id] || 0) + cantidad;
+      return { prod: prod, nombre: nombre, cantidad: cantidad, precio: precio };
+    });
+    const disp = {};
+    Ventas.lotesDisponibles().forEach((l) => { disp[l.productoId] = (disp[l.productoId] || 0) + Math.max(0, l.disponible); });
+    filas.forEach((f) => {
+      if (pedido[f.prod.id] > (disp[f.prod.id] || 0)) throw new AppError('Stock insuficiente de ' + f.nombre + ': quedan ' + (disp[f.prod.id] || 0) + '.');
+    });
+    const ids = [];
+    filas.forEach((f) => {
+      const r = Salidas.registrar({ productoId: f.prod.id, cantidad: f.cantidad, motivo: PREMIO_TORNEO, fecha: t.fecha, notas: t.nombre, torneoId: t.id, precio: f.precio }, user);
+      ids.push.apply(ids, r.ids);
+    });
+    return { ids: ids, unidades: filas.reduce((s, f) => s + f.cantidad, 0) };
+  },
+
   /** Premio del torneo: cambiar el precio al que el torneo lo "compra" o quitarlo (la unidad vuelve al stock). */
   _premio(id) {
     const x = Db.get('Salidas', String(id || ''));

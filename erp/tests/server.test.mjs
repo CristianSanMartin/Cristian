@@ -1688,3 +1688,15 @@ test("torneos: cuadrar un jugador con otro cliente, sin costo y eliminar un torn
   assert.equal(d.torneos.length, 0);
   assert.equal(d.cajas[0].tickets.filter(x => x.estado === "abierto").length, 0);
 });
+
+test("torneos: varios premios a la vez, todo o nada", () => {
+  const s = createServer();
+  const { prods } = conInventario(s);
+  const t = s.ok("crearTorneo", { nombre: "Chill", fecha: "2026-10-26", formato: "Torneo The Chill", inscripcion: 5000, jugadores: [{ popId: "1", nombre: "A B", lugar: 1 }] }).result;
+  assert.match(errorDe(s.call("premiosTorneo", { id: t.id, premios: [{ productoId: prods.miniTin.id, cantidad: 2 }, { productoId: prods.miniTin.id, cantidad: 9 }] })), /Stock insuficiente/);
+  assert.equal(s.ok("bootstrap").data.torneos[0].premios.length, 0, "si uno falla no sale ninguno");
+  const r = s.ok("premiosTorneo", { id: t.id, premios: [{ productoId: prods.miniTin.id, cantidad: 2 }, { productoId: prods.binderEng.id, cantidad: 1, precio: 30000 }] }).result;
+  assert.equal(r.unidades, 3);
+  const pr = s.ok("bootstrap").data.torneos[0].premios;
+  assert.deepEqual(pr.map(x => [x.cantidad, x.precio]).sort(), [[1, 30000], [2, 18000]]);
+});

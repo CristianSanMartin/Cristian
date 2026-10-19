@@ -34,6 +34,8 @@
   };
   /** Comisión TUU estimada de la caja: por cada pago con la máquina (0,77% + $65 + IVA). */
   const comisionEstimada = (c) => vivos(c).reduce((s, t) => s + t.pagos.reduce((a, p) => a + (TUU.indexOf(p.medio) !== -1 ? GS.comisionPago(data().catalogos.comisiones[p.medio], p.monto) : 0), 0), 0);
+  /** Ticket con inscripciones de torneo que aún no se cobran (pago pendiente): se resalta en la lista. */
+  const porCobrarTorneo = (t) => t.estado === 'abierto' && t.lineas.some((l) => l.tj) && t.pagos.some((p) => p.medio === 'pendiente');
   const lineaTexto = (l) => (l.productoId ? l.cantidad + ' × ' + l.producto : l.categoria ? (data().catalogos.egresosCaja[l.categoria] ? data().catalogos.egresosCaja[l.categoria].label : l.categoria) + (l.descripcion ? ' · ' + l.descripcion : '') : '');
   const pagosTexto = (t) => (t.tipo === 'egreso' ? (data().catalogos.cuentas[t.cuenta] || 'Caja') : t.pagos.map((p) => data().catalogos.mediosCaja[p.medio] + ' ' + fmt.money(p.monto) + (p.cuotas > 1 ? ' en ' + p.cuotas + ' cuotas' : '')).join(' + '));
 
@@ -88,7 +90,7 @@
           (sel.size >= 2 ? ' <button class="btn small" data-action="cobrarJuntos" data-id="' + esc(c.id) + '">Cobrar juntos</button>' : ' · marca otro para cobrarlos juntos') +
           ' <button class="btn small ghost" data-action="limpiarSelTickets">Quitar marcas</button></div>' : '') +
         '<div class="table-wrap"><table class="data-table"><thead><tr><th>Ticket</th><th>Hora</th><th>Cliente</th><th>Detalle</th><th>Pago</th><th class="right">Total</th><th>Registró</th><th></th></tr></thead><tbody>' +
-        (c.tickets.length ? c.tickets.slice().reverse().map((t) => '<tr class="' + (t.estado === 'anulado' ? 'row-muted' : '') + '">' +
+        (c.tickets.length ? c.tickets.slice().reverse().map((t) => '<tr class="' + (t.estado === 'anulado' ? 'row-muted' : porCobrarTorneo(t) ? 'fila-por-cobrar' : '') + '"' + (porCobrarTorneo(t) ? ' title="Inscripción de torneo por cobrar: edita el ticket y elige el medio de pago"' : '') + '>' +
           '<td class="cell-strong nowrap">' + (abierta && op && t.estado === 'abierto' && t.tipo === 'venta' ? '<input type="checkbox" class="row-check" data-sel-ticket="' + esc(t.id) + '"' + (sel.has(t.id) ? ' checked' : '') + ' title="Marcar para cobrar junto con otros" aria-label="Marcar ticket"> ' : '') + esc(t.id.slice(-2)) + (t.tipo === 'egreso' ? ' <span class="badge st-pedido">Salida</span>' : '') + (t.estado === 'anulado' ? ' <span class="badge">Anulado</span>' : '') + '</td>' +
           '<td class="cell-dim nowrap">' + esc(String(t.creadoEn || '').slice(11, 16)) + '</td>' +
           '<td>' + esc(t.cliente || (t.tipo === 'egreso' ? '—' : 'Cliente general')) + (t.canal && t.canal !== 'Tienda' ? '<div class="cell-dim">' + esc(t.canal + (t.evento ? ' · ' + t.evento : '')) + '</div>' : '') + '</td>' +
