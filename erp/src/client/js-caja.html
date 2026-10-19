@@ -184,7 +184,7 @@
       fields: () => '<div class="form-grid">' +
         '<div class="form-field"><label>Cliente</label><input name="cliente" list="tk-clientes" autocomplete="off" value="' + esc(t ? t.cliente : '') + '" placeholder="Cliente general"><datalist id="tk-clientes">' + d.clientes.map((x) => '<option value="' + esc(x.nombre) + '">').join('') + '</datalist></div>' +
         '<div class="form-field"><label>Canal</label><select name="canal">' + GS.options(d.catalogos.canales, t ? t.canal : 'Tienda') + '</select></div>' +
-        '<div class="form-field"><label>Evento</label><input name="evento" value="' + esc(t ? t.evento : '') + '"></div>' +
+        '<div class="form-field" data-evento' + ((t ? t.canal : 'Tienda') === 'Evento' ? '' : ' hidden') + '><label>Evento</label><input name="evento" value="' + esc(t ? t.evento : '') + '"></div>' +
         '<div class="form-field full"><label>Productos y líneas</label><div class="table-wrap"><table class="data-table" style="min-width:0"><thead><tr><th>Producto / concepto</th><th>Cant.</th><th>Precio</th><th class="right">Subtotal</th><th></th></tr></thead>' +
         '<tbody data-tk-lineas>' + (t ? t.lineas.map((l) => (l.productoId ? filaProd(l) : filaMonto(l))).join('') : '') + '</tbody></table></div>' +
         '<div class="btn-row" style="margin-top:8px;"><button type="button" class="btn small secondary" data-tk-add-prod>' + GS.icon('plus', 2.4) + 'Producto sellado</button>' +

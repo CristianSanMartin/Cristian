@@ -73,7 +73,7 @@
       '<div class="form-field"><label for="nv-fecha">Fecha *</label><input id="nv-fecha" type="date" name="fecha" value="' + esc(borrador.fecha) + '"></div>' +
       '<div class="form-field"><label for="nv-cliente">Cliente</label><input id="nv-cliente" name="cliente" list="nv-clientes" autocomplete="off" value="' + esc(borrador.cliente) + '" placeholder="Cliente general"><datalist id="nv-clientes">' + clientes + '</datalist></div>' +
       '<div class="form-field"><label for="nv-canal">Canal</label><select id="nv-canal" name="canal">' + GS.options(data().catalogos.canales, borrador.canal) + '</select></div>' +
-      '<div class="form-field"><label for="nv-evento">Evento</label><input id="nv-evento" name="evento" value="' + esc(borrador.evento) + '" placeholder="Ej: Torneo martes"></div>' +
+      '<div class="form-field" data-evento' + (borrador.canal === 'Evento' ? '' : ' hidden') + '><label for="nv-evento">Evento</label><input id="nv-evento" name="evento" value="' + esc(borrador.evento) + '" placeholder="Ej: Torneo martes"></div>' +
       '<div class="form-field"><label for="nv-medio">Medio de pago</label><select id="nv-medio" name="medioPago">' + GS.options(Object.keys(medios).map((k) => ({ value: k, label: medios[k] })), borrador.medioPago) + '</select></div>' +
       '<div class="form-field"><label for="nv-boleta">N° boleta</label><input id="nv-boleta" name="boleta" value="' + esc(borrador.boleta) + '"></div>' +
       '<div class="form-field"><label class="check" style="margin-top:22px;"><input type="checkbox" name="pagada"' + (borrador.pagada ? ' checked' : '') + '> Pagada completa</label></div>' +
@@ -520,7 +520,7 @@
         '<div class="form-field"><label>Cliente</label><input name="cliente" list="ev-clientes" autocomplete="off" value="' + esc(v.clienteId ? v.cliente : '') + '" placeholder="Cliente general"><datalist id="ev-clientes">' + clientes + '</datalist></div>' +
         '<div class="form-field"><label>N° boleta</label><input name="boleta" value="' + esc(v.boleta) + '"></div>' +
         '<div class="form-field"><label>Canal</label><select name="canal">' + GS.options(d.catalogos.canales, v.canal) + '</select></div>' +
-        '<div class="form-field"><label>Evento</label><input name="evento" value="' + esc(v.evento) + '"></div>' +
+        '<div class="form-field" data-evento' + (v.canal === 'Evento' ? '' : ' hidden') + '><label>Evento</label><input name="evento" value="' + esc(v.evento) + '"></div>' +
         '<div class="form-field"><label>Medio de pago</label><select name="medioPago">' + GS.options(Object.keys(d.catalogos.mediosPago).map((k) => ({ value: k, label: d.catalogos.mediosPago[k] })), v.medioPago) + '</select></div>' +
         '<div class="form-field"><label>Comisión</label><input type="number" name="comision" min="0" step="1" value="' + esc(v.comision) + '"></div>' +
         lineas +

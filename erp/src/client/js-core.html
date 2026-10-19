@@ -398,6 +398,17 @@
     openModals.forEach((m) => { if (m.opts.live) m.render(); });
   };
 
+  /* El campo "Evento" solo aparece cuando el canal es Evento (si se oculta, se vacía). */
+  document.addEventListener('change', (e) => {
+    if (e.target.name !== 'canal' || !e.target.closest) return;
+    const f = e.target.closest('form');
+    const w = f && f.querySelector('[data-evento]');
+    if (!w) return;
+    w.hidden = e.target.value !== 'Evento';
+    const inp = w.querySelector('input');
+    if (w.hidden && inp && inp.value) { inp.value = ''; inp.dispatchEvent(new Event('input', { bubbles: true })); }
+  });
+
   /* Clicks: navegación y botones con data-action (delegados en todo el documento). */
   document.addEventListener('click', (e) => {
     const nav = e.target.closest('[data-nav]');

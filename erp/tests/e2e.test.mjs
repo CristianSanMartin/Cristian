@@ -749,6 +749,11 @@ test("torneos: subir el .tdf, cuadrar clientes, cobrar juntos en la caja, premio
     await page.locator('#modal-root .modal-overlay [data-tk-lineas] tr[data-tj]').nth(1).waitFor();
     const tk = modal(page);
     assert.equal(await tk.locator('[name="tkPagoMonto"]').inputValue(), "16000");
+    // "Evento" solo aparece con el canal Evento
+    assert.equal(await tk.locator("[data-evento]").isHidden(), true);
+    await tk.locator('select[name="canal"]').selectOption("Evento");
+    assert.equal(await tk.locator("[data-evento]").isVisible(), true);
+    await tk.locator('select[name="canal"]').selectOption("Tienda");
     await tk.locator('[name="tkMedio"]').selectOption("efectivo");
     await tk.locator(".modal-head h3").click();
     await tk.locator('button[type="submit"]').click();
