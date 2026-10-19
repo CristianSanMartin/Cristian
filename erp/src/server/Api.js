@@ -126,19 +126,31 @@ function api(accion, datos) {
     Auth.require(user, ruta.rol);
     const payload = datos && typeof datos === 'object' ? datos : {};
 
-    if (!ruta.write) return { ok: true, data: ruta.fn(payload, user) };
+    const t0 = Date.now();
+    if (!ruta.write) {
+      const data = ruta.fn(payload, user);
+      Api.medir(accion, t0, { total: Date.now() - t0 });
+      return { ok: true, data: data };
+    }
 
     const lock = LockService.getScriptLock();
     if (!lock.tryLock(20000)) throw new AppError('El sistema está ocupado con otra operación. Intenta de nuevo en unos segundos.', 'OCUPADO');
+    const tLock = Date.now();
     let result;
+    let tFn, tFlush;
     try {
       result = ruta.fn(payload, user);
+      tFn = Date.now();
       SpreadsheetApp.flush();
+      tFlush = Date.now();
     } finally {
       lock.releaseLock();
     }
-    Db.reset();
-    return { ok: true, result: result == null ? null : JSON.parse(JSON.stringify(result)), data: Snapshot.build(user) };
+    // La caché ya quedó al día con lo escrito: la foto de datos reutiliza lo leído (no vuelve a leer todo).
+    const data = Snapshot.build(user);
+    const tFin = Date.now();
+    Api.medir(accion, t0, { espera: tLock - t0, accion: tFn - tLock, flush: tFlush - tFn, foto: tFin - tFlush, total: tFin - t0 });
+    return { ok: true, result: result == null ? null : JSON.parse(JSON.stringify(result)), data: data };
   } catch (err) {
     if (!(err instanceof AppError)) console.error(accion, err && err.stack ? err.stack : err);
     return {
@@ -148,6 +160,21 @@ function api(accion, datos) {
     };
   }
 }
+
+const Api = {
+  /**
+   * Tiempos de cada llamada en los registros de ejecución de Apps Script (Ejecuciones → registros):
+   * espera del candado, la acción, el guardado en la planilla (flush), la foto de datos que vuelve a la
+   * pantalla, y qué hojas se leyeron (veces, filas y milisegundos). Las llamadas de más de 3 s se marcan.
+   */
+  medir(accion, t0, ms) {
+    const st = Db.stats;
+    const hojas = Object.keys(st.tablas).sort((a, b) => st.tablas[b].ms - st.tablas[a].ms).slice(0, 6)
+      .map((t) => t + ' ' + st.tablas[t].lecturas + '×' + st.tablas[t].filas + ' filas ' + st.tablas[t].ms + 'ms').join(' · ');
+    const linea = '[tiempos] ' + accion + ' ' + JSON.stringify(ms) + ' lecturas=' + st.lecturas + ' (' + st.filas + ' filas, ' + st.msLectura + 'ms) escrituras=' + st.escrituras + ' | ' + hojas;
+    if (ms.total > 3000) console.warn(linea); else console.log(linea);
+  },
+};
 
 /**
  * Prepara la planilla: crea o actualiza las hojas, registra a quien lo ejecuta

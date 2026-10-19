@@ -397,3 +397,12 @@ Menú **Torneos**. Al terminar un torneo, TOM (Tournament Operations Manager) ex
   punto de equilibrio (jugadores necesarios para cubrir premios y juez).
 - Requiere "Instalar / actualizar hojas" (hojas nuevas `Torneos` y `Torneo_Jugadores`, columnas nuevas en
   `Salidas`).
+
+## Rendimiento al guardar
+
+- Cada escritura actualiza la caché de la llamada en el momento (no vuelve a leer la hoja), y agregar
+  filas a una hoja que no se ha leído —como `Auditoria`, que crece siempre— solo lee su encabezado.
+  Antes cada registro de auditoría leía la hoja entera, por eso guardar se hacía más lento con el tiempo.
+- Cada llamada deja una línea `[tiempos]` en Apps Script → **Ejecuciones** → registros: espera del candado,
+  la acción, el guardado (flush), la foto de datos que vuelve a la pantalla y qué hojas se leyeron
+  (veces, filas, ms). Las que pasan de 3 segundos salen como advertencia.
