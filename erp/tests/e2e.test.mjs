@@ -721,15 +721,21 @@ test("torneos: subir el .tdf, cuadrar clientes, cobrar juntos en la caja, premio
     // Premios: varios a la vez, elegidos como en la caja (sin lugar), a PVP editable
     await page.click('.detalle-row [data-action="agregarPremio"]');
     const pm = modal(page);
-    await pm.locator("[data-pr-pick]").nth(0).click();
-    await pm.locator("[data-pr-pick]").nth(0).click();
-    await pm.locator("[data-pr-pick]").nth(1).click();
-    assert.equal(await pm.locator("[data-pr]").count(), 2);
+    const prod = pm.locator('[data-pr-pick]:not([data-pr-pick="__sobres"])');
+    await prod.nth(0).click();
+    await prod.nth(0).click();
+    await prod.nth(1).click();
+    // Sobres sueltos: sin stock, a $6.000
+    await pm.locator('[data-pr-pick="__sobres"]').click();
+    await pm.locator('[data-pr-pick="__sobres"]').click();
+    assert.equal(await pm.locator("[data-pr]").count(), 3);
     assert.equal(await pm.locator('[data-pr] [name="prCant"]').first().inputValue(), "2");
+    assert.equal(await pm.locator('[data-pr-sobres] [name="prPrecio"]').inputValue(), "6000");
     await pm.locator('[data-pr] [name="prPrecio"]').nth(1).fill("10000");
     await pm.locator(".modal-head h3").click();
     await pm.locator('button[type="submit"]').click();
-    await toast(page, /3 premios agregados/);
+    await toast(page, /5 premios agregados/);
+    assert.match(await page.locator(".detalle-row").textContent(), /Sobres sueltos.*2\$12\.000/s);
     await page.locator(".detalle-row [data-juez]").fill("10000");
     await page.click('.detalle-row [data-action="guardarJuez"]');
     await toast(page, /Pago al juez registrado/);

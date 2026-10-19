@@ -388,7 +388,7 @@ Menú **Torneos**. Al terminar un torneo, TOM (Tournament Operations Manager) ex
   mismo ticket. **Cobrar juntos:** se marcan varios tickets en la caja (el primero marcado es quien paga)
   y quedan en uno solo, con todas sus líneas. Lo que no se pague queda como deuda del cliente al cerrar
   la caja. "Sin costo" quita la inscripción de un jugador (invitado, juez que juega).
-- **Premios:** salen del inventario como salida ligada al torneo. El torneo los "compra" a PVP (se puede
+- **Premios:** salen del inventario como salida ligada al torneo (los **sobres sueltos** de booster boxes abiertas se agregan sin control de stock, a $6.000 c/u por defecto). El torneo los "compra" a PVP (se puede
   cambiar el precio): la factura del producto los cuenta como vendidos a ese precio y el torneo los carga.
 - **Juez:** pago variable en efectivo; queda como egreso de la caja del torneo (Finanzas → "Torneos
   (juez y gastos)").

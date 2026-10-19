@@ -15,7 +15,7 @@
 
 const APP = {
   nombre: 'GS Prime ERP',
-  version: '2.19.4',
+  version: '2.19.5',
   tz: 'America/Santiago',
   iva: 0.19,
 };
@@ -216,6 +216,8 @@ const SCHEMA = {
     key: 'id',
     cols: Object.assign({
       id: 's', fecha: 'd', nombre: 's', formato: 's', inscripcion: 'n', cajaId: 's', ciudad: 's', rondas: 'n', juez: 'n', juezTicket: 's', notas: 's',
+      // Sobres sueltos entregados como premio (de booster boxes abiertas; sin control de stock): cantidad y total a PVP.
+      sobres: 'n', sobresMonto: 'n',
     }, AUDIT_COLS),
   },
   /** Jugador de un torneo (TJ-000001): Player ID de Play! Pokémon, cliente, lugar final y si juega sin costo. */
@@ -258,6 +260,8 @@ const EGRESOS_CAJA = {
 };
 /** Formatos de torneo sugeridos (el valor de inscripción por defecto sale del último torneo de ese formato). */
 const FORMATOS_TORNEO = ['Torneo The Chill'];
+/** PVP de un sobre suelto (premio de torneo sin control de stock). */
+const PRECIO_SOBRE_SUELTO = 6000;
 
 /** Ventas por monto (sin unidades del inventario). Torneo = ingreso por servicio. */
 const CATEGORIAS_VENTA = ['Singles', 'Torneo', 'Sobres sueltos', 'Bazar', 'Accesorios', 'Ajuste', 'Otro'];

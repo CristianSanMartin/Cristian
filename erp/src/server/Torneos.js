@@ -208,8 +208,15 @@ const Torneos = {
    */
   agregarPremios(p, user) {
     const t = Torneos.requerir(p.id);
-    const items = (Array.isArray(p.premios) ? p.premios : []).filter((x) => x && x.productoId);
-    if (!items.length) throw new AppError('Elige al menos un premio.');
+    const todos = Array.isArray(p.premios) ? p.premios : [];
+    const items = todos.filter((x) => x && x.productoId);
+    // Sobres sueltos: sin stock, se suman al torneo a su precio (PVP $6.000 por defecto).
+    const sobres = todos.filter((x) => x && x.sobres).map((x) => {
+      const n = Util.entero(x.cantidad, 'La cantidad de sobres', { requerido: true, min: 1 });
+      const precio = x.precio === '' || x.precio == null ? PRECIO_SOBRE_SUELTO : Util.entero(x.precio, 'El precio del sobre', { min: 0 });
+      return { n: n, monto: n * precio };
+    });
+    if (!items.length && !sobres.length) throw new AppError('Elige al menos un premio.');
     const pedido = {};
     const filas = items.map((x) => {
       const prod = Productos.requerir(x.productoId);
@@ -225,11 +232,27 @@ const Torneos = {
       if (pedido[f.prod.id] > (disp[f.prod.id] || 0)) throw new AppError('Stock insuficiente de ' + f.nombre + ': quedan ' + (disp[f.prod.id] || 0) + '.');
     });
     const ids = [];
+    if (sobres.length) {
+      const n = sobres.reduce((a, x) => a + x.n, 0);
+      const monto = sobres.reduce((a, x) => a + x.monto, 0);
+      Db.update('Torneos', t.id, Object.assign({ sobres: (t.sobres || 0) + n, sobresMonto: (t.sobresMonto || 0) + monto }, Util.sello(user)));
+      Audit.log(user, 'sobres premio', 'Torneo', t.id, { sobres: n, monto: monto });
+    }
     filas.forEach((f) => {
       const r = Salidas.registrar({ productoId: f.prod.id, cantidad: f.cantidad, motivo: PREMIO_TORNEO, fecha: t.fecha, notas: t.nombre, torneoId: t.id, precio: f.precio }, user);
       ids.push.apply(ids, r.ids);
     });
-    return { ids: ids, unidades: filas.reduce((s, f) => s + f.cantidad, 0) };
+    return { ids: ids, unidades: filas.reduce((a, f) => a + f.cantidad, 0) + sobres.reduce((a, x) => a + x.n, 0) };
+  },
+
+  /** Sobres sueltos de premio: fija la cantidad y el precio por sobre (0 sobres = quitarlos). */
+  guardarSobres(p, user) {
+    const t = Torneos.requerir(p.id);
+    const n = Util.entero(p.cantidad, 'La cantidad de sobres', { min: 0 });
+    const precio = p.precio === '' || p.precio == null ? PRECIO_SOBRE_SUELTO : Util.entero(p.precio, 'El precio del sobre', { min: 0 });
+    Db.update('Torneos', t.id, Object.assign({ sobres: n, sobresMonto: n * precio }, Util.sello(user)));
+    Audit.log(user, 'sobres premio', 'Torneo', t.id, { antes: (t.sobres || 0) + ' por $' + (t.sobresMonto || 0), sobres: n, monto: n * precio });
+    return { id: t.id };
   },
 
   /** Premio del torneo: cambiar el precio al que el torneo lo "compra" o quitarlo (la unidad vuelve al stock). */
@@ -332,7 +355,7 @@ const Torneos = {
       const vivos = jugadores.filter((j) => j.estado !== 'anulada');
       const inscripciones = vivos.reduce((s, j) => s + j.monto, 0);
       const comisiones = vivos.reduce((s, j) => s + j.comision, 0);
-      const premiosBruto = pr.reduce((s, x) => s + x.precio * x.cantidad, 0);
+      const premiosBruto = pr.reduce((s, x) => s + x.precio * x.cantidad, 0) + (t.sobresMonto || 0);
       const premiosCosto = pr.reduce((s, x) => s + x.costo * x.cantidad, 0);
       const insNeto = Economia.sinIva(inscripciones);
       const premiosNeto = Economia.sinIva(premiosBruto);

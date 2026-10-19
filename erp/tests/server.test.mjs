@@ -1716,3 +1716,16 @@ test("caja: líneas por monto con cantidad (bazar: 3 bebidas) pasan a la venta c
   assert.deepEqual(v.lineas.map(l => [l.descripcion, l.cantidad, l.precio]), [["Bebida", 3, 1500], ["Snack", 1, 1000]]);
   assert.equal(v.total, 5500);
 });
+
+test("torneos: sobres sueltos de premio (sin stock, $6.000 c/u) suman al costo del torneo", () => {
+  const s = createServer();
+  const t = s.ok("crearTorneo", { nombre: "Chill", fecha: "2026-10-27", formato: "Torneo The Chill", inscripcion: 5000, jugadores: [{ popId: "1", nombre: "A B", lugar: 1 }] }).result;
+  s.ok("premiosTorneo", { id: t.id, premios: [{ sobres: true, cantidad: 3 }] });
+  let tr = s.ok("bootstrap").data.torneos[0];
+  assert.deepEqual([tr.sobres, tr.sobresMonto, tr.resultado.premiosBruto], [3, 18000, 18000]);
+  s.ok("sobresTorneo", { id: t.id, cantidad: 2, precio: 5000 });
+  tr = s.ok("bootstrap").data.torneos[0];
+  assert.deepEqual([tr.sobres, tr.sobresMonto], [2, 10000]);
+  s.ok("sobresTorneo", { id: t.id, cantidad: 0 });
+  assert.equal(s.ok("bootstrap").data.torneos[0].resultado.premiosBruto, 0);
+});

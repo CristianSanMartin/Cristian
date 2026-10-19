@@ -182,10 +182,12 @@
         (op && t.juezEstado !== 'pasado' ? '<input class="qty-input price-input" style="width:110px" type="number" min="0" step="1" data-juez="' + esc(t.id) + '" value="' + esc(t.juez || '') + '" placeholder="Efectivo">' +
           '<button class="btn small secondary" data-action="guardarJuez" data-id="' + esc(t.id) + '">Guardar</button>' : '<strong>' + fmt.money(t.juez) + '</strong>') +
         '<span class="cell-dim">' + (t.juezEstado === 'pasado' ? 'ya en Finanzas' : t.juez ? 'egreso en la caja del ' + fmt.date(t.fecha) : '') + '</span></div>' +
-        (t.premios.length ? '<table class="mini-table"><thead><tr><th>Premio</th><th class="right">Cant.</th><th class="right">Precio torneo</th><th></th></tr></thead><tbody>' +
+        (t.premios.length || t.sobres ? '<table class="mini-table"><thead><tr><th>Premio</th><th class="right">Cant.</th><th class="right">Precio torneo</th><th></th></tr></thead><tbody>' +
           t.premios.map((x) => '<tr><td style="min-width:180px;"><div class="cell-strong">' + esc(x.producto) + '</div><div class="cell-dim">' + esc(x.notas || '') + '</div></td><td class="cell-num right">' + x.cantidad + '</td>' +
             '<td class="cell-num right">' + fmt.money(x.precio * x.cantidad) + '<div class="cell-dim">costo ' + fmt.money(x.costo * x.cantidad) + ' neto</div></td>' +
             '<td>' + (op ? '<div class="row-actions">' + GS.iconBtn('precioPremio', x.id, 'edit', 'Cambiar el precio al que el torneo compra el premio') + GS.iconBtn('quitarPremio', x.id, 'trash', 'Quitar: la unidad vuelve al inventario', 'danger') + '</div>' : '') + '</td></tr>').join('') +
+          (t.sobres ? '<tr><td style="min-width:180px;"><div class="cell-strong">Sobres sueltos</div><div class="cell-dim">sin control de stock · ' + fmt.money(t.sobres ? t.sobresMonto / t.sobres : 0) + ' c/u</div></td><td class="cell-num right">' + t.sobres + '</td>' +
+            '<td class="cell-num right">' + fmt.money(t.sobresMonto) + '</td><td>' + (op ? '<div class="row-actions">' + GS.iconBtn('editarSobres', t.id, 'edit', 'Cambiar cantidad o precio de los sobres') + GS.iconBtn('quitarSobres', t.id, 'trash', 'Quitar los sobres', 'danger') + '</div>' : '') + '</td></tr>' : '') +
           '</tbody></table>' : '<p class="muted">Sin premios registrados.</p>') +
         (op ? '<button class="btn small secondary" data-action="agregarPremio" data-id="' + esc(t.id) + '" style="margin-top:8px;">' + GS.icon('plus', 2.4) + 'Premios del inventario</button>' : '') +
       '</div></div></div>' +
@@ -263,6 +265,7 @@
     const prods = d.productos.filter((p) => stock[p.id]).sort((a, b) => a.nombreCompleto.localeCompare(b.nombreCompleto));
     const porId = {};
     prods.forEach((p) => { porId[p.id] = p; });
+    const precioSobre = d.catalogos.precioSobre || 6000;
     const sigla = (x) => String(x || '').split(/\s+/).filter((w) => /^[A-Za-zÁÉÍÓÚÑ]/.test(w)).map((w) => w[0]).join('');
     const prodCelda = (p) => '<div class="prod-cell">' + GS.thumb(p.imagen) + '<div><span class="cell-strong">' + esc(p.nombre) + '</span> ' + GS.langPill(p.idioma) + '<div class="cell-dim">' + esc(p.edicion || '') + '</div></div></div>';
     const fila = (pid) => '<tr data-pr="' + esc(pid) + '"><td>' + prodCelda(porId[pid]) + '</td>' +
@@ -296,14 +299,27 @@
         const pintar = () => {
           const q = GS.norm(buscar.value.trim());
           const vis = prods.filter((p) => !q || GS.norm(p.nombreCompleto + ' ' + p.tipo + ' ' + p.edicion + ' ' + p.idioma + ' ' + sigla(p.tipo) + ' ' + sigla(p.nombre)).includes(q));
-          lista.innerHTML = vis.length ? vis.map((p) => {
+          const sobreFila = !q || GS.norm('sobres sueltos sobre').includes(q)
+            ? '<tr data-pr-pick="__sobres" style="cursor:pointer;"><td><div class="prod-cell">' + GS.thumb('') + '<div><span class="cell-strong">Sobres sueltos</span><div class="cell-dim">de booster boxes abiertas · sin control de stock</div></div></div></td>' +
+              '<td class="cell-dim">Sobre</td><td class="cell-num right">—</td><td class="cell-num right">' + fmt.money(precioSobre) + '</td><td><span class="btn small secondary">' + GS.icon('plus', 2.4) + '</span></td></tr>' : '';
+          lista.innerHTML = sobreFila + (vis.length ? vis.map((p) => {
             const queda = stock[p.id] - enLista(p.id);
             return '<tr data-pr-pick="' + esc(p.id) + '" style="cursor:' + (queda > 0 ? 'pointer' : 'not-allowed') + ';' + (queda > 0 ? '' : 'opacity:.5;') + '">' +
               '<td>' + prodCelda(p) + '</td><td class="cell-dim">' + esc(p.tipo || '') + '</td><td class="cell-num right"><strong>' + queda + '</strong></td>' +
               '<td class="cell-num right">' + fmt.money(p.precio) + '</td><td>' + (queda > 0 ? '<span class="btn small secondary">' + GS.icon('plus', 2.4) + '</span>' : '') + '</td></tr>';
-          }).join('') : '<tr><td colspan="5" class="muted center">' + (prods.length ? 'Ningún producto coincide.' : 'No hay productos con stock disponible.') + '</td></tr>';
+          }).join('') : sobreFila ? '' : '<tr><td colspan="5" class="muted center">' + (prods.length ? 'Ningún producto coincide.' : 'No hay productos con stock disponible.') + '</td></tr>');
         };
         const agregar = (pid) => {
+          if (pid === '__sobres') {
+            const tr = cuerpo.querySelector('[data-pr-sobres]');
+            if (tr) { const c = tr.querySelector('[name="prCant"]'); c.value = (Number(c.value) || 0) + 1; }
+            else cuerpo.insertAdjacentHTML('beforeend', '<tr data-pr data-pr-sobres><td><span class="cell-strong">Sobres sueltos</span><div class="cell-dim">sin control de stock</div></td>' +
+              '<td><input class="qty-input" style="width:64px" type="number" min="1" step="1" name="prCant" value="1"></td>' +
+              '<td><input class="qty-input price-input" style="width:100px" type="number" min="0" step="1" name="prPrecio" value="' + precioSobre + '"></td>' +
+              '<td class="cell-num right" data-pr-sub>—</td><td><button type="button" class="btn small ghost" data-pr-quitar title="Quitar">✕</button></td></tr>');
+            upd();
+            return;
+          }
           if (enLista(pid) >= stock[pid]) return;
           const tr = cuerpo.querySelector('[data-pr="' + CSS.escape(pid) + '"]');
           if (tr) { const c = tr.querySelector('[name="prCant"]'); c.value = (Number(c.value) || 0) + 1; } else cuerpo.insertAdjacentHTML('beforeend', fila(pid));
@@ -318,7 +334,9 @@
         buscar.focus();
       },
       onSubmit: (v, form) => {
-        const premios = Array.from(form.querySelectorAll('[data-pr]')).map((tr) => ({ productoId: tr.dataset.pr, cantidad: tr.querySelector('[name="prCant"]').value, precio: tr.querySelector('[name="prPrecio"]').value }));
+        const premios = Array.from(form.querySelectorAll('[data-pr]')).map((tr) => (tr.hasAttribute('data-pr-sobres')
+          ? { sobres: true, cantidad: tr.querySelector('[name="prCant"]').value, precio: tr.querySelector('[name="prPrecio"]').value }
+          : { productoId: tr.dataset.pr, cantidad: tr.querySelector('[name="prCant"]').value, precio: tr.querySelector('[name="prPrecio"]').value }));
         if (!premios.length) throw new Error('Elige al menos un premio.');
         return GS.mutate('premiosTorneo', { id: id, premios: premios }, (r) => r.unidades + (r.unidades === 1 ? ' premio agregado' : ' premios agregados') + ' al torneo');
       },
@@ -335,6 +353,20 @@
       onSubmit: (v) => GS.mutate('precioPremio', { id: id, precio: v.precio }, 'Precio del premio actualizado'),
     });
   };
+  GS.actions.editarSobres = (id) => {
+    const t = torneoDe(id);
+    GS.formModal({
+      title: 'Sobres sueltos de premio',
+      submitLabel: 'Guardar',
+      fields: () => '<div class="form-grid"><div class="form-field"><label>Cantidad *</label><input type="number" name="cantidad" min="0" step="1" value="' + esc(t.sobres) + '"></div>' +
+        '<div class="form-field"><label>Precio por sobre</label><input type="number" name="precio" min="0" step="1" value="' + esc(t.sobres ? t.sobresMonto / t.sobres : data().catalogos.precioSobre) + '"></div></div>',
+      onSubmit: (v) => GS.mutate('sobresTorneo', { id: id, cantidad: v.cantidad, precio: v.precio }, 'Sobres actualizados'),
+    });
+  };
+  GS.actions.quitarSobres = (id) => GS.confirm({
+    title: 'Quitar sobres sueltos', message: 'Los sobres dejan de contar como premio del torneo.', confirmLabel: 'Quitar', danger: true,
+    onConfirm: () => GS.mutate('sobresTorneo', { id: id, cantidad: 0 }, 'Sobres quitados'),
+  });
   GS.actions.quitarPremio = (id) => GS.confirm({
     title: 'Quitar premio', message: 'La unidad vuelve al inventario y deja de contar en el torneo.', confirmLabel: 'Quitar', danger: true,
     onConfirm: () => GS.mutate('quitarPremio', { id: id }, 'Premio quitado'),
