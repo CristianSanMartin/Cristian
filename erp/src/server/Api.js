@@ -66,6 +66,7 @@ function rutas_() {
     premioTorneo: { rol: 'operador', write: true, fn: Torneos.agregarPremio },
     premiosTorneo: { rol: 'operador', write: true, fn: Torneos.agregarPremios },
     sobresTorneo: { rol: 'operador', write: true, fn: Torneos.guardarSobres },
+    participacionTorneo: { rol: 'operador', write: true, fn: Torneos.guardarParticipacion },
     precioPremio: { rol: 'operador', write: true, fn: Torneos.precioPremio },
     quitarPremio: { rol: 'operador', write: true, fn: Torneos.quitarPremio },
     unirTickets: { rol: 'operador', write: true, fn: Cajas.unirTickets },
@@ -275,7 +276,7 @@ const Snapshot = {
       user: { email: user.email, nombre: user.nombre, rol: user.rol },
       catalogos: {
         idiomas: IDIOMAS, tipos: TIPOS_PRODUCTO, canales: CANALES, mediosPago: MEDIOS_PAGO, comisiones: COMISIONES_PAGO,
-        categoriasVenta: CATEGORIAS_VENTA, motivosSalida: MOTIVOS_SALIDA, mediosCaja: MEDIOS_CAJA, egresosCaja: EGRESOS_CAJA, categoriasMovimiento: CATEGORIAS_MOVIMIENTO, cuentas: CUENTAS, formatosTorneo: FORMATOS_TORNEO, tiposBazar: TIPOS_BAZAR, precioSobre: PRECIO_SOBRE_SUELTO,
+        categoriasVenta: CATEGORIAS_VENTA, motivosSalida: MOTIVOS_SALIDA, mediosCaja: MEDIOS_CAJA, egresosCaja: EGRESOS_CAJA, categoriasMovimiento: CATEGORIAS_MOVIMIENTO, cuentas: CUENTAS, formatosTorneo: FORMATOS_TORNEO, tiposBazar: TIPOS_BAZAR, precioSobre: PRECIO_SOBRE_SUELTO, precioParticipacion: PRECIO_SOBRE_PARTICIPACION,
       },
       proveedores: proveedores,
       productos: prods,

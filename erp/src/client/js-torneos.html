@@ -189,7 +189,10 @@
           (t.sobres ? '<tr><td style="min-width:180px;"><div class="cell-strong">Sobres sueltos</div><div class="cell-dim">sin control de stock · ' + fmt.money(t.sobres ? t.sobresMonto / t.sobres : 0) + ' c/u</div></td><td class="cell-num right">' + t.sobres + '</td>' +
             '<td class="cell-num right">' + fmt.money(t.sobresMonto) + '</td><td>' + (op ? '<div class="row-actions">' + GS.iconBtn('editarSobres', t.id, 'edit', 'Cambiar cantidad o precio de los sobres') + GS.iconBtn('quitarSobres', t.id, 'trash', 'Quitar los sobres', 'danger') + '</div>' : '') + '</td></tr>' : '') +
           '</tbody></table>' : '<p class="muted">Sin premios registrados.</p>') +
-        (op ? '<button class="btn small secondary" data-action="agregarPremio" data-id="' + esc(t.id) + '" style="margin-top:8px;">' + GS.icon('plus', 2.4) + 'Premios del inventario</button>' : '') +
+        (t.participacion ? '<div class="field-row" style="margin-top:8px;align-items:center;justify-content:space-between;"><span><span class="cell-strong">Sobres de participación</span> <span class="cell-dim">' + t.participacion + ' × ' + fmt.money(t.participacionMonto / t.participacion) + '</span></span>' +
+          '<span><strong>' + fmt.money(t.participacionMonto) + '</strong> ' + (op ? GS.iconBtn('participacionTorneo', t.id, 'edit', 'Cambiar cantidad o precio') + GS.iconBtn('quitarParticipacion', t.id, 'trash', 'Quitar', 'danger') : '') + '</span></div>' : '') +
+        (op ? '<div class="btn-row" style="margin-top:8px;"><button class="btn small secondary" data-action="agregarPremio" data-id="' + esc(t.id) + '">' + GS.icon('plus', 2.4) + 'Premios del inventario</button>' +
+          (t.participacion ? '' : '<button class="btn small secondary" data-action="participacionTorneo" data-id="' + esc(t.id) + '">' + GS.icon('plus', 2.4) + 'Sobres de participación</button>') + '</div>' : '') +
       '</div></div></div>' +
       // Jugadores
       '<div class="table-wrap" style="margin-top:14px;"><table class="data-table"><thead><tr><th class="right">Lugar</th><th>Jugador</th><th>Cliente</th><th>Inscripción</th><th class="right">Monto</th><th>Ticket / venta</th><th></th></tr></thead><tbody>' +
@@ -363,6 +366,23 @@
       onSubmit: (v) => GS.mutate('sobresTorneo', { id: id, cantidad: v.cantidad, precio: v.precio }, 'Sobres actualizados'),
     });
   };
+  // Sobres de participación: uno por jugador, al precio torneo ($2.000 por defecto).
+  GS.actions.participacionTorneo = (id) => {
+    const t = torneoDe(id);
+    const n = t.participacion || t.jugadores.length;
+    GS.formModal({
+      title: 'Sobres de participación',
+      submitLabel: 'Guardar',
+      fields: () => '<div class="form-grid"><div class="form-field"><label>Sobres *</label><input type="number" name="cantidad" min="0" step="1" value="' + esc(n) + '"></div>' +
+        '<div class="form-field"><label>Precio torneo por sobre</label><input type="number" name="precio" min="0" step="1" value="' + esc(t.participacion ? t.participacionMonto / t.participacion : data().catalogos.precioParticipacion) + '"></div></div>' +
+        '<p class="hint">Uno para cada jugador (' + t.jugadores.length + '). Se descuentan del margen del torneo a este precio. La compra de los sobres regístrala como gasto en la caja o en Finanzas.</p>',
+      onSubmit: (v) => GS.mutate('participacionTorneo', { id: id, cantidad: v.cantidad, precio: v.precio }, 'Sobres de participación guardados'),
+    });
+  };
+  GS.actions.quitarParticipacion = (id) => GS.confirm({
+    title: 'Quitar sobres de participación', message: 'Dejan de contar como premio del torneo.', confirmLabel: 'Quitar', danger: true,
+    onConfirm: () => GS.mutate('participacionTorneo', { id: id, cantidad: 0 }, 'Sobres de participación quitados'),
+  });
   GS.actions.quitarSobres = (id) => GS.confirm({
     title: 'Quitar sobres sueltos', message: 'Los sobres dejan de contar como premio del torneo.', confirmLabel: 'Quitar', danger: true,
     onConfirm: () => GS.mutate('sobresTorneo', { id: id, cantidad: 0 }, 'Sobres quitados'),

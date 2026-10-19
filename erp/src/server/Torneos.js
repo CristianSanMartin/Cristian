@@ -255,6 +255,19 @@ const Torneos = {
     return { id: t.id };
   },
 
+  /**
+   * Sobres de participación: uno para cada jugador, al precio torneo (por defecto $2.000). Se compran de
+   * manera informal (la compra va como gasto en la caja o Finanzas); aquí solo se cargan al torneo. 0 = quitar.
+   */
+  guardarParticipacion(p, user) {
+    const t = Torneos.requerir(p.id);
+    const n = Util.entero(p.cantidad, 'La cantidad de sobres de participación', { min: 0 });
+    const precio = p.precio === '' || p.precio == null ? PRECIO_SOBRE_PARTICIPACION : Util.entero(p.precio, 'El precio del sobre de participación', { min: 0 });
+    Db.update('Torneos', t.id, Object.assign({ participacion: n, participacionMonto: n * precio }, Util.sello(user)));
+    Audit.log(user, 'sobres participación', 'Torneo', t.id, { sobres: n, monto: n * precio });
+    return { id: t.id };
+  },
+
   /** Premio del torneo: cambiar el precio al que el torneo lo "compra" o quitarlo (la unidad vuelve al stock). */
   _premio(id) {
     const x = Db.get('Salidas', String(id || ''));
@@ -355,7 +368,7 @@ const Torneos = {
       const vivos = jugadores.filter((j) => j.estado !== 'anulada');
       const inscripciones = vivos.reduce((s, j) => s + j.monto, 0);
       const comisiones = vivos.reduce((s, j) => s + j.comision, 0);
-      const premiosBruto = pr.reduce((s, x) => s + x.precio * x.cantidad, 0) + (t.sobresMonto || 0);
+      const premiosBruto = pr.reduce((s, x) => s + x.precio * x.cantidad, 0) + (t.sobresMonto || 0) + (t.participacionMonto || 0);
       const premiosCosto = pr.reduce((s, x) => s + x.costo * x.cantidad, 0);
       const insNeto = Economia.sinIva(inscripciones);
       const premiosNeto = Economia.sinIva(premiosBruto);

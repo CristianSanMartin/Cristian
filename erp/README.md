@@ -390,6 +390,7 @@ Menú **Torneos**. Al terminar un torneo, TOM (Tournament Operations Manager) ex
   la caja. "Sin costo" quita la inscripción de un jugador (invitado, juez que juega).
 - **Premios:** salen del inventario como salida ligada al torneo (los **sobres sueltos** de booster boxes abiertas se agregan sin control de stock, a $6.000 c/u por defecto). El torneo los "compra" a PVP (se puede
   cambiar el precio): la factura del producto los cuenta como vendidos a ese precio y el torneo los carga.
+- **Sobres de participación:** uno por jugador, al precio torneo ($2.000 por defecto); la compra (informal) va como gasto en la caja o Finanzas.
 - **Juez:** pago variable en efectivo; queda como egreso de la caja del torneo (Finanzas → "Torneos
   (juez y gastos)").
 - **Resultado:** inscripciones − IVA − comisiones TUU − premios (sin IVA) − juez = margen, por jugador y

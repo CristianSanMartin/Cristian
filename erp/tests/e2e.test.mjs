@@ -736,6 +736,14 @@ test("torneos: subir el .tdf, cuadrar clientes, cobrar juntos en la caja, premio
     await pm.locator('button[type="submit"]').click();
     await toast(page, /5 premios agregados/);
     assert.match(await page.locator(".detalle-row").textContent(), /Sobres sueltos.*2\$12\.000/s);
+    // Sobres de participación: uno por jugador a $2.000
+    await page.click('.detalle-row [data-action="participacionTorneo"]');
+    assert.equal(await modal(page).locator('input[name="cantidad"]').inputValue(), "3");
+    assert.equal(await modal(page).locator('input[name="precio"]').inputValue(), "2000");
+    await modal(page).locator(".modal-head h3").click();
+    await modal(page).locator('button[type="submit"]').click();
+    await toast(page, /participación guardados/);
+    assert.match(await page.locator(".detalle-row").textContent(), /Sobres de participación\s*3 × \$2\.000\s*\$6\.000/);
     await page.locator(".detalle-row [data-juez]").fill("10000");
     await page.click('.detalle-row [data-action="guardarJuez"]');
     await toast(page, /Pago al juez registrado/);
