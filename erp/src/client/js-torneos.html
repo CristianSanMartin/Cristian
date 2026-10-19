@@ -1,0 +1,300 @@
+<script>
+/* =========================================================
+   Torneos: se crean desde el archivo .tdf de TOM. Cada jugador
+   queda como un ticket pendiente en la caja del día; premios
+   del inventario (a PVP), pago al juez y margen del torneo.
+========================================================= */
+(function () {
+  'use strict';
+  const { fmt, esc } = GS;
+  const data = () => GS.state.data;
+  const kpi = (l, v, sub) => '<div class="kpi-card"><div class="kpi-label">' + l + '</div><div class="kpi-value small">' + v + '</div><div class="kpi-sub">' + (sub || '') + '</div></div>';
+  const abiertos = new Set();
+  const torneos = () => data().torneos || [];
+
+  const ESTADO = {
+    por_cobrar: ['Por cobrar', 'st-pedido'], parcial: ['Pago parcial', 'st-parcial'], pagado: ['Pagado', 'st-ok'], debe: ['Debe', 'st-cancelada'],
+    sin_costo: ['Sin costo', ''], sin_ticket: ['Sin inscripción', 'st-cancelada'], anulada: ['Anulada', ''],
+  };
+  const badge = (e) => '<span class="badge ' + (ESTADO[e] || ['', ''])[1] + '">' + esc((ESTADO[e] || [e])[0]) + '</span>';
+  const signo = (n) => (n < 0 ? 'text-danger' : n > 0 ? 'text-success' : '');
+
+  /* ---------- archivo .tdf de TOM ---------- */
+
+  /** Lee el XML del .tdf: nombre, fecha, ciudad, rondas y jugadores con su Player ID y lugar final. */
+  function leerTdf(texto) {
+    const xml = new DOMParser().parseFromString(texto, 'application/xml');
+    if (xml.querySelector('parsererror') || !xml.querySelector('tournament')) throw new Error('El archivo no parece un torneo de TOM (.tdf).');
+    const txt = (sel, raiz) => { const n = (raiz || xml).querySelector(sel); return n ? n.textContent.trim() : ''; };
+    const f = txt('tournament > data > startdate').split('/');   // MM/DD/YYYY
+    const fecha = f.length === 3 ? f[2] + '-' + f[0].padStart(2, '0') + '-' + f[1].padStart(2, '0') : '';
+    const lugar = {};
+    xml.querySelectorAll('standings pod[type="finished"] player').forEach((p) => { lugar[p.getAttribute('id')] = Number(p.getAttribute('place')) || 0; });
+    const jugadores = Array.from(xml.querySelectorAll('tournament > players > player')).map((p) => {
+      const id = p.getAttribute('userid') || '';
+      const nombre = [txt('firstname', p), txt('lastname', p)].filter((x) => x && x !== '.').join(' ');
+      return { popId: id, nombre: nombre || id, lugar: lugar[id] || 0 };
+    }).sort((a, b) => (a.lugar || 999) - (b.lugar || 999));
+    if (!jugadores.length) throw new Error('El archivo no tiene jugadores.');
+    return {
+      nombre: txt('tournament > data > name'), fecha: fecha, ciudad: txt('tournament > data > city'),
+      rondas: xml.querySelectorAll('pods round').length, jugadores: jugadores,
+    };
+  }
+
+  /** Cliente que corresponde a un jugador: por ID Pokémon, si no por nombre. */
+  function clienteDe(j) {
+    const cs = data().clientes;
+    const porId = j.popId && cs.find((c) => String(c.idPokemon || '').trim() === j.popId);
+    if (porId) return { cliente: porId, como: 'id' };
+    const n = GS.norm(j.nombre);
+    const porNombre = cs.find((c) => GS.norm(c.nombre) === n);
+    return porNombre ? { cliente: porNombre, como: 'nombre' } : { cliente: null, como: 'nuevo' };
+  }
+
+  /** Inscripción por defecto del formato: la del último torneo de ese formato. */
+  const inscripcionDe = (formato) => {
+    const t = torneos().find((x) => GS.norm(x.formato) === GS.norm(formato));
+    return t ? t.inscripcion : '';
+  };
+
+  GS.actions.subirTdf = () => document.getElementById('tdf-input').click();
+
+  function importar(tdf) {
+    const formatos = Array.from(new Set(data().catalogos.formatosTorneo.concat(torneos().map((t) => t.formato))));
+    const formato0 = torneos()[0] ? torneos()[0].formato : formatos[0] || '';
+    const comoTxt = { id: '<span class="text-success" title="Enlazado por su ID Pokémon">✓ ID</span>', nombre: '<span class="text-gold" title="Mismo nombre: revisa que sea la misma persona">~ nombre</span>', nuevo: '<span class="muted" title="Se crea como cliente nuevo">nuevo</span>' };
+    GS.formModal({
+      title: 'Nuevo torneo desde TOM',
+      submitLabel: 'Crear torneo',
+      size: 'wide',
+      fields: () => '<div class="form-grid">' +
+        '<div class="form-field"><label>Nombre *</label><input name="nombre" maxlength="80" value="' + esc(tdf.nombre) + '"></div>' +
+        '<div class="form-field"><label>Fecha *</label><input type="date" name="fecha" value="' + esc(tdf.fecha) + '"></div>' +
+        '<div class="form-field"><label>Formato *</label><input name="formato" list="trn-formatos" value="' + esc(formato0) + '"><datalist id="trn-formatos">' + formatos.map((x) => '<option value="' + esc(x) + '">').join('') + '</datalist></div>' +
+        '<div class="form-field"><label>Inscripción *</label><input type="number" name="inscripcion" min="1" step="1" value="' + esc(inscripcionDe(formato0)) + '" placeholder="Ej.: 8000"></div>' +
+        '<div class="form-field full"><label>Jugadores (' + tdf.jugadores.length + ')</label><div class="table-wrap"><table class="data-table" style="min-width:0"><thead><tr><th class="right">Lugar</th><th>Jugador (TOM)</th><th>Player ID</th><th>Cliente</th><th></th><th class="center" title="No paga inscripción (invitado, juez que juega…)">Sin costo</th></tr></thead><tbody>' +
+          tdf.jugadores.map((j, i) => {
+            const m = clienteDe(j);
+            return '<tr data-trn-j="' + i + '"><td class="cell-num right">' + (j.lugar || '—') + '</td><td class="cell-strong">' + esc(j.nombre) + '</td><td class="cell-dim">' + esc(j.popId) + '</td>' +
+              '<td><input name="cli' + i + '" list="trn-clientes" autocomplete="off" value="' + esc(m.cliente ? m.cliente.nombre : '') + '" placeholder="' + esc(j.nombre) + ' (nuevo)" data-cli-id="' + esc(m.cliente ? m.cliente.id : '') + '" data-cli-nombre="' + esc(m.cliente ? m.cliente.nombre : '') + '"></td>' +
+              '<td class="nowrap" data-trn-como>' + comoTxt[m.como] + '</td>' +
+              '<td class="center"><input type="checkbox" name="sin' + i + '"></td></tr>';
+          }).join('') + '</tbody></table></div>' +
+          '<datalist id="trn-clientes">' + data().clientes.map((c) => '<option value="' + esc(c.nombre) + '">' + esc(c.idPokemon ? 'ID ' + c.idPokemon : '') + '</option>').join('') + '</datalist></div></div>' +
+        '<p class="hint">Cada jugador queda como un ticket <strong>pendiente</strong> en la caja del ' + esc(tdf.fecha ? fmt.date(tdf.fecha) : 'día del torneo') + ' (se abre si no lo está). ' +
+        'Al cobrar, edita el ticket en la caja y cambia el medio de pago; si uno paga por otro, usa "Cobrar juntos". Lo que no se pague queda como deuda del cliente al cerrar la caja. ' +
+        'Si el cliente sugerido no es la misma persona, escribe el correcto: su ID Pokémon queda guardado para los próximos torneos.</p>',
+      onMount: (form) => {
+        let tocado = false;
+        form.elements.inscripcion.addEventListener('input', () => { tocado = true; });
+        form.elements.formato.addEventListener('input', () => { if (!tocado) form.elements.inscripcion.value = inscripcionDe(form.elements.formato.value); });
+        form.addEventListener('input', (e) => {
+          const tr = e.target.closest('[data-trn-j]');
+          if (!tr || !/^cli/.test(e.target.name)) return;
+          const v = e.target.value.trim();
+          const c = data().clientes.find((x) => GS.norm(x.nombre) === GS.norm(v));
+          tr.querySelector('[data-trn-como]').innerHTML = !v ? comoTxt.nuevo : c ? (c.id === e.target.dataset.cliId ? comoTxt[clienteDe(tdf.jugadores[tr.dataset.trnJ]).como] : '<span class="text-gold">elegido</span>') : '<span class="muted">nuevo: ' + esc(v) + '</span>';
+        });
+      },
+      onSubmit: (v, form) => {
+        const jugadores = tdf.jugadores.map((j, i) => {
+          const inp = form.elements['cli' + i];
+          const val = inp.value.trim();
+          const r = { popId: j.popId, nombre: j.nombre, lugar: j.lugar, sinCosto: form.elements['sin' + i].checked };
+          if (val && inp.dataset.cliId && val === inp.dataset.cliNombre) r.clienteId = inp.dataset.cliId;
+          else if (val) r.cliente = val;
+          return r;
+        });
+        return GS.mutate('crearTorneo', { nombre: v.nombre, fecha: v.fecha, formato: v.formato, inscripcion: v.inscripcion, ciudad: tdf.ciudad, rondas: tdf.rondas, jugadores: jugadores },
+          (r) => 'Torneo creado: ' + r.jugadores + ' jugadores, ' + r.tickets + ' inscripciones por cobrar en la caja').then((r) => { abiertos.add(r.id); GS.render(); return r; });
+      },
+    });
+  }
+
+  /* ---------- vista ---------- */
+
+  GS.views.torneos = {
+    title: 'Torneos',
+    render(el) {
+      const op = GS.puede('operador');
+      const ts = torneos();
+      const mes = data().hoy.slice(0, 7);
+      const delMes = ts.filter((t) => t.fecha.slice(0, 7) === mes);
+      const suma = (arr, k) => arr.reduce((s, t) => s + t.resultado[k], 0);
+      el.innerHTML =
+        '<div class="page-head"><div><h1>Torneos</h1><p>Sube el archivo .tdf de TOM: los jugadores quedan por cobrar en la caja del día. Agrega premios del inventario y el pago al juez para ver el margen.</p></div>' +
+        (op ? '<div class="btn-row"><button class="btn" data-action="subirTdf">' + GS.icon('plus', 2.4) + 'Subir torneo (.tdf)</button><input type="file" id="tdf-input" accept=".tdf,.xml,text/xml" hidden></div>' : '') + '</div>' +
+        '<div class="kpi-grid">' +
+        kpi('Torneos del mes', delMes.length, fmt.num(suma(delMes, 'jugadores')) + ' jugadores') +
+        kpi('Inscripciones del mes', fmt.money(suma(delMes, 'inscripciones')), 'con IVA') +
+        kpi('Margen del mes', '<span class="' + signo(suma(delMes, 'margen')) + '">' + fmt.money(suma(delMes, 'margen')) + '</span>', 'inscripciones − comisiones − premios − juez') +
+        kpi('Por cobrar', fmt.money(suma(ts, 'porCobrar')), 'inscripciones pendientes o adeudadas') + '</div>' +
+        '<div class="table-wrap"><table class="data-table"><thead><tr><th></th><th>Fecha</th><th>Torneo</th><th class="right">Jugadores</th><th class="right">Inscripciones</th><th class="right">Premios</th><th class="right">Juez</th><th class="right">Margen</th><th class="right">Por cobrar</th></tr></thead><tbody>' +
+        (ts.length ? ts.map((t) => {
+          const r = t.resultado;
+          const open = abiertos.has(t.id);
+          return '<tr class="fila-compra' + (open ? ' abierta' : '') + '" data-action="verTorneo" data-id="' + esc(t.id) + '"><td><span class="chev">' + (open ? '▾' : '▸') + '</span></td>' +
+            '<td class="nowrap">' + fmt.date(t.fecha) + '</td><td><div class="cell-strong">' + esc(t.nombre) + '</div><div class="cell-dim">' + esc(t.formato) + ' · ' + fmt.money(t.inscripcion) + ' · ' + esc(t.id) + '</div></td>' +
+            '<td class="cell-num right">' + r.jugadores + (r.pagan !== r.jugadores ? '<div class="cell-dim">' + r.pagan + ' pagan</div>' : '') + '</td>' +
+            '<td class="cell-num right">' + fmt.money(r.inscripciones) + '</td><td class="cell-num right">' + (r.premiosBruto ? fmt.money(r.premiosBruto) : '—') + '</td>' +
+            '<td class="cell-num right">' + (r.juez ? fmt.money(r.juez) : '—') + '</td>' +
+            '<td class="cell-num right"><strong class="' + signo(r.margen) + '">' + fmt.money(r.margen) + '</strong><div class="cell-dim">' + Math.round(r.margenPct * 100) + '%</div></td>' +
+            '<td class="cell-num right">' + (r.porCobrar ? '<span class="text-gold">' + fmt.money(r.porCobrar) + '</span>' : '—') + '</td></tr>' +
+            (open ? '<tr class="detalle-row"><td colspan="9">' + detalle(t) + '</td></tr>' : '');
+        }).join('') : '<tr><td colspan="9">' + GS.empty('Sin torneos', 'Sube el archivo .tdf que exporta TOM al terminar el torneo.', 'torneos') + '</td></tr>') +
+        '</tbody></table></div>';
+      const input = document.getElementById('tdf-input');
+      if (input) input.addEventListener('change', async () => {
+        const f = input.files[0];
+        input.value = '';
+        if (!f) return;
+        try { importar(leerTdf(await f.text())); } catch (e) { GS.toast(e.message, true); }
+      });
+    },
+  };
+
+  GS.actions.verTorneo = (id) => { if (abiertos.has(id)) abiertos.delete(id); else abiertos.add(id); GS.render(); };
+
+  function detalle(t) {
+    const r = t.resultado;
+    const op = GS.puede('operador');
+    const cajaAbierta = t.cajaEstado === 'abierta';
+    const medios = data().catalogos.mediosCaja;
+    const filaRes = (l, v, cls) => '<tr' + (cls ? ' class="' + cls + '"' : '') + '><td>' + l + '</td><td class="cell-num right">' + v + '</td></tr>';
+    return '<div class="detalle-compra" style="padding:14px 10px;">' +
+      '<div class="dash-grid">' +
+      // Resultado
+      '<div class="panel"><div class="panel-head"><h3>Resultado</h3><span class="tag">' + esc(t.ciudad || '') + (t.rondas ? ' · ' + t.rondas + ' rondas' : '') + '</span></div><div class="panel-body"><table class="mini-table"><tbody>' +
+        filaRes('Inscripciones (' + r.pagan + ' × ' + fmt.money(t.inscripcion) + ')', fmt.money(r.inscripciones)) +
+        filaRes('− IVA', '−' + fmt.money(r.iva)) +
+        filaRes('− Comisiones TUU', '−' + fmt.money(r.comisiones)) +
+        filaRes('− Premios (precio torneo, sin IVA)', '−' + fmt.money(r.premiosNeto)) +
+        filaRes('− Juez', '−' + fmt.money(r.juez)) +
+        '<tr><td class="cell-strong">Margen</td><td class="cell-num right"><strong class="' + signo(r.margen) + '">' + fmt.money(r.margen) + '</strong> <span class="cell-dim">' + Math.round(r.margenPct * 100) + '%</span></td></tr>' +
+        filaRes('Por jugador', fmt.money(r.porJugador), 'cell-dim') +
+        '</tbody></table>' +
+        '<p class="table-note">' + (r.equilibrio ? 'Punto de equilibrio: <strong>' + r.equilibrio + ' jugadores</strong> pagando ' + fmt.money(t.inscripcion) + ' cubren premios y juez. ' : '') +
+        (r.premiosCosto ? 'Los premios costaron ' + fmt.money(r.premiosCosto) + ' neto; a precio torneo ' + fmt.money(r.premiosNeto) + ' (la diferencia queda como ganancia de sus facturas).' : '') + '</p></div></div>' +
+      // Juez y premios
+      '<div class="panel"><div class="panel-head"><h3>Juez y premios</h3></div><div class="panel-body">' +
+        '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0 12px;"><span class="cell-strong nowrap">Pago al juez</span>' +
+        (op && t.juezEstado !== 'pasado' ? '<input class="qty-input price-input" style="width:110px" type="number" min="0" step="1" data-juez="' + esc(t.id) + '" value="' + esc(t.juez || '') + '" placeholder="Efectivo">' +
+          '<button class="btn small secondary" data-action="guardarJuez" data-id="' + esc(t.id) + '">Guardar</button>' : '<strong>' + fmt.money(t.juez) + '</strong>') +
+        '<span class="cell-dim">' + (t.juezEstado === 'pasado' ? 'ya en Finanzas' : t.juez ? 'egreso en la caja del ' + fmt.date(t.fecha) : '') + '</span></div>' +
+        (t.premios.length ? '<table class="mini-table"><thead><tr><th>Premio</th><th class="right">Cant.</th><th class="right">Precio torneo</th><th></th></tr></thead><tbody>' +
+          t.premios.map((x) => '<tr><td style="min-width:180px;"><div class="cell-strong">' + esc(x.producto) + '</div><div class="cell-dim">' + esc(x.notas || '') + '</div></td><td class="cell-num right">' + x.cantidad + '</td>' +
+            '<td class="cell-num right">' + fmt.money(x.precio * x.cantidad) + '<div class="cell-dim">costo ' + fmt.money(x.costo * x.cantidad) + ' neto</div></td>' +
+            '<td>' + (op ? '<div class="row-actions">' + GS.iconBtn('precioPremio', x.id, 'edit', 'Cambiar el precio al que el torneo compra el premio') + GS.iconBtn('quitarPremio', x.id, 'trash', 'Quitar: la unidad vuelve al inventario', 'danger') + '</div>' : '') + '</td></tr>').join('') +
+          '</tbody></table>' : '<p class="muted">Sin premios registrados.</p>') +
+        (op ? '<button class="btn small secondary" data-action="agregarPremio" data-id="' + esc(t.id) + '" style="margin-top:8px;">' + GS.icon('plus', 2.4) + 'Premio del inventario</button>' : '') +
+      '</div></div></div>' +
+      // Jugadores
+      '<div class="table-wrap" style="margin-top:14px;"><table class="data-table"><thead><tr><th class="right">Lugar</th><th>Jugador</th><th>Cliente</th><th>Inscripción</th><th class="right">Monto</th><th>Ticket / venta</th><th></th></tr></thead><tbody>' +
+      t.jugadores.map((j) => '<tr><td class="cell-num right">' + (j.lugar ? j.lugar + 'º' : '—') + '</td>' +
+        '<td><div class="cell-strong">' + esc(j.nombre) + '</div><div class="cell-dim">ID ' + esc(j.popId || '—') + '</div></td>' +
+        '<td>' + esc(j.cliente) + (j.pagadoPor && GS.norm(j.pagadoPor) !== GS.norm(j.cliente) ? '<div class="cell-dim">pagó ' + esc(j.pagadoPor) + '</div>' : '') + '</td>' +
+        '<td>' + badge(j.estado) + (j.medios && j.medios.length ? '<div class="cell-dim">' + j.medios.map((m) => esc(medios[m] || m)).join(' + ') + '</div>' : '') + '</td>' +
+        '<td class="cell-num right">' + (j.monto ? fmt.money(j.monto) : '—') + (j.debe ? '<div class="cell-dim text-gold">debe ' + fmt.money(j.debe) + '</div>' : '') + '</td>' +
+        '<td class="cell-dim">' + esc(j.ventaId || j.ticketId || '') + '</td>' +
+        '<td><div class="row-actions">' + (op ? GS.iconBtn('vincularJugador', j.id, 'clientes', 'Cambiar el cliente de este jugador') : '') +
+          (op && cajaAbierta && !j.ventaId && j.estado !== 'sin_costo' && j.estado !== 'pagado' ? '<button class="btn small ghost" data-action="sinCostoJugador" data-id="' + esc(j.id) + '" title="No paga inscripción (invitado, juez que juega…)">Sin costo</button>' : '') +
+          (op && cajaAbierta && j.estado === 'sin_costo' ? '<button class="btn small ghost" data-action="cobrarJugador" data-id="' + esc(j.id) + '">Cobrar</button>' : '') +
+          (j.ticketId && !j.ventaId ? '<button class="btn small ghost" data-action="irCajaTorneo" data-id="' + esc(t.cajaId) + '">Caja</button>' : '') + '</div></td></tr>').join('') +
+      '</tbody></table></div>' +
+      '<div class="btn-row" style="margin-top:10px;">' + (op ? '<button class="btn small ghost" data-action="editarTorneo" data-id="' + esc(t.id) + '">' + GS.icon('edit') + 'Editar torneo</button>' : '') +
+        (GS.puede('admin') ? '<button class="btn small ghost danger" data-action="eliminarTorneo" data-id="' + esc(t.id) + '">' + GS.icon('trash') + 'Eliminar torneo</button>' : '') + '</div>' +
+      '<p class="table-note">Para cobrar: en la Caja del día edita el ticket del jugador y cambia "Pendiente" por el medio de pago (puedes agregar productos al mismo ticket). Si una persona paga varios, marca sus tickets y usa "Cobrar juntos".</p>' +
+      '</div>';
+  }
+
+  const torneoDe = (id) => torneos().find((t) => t.id === id);
+  const jugadorDe = (id) => { for (const t of torneos()) { const j = t.jugadores.find((x) => x.id === id); if (j) return j; } return null; };
+
+  GS.actions.irCajaTorneo = (cajaId) => { GS.filters('caja', { caja: '', tab: 'caja' }).caja = cajaId; GS.filters('caja', { caja: '', tab: 'caja' }).tab = 'caja'; GS.go('caja'); };
+  GS.actions.guardarJuez = (id) => {
+    const inp = document.querySelector('[data-juez="' + CSS.escape(id) + '"]');
+    GS.mutate('juezTorneo', { id: id, monto: inp ? inp.value : 0 }, (r) => (r.ticket ? 'Pago al juez registrado en la caja (' + r.ticket + ')' : 'Pago al juez quitado')).catch((e) => GS.toast(e.message, true));
+  };
+  GS.actions.sinCostoJugador = (id) => GS.mutate('cobroJugador', { id: id, sinCosto: true }, 'Sin costo: se quitó su inscripción de la caja').catch((e) => GS.toast(e.message, true));
+  GS.actions.cobrarJugador = (id) => GS.mutate('cobroJugador', { id: id, sinCosto: false }, 'Inscripción pendiente en la caja').catch((e) => GS.toast(e.message, true));
+
+  GS.actions.vincularJugador = (id) => {
+    const j = jugadorDe(id);
+    GS.formModal({
+      title: 'Cliente de ' + j.nombre,
+      submitLabel: 'Guardar',
+      fields: () => '<p class="hint">Jugador en TOM: <strong>' + esc(j.nombre) + '</strong> · ID ' + esc(j.popId || '—') + '. Ahora: ' + esc(j.cliente) + '.</p>' +
+        '<div class="form-field"><label>Cliente *</label><input name="cliente" list="vj-clientes" autocomplete="off" value="' + esc(j.cliente) + '"><datalist id="vj-clientes">' +
+        data().clientes.map((c) => '<option value="' + esc(c.nombre) + '">' + esc(c.idPokemon ? 'ID ' + c.idPokemon : '') + '</option>').join('') + '</datalist></div>' +
+        '<p class="hint">El ID Pokémon pasa a este cliente, así en los próximos torneos se reconoce solo. Si no existe, se crea.</p>',
+      onSubmit: (v) => GS.mutate('vincularJugador', { id: id, cliente: v.cliente }, j.nombre + ' enlazado con ' + v.cliente),
+    });
+  };
+
+  GS.actions.editarTorneo = (id) => {
+    const t = torneoDe(id);
+    GS.formModal({
+      title: 'Editar ' + t.nombre,
+      submitLabel: 'Guardar',
+      fields: () => '<div class="form-grid"><div class="form-field"><label>Nombre *</label><input name="nombre" maxlength="80" value="' + esc(t.nombre) + '"></div>' +
+        '<div class="form-field"><label>Formato *</label><input name="formato" value="' + esc(t.formato) + '"></div>' +
+        '<div class="form-field full"><label>Notas</label><input name="notas" maxlength="300" value="' + esc(t.notas || '') + '"></div></div>' +
+        '<p class="hint">El valor de la inscripción de cada jugador se cambia en su ticket de la caja.</p>',
+      onSubmit: (v) => GS.mutate('editarTorneo', Object.assign({ id: id }, v), 'Torneo actualizado'),
+    });
+  };
+  GS.actions.eliminarTorneo = (id) => {
+    const t = torneoDe(id);
+    GS.confirm({
+      title: 'Eliminar ' + t.nombre,
+      message: 'Se anulan las inscripciones pendientes en la caja, el pago al juez y los premios (vuelven al inventario). Solo se puede si la caja no se ha cerrado.',
+      confirmLabel: 'Sí, eliminar', danger: true,
+      onConfirm: () => GS.mutate('eliminarTorneo', { id: id }, 'Torneo eliminado'),
+    });
+  };
+
+  GS.actions.agregarPremio = (id) => {
+    const t = torneoDe(id);
+    const d = data();
+    const stock = {};
+    d.lotes.forEach((l) => { if (l.disponible > 0) stock[l.productoId] = (stock[l.productoId] || 0) + l.disponible; });
+    const prods = d.productos.filter((p) => stock[p.id]).sort((a, b) => a.nombreCompleto.localeCompare(b.nombreCompleto));
+    GS.formModal({
+      title: 'Premio para ' + t.nombre,
+      submitLabel: 'Agregar premio',
+      fields: () => '<div class="form-grid">' +
+        '<div class="form-field full"><label>Producto *</label><select name="productoId">' + GS.options([{ value: '', label: 'Elige el producto…' }].concat(prods.map((p) => ({ value: p.id, label: p.nombreCompleto + ' (' + stock[p.id] + ' disp.)' }))), '') + '</select></div>' +
+        '<div class="form-field"><label>Cantidad *</label><input type="number" name="cantidad" min="1" step="1" value="1"></div>' +
+        '<div class="form-field"><label>Precio torneo (unidad)</label><input type="number" name="precio" min="0" step="1" placeholder="PVP"></div>' +
+        '<div class="form-field full"><label>Para</label><select name="lugar">' + GS.options([{ value: '', label: 'Sin lugar (ej. premio de participación)' }].concat(t.jugadores.filter((j) => j.lugar).map((j) => ({ value: String(j.lugar), label: j.lugar + 'º · ' + j.nombre }))), '') + '</select></div></div>' +
+        '<p class="hint">Sale del inventario como premio del torneo. El torneo lo "compra" a este precio (parte en el PVP): la factura del producto no pierde ganancia y el premio se descuenta del margen del torneo.</p>',
+      onMount: (form) => {
+        form.elements.productoId.addEventListener('change', () => {
+          const p = prods.find((x) => x.id === form.elements.productoId.value);
+          form.elements.precio.value = p ? p.precio : '';
+        });
+      },
+      onSubmit: (v) => {
+        if (!v.productoId) throw new Error('Elige el producto.');
+        return GS.mutate('premioTorneo', Object.assign({ id: id }, v), 'Premio agregado al torneo');
+      },
+    });
+  };
+  GS.actions.precioPremio = (id) => {
+    let x = null;
+    torneos().some((t) => (x = t.premios.find((p) => p.id === id)));
+    GS.formModal({
+      title: 'Precio del premio',
+      submitLabel: 'Guardar',
+      fields: () => '<p class="hint">' + esc(x.producto) + ' · costo ' + fmt.money(x.costo) + ' neto por unidad.</p>' +
+        '<div class="form-field"><label>Precio torneo por unidad (con IVA) *</label><input type="number" name="precio" min="0" step="1" value="' + esc(x.precio) + '"></div>',
+      onSubmit: (v) => GS.mutate('precioPremio', { id: id, precio: v.precio }, 'Precio del premio actualizado'),
+    });
+  };
+  GS.actions.quitarPremio = (id) => GS.confirm({
+    title: 'Quitar premio', message: 'La unidad vuelve al inventario y deja de contar en el torneo.', confirmLabel: 'Quitar', danger: true,
+    onConfirm: () => GS.mutate('quitarPremio', { id: id }, 'Premio quitado'),
+  });
+})();
+</script>

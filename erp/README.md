@@ -372,3 +372,27 @@ Menú **Caja del día**. Se abre una caja por fecha (`CJ-20261012`) y cada atenc
 - **GSTin:** al entrar, la mascota avisa una vez al día los abonos de TUU esperados hoy y los atrasados.
 - Comisión TUU: 0,77% + $65 + IVA sobre la comisión (calza con el informe). Las ventas desde el
   01-10-2026 con la fórmula anterior se corrigen al ejecutar "Instalar / actualizar hojas".
+
+## Torneos
+
+Menú **Torneos**. Al terminar un torneo, TOM (Tournament Operations Manager) exporta un archivo `.tdf`:
+
+- **Subir torneo (.tdf):** se leen el nombre, la fecha, la ciudad, las rondas y los jugadores con su
+  **Player ID** y lugar final. Se elige el formato (ej. "Torneo The Chill") y la inscripción, que se
+  sugiere desde el último torneo de ese formato.
+- **Clientes:** cada jugador se enlaza con su cliente por el ID Pokémon (o por nombre la primera vez;
+  si no existe, se crea) y el ID queda guardado. Si el cliente sugerido no es la misma persona, se cambia
+  en la importación o después con el botón de cliente del jugador (el ID pasa al cliente correcto).
+- **Cobro:** cada jugador queda como un ticket **pendiente** en la Caja del día del torneo (se abre si
+  no lo está). Al cobrar se edita el ticket y se cambia el medio de pago; se pueden agregar productos al
+  mismo ticket. **Cobrar juntos:** se marcan varios tickets en la caja (el primero marcado es quien paga)
+  y quedan en uno solo, con todas sus líneas. Lo que no se pague queda como deuda del cliente al cerrar
+  la caja. "Sin costo" quita la inscripción de un jugador (invitado, juez que juega).
+- **Premios:** salen del inventario como salida ligada al torneo. El torneo los "compra" a PVP (se puede
+  cambiar el precio): la factura del producto los cuenta como vendidos a ese precio y el torneo los carga.
+- **Juez:** pago variable en efectivo; queda como egreso de la caja del torneo (Finanzas → "Torneos
+  (juez y gastos)").
+- **Resultado:** inscripciones − IVA − comisiones TUU − premios (sin IVA) − juez = margen, por jugador y
+  punto de equilibrio (jugadores necesarios para cubrir premios y juez).
+- Requiere "Instalar / actualizar hojas" (hojas nuevas `Torneos` y `Torneo_Jugadores`, columnas nuevas en
+  `Salidas`).

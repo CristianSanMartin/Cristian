@@ -11,6 +11,9 @@ const Salidas = {
     const motivo = Util.opcion(p.motivo, 'El motivo', Object.keys(MOTIVOS_SALIDA));
     const fecha = Util.fecha(p.fecha, 'La fecha', { requerido: true });
     const notas = Util.texto(p.notas, 'El detalle', { max: 200 });
+    // Premio de torneo: el torneo "compra" la unidad a este precio (con IVA), así la factura no pierde ganancia.
+    const torneoId = p.torneoId ? String(p.torneoId) : '';
+    const precio = torneoId ? Util.entero(p.precio, 'El precio del premio', { min: 0 }) : 0;
     const suyos = Ventas.lotesDisponibles().filter((l) => l.productoId === prod.id && l.disponible > 0);
     const stock = suyos.reduce((t, l) => t + l.disponible, 0);
     if (cantidad > stock) throw new AppError('Stock insuficiente de ' + nombre + ': ' + (stock ? 'quedan ' + stock : 'no hay unidades') + ' en inventario.');
@@ -20,12 +23,12 @@ const Salidas = {
       if (!falta) return;
       const n = Math.min(falta, l.disponible);
       falta -= n;
-      salidas.push({ fecha: fecha, motivo: motivo, loteId: l.id, productoId: prod.id, cantidad: n, costo: l.costo, notas: notas, anulada: false });
+      salidas.push({ fecha: fecha, motivo: motivo, loteId: l.id, productoId: prod.id, cantidad: n, costo: l.costo, notas: notas, anulada: false, torneoId: torneoId, precio: precio });
     });
     const ids = Util.reservarIds('SAL', 6, salidas.length);
     const sello = Util.sello(user, true);
     Db.insertMany('Salidas', salidas.map((x, i) => Object.assign({ id: ids[i] }, x, sello)));
-    Audit.log(user, 'salida', 'Producto', prod.id, { motivo: motivo, cantidad: cantidad, salidas: ids, notas: notas });
+    Audit.log(user, 'salida', 'Producto', prod.id, Object.assign({ motivo: motivo, cantidad: cantidad, salidas: ids, notas: notas }, torneoId ? { torneo: torneoId, precio: precio } : {}));
     return { ids: ids, costo: Math.round(salidas.reduce((t, x) => t + x.costo * x.cantidad, 0)) };
   },
 
@@ -40,7 +43,7 @@ const Salidas = {
   /** Las salidas vigentes, para la pantalla (lista en Inventario y GOPM en Finanzas). */
   vista() {
     return Db.all('Salidas').filter((x) => !x.anulada)
-      .map((x) => ({ id: x.id, fecha: x.fecha, motivo: x.motivo, motivoLabel: MOTIVOS_SALIDA[x.motivo] || x.motivo, loteId: x.loteId, productoId: x.productoId, cantidad: x.cantidad, costo: x.costo, notas: x.notas }))
+      .map((x) => ({ id: x.id, fecha: x.fecha, motivo: x.motivo, motivoLabel: MOTIVOS_SALIDA[x.motivo] || x.motivo, loteId: x.loteId, productoId: x.productoId, cantidad: x.cantidad, costo: x.costo, notas: x.notas, torneoId: x.torneoId || '', precio: x.precio || 0 }))
       .sort((a, b) => (b.fecha + b.id).localeCompare(a.fecha + a.id));
   },
 };

@@ -89,7 +89,10 @@ const Cajas = {
         };
       }
       const categoria = Util.opcion(x.categoria, 'La categoría', CATEGORIAS_VENTA.filter((c) => c !== 'Ajuste'));
-      return { categoria: categoria, descripcion: Util.texto(x.descripcion, 'El detalle', { max: 120 }), monto: Util.entero(x.monto, 'El monto de ' + categoria, { requerido: true, min: 1 }) };
+      const linea = { categoria: categoria, descripcion: Util.texto(x.descripcion, 'El detalle', { max: 120 }), monto: Util.entero(x.monto, 'El monto de ' + categoria, { requerido: true, min: 1 }) };
+      // Inscripción de un jugador de un torneo (TJ-000001): el torneo sabe en qué ticket quedó y si se pagó.
+      if (x.tj && /^TJ-\d+$/.test(String(x.tj))) linea.tj = String(x.tj);
+      return linea;
     });
     // Stock: lo disponible menos lo reservado por otros tickets.
     const pedido = {};
@@ -153,6 +156,50 @@ const Cajas = {
     if (t.estado !== 'abierto') throw new AppError('El ticket ' + t.id + ' ya no se puede anular.');
     Db.update('Caja_Tickets', t.id, Object.assign({ estado: 'anulado' }, Util.sello(user)));
     Audit.log(user, 'anular', 'Ticket', t.id, { total: t.total });
+  },
+
+  /**
+   * Cobrar juntos: une varios tickets de venta abiertos de la misma caja en uno solo (ej. una persona paga
+   * la inscripción de dos jugadores y además compra algo). El primero recibe las líneas y los pagos de los
+   * demás, que quedan anulados. p: { cajaId, ids: [...], cliente (quien paga) }.
+   */
+  unirTickets(p, user) {
+    const caja = Cajas.requerirAbierta(p.cajaId);
+    const ids = Array.from(new Set(Array.isArray(p.ids) ? p.ids.map(String) : []));
+    if (ids.length < 2) throw new AppError('Elige al menos dos tickets para cobrar juntos.');
+    const tickets = ids.map((id) => {
+      const t = Db.get('Caja_Tickets', id);
+      if (!t || t.cajaId !== caja.id) throw new AppError('El ticket ' + id + ' no es de esta caja.', 'NO_ENCONTRADO');
+      if (t.estado !== 'abierto') throw new AppError('El ticket ' + t.id + ' ya no se puede editar.');
+      if (t.tipo !== 'venta') throw new AppError('El ticket ' + t.id + ' es una salida: solo se unen ventas.');
+      return Cajas._leer(t);
+    });
+    const base = tickets[0];
+    const lineas = [];
+    tickets.forEach((t) => t.lineas.forEach((l) => {
+      const igual = l.productoId && lineas.find((x) => x.productoId === l.productoId && x.precio === l.precio);
+      if (igual) igual.cantidad += l.cantidad; else lineas.push(Object.assign({}, l));
+    }));
+    // Pagos: los del mismo medio se suman (las cuotas quedan aparte).
+    const pagos = [];
+    tickets.forEach((t) => t.pagos.forEach((g) => {
+      const igual = !(g.cuotas > 1) && pagos.find((x) => x.medio === g.medio && !(x.cuotas > 1));
+      if (igual) igual.monto += g.monto; else pagos.push(Object.assign({}, g));
+    }));
+    const cliente = Util.texto(p.cliente, 'El cliente', { max: 120 }) || base.cliente;
+    if (pagos.some((g) => g.medio === 'pendiente') && (!cliente || Util.normalizar(cliente) === Util.normalizar(Clientes.GENERAL))) {
+      throw new AppError('Queda un pago pendiente: indica quién paga.');
+    }
+    const total = lineas.reduce((t, l) => t + (l.productoId ? l.precio * l.cantidad : l.monto), 0);
+    const notas = tickets.map((t) => t.notas).filter(Boolean).join(' · ').slice(0, 300);
+    Db.update('Caja_Tickets', base.id, Object.assign({ cliente: cliente, total: total, lineas: JSON.stringify(lineas), pagos: JSON.stringify(pagos), notas: notas }, Util.sello(user)));
+    const otros = tickets.slice(1);
+    Db.actualizarVarios('Caja_Tickets', otros.reduce((o, t) => {
+      o[t.id] = Object.assign({ estado: 'anulado', notas: ('Unido a ' + base.id + (t.notas ? ' · ' + t.notas : '')).slice(0, 300) }, Util.sello(user));
+      return o;
+    }, {}));
+    Audit.log(user, 'cobrar juntos', 'Ticket', base.id, { unidos: otros.map((t) => t.id).join(', '), cliente: cliente, total: total });
+    return { id: base.id };
   },
 
   /** Reparte un monto entero en proporción a unos pesos (la última parte se lleva el redondeo). */

@@ -15,7 +15,7 @@
 
 const APP = {
   nombre: 'GS Prime ERP',
-  version: '2.18.3',
+  version: '2.19.0',
   tz: 'America/Santiago',
   iva: 0.19,
 };
@@ -106,6 +106,8 @@ const SCHEMA = {
     key: 'id',
     cols: Object.assign({
       id: 's', fecha: 'd', motivo: 's', loteId: 's', productoId: 's', cantidad: 'n', costo: 'n', notas: 's', anulada: 'b',
+      // Premio de un torneo: el torneo "compra" la unidad a este precio (con IVA; por defecto el PVP).
+      torneoId: 's', precio: 'n',
     }, AUDIT_COLS),
   },
   /**
@@ -209,6 +211,20 @@ const SCHEMA = {
       fechaAbono: 'd', abonado: 'n', ticketId: 's', pago: 'n', cuotaId: 's',
     }, AUDIT_COLS),
   },
+  /** Torneo (TRN-0001): se crea desde el archivo .tdf de TOM; cada jugador queda como un ticket por cobrar en la caja de ese día. */
+  Torneos: {
+    key: 'id',
+    cols: Object.assign({
+      id: 's', fecha: 'd', nombre: 's', formato: 's', inscripcion: 'n', cajaId: 's', ciudad: 's', rondas: 'n', juez: 'n', juezTicket: 's', notas: 's',
+    }, AUDIT_COLS),
+  },
+  /** Jugador de un torneo (TJ-000001): Player ID de Play! Pokémon, cliente, lugar final y si juega sin costo. */
+  Torneo_Jugadores: {
+    key: 'id',
+    cols: Object.assign({
+      id: 's', torneoId: 's', popId: 's', nombre: 's', clienteId: 's', lugar: 'n', sinCosto: 'b',
+    }, AUDIT_COLS),
+  },
   Validaciones: {
     key: 'clave',
     cols: { clave: 's', firma: 's', estado: 's', nota: 's', actualizadoEn: 't', actualizadoPor: 's' },
@@ -226,6 +242,8 @@ const IDIOMAS = ['ENG', 'ESP', 'JPN', 'Otro'];
 
 /** Motivos de salida de stock que no son venta. */
 const MOTIVOS_SALIDA = { premio: 'Premio', apertura: 'Caja abierta', interno: 'Uso interno', perdida: 'Pérdida' };
+/** Salida de un premio de torneo (se registra desde Torneos). */
+const PREMIO_TORNEO = 'premio';
 
 /** Caja del día: medios de pago de un ticket (puede haber varios) y tipos de salida de plata. */
 /** Medios de pago que pasan por la máquina TUU (cobran comisión y se abonan en 2 días hábiles). */
@@ -236,7 +254,10 @@ const EGRESOS_CAJA = {
   gav: { label: 'Gasto (GAV)', categoria: 'gav', prefijo: '' },
   gopm: { label: 'Gasto puesta en marcha (GOPM)', categoria: 'gopm', prefijo: '' },
   otro_egreso: { label: 'Otro egreso', categoria: 'otro_egreso', prefijo: '' },
+  juez_torneo: { label: 'Pago juez de torneo', categoria: 'torneo', prefijo: 'Juez · ' },
 };
+/** Formatos de torneo sugeridos (el valor de inscripción por defecto sale del último torneo de ese formato). */
+const FORMATOS_TORNEO = ['Torneo The Chill'];
 
 /** Ventas por monto (sin unidades del inventario). Torneo = ingreso por servicio. */
 const CATEGORIAS_VENTA = ['Singles', 'Torneo', 'Sobres sueltos', 'Bazar', 'Accesorios', 'Ajuste', 'Otro'];
@@ -250,7 +271,7 @@ const PREFIJOS_VENTA = { 'Singles': 'SGL', 'Torneo': 'TOR', 'Sobres sueltos': 'S
 const CATEGORIAS_MOVIMIENTO = {
   ingreso: { aporte: 'Patrimonio · aporte de capital', devolucion_sii: 'Devolución SII', otro_ingreso: 'Otro ingreso' },
   egreso: {
-    compra: 'Compra por monto', gav: 'GAV', gopm: 'GOPM (puesta en marcha)', sii: 'Pago SII', comision: 'Comisión', retiro: 'Patrimonio · retiro de capital', otro_egreso: 'Otro egreso',
+    compra: 'Compra por monto', gav: 'GAV', gopm: 'GOPM (puesta en marcha)', sii: 'Pago SII', comision: 'Comisión', torneo: 'Torneos (juez y gastos)', retiro: 'Patrimonio · retiro de capital', otro_egreso: 'Otro egreso',
   },
 };
 const CUENTAS = { caja: 'Caja (efectivo)', banco: 'Banco', tuu: 'TUU' };

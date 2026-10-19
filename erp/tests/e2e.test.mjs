@@ -682,3 +682,72 @@ test("se adapta a celular sin desbordar la página", { skip }, async () => {
     await browser.close();
   }
 });
+
+// Archivo .tdf de TOM de ejemplo (jugadores inventados).
+const TDF = `<?xml version="1.0" encoding="UTF-8"?>
+<tournament type="2" stage="5" version="1.86" gametype="TRADING_CARD_GAME" mode="CUSTOM">
+  <data><name>Chill 01-11</name><id></id><city>Santiago</city><startdate>11/01/2030</startdate></data>
+  <players>
+    <player userid="9001"><firstname>Ana</firstname><lastname>Rojas</lastname></player>
+    <player userid="9002"><firstname>Beto</firstname><lastname>Díaz</lastname></player>
+    <player userid="9003"><firstname>Carla</firstname><lastname>.</lastname></player>
+  </players>
+  <pods><pod><rounds><round number="1"></round><round number="2"></round></rounds></pod></pods>
+  <standings><pod category="2" type="finished"><player id="9002" place="1" /><player id="9001" place="2" /><player id="9003" place="3" /></pod></standings>
+</tournament>`;
+
+test("torneos: subir el .tdf, cuadrar clientes, cobrar juntos en la caja, premio y juez", { skip }, async () => {
+  const browser = await chromium.launch();
+  try {
+    const { page, errores } = await abrir(browser);
+    await page.click('[data-nav="torneos"]');
+    await page.locator("#tdf-input").setInputFiles({ name: "chill.tdf", mimeType: "text/xml", buffer: Buffer.from(TDF) });
+    const m = modal(page);
+    await m.locator('input[name="nombre"]').waitFor();
+    assert.equal(await m.locator('input[name="fecha"]').inputValue(), "2030-11-01");
+    // Ordenados por lugar; Ana Rojas ya es cliente (por nombre), los demás son nuevos.
+    assert.match(await m.locator("tbody").textContent(), /1Beto Díaz9002.*2Ana Rojas9001.*~ nombre.*3Carla9003/s);
+    await m.locator('input[name="inscripcion"]').fill("8000");
+    await m.locator('button[type="submit"]').click();
+    await toast(page, /3 jugadores, 3 inscripciones por cobrar/);
+    await cerrado(page);
+    const fila = page.locator("#view tr.fila-compra", { hasText: "Chill 01-11" });
+    assert.match(await fila.textContent(), /3.*\$24\.000.*\$24\.000/s);
+    assert.equal(await page.locator(".detalle-row .badge", { hasText: "Por cobrar" }).count(), 3);
+
+    // Premio a PVP y juez
+    await page.click('.detalle-row [data-action="agregarPremio"]');
+    await modal(page).locator('select[name="productoId"]').selectOption({ index: 1 });
+    assert.notEqual(await modal(page).locator('input[name="precio"]').inputValue(), "");
+    await modal(page).locator('select[name="lugar"]').selectOption("1");
+    await modal(page).locator('button[type="submit"]').click();
+    await toast(page, /Premio agregado/);
+    await page.locator(".detalle-row [data-juez]").fill("10000");
+    await page.click('.detalle-row [data-action="guardarJuez"]');
+    await toast(page, /Pago al juez registrado/);
+    assert.match(await page.locator(".detalle-row").textContent(), /Juez−\$10\.000.*1º lugar · Beto Díaz/s);
+
+    // Caja: Ana paga lo suyo y lo de Beto en efectivo
+    await page.click('.detalle-row [data-action="irCajaTorneo"] >> nth=0');
+    const caja = page.locator("#caja-cuerpo");
+    await caja.locator("tr", { hasText: "Ana Rojas" }).locator("[data-sel-ticket]").check();
+    await caja.locator("tr", { hasText: "Beto Díaz" }).locator("[data-sel-ticket]").check();
+    await caja.locator('[data-action="cobrarJuntos"]').click();
+    assert.equal(await modal(page).locator('input[name="cliente"]').inputValue(), "Ana Rojas");
+    await modal(page).locator('button[type="submit"]').click();
+    // Se abre el ticket unido: dos inscripciones, el pago pendiente sigue al total.
+    await page.locator('#modal-root .modal-overlay [data-tk-lineas] tr[data-tj]').nth(1).waitFor();
+    const tk = modal(page);
+    assert.equal(await tk.locator('[name="tkPagoMonto"]').inputValue(), "16000");
+    await tk.locator('[name="tkMedio"]').selectOption("efectivo");
+    await tk.locator('button[type="submit"]').click();
+    await toast(page, /actualizado/);
+    await page.click('[data-nav="torneos"]');
+    const det = page.locator(".detalle-row");
+    assert.equal(await det.locator(".badge", { hasText: "Pagado" }).count(), 2);
+    assert.match(await det.textContent(), /Beto Díaz.*pagó Ana Rojas/s);
+    assert.deepEqual(errores, []);
+  } finally {
+    await browser.close();
+  }
+});

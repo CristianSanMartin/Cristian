@@ -1582,3 +1582,109 @@ test("reabrir una caja cerrada: se agregan tickets y al cerrar solo pasan los nu
   assert.deepEqual([c.estado, c.tuuTotal], ["cerrada", 15000]);
   assert.equal(d.tuu.esperados.find(e => e.cajaId === caja.id).monto, 15000);
 });
+
+test("torneos: jugadores del .tdf → tickets pendientes en la caja, cobrar juntos, juez, premios a PVP y resultado", () => {
+  const s = createServer();
+  const { prods } = conInventario(s);
+  // Un cliente frecuente ya tiene su ID Pokémon; otro existe con su nombre pero sin ID.
+  const ana = s.ok("guardarCliente", { nombre: "Ana Rojas", idPokemon: "1001" }).result;
+  s.ok("guardarCliente", { nombre: "Beto Díaz" });
+  const base = { nombre: "The Chill 18-10", fecha: "2026-10-18", formato: "Torneo The Chill", inscripcion: 8000, rondas: 4 };
+  const jugadores = [
+    { popId: "1001", nombre: "Ana R.", lugar: 1 },
+    { popId: "1002", nombre: "Beto Díaz", lugar: 2 },
+    { popId: "1003", nombre: "Carla Soto", lugar: 3 },
+    { popId: "1004", nombre: "Dani Juez", lugar: 4, sinCosto: true },
+  ];
+  assert.match(errorDe(s.call("crearTorneo", { ...base, jugadores: [] })), /no tiene jugadores/);
+  assert.match(errorDe(s.call("crearTorneo", { ...base, jugadores: [jugadores[0], { ...jugadores[1], popId: "1001" }] })), /repetido/);
+  const r = s.ok("crearTorneo", { ...base, jugadores }).result;
+  assert.deepEqual([r.jugadores, r.tickets, r.cajaId], [4, 3, "CJ-20261018"]);
+  assert.match(errorDe(s.call("crearTorneo", { ...base, jugadores })), /Ya existe/);
+
+  let d = s.ok("bootstrap").data;
+  // Clientes: por ID Pokémon, por nombre (se le guarda el ID) y nuevo.
+  const cli = (n) => d.clientes.find(c => c.nombre === n);
+  assert.equal(cli("Beto Díaz").idPokemon, "1002");
+  assert.equal(cli("Carla Soto").idPokemon, "1003");
+  let t = d.torneos[0];
+  assert.deepEqual(t.jugadores.map(j => [j.lugar, j.cliente, j.estado]), [[1, "Ana Rojas", "por_cobrar"], [2, "Beto Díaz", "por_cobrar"], [3, "Carla Soto", "por_cobrar"], [4, "Dani Juez", "sin_costo"]]);
+  const caja = d.cajas.find(c => c.id === "CJ-20261018");
+  const tk = (n) => caja.tickets.find(x => x.cliente === n);
+  assert.deepEqual(tk("Ana Rojas").pagos, [{ medio: "pendiente", monto: 8000 }]);
+  assert.match(tk("Ana Rojas").lineas[0].descripcion, /The Chill 18-10 · Ana R\./);
+
+  // Ana paga lo suyo y lo de Beto, y además compra un Mini Tin: cobrar juntos y editar el ticket.
+  const u = s.ok("unirTickets", { cajaId: caja.id, ids: [tk("Ana Rojas").id, tk("Beto Díaz").id], cliente: "Ana Rojas" }).result;
+  d = s.ok("bootstrap").data;
+  let unido = d.cajas.find(c => c.id === caja.id).tickets.find(x => x.id === u.id);
+  assert.deepEqual([unido.lineas.length, unido.total, unido.pagos], [2, 16000, [{ medio: "pendiente", monto: 16000 }]]);
+  assert.equal(d.cajas.find(c => c.id === caja.id).tickets.find(x => x.id === tk("Beto Díaz").id).estado, "anulado");
+  s.ok("guardarTicket", { ...unido, lineas: unido.lineas.concat([{ productoId: prods.miniTin.id, cantidad: 1, precio: 18000 }]), pagos: [{ medio: "debito", monto: 34000 }] });
+  d = s.ok("bootstrap").data;
+  t = d.torneos[0];
+  assert.deepEqual(t.jugadores.slice(0, 3).map(j => [j.estado, j.pagadoPor]), [["pagado", "Ana Rojas"], ["pagado", "Ana Rojas"], ["por_cobrar", "Carla Soto"]]);
+
+  // Juez en efectivo: egreso en la caja del torneo.
+  s.ok("juezTorneo", { id: t.id, monto: 15000 });
+  // Premio a PVP (el torneo lo "compra"), con la opción de cambiar el precio.
+  const pr = s.ok("premioTorneo", { id: t.id, productoId: prods.miniTin.id, cantidad: 1, lugar: 1 }).result;
+  assert.equal(pr.precio, 18000);
+  d = s.ok("bootstrap").data;
+  t = d.torneos[0];
+  assert.match(t.premios[0].notas, /1º lugar · Ana R\./);
+  s.ok("precioPremio", { id: t.premios[0].id, precio: 15000 });
+  d = s.ok("bootstrap").data;
+  t = d.torneos[0];
+  const res = t.resultado;
+  assert.equal(res.inscripciones, 24000);
+  assert.equal(res.premiosBruto, 15000);
+  assert.equal(res.juez, 15000);
+  assert.ok(res.comisiones > 0 && res.comisiones < 300, "comisión TUU de las dos inscripciones pagadas con débito");
+  assert.equal(Math.round(res.margen), Math.round(24000 / 1.19 - res.comisiones - 15000 / 1.19 - 15000));
+  assert.equal(res.porCobrar, 8000);
+  // El premio no le resta ganancia a la factura: cuenta como vendido a su precio.
+  const lotesTin = d.lotes.filter(l => l.productoId === prods.miniTin.id);
+  assert.ok(lotesTin.some(l => l.unidadesVendidas.some(x => /Premio TRN-/.test(x.oc) && x.precio === 15000)));
+
+  // Al cerrar la caja: las inscripciones van a TOR y Carla queda debiendo.
+  s.ok("cerrarCaja", { id: caja.id });
+  d = s.ok("bootstrap").data;
+  t = d.torneos[0];
+  assert.deepEqual(t.jugadores.slice(0, 3).map(j => j.estado), ["pagado", "pagado", "debe"]);
+  assert.ok(t.jugadores.every(j => !j.ventaId || /^TOR-/.test(j.ventaId)));
+  assert.equal(d.ventas.find(v => v.id === t.jugadores[2].ventaId).saldo, 8000);
+  assert.ok(d.movimientos.some(m => m.categoria === "torneo" && m.monto === 15000));
+  assert.match(errorDe(s.call("juezTorneo", { id: t.id, monto: 20000 })), /ya pasó a Finanzas/);
+  assert.match(errorDe(s.call("eliminarTorneo", { id: t.id })), /no se puede eliminar/);
+});
+
+test("torneos: cuadrar un jugador con otro cliente, sin costo y eliminar un torneo mal importado", () => {
+  const s = createServer();
+  const real = s.ok("guardarCliente", { nombre: "Matías Pérez" }).result;
+  const r = s.ok("crearTorneo", { nombre: "Liga", fecha: "2026-10-25", formato: "Torneo The Chill", inscripcion: 5000, jugadores: [{ popId: "2001", nombre: "Mati P", lugar: 1 }, { popId: "2002", nombre: "Otro", lugar: 2 }] }).result;
+  let d = s.ok("bootstrap").data;
+  let t = d.torneos[0];
+  const j = t.jugadores[0];
+  assert.equal(j.cliente, "Mati P", "sin coincidencia se crea un cliente nuevo");
+  s.ok("vincularJugador", { id: j.id, clienteId: real.id });
+  d = s.ok("bootstrap").data;
+  t = d.torneos[0];
+  assert.equal(t.jugadores[0].cliente, "Matías Pérez");
+  assert.equal(d.clientes.find(c => c.id === real.id).idPokemon, "2001");
+  assert.equal(d.clientes.find(c => c.nombre === "Mati P").idPokemon, "", "el ID pasa al cliente correcto");
+  assert.ok(d.cajas[0].tickets.some(x => x.cliente === "Matías Pérez" && x.estado === "abierto"));
+  // Sin costo: se anula su inscripción; de vuelta: se crea de nuevo.
+  s.ok("cobroJugador", { id: t.jugadores[1].id, sinCosto: true });
+  d = s.ok("bootstrap").data;
+  assert.equal(d.torneos[0].jugadores[1].estado, "sin_costo");
+  assert.equal(d.cajas[0].tickets.filter(x => x.estado === "abierto").length, 1);
+  s.ok("cobroJugador", { id: t.jugadores[1].id, sinCosto: false });
+  d = s.ok("bootstrap").data;
+  assert.equal(d.torneos[0].jugadores[1].estado, "por_cobrar");
+  // Eliminar: se anulan sus tickets.
+  s.ok("eliminarTorneo", { id: r.id });
+  d = s.ok("bootstrap").data;
+  assert.equal(d.torneos.length, 0);
+  assert.equal(d.cajas[0].tickets.filter(x => x.estado === "abierto").length, 0);
+});
