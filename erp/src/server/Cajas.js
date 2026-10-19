@@ -89,7 +89,11 @@ const Cajas = {
         };
       }
       const categoria = Util.opcion(x.categoria, 'La categoría', CATEGORIAS_VENTA.filter((c) => c !== 'Ajuste'));
-      const linea = { categoria: categoria, descripcion: Util.texto(x.descripcion, 'El detalle', { max: 120 }), monto: Util.entero(x.monto, 'El monto de ' + categoria, { requerido: true, min: 1 }) };
+      // Cantidad × precio unitario (ej. 3 bebidas a $1.500); monto = total de la línea. Sin precio: monto directo.
+      const cantidad = x.cantidad === '' || x.cantidad == null ? 1 : Util.entero(x.cantidad, 'La cantidad de ' + categoria, { min: 1 });
+      const precio = x.precio === '' || x.precio == null ? null : Util.entero(x.precio, 'El precio de ' + categoria, { requerido: true, min: 1 });
+      const monto = precio != null ? precio * cantidad : Util.entero(x.monto, 'El monto de ' + categoria, { requerido: true, min: 1 });
+      const linea = { categoria: categoria, descripcion: Util.texto(x.descripcion, 'El detalle', { max: 120 }), cantidad: cantidad, precio: precio != null ? precio : monto / cantidad, monto: monto };
       // Inscripción de un jugador de un torneo (TJ-000001): el torneo sabe en qué ticket quedó y si se pagó.
       if (x.tj && /^TJ-\d+$/.test(String(x.tj))) linea.tj = String(x.tj);
       return linea;
@@ -283,7 +287,7 @@ const Cajas = {
           const principal = pagados[0] || (d.medios.cuotas ? 'credito' : 'efectivo');
           const v = Ventas.crear({
             fecha: caja.fecha, cliente: t.cliente, canal: t.canal, evento: t.evento, medioPago: principal, notas: 'Ticket ' + t.id + (t.notas ? ' · ' + t.notas : ''),
-            lineas: d.lineas.map((l) => (l.productoId ? { productoId: l.productoId, cantidad: l.cantidad, precio: l.precio } : { categoria: l.categoria, descripcion: l.descripcion, monto: l.monto })),
+            lineas: d.lineas.map((l) => (l.productoId ? { productoId: l.productoId, cantidad: l.cantidad, precio: l.precio } : { categoria: l.categoria, descripcion: l.descripcion, monto: l.monto, cantidad: l.cantidad || 1 })),
           }, user);
           // Lo pagado con el medio principal es el abono; los otros medios quedan como abonos del mismo día.
           Db.update('Ventas', v.id, Object.assign({ abono: pagados.length ? d.medios[principal] : 0, comision: 0 }, Util.sello(user)));

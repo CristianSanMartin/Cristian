@@ -1700,3 +1700,19 @@ test("torneos: varios premios a la vez, todo o nada", () => {
   const pr = s.ok("bootstrap").data.torneos[0].premios;
   assert.deepEqual(pr.map(x => [x.cantidad, x.precio]).sort(), [[1, 30000], [2, 18000]]);
 });
+
+test("caja: líneas por monto con cantidad (bazar: 3 bebidas) pasan a la venta con su cantidad", () => {
+  const s = createServer();
+  const caja = s.ok("abrirCaja", { fecha: "2026-10-20" }).result;
+  assert.match(errorDe(s.call("guardarTicket", { cajaId: caja.id, lineas: [{ categoria: "Bazar", descripcion: "Bebida", cantidad: 0, precio: 1500 }], pagos: [{ medio: "efectivo", monto: 0 }] })), /cantidad/);
+  const t = s.ok("guardarTicket", { cajaId: caja.id, lineas: [{ categoria: "Bazar", descripcion: "Bebida", cantidad: 3, precio: 1500 }, { categoria: "Bazar", descripcion: "Snack", precio: 1000 }], pagos: [{ medio: "efectivo", monto: 5500 }] }).result;
+  let d = s.ok("bootstrap").data;
+  const tk = d.cajas[0].tickets.find(x => x.id === t.id);
+  assert.deepEqual(tk.lineas.map(l => [l.descripcion, l.cantidad, l.precio, l.monto]), [["Bebida", 3, 1500, 4500], ["Snack", 1, 1000, 1000]]);
+  assert.equal(tk.total, 5500);
+  s.ok("cerrarCaja", { id: caja.id });
+  d = s.ok("bootstrap").data;
+  const v = d.ventas.find(x => x.id.startsWith("BAZ-"));
+  assert.deepEqual(v.lineas.map(l => [l.descripcion, l.cantidad, l.precio]), [["Bebida", 3, 1500], ["Snack", 1, 1000]]);
+  assert.equal(v.total, 5500);
+});

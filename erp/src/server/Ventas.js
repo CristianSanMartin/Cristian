@@ -32,7 +32,10 @@ const Ventas = {
       if (!x.productoId && x.categoria) {
         const categoria = Util.opcion(x.categoria, 'La categoría', CATEGORIAS_VENTA);
         const monto = Util.entero(x.monto, 'El monto de ' + categoria, { requerido: true, min: 1 });
-        lineas.push({ loteId: '', productoId: '', cantidad: 1, precioLista: monto, precio: monto, costo: 0, categoria: categoria, descripcion: Util.texto(x.descripcion, 'La descripción', { max: 120 }) });
+        // Cantidad (ej. 3 bebidas): monto = total de la línea; si no se divide exacto, queda como 1 × monto.
+        const n = x.cantidad ? Util.entero(x.cantidad, 'La cantidad de ' + categoria, { min: 1 }) : 1;
+        const cant = n > 1 && monto % n === 0 ? n : 1;
+        lineas.push({ loteId: '', productoId: '', cantidad: cant, precioLista: monto / cant, precio: monto / cant, costo: 0, categoria: categoria, descripcion: Util.texto(x.descripcion, 'La descripción', { max: 120 }) });
         return;
       }
       const prod = Productos.requerir(x.productoId);

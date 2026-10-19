@@ -15,7 +15,7 @@
 
 const APP = {
   nombre: 'GS Prime ERP',
-  version: '2.19.3',
+  version: '2.19.4',
   tz: 'America/Santiago',
   iva: 0.19,
 };
@@ -261,6 +261,8 @@ const FORMATOS_TORNEO = ['Torneo The Chill'];
 
 /** Ventas por monto (sin unidades del inventario). Torneo = ingreso por servicio. */
 const CATEGORIAS_VENTA = ['Singles', 'Torneo', 'Sobres sueltos', 'Bazar', 'Accesorios', 'Ajuste', 'Otro'];
+/** Bazar: qué se vendió. */
+const TIPOS_BAZAR = ['Bebida', 'Snack'];
 /**
  * Las OC son solo para productos sellados del inventario. Una venta solo por monto de estas
  * categorías lleva su propio correlativo (SGL-0001, TOR-0001…). Ajuste y Otro siguen como OC.

@@ -36,7 +36,7 @@
   const comisionEstimada = (c) => vivos(c).reduce((s, t) => s + t.pagos.reduce((a, p) => a + (TUU.indexOf(p.medio) !== -1 ? GS.comisionPago(data().catalogos.comisiones[p.medio], p.monto) : 0), 0), 0);
   /** Ticket con inscripciones de torneo que aún no se cobran (pago pendiente): se resalta en la lista. */
   const porCobrarTorneo = (t) => t.estado === 'abierto' && t.lineas.some((l) => l.tj) && t.pagos.some((p) => p.medio === 'pendiente');
-  const lineaTexto = (l) => (l.productoId ? l.cantidad + ' × ' + l.producto : l.categoria ? (data().catalogos.egresosCaja[l.categoria] ? data().catalogos.egresosCaja[l.categoria].label : l.categoria) + (l.descripcion ? ' · ' + l.descripcion : '') : '');
+  const lineaTexto = (l) => (l.productoId ? l.cantidad + ' × ' + l.producto : l.categoria ? (l.cantidad > 1 ? l.cantidad + ' × ' : '') + (data().catalogos.egresosCaja[l.categoria] ? data().catalogos.egresosCaja[l.categoria].label : l.categoria) + (l.descripcion ? ' · ' + l.descripcion : '') : '');
   const pagosTexto = (t) => (t.tipo === 'egreso' ? (data().catalogos.cuentas[t.cuenta] || 'Caja') : t.pagos.map((p) => data().catalogos.mediosCaja[p.medio] + ' ' + fmt.money(p.monto) + (p.cuotas > 1 ? ' en ' + p.cuotas + ' cuotas' : '')).join(' + '));
 
   GS.views.caja = {
@@ -167,12 +167,23 @@
       '<td><input class="qty-input" style="width:64px" type="number" min="1" max="' + (stock[l.productoId] || '') + '" step="1" name="tkCant" value="' + esc(l.cantidad) + '"></td>' +
       '<td><input class="qty-input price-input" style="width:100px" type="number" min="0" step="1" name="tkPrecio" value="' + esc(l.precio) + '"></td>' +
       '<td class="cell-num right" data-tk-sub>—</td><td><button type="button" class="btn small ghost" data-tk-quitar title="Quitar">✕</button></td></tr>';
-    const filaMonto = (l) => '<tr data-tk-monto' + (l && l.tj ? ' data-tj="' + esc(l.tj) + '"' : '') + '><td>' + (l && l.tj
-      ? '<input type="hidden" name="tkCat" value="Torneo"><input type="hidden" name="tkDesc" value="' + esc(l.descripcion) + '"><span class="badge st-pedido">Inscripción</span> ' + esc(l.descripcion)
-      : '<div class="field-row"><select name="tkCat">' + GS.options(cats, l ? l.categoria : 'Singles') + '</select>' +
-      '<input name="tkDesc" placeholder="Detalle (opcional)" value="' + esc(l ? l.descripcion : '') + '"></div>') + '</td><td class="cell-dim">por monto</td>' +
-      '<td><input class="qty-input price-input" style="width:100px" type="number" min="1" step="1" name="tkMonto" value="' + esc(l ? l.monto : '') + '"></td>' +
-      '<td class="cell-num right" data-tk-sub>—</td><td><button type="button" class="btn small ghost" data-tk-quitar title="Quitar">✕</button></td></tr>';
+    // Línea por monto: concepto, cantidad (por defecto 1) y precio unitario. Bazar: Bebida o Snack.
+    const bazar = d.catalogos.tiposBazar || ['Bebida', 'Snack'];
+    const filaMonto = (l) => {
+      const cat = l ? l.categoria : 'Singles';
+      const desc = l ? l.descripcion || '' : '';
+      const esBazar = cat === 'Bazar';
+      const cant = l ? l.cantidad || 1 : 1;
+      const precio = l ? l.precio || (l.monto ? l.monto / cant : '') : '';
+      return '<tr data-tk-monto' + (l && l.tj ? ' data-tj="' + esc(l.tj) + '"' : '') + '><td>' + (l && l.tj
+        ? '<input type="hidden" name="tkCat" value="Torneo"><input type="hidden" name="tkDesc" value="' + esc(desc) + '"><span class="badge st-pedido">Inscripción</span> ' + esc(desc)
+        : '<div class="field-row"><select name="tkCat">' + GS.options(cats, cat) + '</select>' +
+          '<select name="tkTipo"' + (esBazar ? '' : ' hidden') + '>' + GS.options([{ value: '', label: 'Bebida o snack…' }].concat(bazar.map((x) => ({ value: x, label: x }))), esBazar && bazar.indexOf(desc) !== -1 ? desc : '') + '</select>' +
+          '<input name="tkDesc" placeholder="Detalle (opcional)" value="' + esc(esBazar ? '' : desc) + '"' + (esBazar ? ' hidden' : '') + '></div>') + '</td>' +
+        '<td><input class="qty-input" style="width:64px" type="number" min="1" step="1" name="tkMCant" value="' + esc(cant) + '"' + (l && l.tj ? ' readonly' : '') + '></td>' +
+        '<td><input class="qty-input price-input" style="width:100px" type="number" min="1" step="1" name="tkMonto" value="' + esc(precio) + '"></td>' +
+        '<td class="cell-num right" data-tk-sub>—</td><td><button type="button" class="btn small ghost" data-tk-quitar title="Quitar">✕</button></td></tr>';
+    };
     const filaPago = (p) => '<div class="field-row" data-tk-pago style="margin-bottom:6px;"><select name="tkMedio">' + GS.options(Object.keys(medios).map((k) => ({ value: k, label: medios[k] })), p ? p.medio : 'efectivo') + '</select>' +
       '<input class="price-input" type="number" min="0" step="1" name="tkPagoMonto" value="' + esc(p ? p.monto : '') + '" placeholder="Monto">' +
       '<input class="qty-input" style="width:90px" type="number" min="1" max="48" step="1" name="tkCuotas" value="' + esc(p && p.cuotas ? p.cuotas : 1) + '" title="Cuotas (TUU crédito)" placeholder="Cuotas"' + (p && p.medio === 'credito' ? '' : ' hidden') + '>' +
@@ -237,7 +248,7 @@
           let sub = 0;
           if (tr.hasAttribute('data-tk-prod')) {
             sub = (Number(tr.querySelector('[name="tkCant"]').value) || 0) * (Number(tr.querySelector('[name="tkPrecio"]').value) || 0);
-          } else sub = Number(tr.querySelector('[name="tkMonto"]').value) || 0;
+          } else sub = (Number(tr.querySelector('[name="tkMCant"]').value) || 0) * (Number(tr.querySelector('[name="tkMonto"]').value) || 0);
           tr.querySelector('[data-tk-sub]').textContent = sub ? fmt.money(sub) : '—';
           return s + sub;
         }, 0);
@@ -277,15 +288,26 @@
           if (e.target.name === 'tkCant' && !picker.hidden) pintarLista();
           upd();
         });
-        form.addEventListener('change', upd);
+        form.addEventListener('change', (e) => {
+          if (e.target.name === 'tkCat') {
+            const tr = e.target.closest('tr');
+            const b = e.target.value === 'Bazar';
+            tr.querySelector('[name="tkTipo"]').hidden = !b;
+            tr.querySelector('[name="tkDesc"]').hidden = b;
+          }
+          upd();
+        });
         if (!t) abrirPicker();
         upd();
       },
       onSubmit: (v, form) => {
         const lineas = Array.from(form.querySelector('[data-tk-lineas]').children).map((tr) => {
           if (tr.hasAttribute('data-tk-prod')) return { productoId: tr.dataset.pid, cantidad: tr.querySelector('[name="tkCant"]').value, precio: tr.querySelector('[name="tkPrecio"]').value };
-          const monto = tr.querySelector('[name="tkMonto"]').value;
-          return monto ? { categoria: tr.querySelector('[name="tkCat"]').value, descripcion: tr.querySelector('[name="tkDesc"]').value, monto: monto, tj: tr.dataset.tj || '' } : null;
+          const precio = tr.querySelector('[name="tkMonto"]').value;
+          const cat = tr.querySelector('[name="tkCat"]').value;
+          const tipo = tr.querySelector('[name="tkTipo"]');
+          if (precio && cat === 'Bazar' && !tipo.value) throw new Error('En Bazar elige si es Bebida o Snack.');
+          return precio ? { categoria: cat, descripcion: cat === 'Bazar' ? tipo.value : tr.querySelector('[name="tkDesc"]').value, cantidad: tr.querySelector('[name="tkMCant"]').value || 1, precio: precio, tj: tr.dataset.tj || '' } : null;
         }).filter(Boolean);
         const pagos = Array.from(form.querySelectorAll('[data-tk-pago]')).map((f) => ({ medio: f.querySelector('[name="tkMedio"]').value, monto: f.querySelector('[name="tkPagoMonto"]').value,
           cuotas: f.querySelector('[name="tkMedio"]').value === 'credito' ? f.querySelector('[name="tkCuotas"]').value : '' }));
