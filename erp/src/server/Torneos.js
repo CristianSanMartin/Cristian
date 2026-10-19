@@ -38,7 +38,7 @@ const Torneos = {
   /** Ticket "pendiente" en la caja del torneo con la inscripción del jugador. */
   _ticket(torneo, jugador, cliente, user) {
     return Cajas.guardarTicket({
-      cajaId: torneo.cajaId, tipo: 'venta', cliente: cliente.nombre, canal: 'Evento', evento: torneo.nombre,
+      cajaId: torneo.cajaId, tipo: 'venta', cliente: cliente.nombre, canal: 'Tienda', evento: '',
       lineas: [{ categoria: 'Torneo', descripcion: (torneo.nombre + ' · ' + jugador.nombre).slice(0, 120), monto: torneo.inscripcion, tj: jugador.id }],
       pagos: [{ medio: 'pendiente', monto: torneo.inscripcion }],
     }, user).id;

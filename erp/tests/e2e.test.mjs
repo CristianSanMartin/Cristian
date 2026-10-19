@@ -334,6 +334,8 @@ test("inventario: se marcan unidades de un producto y se venden desde su lote", 
     await otro.locator('[data-action="agregarAVentaExistente"]').click();
     await page.locator('.modal input[name="oc"]').fill(oc.id.replace(/^\D+-0*/, ""));
     assert.match(await page.locator(".modal [data-oc-info]").textContent(), new RegExp(oc.id));
+    // Clic fuera del campo para cerrar las sugerencias del navegador antes de guardar.
+    await page.locator('.modal input[name="precio"]').click();
     await page.locator('.modal input[name="precio"]').fill("25000");
     await page.locator('.modal button[type="submit"]').click();
     await toast(page, new RegExp("1 unidad agregada a " + oc.id));
@@ -708,6 +710,7 @@ test("torneos: subir el .tdf, cuadrar clientes, cobrar juntos en la caja, premio
     // Ordenados por lugar; Ana Rojas ya es cliente (por nombre), los demás son nuevos.
     assert.match(await m.locator("tbody").textContent(), /1Beto Díaz9002.*2Ana Rojas9001.*~ nombre.*3Carla9003/s);
     await m.locator('input[name="inscripcion"]').fill("8000");
+    await m.locator(".modal-head h3").click();
     await m.locator('button[type="submit"]').click();
     await toast(page, /3 jugadores, 3 inscripciones por cobrar/);
     await cerrado(page);
@@ -720,6 +723,7 @@ test("torneos: subir el .tdf, cuadrar clientes, cobrar juntos en la caja, premio
     await modal(page).locator('select[name="productoId"]').selectOption({ index: 1 });
     assert.notEqual(await modal(page).locator('input[name="precio"]').inputValue(), "");
     await modal(page).locator('select[name="lugar"]').selectOption("1");
+    await modal(page).locator(".modal-head h3").click();
     await modal(page).locator('button[type="submit"]').click();
     await toast(page, /Premio agregado/);
     await page.locator(".detalle-row [data-juez]").fill("10000");
@@ -734,12 +738,14 @@ test("torneos: subir el .tdf, cuadrar clientes, cobrar juntos en la caja, premio
     await caja.locator("tr", { hasText: "Beto Díaz" }).locator("[data-sel-ticket]").check();
     await caja.locator('[data-action="cobrarJuntos"]').click();
     assert.equal(await modal(page).locator('input[name="cliente"]').inputValue(), "Ana Rojas");
+    await modal(page).locator(".modal-head h3").click();
     await modal(page).locator('button[type="submit"]').click();
     // Se abre el ticket unido: dos inscripciones, el pago pendiente sigue al total.
     await page.locator('#modal-root .modal-overlay [data-tk-lineas] tr[data-tj]').nth(1).waitFor();
     const tk = modal(page);
     assert.equal(await tk.locator('[name="tkPagoMonto"]').inputValue(), "16000");
     await tk.locator('[name="tkMedio"]').selectOption("efectivo");
+    await tk.locator(".modal-head h3").click();
     await tk.locator('button[type="submit"]').click();
     await toast(page, /actualizado/);
     await page.click('[data-nav="torneos"]');
