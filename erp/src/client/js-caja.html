@@ -535,12 +535,7 @@
     const esp = tuu().esperados;
     const deHoy = esp.filter((e) => e.fecha === hoy);
     const atras = esp.filter((e) => e.fecha < hoy);
-    // Clientes que deben hace más de 30 días.
-    const viejas = GS.cuentasPorCobrar ? GS.cuentasPorCobrar().filter((r) => r.dias > 30) : [];
-    const deudas = viejas.length ? '<p class="text-danger" style="margin-bottom:4px;">' + viejas.length + (viejas.length === 1 ? ' cliente debe' : ' clientes deben') + ' hace más de 30 días (' + fmt.money(viejas.reduce((t, r) => t + r.total, 0)) + '):</p><ul>' +
-      viejas.slice(0, 5).map((r) => '<li>' + esc(r.cliente) + ': ' + fmt.money(r.total) + ' · ' + r.dias + ' días</li>').join('') + '</ul>' +
-      '<p class="hint"><a href="#" data-action="irCuentasPorCobrar">Ver cuentas por cobrar</a> para avisarles por WhatsApp.</p>' : '';
-    if (!deHoy.length && !atras.length) return deudas ? { img: 'meme', titulo: 'Clientes con deudas antiguas', html: deudas } : null;
+    if (!deHoy.length && !atras.length) return null;
     const total = deHoy.reduce((s, e) => s + e.neto, 0);
     const linea = (e) => '<li>' + esc(detalleEsperado(e)) + ': ' + fmt.money(e.neto) + '</li>';
     return {
@@ -548,7 +543,7 @@
       titulo: deHoy.length ? '¡Hoy tienes abono TUU!' : 'Abonos TUU atrasados',
       html: (deHoy.length ? '<p style="font-size:18px;margin-top:0;">Hoy tienes abono TUU por <strong>' + fmt.money(total) + '</strong> (estimado):</p><ul>' + deHoy.map(linea).join('') + '</ul>' : '') +
         (atras.length ? '<p class="text-gold">' + atras.length + (atras.length === 1 ? ' abono atrasado' : ' abonos atrasados') + ' (su fecha ya pasó):</p><ul>' + atras.slice(0, 6).map((e) => '<li>' + fmt.date(e.fecha) + ' · ' + esc(detalleEsperado(e)) + ': ' + fmt.money(e.neto) + '</li>').join('') + '</ul>' : '') +
-        '<p class="hint">Cuando llegue, sube el informe de abono de TUU en Caja del día → Abonos TUU para cuadrarlo con la comisión real.</p>' + deudas,
+        '<p class="hint">Cuando llegue, sube el informe de abono de TUU en Caja del día → Abonos TUU para cuadrarlo con la comisión real.</p>',
     };
   }
   GS.actions.verGstin = () => gstin(mensajeHoy() || { img: 'corazon', titulo: 'Todo al día', html: '<p style="font-size:18px;">Hoy no hay abonos de TUU pendientes. ¡Buenas ventas!</p>' });

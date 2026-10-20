@@ -403,8 +403,7 @@ Menú **Torneos**. Al terminar un torneo, TOM (Tournament Operations Manager) ex
 Finanzas → **Cuentas por cobrar**: una fila por cliente con el total que debe y desde cuándo (menos de 7 días
 normal, 7 a 30 en dorado, más de 30 en rojo). Al desplegarla se ven sus ventas (y los tickets pendientes de la
 caja abierta, como inscripciones de torneo). Botón de **WhatsApp** con el mensaje listo y **Abonar** (abre la
-ficha del cliente). En el Dashboard, la casilla "Por cobrar a clientes" se abre al hacerle clic. GSTin avisa al
-entrar si hay clientes que deben hace más de 30 días.
+ficha del cliente). En el Dashboard, la casilla "Por cobrar a clientes" se abre al hacerle clic.
 
 ## Rendimiento al guardar
 
