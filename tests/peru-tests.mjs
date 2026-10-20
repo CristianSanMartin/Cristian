@@ -172,6 +172,31 @@ const antesRecarga = await page.evaluate(`peruDatos.rutas.find(r=>r.fecha==="202
 await page.setInputFiles("#inSimpli", [f1, f2]);
 await page.waitForFunction(`peruDatos.rutas.find(r=>r.fecha==="2026-09-10"&&r.placa==="AAA111").zona==="Periferia"`);
 const trasRecargaSimpli = await ruta("2026-09-10", "AAA111");
+// Liquidación de cobro para días sin SIMPLI (meses antiguos): el 10-09 ya tiene SIMPLI y se omite
+const fLiq = escribir([["LIQUIDACIÓN SERVICIOS MARZO 2026"], LH,
+  [new Date("2026-03-30T00:00:00"), "JOINT PERU S.A.C.", "BTZ753", "F13", 5, "COMAS", "Metropolitana", 420, "", "", 420],
+  [new Date("2026-03-31T00:00:00"), "JOINT PERU S.A.C.", "BTZ753", "F20", 7, "CARABAYLLO", "Periferia", 640, "", "", 640],
+  [new Date("2026-03-31T00:00:00"), "JOINT PERU S.A.C.", "XYZ 999", "13M3", 4, "LIMA", "METROPOLITANA", 420, "", "", 420],
+  [new Date("2026-09-10T00:00:00"), "JOINT PERU S.A.C.", "AAA111", "F13", 2, "COMAS", "Metropolitana", 420, "", "", 420],
+  ["Total", "", "", "", "", "", "", "", "", "", 1900]], "liquidacion_marzo.xlsx");
+await page.click("button.tab[data-vista=peru]");
+await page.setInputFiles("#inLiqPe", fLiq);
+await page.waitForFunction(`peruDatos.rutas.some(r=>r.fecha==="2026-03-31")`);
+const liqRutas = await page.evaluate(`peruDatos.rutas.filter(r=>r.fecha<"2026-04").map(r=>[r.fecha,r.placa,r.unidad,r.puntos,r.distrito,r.zonaCobro,r.total,r.pago])`);
+const liqAviso = await page.textContent("#estadoPeru");
+const liqSep = await page.evaluate(`peruDatos.rutas.filter(r=>r.fecha==="2026-09-10").map(r=>r.vehiculo)`);
+await page.selectOption("#pFiltro", "liq");
+const liqFiltro = await page.$$eval("#peruBody tr", trs => trs.length);
+await page.selectOption("#pFiltro", "");
+// Recargar SIMPLI de septiembre no borra marzo; SIMPLI del 31-03 reemplaza ese día de la liquidación
+await page.setInputFiles("#inSimpli", [f1, f2]); await page.waitForTimeout(300);
+const liqTrasSep = await page.evaluate(`peruDatos.rutas.filter(r=>r.fecha<"2026-04").length`);
+await page.setInputFiles("#inSimpli", escribir([H, v(50, "2026-03-31", A, "AV LIMA 1, CARABAYLLO")], "simpli_31_03.xlsx"));
+await page.waitForFunction(`peruDatos.rutas.some(r=>r.fecha==="2026-03-31"&&r.placa==="AAA111")`);
+const liqTrasSimpli = await page.evaluate(`peruDatos.rutas.filter(r=>r.fecha<"2026-04").map(r=>[r.fecha,r.placa,r.vehiculo===VEH_LIQ_PE])`);
+// Una nueva liquidación no pisa el día que ya tiene SIMPLI
+await page.setInputFiles("#inLiqPe", fLiq); await page.waitForTimeout(300);
+const liqOtraVez = await page.evaluate(`peruDatos.rutas.filter(r=>r.fecha<"2026-04").map(r=>[r.fecha,r.placa])`);
 await browser.close();
 
 const wb = XLSX.readFile(out, { cellDates: true }), ws = wb.Sheets[wb.SheetNames[0]];
@@ -248,6 +273,13 @@ check("Fecha sin tarifa vigente", sinTarifa, [null, null, "Sin tarifa de cobro n
 check("Feriado nuevo", [conFeriado, feriadoEnHoja, feriados2025], [[420, 126, "Tarifa Feriado", 546, 494], true, ["2026", "2025"]]);
 check("Quitar feriado", sinFeriado, [420, null, "", 420, 380]);
 check("Distrito cambia de zona al recargar SIMPLI", [comasHoja, antesRecarga, trasRecargaSimpli], ["Periferia", "Metropolitana", [610, null, "", 610, 500]]);
+check("Liquidación: rutas de días sin SIMPLI", liqRutas, [["2026-03-30", "BTZ753", "F13", 5, "COMAS", "Metropolitana", 420, 380],
+  ["2026-03-31", "BTZ753", "F20", 7, "CARABAYLLO", "Periferia", 640, 540], ["2026-03-31", "XYZ999", "F13", 4, "LIMA", "Metropolitana", 420, 380]]);
+check("Liquidación: aviso y día con SIMPLI respetado", [liqAviso, liqSep], ["3 rutas de 2 días agregadas desde la liquidación; 1 rutas omitidas porque su día ya tiene SIMPLI. Vista previa: los datos se guardan solo mientras la página esté abierta.", ["JOINT-AAA111-13M3"]]);
+check("Liquidación: filtro", liqFiltro, 3);
+check("Liquidación: SIMPLI de otro mes no la borra", liqTrasSep, 3);
+check("Liquidación: SIMPLI del día la reemplaza", liqTrasSimpli, [["2026-03-30", "BTZ753", true], ["2026-03-31", "AAA111", false]]);
+check("Liquidación: no pisa días con SIMPLI", liqOtraVez, [["2026-03-30", "BTZ753"], ["2026-03-31", "AAA111"]]);
 check("Sin errores JS", errors, []);
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(ok ? "\nTodas las pruebas pasaron" : "\nHay pruebas con fallas");

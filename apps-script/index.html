@@ -597,6 +597,9 @@
         <label class="barra-campo">Mes<select id="pMes" onchange="renderPeru()"><option value="">Sin datos</option></select></label>
         <button id="cargaSimpli" class="button" style="margin:0" onclick="document.getElementById('inSimpli').click()">Cargar Rutas de Simply</button>
         <input id="inSimpli" type="file" accept=".xlsx,.xls" multiple>
+        <button id="cargaLiqPe" class="button secondary" style="margin:0" title="Para meses antiguos: el Excel de liquidación enviado a Sodimac. Solo agrega los días que no tienen rutas de SIMPLI; si después cargas SIMPLI de esos días, lo reemplaza." onclick="document.getElementById('inLiqPe').click()">Cargar liquidación (días sin Simply)</button>
+        <input id="inLiqPe" type="file" accept=".xlsx,.xls" multiple>
+        <span id="txtLiqPe" class="nota barra-info"></span>
         <span id="txtSimpli" class="nota barra-info">Uno o varios reportes de 15 días (Excel). Los días repetidos entre archivos se cuentan una vez.</span>
         <p id="estadoPeru" class="nota barra-estado" role="status"></p>
         <p id="pTc" class="nota barra-estado"></p>
@@ -618,6 +621,7 @@
               <option value="">Todas las rutas</option>
               <option value="obs">Con observación</option>
               <option value="per">Solo periferia</option>
+              <option value="liq">Cargadas desde liquidación</option>
             </select>
             <input id="pBuscar" type="search" placeholder="Buscar placa o distrito" oninput="renderPeru()">
           </div>
@@ -2089,7 +2093,7 @@ function renderPeru(){
   clpPe("pTotal",total,rgM); clpPe("pPago",pago,rgM); clpPe("pMargen",margen,rgM);
   document.getElementById("pTc").textContent=rgM?textoTcPe(rgM):"";
   const f=document.getElementById("pFiltro").value, q=nt(document.getElementById("pBuscar").value);
-  const vis=rutas.filter(r=>(!f||(f==="obs"&&(r.obs||r.obsTarifa))||(f==="per"&&r.zonaCobro==="Periferia"))&&(!q||nt(r.placa+" "+r.distrito).includes(q)));
+  const vis=rutas.filter(r=>(!f||(f==="obs"&&(r.obs||r.obsTarifa))||(f==="per"&&r.zonaCobro==="Periferia")||(f==="liq"&&r.vehiculo===VEH_LIQ_PE))&&(!q||nt(r.placa+" "+r.distrito).includes(q)));
   const tb=document.getElementById("peruBody");
   if(!peruDatos.rutas.length){ tb.innerHTML=`<tr><td colspan="13">Carga los reportes de visitas de SIMPLI.</td></tr>`; }
   else tb.innerHTML=vis.map(r=>{
@@ -2102,6 +2106,10 @@ function renderPeru(){
   document.getElementById("txtSimpli").textContent=fr.length?`En la hoja: ${fr.length} rutas del ${fechaCL(fr[0])} al ${fechaCL(fr[fr.length-1])}`
     :"Uno o varios reportes de 15 días (Excel). Los días repetidos entre archivos se cuentan una vez. Hoja PERU RUTAS.";
   document.getElementById("cargaSimpli").classList.toggle("lista",!!fr.length);
+  const liqD=[...new Set(peruDatos.rutas.filter(r=>r.vehiculo===VEH_LIQ_PE).map(r=>r.fecha))];
+  document.getElementById("txtLiqPe").textContent=liqD.length?`En la hoja: ${liqD.length} días cargados desde liquidación`+(liqD.length<=6?` (${liqD.map(fechaCL).join(", ")}).`:`, del ${fechaCL(liqD[0])} al ${fechaCL(liqD[liqD.length-1])}.`)
+    :"";
+  document.getElementById("cargaLiqPe").classList.toggle("lista",!!liqD.length);
 }
 // Mismo formato que la liquidación que se envía a Sodimac
 function libroLiquidacionPeru(rutas){
@@ -2706,6 +2714,49 @@ document.getElementById("inSimpli").addEventListener("change",async e=>{
     document.getElementById("pMes").value=fr[fr.length-1].slice(0,7); renderPeru();
     avisoPeru(EN_APPS_SCRIPT?`Guardado en Google Sheets.${urlLibro?` <a href="${esc(urlLibro)}" target="_blank" rel="noopener">Abrir planilla</a>`:""}`
       :"Vista previa: los datos se guardan solo mientras la página esté abierta.");
+  }catch(err){ avisoPeru(""); mostrarError(err.message||String(err)); }
+});
+// Liquidación de cobro enviada a Sodimac (FECHA, PLACA, TIPO UNIDAD, PUNTOS, DISTRITOS, ZONA...) -> rutas, para días sin reporte SIMPLI
+// (SIMPLI entrega solo los últimos 3 meses). No trae visitas: entregados = puntos y la zona es la cobrada.
+const VEH_LIQ_PE="LIQUIDACION COBRO";
+function rutasLiquidacionPe(matrices){
+  const rutas=[], vistas=new Set();
+  for(const m of matrices){
+    const fila=m.findIndex(r=>r.some(x=>nt(x)==="PLACA")&&r.some(x=>nt(x)==="FECHA")); if(fila<0) throw new Error("La liquidación no tiene las columnas FECHA y PLACA.");
+    const h=m[fila], c={fecha:idx(h,["FECHA"]),placa:idx(h,["PLACA"]),unidad:idx(h,["TIPO UNIDAD","TIPO DE UNIDAD","UNIDAD"]),puntos:idx(h,["PUNTOS"]),
+      dist:idx(h,["DISTRITOS","DISTRITO"]),zona:idx(h,["ZONA"])};
+    if(c.unidad<0||c.zona<0) throw new Error("La liquidación no tiene las columnas TIPO UNIDAD y ZONA.");
+    for(const r of m.slice(fila+1)){
+      const fecha=fechaISO(r[c.fecha]), placa=nt(r[c.placa]).replace(/\s/g,""); if(!fecha||!placa) continue;
+      const k=fecha+"|"+placa; if(vistas.has(k)) continue; vistas.add(k);
+      const u=nt(r[c.unidad]), d=(u.match(/\d{2}/)||[""])[0], unidad={"10":"F13","13":"F13","15":"F20","20":"F20"}[d]||"";
+      const z=nt(r[c.zona]), zona=/PERIF|LEJANO/.test(z)?"Periferia":/METRO|URBANO/.test(z)?"Metropolitana":"SIN TARIFA";
+      const puntos=c.puntos>=0?num(r[c.puntos]):0, distrito=c.dist>=0?nt(r[c.dist]):"";
+      const obs=["Cargada desde la liquidación de cobro (sin reporte SIMPLI)",unidad?"":"Unidad no reconocida",zona==="SIN TARIFA"?"Zona no reconocida":""].filter(Boolean).join("; ");
+      rutas.push({fecha,placa,vehiculo:VEH_LIQ_PE,unidad,puntos,entregados:puntos,distrito,zona,perif:zona==="Periferia"?1:0,obs});
+    }
+  }
+  return rutas.sort((a,b)=>a.fecha.localeCompare(b.fecha)||a.placa.localeCompare(b.placa));
+}
+document.getElementById("inLiqPe").addEventListener("change",async e=>{
+  const files=[...(e.target.files||[])]; e.target.value=""; if(!files.length) return; ocultarError();
+  try{
+    const ms=[];
+    for(const f of files){ const {wb}=await leerLibroP(f); if(!wb) throw new Error(`${f.name}: la liquidación debe ser un Excel.`); ms.push(matrix(wb.Sheets[wb.SheetNames[0]])); }
+    const liq=rutasLiquidacionPe(ms); if(!liq.length) throw new Error("La liquidación no trae rutas.");
+    // Días con rutas de SIMPLI se respetan; los días que ya venían de una liquidación se reemplazan
+    const conSimpli=new Set(peruDatos.rutas.filter(r=>r.vehiculo!==VEH_LIQ_PE).map(r=>r.fecha));
+    const nuevas=liq.filter(r=>!conSimpli.has(r.fecha)), omitidas=liq.length-nuevas.length;
+    if(!nuevas.length) throw new Error(`Todos los días de la liquidación ya tienen rutas de SIMPLI (${omitidas} rutas omitidas).`);
+    const desde=nuevas[0].fecha, hasta=nuevas[nuevas.length-1].fecha, diasNuevos=new Set(nuevas.map(r=>r.fecha));
+    const quedan=peruDatos.rutas.filter(r=>r.fecha>=desde&&r.fecha<=hasta&&!diasNuevos.has(r.fecha));
+    const filas=[...quedan,...nuevas.map(tarificarPeru)].sort((a,b)=>a.fecha.localeCompare(b.fecha)||a.placa.localeCompare(b.placa));
+    avisoPeru(esc(`Guardando ${nuevas.length} rutas de la liquidación en PERU RUTAS…`));
+    await llamar("guardarLote",[{hoja:"PERU RUTAS",filas:filasPeru(filas),llave:{col:"FECHA",desde,hasta}}]);
+    await recargarPeru();
+    document.getElementById("pMes").value=hasta.slice(0,7); renderPeru();
+    avisoPeru(esc(`${nuevas.length} rutas de ${diasNuevos.size} días agregadas desde la liquidación`+(omitidas?`; ${omitidas} rutas omitidas porque su día ya tiene SIMPLI`:"")+".")
+      +(EN_APPS_SCRIPT?" Guardado en Google Sheets.":" Vista previa: los datos se guardan solo mientras la página esté abierta."));
   }catch(err){ avisoPeru(""); mostrarError(err.message||String(err)); }
 });
 async function recargarPeru(){
