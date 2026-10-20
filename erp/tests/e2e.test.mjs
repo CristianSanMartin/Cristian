@@ -724,6 +724,7 @@ test("torneos: subir el .tdf, cuadrar clientes, cobrar juntos en la caja, premio
     await page.click('.detalle-row [data-action="irCajaTorneo"] >> nth=0');
     const caja = page.locator("#caja-cuerpo");
     assert.equal(await caja.locator("tr.fila-por-cobrar").count(), 3, "inscripciones por cobrar resaltadas");
+    assert.equal(await caja.locator("thead .th-menu").count(), 7, "filtros en todas las columnas");
     await caja.locator("tr", { hasText: "Ana Rojas" }).locator("[data-sel-ticket]").check();
     await caja.locator("tr", { hasText: "Beto Díaz" }).locator("[data-sel-ticket]").check();
     await caja.locator('[data-action="cobrarJuntos"]').click();
