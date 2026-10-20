@@ -91,6 +91,12 @@ await page.selectOption("#ajCobro", "PERIFERIA/LEJANO"); await page.selectOption
 await page.click("text=Guardar ajuste"); await page.waitForTimeout(200);
 const ajustada = await page.evaluate(`(r=>[r.zonaCobro,r.total,r.pago,r.totalCalc,r.pagoCalc,r.obsTarifa,r.llave])(peruDatos.rutas.find(r=>r.fecha==="2026-09-12"&&r.placa==="AAA111"))`);
 const hojaAj = await page.evaluate(`almacenLocal.hojas["PERU AJUSTES"]`);
+// Ajuste de feriado: un día normal marcado como feriado usa tarifa domingo, y uno domingo marcado "no" usa regular
+const ferAj = await page.evaluate(`(()=>{ const t=(r,dia)=>{ const k=r.fecha+"|"+r.placa, prev=ajustesPe.get(k); ajustesPe.set(k,{zonaCobro:"",zonaPago:"",motivo:"t",dia});
+  const x=tarificarPeru(r); prev?ajustesPe.set(k,prev):ajustesPe.delete(k); return [x.detalle,x.tipoRuta,x.total,x.pago]; };
+  const n=peruDatos.rutas.find(r=>!recargoPeru(r.fecha)&&r.zona==="Metropolitana"&&r.unidad==="F13"), d=peruDatos.rutas.find(r=>recargoPeru(r.fecha)==="Tarifa Domingo"&&r.zona==="Metropolitana"&&r.unidad==="F13");
+  abrirAjustePe(n.fecha+"|"+n.placa); const ops=[...document.querySelectorAll("#ajDia option")].map(o=>o.value); document.getElementById("qAjuste").classList.add("hidden");
+  return [t(n,"FERIADO"),t(d,"REGULAR"),ops]; })()`);
 const resumenQ1b = await resumenQ();
 await page.evaluate(`cambiarEstadoQuincenaPe("Enviado al transporte")`); await page.waitForTimeout(200);
 const hojaQuin = await page.evaluate(`almacenLocal.hojas["PERU QUINCENAS"].slice(1).map(r=>r.slice(0,2))`);
@@ -234,7 +240,8 @@ check("Descuento y otro pago guardados", hojaMov, 2);
 check("Ajuste cambia cobro y pago y guarda lo calculado", ajustada, ["Periferia", 610, 500, 420, 380,
   "Punto en PUENTE PIEDRA no entregado (Distrito errado): se cobra Metropolitana; Ajuste: cobrada como Periferia y pagada como Periferia (Validado por Sodimac)".split("; ").slice(1).join("; "),
   "CT ATLANTIS SODIMAC;RUTA REGULAR;13M3;PERIFERIA/LEJANO"]);
-check("Hoja PERU AJUSTES", hojaAj, [["FECHA", "PLACA", "ZONA COBRO", "ZONA PAGO", "MOTIVO"], ["2026-09-12", "AAA111", "Periferia", "Periferia", "Validado por Sodimac"]]);
+check("Ajuste de feriado por ruta", ferAj, [["Tarifa Feriado","RUTA DOMINGO",546,494],["","RUTA REGULAR",420,380],["","FERIADO","REGULAR"]]);
+check("Hoja PERU AJUSTES", hojaAj, [["FECHA", "PLACA", "ZONA COBRO", "ZONA PAGO", "MOTIVO", "TARIFA DIA"], ["2026-09-12", "AAA111", "Periferia", "Periferia", "Validado por Sodimac", ""]]);
 check("Resumen con ajuste, descuento y otros pagos", resumenQ1b, ["5", "S/ 2,294.00", "S/ 2,706.92", "S/ 100.00", "S/ 2,606.92", "S/ 1,000.00"]);
 check("Estado de la quincena", hojaQuin, [["2026-09-Q1", "Enviado al transporte"]]);
 check("Correo", [correo.includes("entre los días 01 al 15 de Septiembre del año 2026"), correo.includes("PAGOS EN EXCESO PERIODOS ANTERIORES    S/. 100,00"),
