@@ -776,6 +776,17 @@ test("torneos: subir el .tdf, cuadrar clientes, cobrar juntos en la caja, premio
     const det = page.locator(".detalle-row");
     assert.equal(await det.locator(".badge", { hasText: "Pagado" }).count(), 2);
     assert.match(await det.textContent(), /Beto Díaz.*pagó Ana Rojas/s);
+
+    // Cuentas por cobrar: Dashboard (clic en la casilla) y Finanzas
+    await page.click('[data-nav="dashboard"]');
+    await page.click('[data-action="verPorCobrar"]');
+    const panel = page.locator(".panel", { hasText: "Cuentas por cobrar" });
+    assert.match(await panel.textContent(), /Carla.*\$8\.000/s);
+    await panel.locator('[data-action="irCuentasPorCobrar"]').click();
+    await page.locator("#fin-cuerpo .kpi-grid").waitFor();
+    const filaCarla = page.locator("#fin-cuerpo tr.fila-compra", { hasText: "Carla" });
+    await filaCarla.click();
+    assert.match(await page.locator("#fin-cuerpo .detalle-row").textContent(), /TK-20301101-03.*caja abierta.*\$8\.000/s);
     assert.deepEqual(errores, []);
   } finally {
     await browser.close();

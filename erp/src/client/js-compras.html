@@ -499,8 +499,12 @@
           '<td>' + (u ? (u.salida ? '<span class="badge st-pedido">' + esc(u.oc) + '</span>' : '<span class="badge st-parcial">Vendida</span>') : reservada ? '<span class="badge st-parcial">Reservada (caja)</span>' : '<span class="badge st-ok">Disponible</span>') +
             (u && u.salidaId && GS.puede('admin') ? ' <a href="#" class="cell-dim" data-action="anularSalida" data-id="' + esc(u.salidaId) + '" title="Devolver la unidad al stock">anular</a>' : '') + '</td>' +
           '<td>' + (u && !u.salida ? '<span class="cell-strong">' + esc(u.oc) + '</span>' : '—') + '</td><td>' + (u ? esc(u.cliente) : '—') + '</td>' +
-          m(l.valorUnitario) + m(l.costo) + m(l.credito) + m(precio) + m(precio / iva) + m(precio - precio / iva) + m(precio - precio / iva - l.credito) +
-          '<td class="cell-num right ' + signo(precio / iva - l.costo) + '">' + fmt.money(precio / iva - l.costo) + '</td></tr>');
+          // Premio de torneo: traspaso sin IVA (el IVA va en la inscripción): neto = precio, sin débito fiscal.
+          (u && u.sinIva
+            ? m(l.valorUnitario) + m(l.costo) + m(l.credito) + m(precio) + m(precio) + '<td class="cell-num right cell-dim" title="El IVA se paga en la inscripción del torneo">$0</td>' + m(-l.credito) +
+              '<td class="cell-num right ' + signo(precio - l.costo) + '">' + fmt.money(precio - l.costo) + '</td></tr>'
+            : m(l.valorUnitario) + m(l.costo) + m(l.credito) + m(precio) + m(precio / iva) + m(precio - precio / iva) + m(precio - precio / iva - l.credito) +
+              '<td class="cell-num right ' + signo(precio / iva - l.costo) + '">' + fmt.money(precio / iva - l.costo) + '</td></tr>'));
       }
     });
     return '<div class="detalle-compra"><table class="data-table"><thead><tr><th></th><th class="right">N°</th><th>Estado</th><th>OC</th><th>Cliente</th>' +

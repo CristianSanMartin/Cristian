@@ -1641,7 +1641,7 @@ test("torneos: jugadores del .tdf → tickets pendientes en la caja, cobrar junt
   assert.equal(res.premiosBruto, 15000);
   assert.equal(res.juez, 15000);
   assert.ok(res.comisiones > 0 && res.comisiones < 300, "comisión TUU de las dos inscripciones pagadas con débito");
-  assert.equal(Math.round(res.margen), Math.round(24000 / 1.19 - res.comisiones - 15000 / 1.19 - 15000));
+  assert.equal(Math.round(res.margen), Math.round(24000 / 1.19 - res.comisiones - 15000 - 15000));
   assert.equal(res.porCobrar, 8000);
   // El premio no le resta ganancia a la factura: cuenta como vendido a su precio.
   const lotesTin = d.lotes.filter(l => l.productoId === prods.miniTin.id);
@@ -1736,7 +1736,7 @@ test("torneos: sobres de participación (uno por jugador, $2.000) se descuentan 
   s.ok("participacionTorneo", { id: t.id, cantidad: 2 });
   let tr = s.ok("bootstrap").data.torneos[0];
   assert.deepEqual([tr.participacion, tr.participacionMonto, tr.resultado.premiosBruto], [2, 4000, 4000]);
-  assert.equal(Math.round(tr.resultado.margen), Math.round(10000 / 1.19 - 4000 / 1.19));
+  assert.equal(Math.round(tr.resultado.margen), Math.round(10000 / 1.19 - 4000));
   s.ok("participacionTorneo", { id: t.id, cantidad: 0 });
   assert.equal(s.ok("bootstrap").data.torneos[0].resultado.premiosBruto, 0);
 });

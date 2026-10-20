@@ -24,10 +24,15 @@
       kpi('Facturas por pagar', '<span class="' + (r.porPagar ? 'text-danger' : '') + '">' + fmt.money(r.porPagar) + '</span>', r.nPorPagar
         ? '<a href="#" data-nav="compras">' + r.nPorPagar + (r.nPorPagar === 1 ? ' factura de compra' : ' facturas de compra') + '</a> · la más antigua del ' + fmt.date(r.pagarDesde)
         : 'Todas pagadas') +
-      kpi('Por cobrar a clientes', fmt.money(r.porCobrar), r.nPorCobrar ? r.nPorCobrar + (r.nPorCobrar === 1 ? ' venta con deuda' : ' ventas con deuda') : 'Nadie debe') +
+      '<div class="kpi-clic" data-action="verPorCobrar" title="Ver quién debe">' + kpi('Por cobrar a clientes', fmt.money(r.porCobrar), (r.nPorCobrar ? r.nPorCobrar + (r.nPorCobrar === 1 ? ' venta con deuda' : ' ventas con deuda') : 'Nadie debe') + ' · ' + (verCobrar ? 'ocultar ▴' : 'ver ▾')) + '</div>' +
       '</div>' +
+      (verCobrar ? '<div class="panel" style="margin:-8px 0 20px;"><div class="panel-head"><h3>Cuentas por cobrar</h3><a href="#" class="tag" data-action="irCuentasPorCobrar">Ver todo en Finanzas →</a></div><div class="panel-body">' + GS.tablaPorCobrar({ max: 8 }) + '</div></div>' : '') +
       (a ? '<p class="table-note" style="margin:-4px 0 12px;">Caja abierta del ' + a.fechas.map(fmt.date).join(', ') + ': ' + a.tickets + ' tickets aún no pasan a Finanzas (efectivo ' + fmt.money(a.efectivo) + ', banco ' + fmt.money(a.banco) + ', TUU neto estimado ' + fmt.money(a.tuu) + ').</p>' : '');
   }
+
+  let verCobrar = false;
+  GS.actions.verPorCobrar = () => { verCobrar = !verCobrar; GS.render(); };
+  GS.actions.irCuentasPorCobrar = () => { GS.closeModals(); GS.filters('finanzas', { tab: 'movimientos', anio: '', q: '' }).tab = 'cobrar'; GS.go('finanzas'); };
 
   GS.views.dashboard = {
     title: 'Dashboard',

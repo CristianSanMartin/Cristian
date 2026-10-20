@@ -582,12 +582,13 @@ const Ventas = {
       r.salidas = (r.salidas || 0) + x.cantidad;
       r.costoSalidas = (r.costoSalidas || 0) + x.costo * x.cantidad;
       // Premio de torneo: el torneo la "compró" a su precio; cuenta como venta de la factura (no le resta ganancia).
+      // Sin IVA: el IVA se paga en la inscripción del torneo, así que el traspaso es a precio completo (ganancia = precio − costo).
       if (x.torneoId && x.precio) {
         r.ventas += x.precio * x.cantidad;
-        r.ganancia += Economia.unidad(x.costo, x.precio).ganancia * x.cantidad;
+        r.ganancia += (x.precio - x.costo) * x.cantidad;
       }
       const etiqueta = x.torneoId ? 'Premio ' + x.torneoId : MOTIVOS_SALIDA[x.motivo] || x.motivo;
-      for (let i = 0; i < x.cantidad; i++) r.unidades.push({ oc: etiqueta, cliente: x.notas, fecha: x.fecha, precio: x.torneoId ? x.precio || 0 : 0, salida: x.motivo, salidaId: x.id });
+      for (let i = 0; i < x.cantidad; i++) r.unidades.push({ oc: etiqueta, cliente: x.notas, fecha: x.fecha, precio: x.torneoId ? x.precio || 0 : 0, salida: x.motivo, salidaId: x.id, sinIva: !!x.torneoId });
     });
 
     // Cuotas de TUU aún no abonadas: lo debe TUU, no el cliente.

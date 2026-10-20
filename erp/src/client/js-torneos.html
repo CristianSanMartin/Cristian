@@ -169,13 +169,13 @@
         filaRes('Inscripciones (' + r.pagan + ' × ' + fmt.money(t.inscripcion) + ')', fmt.money(r.inscripciones)) +
         filaRes('− IVA', '−' + fmt.money(r.iva)) +
         filaRes('− Comisiones TUU', '−' + fmt.money(r.comisiones)) +
-        filaRes('− Premios (precio torneo, sin IVA)', '−' + fmt.money(r.premiosNeto)) +
+        filaRes('− Premios (precio torneo)', '−' + fmt.money(r.premiosNeto)) +
         filaRes('− Juez', '−' + fmt.money(r.juez)) +
         '<tr><td class="cell-strong">Margen</td><td class="cell-num right"><strong class="' + signo(r.margen) + '">' + fmt.money(r.margen) + '</strong> <span class="cell-dim">' + Math.round(r.margenPct * 100) + '%</span></td></tr>' +
         filaRes('Por jugador', fmt.money(r.porJugador), 'cell-dim') +
         '</tbody></table>' +
         '<p class="table-note">' + (r.equilibrio ? 'Punto de equilibrio: <strong>' + r.equilibrio + ' jugadores</strong> pagando ' + fmt.money(t.inscripcion) + ' cubren premios y juez. ' : '') +
-        (r.premiosCosto ? 'Los premios costaron ' + fmt.money(r.premiosCosto) + ' neto; a precio torneo ' + fmt.money(r.premiosNeto) + ' (la diferencia queda como ganancia de sus facturas).' : '') + '</p></div></div>' +
+        (r.premiosCosto ? 'Los premios del inventario costaron ' + fmt.money(r.premiosCosto) + ' neto; el torneo los paga a su precio completo, sin IVA (el IVA ya va en la inscripción). La diferencia queda como ganancia de sus facturas.' : '') + '</p></div></div>' +
       // Juez y premios
       '<div class="panel"><div class="panel-head"><h3>Juez y premios</h3></div><div class="panel-body">' +
         '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0 12px;"><span class="cell-strong nowrap">Pago al juez</span>' +

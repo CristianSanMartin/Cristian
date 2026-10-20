@@ -371,7 +371,8 @@ const Torneos = {
       const premiosBruto = pr.reduce((s, x) => s + x.precio * x.cantidad, 0) + (t.sobresMonto || 0) + (t.participacionMonto || 0);
       const premiosCosto = pr.reduce((s, x) => s + x.costo * x.cantidad, 0);
       const insNeto = Economia.sinIva(inscripciones);
-      const premiosNeto = Economia.sinIva(premiosBruto);
+      // Premios a precio torneo completo, sin IVA: el IVA ya va en la inscripción.
+      const premiosNeto = premiosBruto;
       const margen = insNeto - comisiones - premiosNeto - (t.juez || 0);
       const pagan = vivos.filter((j) => j.monto > 0).length;
       // Punto de equilibrio: jugadores que pagan la inscripción para cubrir premios y juez.

@@ -388,7 +388,7 @@ Menú **Torneos**. Al terminar un torneo, TOM (Tournament Operations Manager) ex
   mismo ticket. **Cobrar juntos:** se marcan varios tickets en la caja (el primero marcado es quien paga)
   y quedan en uno solo, con todas sus líneas. Lo que no se pague queda como deuda del cliente al cerrar
   la caja. "Sin costo" quita la inscripción de un jugador (invitado, juez que juega).
-- **Premios:** salen del inventario como salida ligada al torneo (los **sobres sueltos** de booster boxes abiertas se agregan sin control de stock, a $6.000 c/u por defecto). El torneo los "compra" a PVP (se puede
+- **Premios:** se traspasan al torneo **sin IVA** (el IVA ya se paga en la inscripción): a precio completo (PVP por defecto), así la factura gana lo mismo que si se vendiera en tienda y en la unidad no aparece débito fiscal. Salen del inventario como salida ligada al torneo (los **sobres sueltos** de booster boxes abiertas se agregan sin control de stock, a $6.000 c/u por defecto). El torneo los "compra" a PVP (se puede
   cambiar el precio): la factura del producto los cuenta como vendidos a ese precio y el torneo los carga.
 - **Sobres de participación:** uno por jugador, al precio torneo ($2.000 por defecto); la compra (informal) va como gasto en la caja o Finanzas.
 - **Juez:** pago variable en efectivo; queda como egreso de la caja del torneo (Finanzas → "Torneos
@@ -397,6 +397,14 @@ Menú **Torneos**. Al terminar un torneo, TOM (Tournament Operations Manager) ex
   punto de equilibrio (jugadores necesarios para cubrir premios y juez).
 - Requiere "Instalar / actualizar hojas" (hojas nuevas `Torneos` y `Torneo_Jugadores`, columnas nuevas en
   `Salidas`).
+
+## Cuentas por cobrar
+
+Finanzas → **Cuentas por cobrar**: una fila por cliente con el total que debe y desde cuándo (menos de 7 días
+normal, 7 a 30 en dorado, más de 30 en rojo). Al desplegarla se ven sus ventas (y los tickets pendientes de la
+caja abierta, como inscripciones de torneo). Botón de **WhatsApp** con el mensaje listo y **Abonar** (abre la
+ficha del cliente). En el Dashboard, la casilla "Por cobrar a clientes" se abre al hacerle clic. GSTin avisa al
+entrar si hay clientes que deben hace más de 30 días.
 
 ## Rendimiento al guardar
 

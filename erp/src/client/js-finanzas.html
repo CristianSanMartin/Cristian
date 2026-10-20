@@ -212,6 +212,92 @@
     return r;
   };
 
+  /* ---------- cuentas por cobrar ---------- */
+
+  const diasDesde = (fecha) => Math.max(0, Math.round((new Date(data().hoy + 'T12:00:00Z') - new Date(fecha + 'T12:00:00Z')) / 86400000));
+  /**
+   * Deudas de clientes agrupadas por cliente: ventas con saldo y tickets de la caja abierta con pago pendiente
+   * (ej. inscripciones de torneo), con la antigüedad de la más antigua. Ordenadas de la más antigua a la más nueva.
+   */
+  GS.cuentasPorCobrar = function () {
+    const d = data();
+    const porCli = {};
+    const fila = (clave, nombre, clienteId) => porCli[clave] || (porCli[clave] = { clave: clave, cliente: nombre, clienteId: clienteId || '', total: 0, desde: '', docs: [] });
+    d.ventas.forEach((v) => {
+      if (v.anulada || !(v.saldo > 0)) return;
+      const r = fila(v.clienteId || v.cliente, v.cliente, v.clienteId);
+      r.total += v.saldo;
+      r.docs.push({ id: v.id, fecha: v.fecha, total: v.total, pagado: v.cobrado, saldo: v.saldo });
+    });
+    (d.cajas || []).filter((c) => c.estado === 'abierta').forEach((c) => (c.tickets || []).forEach((t) => {
+      if (t.estado !== 'abierto' || t.tipo !== 'venta') return;
+      const pend = t.pagos.filter((g) => g.medio === 'pendiente').reduce((a, g) => a + g.monto, 0);
+      if (!pend) return;
+      const cli = d.clientes.find((x) => GS.norm(x.nombre) === GS.norm(t.cliente));
+      const r = fila(cli ? cli.id : t.cliente, cli ? cli.nombre : t.cliente, cli ? cli.id : '');
+      r.total += pend;
+      r.docs.push({ id: t.id, fecha: c.fecha, total: t.total, pagado: t.total - pend, saldo: pend, caja: true });
+    }));
+    return Object.values(porCli).map((r) => {
+      r.docs.sort((a, b) => a.fecha.localeCompare(b.fecha));
+      r.desde = r.docs[0].fecha;
+      r.dias = diasDesde(r.desde);
+      const c = d.clientes.find((x) => x.id === r.clienteId);
+      r.telefono = c ? c.telefono : '';
+      return r;
+    }).sort((a, b) => b.dias - a.dias || b.total - a.total);
+  };
+  /** Color por antigüedad: menos de 7 días normal, de 7 a 30 dorado, más de 30 rojo. */
+  const antig = (dias) => '<span class="' + (dias > 30 ? 'text-danger' : dias >= 7 ? 'text-gold' : '') + '">' + (dias === 0 ? 'hoy' : dias === 1 ? '1 día' : dias + ' días') + '</span>';
+  /** Mensaje de WhatsApp con todo lo que debe el cliente. */
+  const wspDeuda = (r) => {
+    const tel = String(r.telefono || '').replace(/\D/g, '');
+    if (!tel) return '<span class="cell-dim" title="Agrega su teléfono en Clientes">sin teléfono</span>';
+    const msg = 'Hola ' + r.cliente.split(' ')[0] + ', te escribimos de GS Prime. Tienes un saldo pendiente de ' + fmt.money(r.total) +
+      (r.docs.length > 1 ? ' (' + r.docs.map((x) => (x.caja ? 'compra' : x.id) + ' del ' + fmt.date(x.fecha) + ': ' + fmt.money(x.saldo)).join('; ') + ')' : ' por tu compra del ' + fmt.date(r.docs[0].fecha)) + '. ¡Gracias!';
+    return '<a class="btn small ghost" target="_blank" rel="noopener" href="https://wa.me/' + tel + '?text=' + encodeURIComponent(msg) + '">WhatsApp</a>';
+  };
+  const abiertosCxc = new Set();
+  GS.actions.verDeudaCliente = (clave) => { if (abiertosCxc.has(clave)) abiertosCxc.delete(clave); else abiertosCxc.add(clave); GS.render(); };
+  /** Tabla de cuentas por cobrar (Finanzas → Cuentas por cobrar y el panel del Dashboard). opts.max = solo las N más antiguas. */
+  GS.tablaPorCobrar = function (opts) {
+    const o = opts || {};
+    const todas = GS.cuentasPorCobrar();
+    const lista = o.max ? todas.slice(0, o.max) : todas;
+    if (!todas.length) return GS.empty('Nadie debe', 'Las ventas con pago pendiente aparecen aquí hasta que se pagan.', 'clientes');
+    const total = todas.reduce((t, r) => t + r.total, 0);
+    const viejas = todas.filter((r) => r.dias > 30);
+    return (o.max ? '' : '<div class="kpi-grid">' +
+        kpi('Por cobrar', fmt.money(total), todas.length + (todas.length === 1 ? ' cliente' : ' clientes')) +
+        kpi('Más de 30 días', '<span class="' + (viejas.length ? 'text-danger' : '') + '">' + fmt.money(viejas.reduce((t, r) => t + r.total, 0)) + '</span>', viejas.length + (viejas.length === 1 ? ' cliente' : ' clientes')) +
+        kpi('De 7 a 30 días', '<span class="text-gold">' + fmt.money(todas.filter((r) => r.dias >= 7 && r.dias <= 30).reduce((t, r) => t + r.total, 0)) + '</span>', '') +
+        kpi('Menos de 7 días', fmt.money(todas.filter((r) => r.dias < 7).reduce((t, r) => t + r.total, 0)), '') + '</div>') +
+      '<div class="table-wrap"><table class="data-table"><thead><tr><th></th><th>Cliente</th><th class="right">Ventas</th><th>Debe desde</th><th class="right">Total adeudado</th><th></th></tr></thead><tbody>' +
+      lista.map((r) => {
+        const open = abiertosCxc.has(r.clave);
+        return '<tr class="fila-compra' + (open ? ' abierta' : '') + '" data-action="verDeudaCliente" data-id="' + esc(r.clave) + '"><td><span class="chev">' + (open ? '▾' : '▸') + '</span></td>' +
+          '<td class="cell-strong">' + esc(r.cliente) + '</td><td class="cell-num right">' + r.docs.length + '</td>' +
+          '<td class="nowrap">' + fmt.date(r.desde) + '<div class="cell-dim">' + antig(r.dias) + '</div></td>' +
+          '<td class="cell-num right"><strong class="' + (r.dias > 30 ? 'text-danger' : r.dias >= 7 ? 'text-gold' : '') + '">' + fmt.money(r.total) + '</strong></td>' +
+          '<td><div class="row-actions">' + wspDeuda(r) + (r.clienteId ? '<button class="btn small ghost" data-nav-cliente="' + esc(r.clienteId) + '" title="Registrar un abono en la ficha del cliente">Abonar</button>' : '') + '</div></td></tr>' +
+          (open ? '<tr class="detalle-row"><td colspan="6"><div class="detalle-compra"><table class="mini-table"><thead><tr><th>Documento</th><th>Fecha</th><th class="right">Total</th><th class="right">Pagado</th><th class="right">Debe</th></tr></thead><tbody>' +
+            r.docs.map((x) => '<tr><td class="cell-strong">' + esc(x.id) + (x.caja ? ' <span class="cell-dim">(caja abierta)</span>' : '') + '</td><td class="nowrap">' + fmt.date(x.fecha) + ' <span class="cell-dim">' + antig(diasDesde(x.fecha)) + '</span></td>' +
+              '<td class="cell-num right">' + fmt.money(x.total) + '</td><td class="cell-num right">' + fmt.money(x.pagado) + '</td><td class="cell-num right"><strong>' + fmt.money(x.saldo) + '</strong></td></tr>').join('') +
+            '</tbody></table>' + (r.docs.some((x) => x.caja) ? '<p class="table-note">Lo de la caja abierta se cobra editando el ticket en la Caja del día.</p>' : '') + '</div></td></tr>' : '');
+      }).join('') + '</tbody></table></div>' +
+      (o.max && todas.length > o.max ? '<p class="table-note">' + (todas.length - o.max) + ' clientes más en Finanzas → Cuentas por cobrar.</p>' : '');
+  };
+  // "Abonar": abre la ficha del cliente con sus deudas desplegadas (ahí se registra el abono).
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest) return;
+    // El enlace de WhatsApp abre su página sin desplegar la fila.
+    if (e.target.closest('a[href^="https://wa.me"]')) { e.stopPropagation(); return; }
+    const b = e.target.closest('[data-nav-cliente]');
+    if (!b) return;
+    e.stopPropagation();
+    GS.go('clientes', b.dataset.navCliente);
+  }, true);
+
   GS.tablaRegistrar('movimientos', { filas: movsBuscados, columnas: colsMov, alCambiar: () => GS.views.finanzas.update() });
 
   // "Ver OC-…" / "Ver CP-…" despliega el detalle debajo de la fila, sin cambiar de página.
@@ -283,7 +369,7 @@
         '<div class="page-head"><div><h1>Finanzas</h1><p>Resumen mensual del negocio y libro de movimientos: aportes, gastos, pagos al SII y compras por monto.</p></div>' +
         '<div class="btn-row"><div class="select-input"><select data-filter="finanzas.anio" aria-label="Año">' + GS.options(anios(), f.anio) + '</select></div>' +
         (GS.puede('operador') ? '<button class="btn" data-action="nuevoMovimiento">' + GS.icon('plus', 2.4) + 'Nuevo movimiento</button>' : '') + '</div></div>' +
-        '<div class="tabs">' + tab('movimientos', 'Movimientos') + tab('resumen', 'Resumen mensual') + '</div>' +
+        '<div class="tabs">' + tab('movimientos', 'Movimientos') + tab('cobrar', 'Cuentas por cobrar' + (GS.cuentasPorCobrar().length ? ' <span class="pill soon">' + fmt.money(GS.cuentasPorCobrar().reduce((t, x) => t + x.total, 0)) + '</span>' : '')) + tab('resumen', 'Resumen mensual') + '</div>' +
         '<div id="fin-cuerpo"></div>';
       this.update();
     },
@@ -342,6 +428,7 @@
           : '<tr><td colspan="' + (colsMov.length + 1) + '">' + GS.empty('Sin movimientos', 'Registra aportes, gastos, pagos al SII o compras por monto con "Nuevo movimiento".', 'finanzas') + '</td></tr>';
         return;
       }
+      if (f.tab === 'cobrar') { cuerpo.innerHTML = GS.tablaPorCobrar(); return; }
       const r = resumen(anio);
       const total = (fila) => fila.valores.reduce((t, x) => t + x, 0);
       // Capital: aportes menos retiros de capital (devolución de aportes). La compra de acciones /
