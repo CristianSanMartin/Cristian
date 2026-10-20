@@ -20,7 +20,7 @@ function libro_() {
 }
 
 // Hojas que la app lee para armar el control de rutas y la liquidación de Perú
-const HOJAS_LECTURA = ['REGISTRO', 'GEOSORT', 'VIAJES PAGADOS', 'PERU RUTAS'];
+const HOJAS_LECTURA = ['REGISTRO', 'GEOSORT', 'VIAJES PAGADOS', 'PERU RUTAS', 'PERU TARIFAS', 'PERU DISTRITOS', 'PERU FERIADOS', 'PERU AJUSTES', 'PERU MOVIMIENTOS', 'PERU CONDUCTORES', 'PERU QUINCENAS', 'PERU COSTOS FIJOS', 'PERU FACTURAS'];
 
 function norm_(v) {
   return String(v == null ? '' : v).trim().normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
@@ -117,4 +117,57 @@ function leerDatos() {
     hojas[n] = sh && sh.getLastRow() ? sh.getDataRange().getValues().map(r => r.map(v => v instanceof Date ? iso_(v) : v)) : [];
   }
   return { hojas: hojas, url: ss.getUrl() };
+}
+
+// ---------- Tipo de cambio sol peruano -> peso chileno (hoja PERU TIPO CAMBIO) ----------
+// Se completa con GOOGLEFINANCE("CURRENCY:PENCLP") los días que faltan desde el último guardado hasta hoy,
+// cada vez que se abre la web. No pide permisos nuevos (usa la misma planilla). Solo se usa en resúmenes y KPI.
+const HOJA_TC = 'PERU TIPO CAMBIO';
+function tipoCambioPeru() {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const ss = libro_();
+    let sh = ss.getSheetByName(HOJA_TC);
+    if (!sh) {
+      sh = ss.insertSheet(HOJA_TC);
+      sh.getRange(1, 1, 1, 2).setValues([['FECHA', 'CLP POR SOL']]).setFontWeight('bold');
+      sh.setFrozenRows(1);
+    }
+    const leer = () => sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, 2).getValues().filter(r => r[0] instanceof Date && Number(r[1]) > 0) : [];
+    let filas = leer();
+    const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+    let desde = new Date(2025, 0, 1);
+    if (filas.length) { desde = new Date(Math.max.apply(null, filas.map(r => r[0].getTime()))); desde.setDate(desde.getDate() + 1); }
+    if (desde <= hoy) {
+      const nuevas = historialPENCLP_(ss, desde, hoy);
+      if (nuevas.length) { sh.getRange(sh.getLastRow() + 1, 1, nuevas.length, 2).setValues(nuevas); filas = leer(); }
+    }
+    return filas.map(r => [iso_(r[0]), Number(r[1])]);
+  } finally {
+    lock.releaseLock();
+  }
+}
+function historialPENCLP_(ss, desde, hasta) {
+  const tmp = ss.insertSheet('_TC_' + Date.now());
+  try {
+    const f = d => 'DATE(' + d.getFullYear() + ',' + (d.getMonth() + 1) + ',' + d.getDate() + ')';
+    // Un día antes de "desde" para que GOOGLEFINANCE siempre devuelva al menos una fila
+    const ini = new Date(desde); ini.setDate(ini.getDate() - 1);
+    tmp.getRange('A1').setFormula('=GOOGLEFINANCE("CURRENCY:PENCLP","price",' + f(ini) + ',' + f(hasta) + ',"DAILY")');
+    let v = [];
+    for (let i = 0; i < 10; i++) {
+      SpreadsheetApp.flush();
+      v = tmp.getDataRange().getValues();
+      if (v.length > 1 && v[1][0] instanceof Date) break;
+      Utilities.sleep(1500);
+    }
+    return v.slice(1).filter(r => r[0] instanceof Date && Number(r[1]) > 0)
+      .map(r => { const d = new Date(r[0]); d.setHours(0, 0, 0, 0); return [d, Number(r[1])]; })
+      .filter(r => r[0] >= desde && r[0] <= hasta);
+  } catch (e) {
+    return [];
+  } finally {
+    ss.deleteSheet(tmp);
+  }
 }

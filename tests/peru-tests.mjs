@@ -60,12 +60,141 @@ const conObs = await page.$$eval("#peruBody tr", trs => trs.map(t => [t.children
 await page.selectOption("#pFiltro", "");
 const pagos = await page.evaluate(`Object.fromEntries(rutasMesPeru().rutas.map(r=>[r.fecha+" "+r.placa,[r.pago,r.margen,r.llave]]))`);
 const resumenPago = await page.evaluate(`["pPago","pMargen"].map(id=>document.getElementById(id).textContent)`);
-const [dlPago] = await Promise.all([page.waitForEvent("download"), page.click("text=Descargar pago transportista")]);
-const outPago = path.join(tmp, "pago_out.xlsx"); await dlPago.saveAs(outPago);
-const nombrePago = dlPago.suggestedFilename();
 const [dl] = await Promise.all([page.waitForEvent("download"), page.click("text=Descargar liquidación")]);
 const out = path.join(tmp, "liq_out.xlsx"); await dl.saveAs(out);
 const nombre = dl.suggestedFilename();
+
+// ---------- Pago transporte por quincena ----------
+await page.click("button.tab[data-vista=peruPago]");
+const vistaPago = await page.isVisible("#vistaPeruPago");
+const quincenas = await page.$$eval("#qSel option", os => os.map(o => o.textContent));
+await page.selectOption("#qSel", "2026-09-Q1");
+const resumenQ = () => page.evaluate(`["qRutas","qNeto","qIgv","qDesc","qTotal","qOtros"].map(id=>document.getElementById(id).textContent)`);
+const resumenQ1 = await resumenQ();
+await page.selectOption("#qFiltro", "fal");
+const conFallidos = await page.$$eval("#qBody tr", trs => trs.map(t => [t.children[0].textContent, t.children[1].textContent, t.children[5].textContent]));
+await page.selectOption("#qFiltro", "");
+await page.fill('#qConductores input[data-p=AAA111][data-k=nombre]', "JUAN PEREZ");
+await page.fill('#qConductores input[data-p=AAA111][data-k=doc]', "DNI 123");
+await page.click("text=Guardar conductores"); await page.waitForTimeout(200);
+const hojaCond = await page.evaluate(`almacenLocal.hojas["PERU CONDUCTORES"]`);
+await page.fill("#dConcepto", "Pagos en exceso periodos anteriores"); await page.fill("#dMonto", "100");
+await page.click("#vistaPeruPago >> text=Agregar >> nth=0"); await page.waitForTimeout(200);
+await page.fill("#opConcepto", "Personal de seguimiento"); await page.fill("#opBenef", "MARIA X"); await page.fill("#opDoc", "DNI 9"); await page.fill("#opMonto", "1000");
+await page.click("#vistaPeruPago >> text=Agregar >> nth=1"); await page.waitForTimeout(200);
+const hojaMov = await page.evaluate(`almacenLocal.hojas["PERU MOVIMIENTOS"].length-1`);
+// Ajuste: 12-09 AAA111 se cobró y pagó como Periferia
+await page.click('#qBody button[data-k="2026-09-12|AAA111"]');
+await page.selectOption("#ajCobro", "PERIFERIA/LEJANO"); await page.selectOption("#ajPago", "PERIFERIA/LEJANO"); await page.fill("#ajMotivo", "Validado por Sodimac");
+await page.click("text=Guardar ajuste"); await page.waitForTimeout(200);
+const ajustada = await page.evaluate(`(r=>[r.zonaCobro,r.total,r.pago,r.totalCalc,r.pagoCalc,r.obsTarifa,r.llave])(peruDatos.rutas.find(r=>r.fecha==="2026-09-12"&&r.placa==="AAA111"))`);
+const hojaAj = await page.evaluate(`almacenLocal.hojas["PERU AJUSTES"]`);
+const resumenQ1b = await resumenQ();
+await page.selectOption("#qEstado", "Enviado al transporte"); await page.waitForTimeout(200);
+const hojaQuin = await page.evaluate(`almacenLocal.hojas["PERU QUINCENAS"].slice(1).map(r=>r.slice(0,2))`);
+const correo = await page.inputValue("#qCorreo");
+const [dlQ] = await Promise.all([page.waitForEvent("download"), page.click("text=Descargar detalle quincena")]);
+const outQ = path.join(tmp, "q_out.xlsx"); await dlQ.saveAs(outQ);
+const nombreQ = dlQ.suggestedFilename();
+// Recargar desde las hojas conserva ajustes, descuentos, conductores y estado
+await page.evaluate("recargarPeru()"); await page.waitForTimeout(200);
+const trasRecargarPago = [await resumenQ(), await page.inputValue("#qEstado"), await page.evaluate(`peruDatos.rutas.find(r=>r.fecha==="2026-09-12"&&r.placa==="AAA111").pago`)];
+
+// ---------- Cuadre y KPI ----------
+await page.click("button.tab[data-vista=peruCuadre]");
+const vistaCuadre = await page.isVisible("#vistaPeruCuadre");
+const cuadreSin = await page.evaluate(`(d=>[d.calc,d.liq,d.ajustes.length,d.difCobro,d.cobrado,d.pago,d.desc,d.otros,d.costo,d.margen])(mesCuadrePe("2026-09"))`);
+await page.fill("#fcNumero", "F001-10"); await page.fill("#fcFecha", "2026-10-05"); await page.fill("#fcMonto", "3056");
+await page.click("#cCuadreCobro >> text=Guardar factura"); await page.waitForTimeout(200);
+const cuadreCobro = await page.$$eval("#cCuadreCobro tr", trs => trs.map(t => [...t.children].map(c => c.textContent.trim())));
+const pendiente = await page.evaluate(`[document.getElementById("cPendiente").textContent,document.getElementById("cPendienteDet").textContent]`);
+await page.fill("#fpQ1Numero", "E001-5"); await page.fill("#fpQ1Monto", "2606.92"); await page.fill("#fpQ1Pago", "2026-09-25");
+await page.click("#cCuadrePago >> text=Guardar factura >> nth=0"); await page.waitForTimeout(200);
+await page.fill("#fcPago", "2026-10-20"); await page.click("#cCuadreCobro >> text=Guardar factura"); await page.waitForTimeout(200);
+const trasFacturas = await page.evaluate(`(d=>[d.difCobro,d.qs[0].dif,d.qs[0].dias,d.cobrado,Math.round(d.margen*100)/100,document.getElementById("cPendiente").textContent,almacenLocal.hojas["PERU FACTURAS"].length-1])(mesCuadrePe("2026-09"))`);
+const kpi = await page.evaluate(`(k=>[k.rutas,k.placas,Math.round(k.perif*1000)/10,Math.round(k.dom*1000)/10,Math.round(k.entrega*1000)/10,k.diasPago])(mesCuadrePe("2026-09").kpi)`);
+const cajasKpi = await page.$$eval("#cKpi .summary-title", e => e.map(x => x.textContent));
+const tendencia = await page.$$eval("#cTendencia tbody tr", trs => trs.map(t => t.children[0].textContent));
+const hojaFijos = await page.evaluate(`almacenLocal.hojas["PERU COSTOS FIJOS"]`);
+// Pesos chilenos: tipo de cambio de la hoja PERU TIPO CAMBIO, al tipo de cambio de hoy (último), solo en resúmenes
+const sinTc = await page.evaluate(`document.getElementById("cCobrado").parentNode.querySelector(".clp").textContent`);
+await page.evaluate(`almacenLocal.hojas["PERU TIPO CAMBIO"]=[["FECHA","CLP POR SOL"],["2026-09-01",250],["2026-09-15",260],["2026-10-01",270]]; cargarTipoCambioPe()`);
+await page.waitForTimeout(200);
+const clp = await page.evaluate(`[document.getElementById("cCobrado").parentNode.querySelector(".clp").textContent, document.getElementById("cTc").textContent,
+  [...document.querySelectorAll("#cKpi .clp")].length, document.querySelector("#cTendencia tbody tr").children[8].textContent,
+  tcPeriodoPe().tc]`);
+await page.click("button.tab[data-vista=peruPago]"); await page.selectOption("#qSel", "2026-09-Q1");
+const clpPago = await page.evaluate(`[document.getElementById("qTotal").parentNode.querySelector(".clp").textContent, document.querySelectorAll("#qBody .clp").length]`);
+await page.click("button.tab[data-vista=peruCuadre]");
+
+// ---------- Tarifas (vigencias, feriados, distritos) ----------
+page.on("dialog", d => d.accept());
+const ruta = (f, p) => page.evaluate(`(r=>r&&[r.tarifa,r.adicional,r.detalle,r.total,r.pago])(peruDatos.rutas.find(r=>r.fecha==="${f}"&&r.placa==="${p}"))`);
+const hojasConfig = await page.evaluate(`["PERU TARIFAS","PERU DISTRITOS","PERU FERIADOS"].map(h=>(almacenLocal.hojas[h]||[]).length-1)`);
+const encTarifas = await page.evaluate(`almacenLocal.hojas["PERU TARIFAS"][0]`);
+await page.click("button.tab[data-vista=peruTarifas]");
+const vistaTarifas = await page.isVisible("#vistaPeruTarifas");
+const tablaCobro = await page.$$eval("#peTar_COBRO tbody tr", trs => trs.map(t => [...t.children].map(c => c.textContent.trim())));
+// Nueva vigencia del cobro desde el 13-09-2026: F13 Metropolitana 450 / 585
+await page.click("#peTar_COBRO >> text=Nueva vigencia");
+await page.fill("#peDesde_COBRO", "2026-09-13");
+await page.fill('#peTar_COBRO .in-tarifa[data-u=F13][data-c=URBANO][data-k=regular]', "450");
+await page.fill('#peTar_COBRO .in-tarifa[data-u=F13][data-c=URBANO][data-k=domingo]', "585");
+await page.click("#peTar_COBRO >> text=Guardar vigencia");
+await page.waitForFunction(`vigenciasPe("COBRO").length===2`);
+await page.waitForTimeout(200);
+const conVigencia = [await ruta("2026-09-10", "AAA111"), await ruta("2026-09-13", "CCC333"), await ruta("2026-09-15", "AAA111")];
+const filasTar = await page.evaluate(`almacenLocal.hojas["PERU TARIFAS"].length-1`);
+const opcionesVig = await page.$$eval("#peVig_COBRO option", os => os.map(o => o.textContent));
+// Se lee de la hoja al recargar
+await page.evaluate("recargarPeru()"); await page.waitForTimeout(200);
+const trasRecargar = [await page.evaluate(`tarifasPe.length`), await ruta("2026-09-15", "AAA111")];
+await page.click("#peTar_COBRO >> text=Eliminar esta vigencia");
+await page.waitForFunction(`vigenciasPe("COBRO").length===1`); await page.waitForTimeout(200);
+const sinVigencia = await ruta("2026-09-15", "AAA111");
+const sinTarifa = await page.evaluate(`(r=>[r.tarifa,r.pago,r.obsTarifa])(tarificarPeru({fecha:"2024-12-31",unidad:"F13",zona:"Metropolitana",obs:""}))`);
+// Feriado nuevo: cobro con adicional "Tarifa Feriado" y pago con tarifa de domingo
+await page.fill("#peNuevoFer", "2026-09-10"); await page.fill("#peNombreFer", "Prueba");
+await page.click("#vistaPeruTarifas >> text=Agregar >> nth=1");
+await page.waitForFunction(`FERIADOS_PE.has("2026-09-10")`); await page.waitForTimeout(200);
+const conFeriado = await ruta("2026-09-10", "AAA111");
+const feriadoEnHoja = await page.evaluate(`almacenLocal.hojas["PERU FERIADOS"].some(r=>String(r[0]).startsWith("2026-09-10")&&r[1]==="Prueba")`);
+const feriados2025 = await page.$$eval("#peAnioFer option", os => os.map(o => o.value));
+await page.evaluate(`quitarFeriadoPe("2026-09-10")`); await page.waitForTimeout(200);
+const sinFeriado = await ruta("2026-09-10", "AAA111");
+// Distrito: COMAS a Periferia se aplica al volver a cargar SIMPLI
+await page.fill("#peBuscarDist", "COMAS");
+await page.selectOption("#peDistritos select", "PERIFERIA/LEJANO"); await page.waitForTimeout(200);
+const comasHoja = await page.evaluate(`almacenLocal.hojas["PERU DISTRITOS"].find(r=>r[0]==="COMAS")[1]`);
+const antesRecarga = await page.evaluate(`peruDatos.rutas.find(r=>r.fecha==="2026-09-10"&&r.placa==="AAA111").zona`);
+await page.setInputFiles("#inSimpli", [f1, f2]);
+await page.waitForFunction(`peruDatos.rutas.find(r=>r.fecha==="2026-09-10"&&r.placa==="AAA111").zona==="Periferia"`);
+const trasRecargaSimpli = await ruta("2026-09-10", "AAA111");
+// Liquidación de cobro para días sin SIMPLI (meses antiguos): el 10-09 ya tiene SIMPLI y se omite
+const fLiq = escribir([["LIQUIDACIÓN SERVICIOS MARZO 2026"], LH,
+  [new Date("2026-03-30T00:00:00"), "JOINT PERU S.A.C.", "BTZ753", "F13", 5, "COMAS", "Metropolitana", 420, "", "", 420],
+  [new Date("2026-03-31T00:00:00"), "JOINT PERU S.A.C.", "BTZ753", "F20", 7, "CARABAYLLO", "Periferia", 640, "", "", 640],
+  [new Date("2026-03-31T00:00:00"), "JOINT PERU S.A.C.", "XYZ 999", "13M3", 4, "LIMA", "METROPOLITANA", 420, "", "", 420],
+  [new Date("2026-09-10T00:00:00"), "JOINT PERU S.A.C.", "AAA111", "F13", 2, "COMAS", "Metropolitana", 420, "", "", 420],
+  ["Total", "", "", "", "", "", "", "", "", "", 1900]], "liquidacion_marzo.xlsx");
+await page.click("button.tab[data-vista=peru]");
+await page.setInputFiles("#inLiqPe", fLiq);
+await page.waitForFunction(`peruDatos.rutas.some(r=>r.fecha==="2026-03-31")`);
+const liqRutas = await page.evaluate(`peruDatos.rutas.filter(r=>r.fecha<"2026-04").map(r=>[r.fecha,r.placa,r.unidad,r.puntos,r.distrito,r.zonaCobro,r.total,r.pago])`);
+const liqAviso = await page.textContent("#estadoPeru");
+const liqSep = await page.evaluate(`peruDatos.rutas.filter(r=>r.fecha==="2026-09-10").map(r=>r.vehiculo)`);
+await page.selectOption("#pFiltro", "liq");
+const liqFiltro = await page.$$eval("#peruBody tr", trs => trs.length);
+await page.selectOption("#pFiltro", "");
+// Recargar SIMPLI de septiembre no borra marzo; SIMPLI del 31-03 reemplaza ese día de la liquidación
+await page.setInputFiles("#inSimpli", [f1, f2]); await page.waitForTimeout(300);
+const liqTrasSep = await page.evaluate(`peruDatos.rutas.filter(r=>r.fecha<"2026-04").length`);
+await page.setInputFiles("#inSimpli", escribir([H, v(50, "2026-03-31", A, "AV LIMA 1, CARABAYLLO")], "simpli_31_03.xlsx"));
+await page.waitForFunction(`peruDatos.rutas.some(r=>r.fecha==="2026-03-31"&&r.placa==="AAA111")`);
+const liqTrasSimpli = await page.evaluate(`peruDatos.rutas.filter(r=>r.fecha<"2026-04").map(r=>[r.fecha,r.placa,r.vehiculo===VEH_LIQ_PE])`);
+// Una nueva liquidación no pisa el día que ya tiene SIMPLI
+await page.setInputFiles("#inLiqPe", fLiq); await page.waitForTimeout(300);
+const liqOtraVez = await page.evaluate(`peruDatos.rutas.filter(r=>r.fecha<"2026-04").map(r=>[r.fecha,r.placa])`);
 await browser.close();
 
 const wb = XLSX.readFile(out, { cellDates: true }), ws = wb.Sheets[wb.SheetNames[0]];
@@ -91,14 +220,64 @@ check("Filtro con observación", conObs, [["12-09-2026", "AAA111"]]);
 check("Nombre de la liquidación", nombre, "Liquidacion JOINT PERU S.A.C. UM SODIMAC - 09SEPTIEMBRE - 2026.xlsx");
 check("Formato de la liquidación", [wb.SheetNames[0], salida[0], salida[2].slice(1, 9), salida.length, ws["K2"].f, ws["K8"].f],
   ["LIQUIDACIÓN SERVICIOS", LH, ["JOINT PERU S.A.C.", "AAA111", "F13", 2, "COMAS", "Metropolitana", 420, ""], 8, "SUM(H2:I2)", "SUM(K2:K7)"]);
-check("Pago transportista regular urbano", pagos["2026-09-10 AAA111"], [380, 40, "CT ATLANTIS SODIMAC;RUTA REGULAR;13m3;URBANO"]);
-check("Pago transportista F20 periferia", pagos["2026-09-12 BBB222"], [540, 100, "CT ATLANTIS SODIMAC;RUTA REGULAR;20m3;PERIFERIA/LEJANO"]);
-check("Pago transportista domingo", pagos["2026-09-13 CCC333"], [494, 52, "CT ATLANTIS SODIMAC;RUTA DOMINGO;13m3;URBANO"]);
+check("Pago transportista regular urbano", pagos["2026-09-10 AAA111"], [380, 40, "CT ATLANTIS SODIMAC;RUTA REGULAR;13M3;URBANO"]);
+check("Pago transportista F20 periferia", pagos["2026-09-12 BBB222"], [540, 100, "CT ATLANTIS SODIMAC;RUTA REGULAR;20M3;PERIFERIA/LEJANO"]);
+check("Pago transportista domingo", pagos["2026-09-13 CCC333"], [494, 52, "CT ATLANTIS SODIMAC;RUTA DOMINGO;13M3;URBANO"]);
 check("Resumen pago y margen", resumenPago, ["S/ 2,554", "S/ 312 (11%)"]);
-const wbP = XLSX.readFile(outPago, { cellDates: true }), wsP = wbP.Sheets[wbP.SheetNames[0]];
-const salidaP = XLSX.utils.sheet_to_json(wsP, { header: 1, defval: "" });
-check("Excel pago transportista", [nombrePago, wbP.SheetNames[0], salidaP[0].length, salidaP[1].slice(1, 4), salidaP[1][9], salidaP.length, wsP["J8"].f],
-  ["Pago transportista CT ATLANTIS SODIMAC - SEPTIEMBRE 2026.xlsx", "PAGO TRANSPORTE", 10, ["CT ATLANTIS SODIMAC", "AAA111", "F13"], 380, 8, "SUM(J2:J7)"]);
+check("Vista pago transporte y quincenas", [vistaPago, quincenas], [true, ["2ª quincena septiembre 2026 (16 al 30)", "1ª quincena septiembre 2026 (01 al 15)"]]);
+check("Resumen 1ª quincena", resumenQ1, ["5", "S/ 2,174.00", "S/ 2,565.32", "S/ 0.00", "S/ 2,565.32", "S/ 847.46"]);
+check("Rutas con puntos fallidos", conFallidos, [["12-09-2026", "AAA111", "1"]]);
+check("Conductor guardado", hojaCond, [["PLACA", "CONDUCTOR", "DOCUMENTO"], ["AAA111", "JUAN PEREZ", "DNI 123"]]);
+check("Descuento y otro pago guardados", hojaMov, 2);
+check("Ajuste cambia cobro y pago y guarda lo calculado", ajustada, ["Periferia", 610, 500, 420, 380,
+  "Punto en PUENTE PIEDRA no entregado (Distrito errado): se cobra Metropolitana; Ajuste: cobrada como Periferia y pagada como Periferia (Validado por Sodimac)".split("; ").slice(1).join("; "),
+  "CT ATLANTIS SODIMAC;RUTA REGULAR;13M3;PERIFERIA/LEJANO"]);
+check("Hoja PERU AJUSTES", hojaAj, [["FECHA", "PLACA", "ZONA COBRO", "ZONA PAGO", "MOTIVO"], ["2026-09-12", "AAA111", "Periferia", "Periferia", "Validado por Sodimac"]]);
+check("Resumen con ajuste, descuento y otros pagos", resumenQ1b, ["5", "S/ 2,294.00", "S/ 2,706.92", "S/ 100.00", "S/ 2,606.92", "S/ 1,000.00"]);
+check("Estado de la quincena", hojaQuin, [["2026-09-Q1", "Enviado al transporte"]]);
+check("Correo", [correo.includes("entre los días 01 al 15 de Septiembre del año 2026"), correo.includes("PAGOS EN EXCESO PERIODOS ANTERIORES    S/. 100,00"),
+  correo.includes("TOTAL DESC. S/. 100,00"), correo.includes("asciende a: S/. 2.606,92 IGV incluido"), correo.includes("S/. 1.180,00 MARIA X DNI 9"), correo.includes("1ª Q SEP 26")],
+  [true, true, true, true, true, true]);
+const wbQ = XLSX.readFile(outQ), wsQ = wbQ.Sheets[wbQ.SheetNames[0]];
+const salidaQ = XLSX.utils.sheet_to_json(wsQ, { header: 1, defval: "" });
+check("Excel detalle quincena", [nombreQ, salidaQ[0], salidaQ[1], wsQ["L7"].f, wsQ["M9"].v, wsQ["K10"].v, wsQ["M10"].v],
+  ["1Q SEP 2026.xlsx", ["Fecha", "CtOrigen", "Motivo", "Patente", "Distrito", "Capacidad", "PUNTOS", "Tipo", "Usuario", "NoDocumentoUsuario", "Tarifario", "Neto", "IGVInc"],
+   ["jueves, 10 de septiembre de 2026", "CT ATLANTIS SODIMAC", "RUTA REGULAR", "AAA111", "COMAS", "13M3", 2, "URBANO", "JUAN PEREZ", "DNI 123", "CT ATLANTIS SODIMAC;RUTA REGULAR;13M3;URBANO", 380, 448.4],
+   "SUM(L2:L6)", -100, "Total a facturar", 2606.92]);
+check("Pago se lee desde las hojas", trasRecargarPago, [["5", "S/ 2,294.00", "S/ 2,706.92", "S/ 100.00", "S/ 2,606.92", "S/ 1,000.00"], "Enviado al transporte", 500]);
+check("Vista cuadre", vistaCuadre, true);
+// Sep: 6 rutas; 12-09 AAA111 ajustada a Periferia (+190 cobro, +120 pago). Q1: 5 rutas pago 2294, desc 100 con IGV, otro pago 1000 (reemplaza el fijo). Q2: 1 ruta 380, fijo 847,46.
+check("Cuadre sin facturas", cuadreSin, [2866, 3056, 1, null, 3056, 2674, 84.75, 1847.46, 4436.71, -1380.71]);
+check("Cuadre del cobro con factura", cuadreCobro, [["Calculado por la web", "S/ 2,866.00"], ["Ajuste 12-09-2026 AAA111: Validado por Sodimac", "S/ 190.00"], ["Liquidado", "S/ 3,056.00"],
+  ["Facturado a Sodimac", "S/ 3,056.00"], ["Diferencia sin explicar", "Cuadra"]]);
+check("Pendiente de cobro", pendiente, ["S/ 3,056.00", "Septiembre 2026 (F F001-10)"]);
+check("Facturas del transporte, días a pago y cobro pagado", trasFacturas, [0, 0, 10, 3056, -1380.71, "S/ 0.00", 2]);
+check("KPI del mes", kpi, [6, { AAA111: 4, BBB222: 1, CCC333: 1 }, 33.3, 16.7, 90, 10]);
+check("Cajas KPI", cajasKpi, ["Rutas", "% periferia", "% domingo o feriado", "Puntos por ruta", "% entrega efectiva", "Ingreso por ruta", "Costo por ruta", "Margen por ruta", "Margen %", "Días cierre a pago"]);
+check("Tendencia", tendencia, ["Septiembre 2026"]);
+check("Costo fijo de seguimiento", hojaFijos, [["CONCEPTO", "BENEFICIARIO", "DOCUMENTO", "VIGENTE DESDE", "MONTO NETO"], ["Personal de seguimiento", "", "", "2025-01-01", 847.46]]);
+check("Sin tipo de cambio no muestra pesos", sinTc, "");
+check("Pesos chilenos en el cuadre (tipo de cambio de hoy: 270)", clp,
+  ["≈ $ 825.120 CLP", "Pesos chilenos al tipo de cambio de hoy: 1 S/ = $ 270,00 (Google Finance, 01-10-2026).", 3, "-$ 372.792", 270]);
+check("Pesos chilenos en el resumen de la quincena (hoy: 270) y no en la tabla", clpPago, ["≈ $ 703.868 CLP", 0]);
+check("Hojas de tarifas, distritos y feriados creadas al abrir", hojasConfig, [8, 55, 32]);
+check("Encabezado PERU TARIFAS", encTarifas, ["TARIFARIO", "TIPO", "VIGENTE DESDE", "UNIDAD", "ZONA", "REGULAR", "DOMINGO"]);
+check("Vista Tarifas", [vistaTarifas, tablaCobro[0], tablaCobro[3]], [true, ["F13", "Metropolitana", "S/ 420", "S/ 546 +30%"], ["F20", "Periferia", "S/ 640", "S/ 832 +30%"]]);
+check("Nueva vigencia solo cambia desde su fecha", conVigencia, [[420, null, "", 420, 380], [450, 135, "Tarifa Domingo", 585, 494], [450, null, "", 450, 380]]);
+check("Vigencia guardada con historial", [filasTar, opcionesVig], [12, ["Desde 13-09-2026 (vigente)", "Desde 01-01-2025"]]);
+check("Tarifas leídas desde la hoja", trasRecargar, [12, [450, null, "", 450, 380]]);
+check("Eliminar vigencia vuelve a la anterior", sinVigencia, [420, null, "", 420, 380]);
+check("Fecha sin tarifa vigente", sinTarifa, [null, null, "Sin tarifa de cobro ni de pago vigente al 31-12-2024"]);
+check("Feriado nuevo", [conFeriado, feriadoEnHoja, feriados2025], [[420, 126, "Tarifa Feriado", 546, 494], true, ["2026", "2025"]]);
+check("Quitar feriado", sinFeriado, [420, null, "", 420, 380]);
+check("Distrito cambia de zona al recargar SIMPLI", [comasHoja, antesRecarga, trasRecargaSimpli], ["Periferia", "Metropolitana", [610, null, "", 610, 500]]);
+check("Liquidación: rutas de días sin SIMPLI", liqRutas, [["2026-03-30", "BTZ753", "F13", 5, "COMAS", "Metropolitana", 420, 380],
+  ["2026-03-31", "BTZ753", "F20", 7, "CARABAYLLO", "Periferia", 640, 540], ["2026-03-31", "XYZ999", "F13", 4, "LIMA", "Metropolitana", 420, 380]]);
+check("Liquidación: aviso y día con SIMPLI respetado", [liqAviso, liqSep], ["3 rutas de 2 días agregadas desde la liquidación; 1 rutas omitidas porque su día ya tiene SIMPLI. Vista previa: los datos se guardan solo mientras la página esté abierta.", ["JOINT-AAA111-13M3"]]);
+check("Liquidación: filtro", liqFiltro, 3);
+check("Liquidación: SIMPLI de otro mes no la borra", liqTrasSep, 3);
+check("Liquidación: SIMPLI del día la reemplaza", liqTrasSimpli, [["2026-03-30", "BTZ753", true], ["2026-03-31", "AAA111", false]]);
+check("Liquidación: no pisa días con SIMPLI", liqOtraVez, [["2026-03-30", "BTZ753"], ["2026-03-31", "AAA111"]]);
 check("Sin errores JS", errors, []);
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(ok ? "\nTodas las pruebas pasaron" : "\nHay pruebas con fallas");

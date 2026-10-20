@@ -112,6 +112,26 @@
     #peruBody td.n { text-align:right; font-variant-numeric:tabular-nums; }
     #peruBody td:last-child { white-space:normal; min-width:240px; }
     #peruBody tr.obs td:first-child { box-shadow:inset 3px 0 0 var(--warn,#b45309); }
+    .tarifas-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:18px; margin-bottom:18px; }
+    .tarifas-grid > .card { margin:0; }
+    .tarifas-grid td.n { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+    .in-tarifa { width:90px; text-align:right; }
+    .tarifas-grid td { vertical-align:middle; }
+    .tarifas-grid td select { padding:3px 6px; font-size:12px; margin:0; }
+    .nota-inline { font-size:11px; color:var(--muted,#6b7280); }
+    .btn-mini { border:1px solid var(--border,#e5e7eb); background:transparent; color:var(--muted,#6b7280); border-radius:6px; padding:3px 8px; font-size:12px; cursor:pointer; }
+    .ajuste-box { margin-top:14px; padding:14px; border:1px solid var(--accent-line,#bfdbfe); background:var(--accent-soft,#eff6ff); border-radius:10px; }
+    .ajuste-box .filters { margin:10px 0 0; align-items:center; }
+    #qBody td { white-space:nowrap; } #qBody td.n { text-align:right; font-variant-numeric:tabular-nums; }
+    #qBody td.obs-c { white-space:normal; min-width:200px; }
+    #qBody tr.obs td:first-child { box-shadow:inset 3px 0 0 var(--warn,#b45309); }
+    .cuadre table { width:100%; } .cuadre td.n { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+    .cuadre h3 { margin:16px 0 8px; }
+    #cKpi .summary-box .nota { margin-top:6px; }
+    #cTendencia tr.sel td { background:var(--accent-soft,#eff6ff); }
+    .barra { height:10px; border-radius:5px; background:var(--ok,#059669); min-width:2px; } .barra.neg { background:var(--err,#b91c1c); }
+    .clp { font-size:12px; color:var(--muted,#6b7280); margin-top:2px; font-variant-numeric:tabular-nums; }
+    .btn-mini:hover { color:var(--err,#b91c1c); border-color:currentColor; }
     @media (max-width:900px){ .rutas-layout { grid-template-columns:1fr; } .rutas-panel { position:static; max-height:none; } }
   </style>
 </head>
@@ -128,7 +148,10 @@
     <button class="tab active" data-vista="proforma" onclick="mostrarVista('proforma')">Revisión de proforma</button>
     <button class="tab" data-vista="rutas" onclick="mostrarVista('rutas')">Control de rutas</button>
     <span class="nav-grupo">Perú</span>
-    <button class="tab" data-vista="peru" onclick="mostrarVista('peru')">Liquidación Sodimac</button>
+    <button class="tab" data-vista="peru" onclick="mostrarVista('peru')">Cobro Sodimac</button>
+    <button class="tab" data-vista="peruPago" onclick="mostrarVista('peruPago')">Pago transporte</button>
+    <button class="tab" data-vista="peruCuadre" onclick="mostrarVista('peruCuadre')">Cuadre y KPI</button>
+    <button class="tab" data-vista="peruTarifas" onclick="mostrarVista('peruTarifas')">Tarifas</button>
   </nav>
   <div class="app-main">
   <div id="errorArea" class="card hidden"><div id="errorText" class="error-box"></div></div>
@@ -342,6 +365,171 @@
       </main>
     </div>
   </div>
+  <div id="vistaPeruPago" class="hidden">
+    <div class="rutas-layout">
+      <aside class="card rutas-panel">
+        <h3>Quincena</h3>
+        <select id="qSel" onchange="renderPagoPeru()" style="width:100%"><option value="">Sin datos</option></select>
+        <h3>Estado</h3>
+        <select id="qEstado" onchange="cambiarEstadoQuincenaPe(this.value)" style="width:100%">
+          <option>Borrador</option><option>Enviado al transporte</option><option>Validado</option><option>Pagado</option>
+        </select>
+        <p id="qEstadoFecha" class="nota"></p>
+        <p id="estadoPagoPe" class="nota" role="status"></p>
+        <p id="qTc" class="nota"></p>
+
+        <h3>Conductores</h3>
+        <p class="nota" style="margin-top:0">SIMPLI no trae el conductor: se registra una vez por placa y va en el detalle.</p>
+        <div class="table-wrap"><table><thead><tr><th>Placa</th><th>Conductor</th><th>Documento</th></tr></thead><tbody id="qConductores"></tbody></table></div>
+        <button class="button secondary" style="margin:8px 0 0" onclick="guardarConductoresPe()">Guardar conductores</button>
+      </aside>
+
+      <main style="min-width:0">
+        <div class="summary" style="margin-bottom:18px">
+          <div class="summary-box"><div class="summary-title">Rutas</div><div id="qRutas" class="summary-value">0</div></div>
+          <div class="summary-box"><div class="summary-title">Neto</div><div id="qNeto" class="summary-value">S/ 0</div></div>
+          <div class="summary-box"><div class="summary-title">Con IGV</div><div id="qIgv" class="summary-value">S/ 0</div></div>
+          <div class="summary-box"><div class="summary-title">Descuentos</div><div id="qDesc" class="summary-value">S/ 0</div></div>
+          <div class="summary-box"><div class="summary-title">Total a facturar</div><div id="qTotal" class="summary-value okc">S/ 0</div></div>
+          <div class="summary-box"><div class="summary-title">Otros pagos</div><div id="qOtros" class="summary-value">S/ 0</div></div>
+        </div>
+        <div class="card">
+          <h2>Rutas de la quincena</h2>
+          <div class="filters">
+            <select id="qFiltro" onchange="renderPagoPeru()">
+              <option value="">Todas las rutas</option>
+              <option value="fal">Con puntos fallidos</option>
+              <option value="aj">Con ajuste</option>
+            </select>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Fecha</th><th>Placa</th><th>Conductor</th><th>Capacidad</th><th>Puntos</th><th>Fallidos</th><th>Distrito</th><th>Tipo</th><th>Motivo</th><th>Neto</th><th>Con IGV</th><th>Observación</th><th></th></tr></thead>
+              <tbody id="qBody"><tr><td colspan="13">Carga los reportes de visitas de SIMPLI en Cobro Sodimac.</td></tr></tbody>
+            </table>
+          </div>
+          <div id="qAjuste" class="ajuste-box hidden"></div>
+          <div class="actions">
+            <button class="button green" onclick="descargarDetallePagoPe()">Descargar detalle quincena</button>
+          </div>
+        </div>
+        <div class="tarifas-grid">
+          <div class="card">
+            <h2>Descuentos</h2>
+            <p class="nota" style="margin-top:-6px">Montos con IGV: se restan del total a facturar, como en el correo al transporte.</p>
+            <div class="table-wrap"><table><thead><tr><th>Concepto</th><th>Placa</th><th>Detalle</th><th>Monto</th><th></th></tr></thead><tbody id="qDescuentos"></tbody></table></div>
+            <div class="filters" style="margin-top:12px">
+              <input id="dConcepto" placeholder="Concepto (ej. Pagos en exceso periodos anteriores)" style="flex:2 1 220px">
+              <input id="dPlaca" placeholder="Placa (opcional)" style="width:120px">
+              <input id="dDetalle" placeholder="Detalle" style="flex:1 1 140px">
+              <input id="dMonto" type="number" min="0" step="any" placeholder="Con IGV S/" style="width:110px">
+              <button class="button" style="margin:0" onclick="agregarMovimientoPe('DESCUENTO')">Agregar</button>
+            </div>
+          </div>
+          <div class="card">
+            <h2>Otros pagos de la quincena</h2>
+            <p class="nota" style="margin-top:-6px">Montos netos, sin IGV. No se suman a la factura del transporte; cuentan como costo. El personal de seguimiento se carga solo con el monto fijo de Tarifas.</p>
+            <div class="table-wrap"><table><thead><tr><th>Concepto</th><th>Beneficiario</th><th>Documento</th><th>Monto</th><th></th></tr></thead><tbody id="qOtrosPagos"></tbody></table></div>
+            <div class="filters" style="margin-top:12px">
+              <input id="opConcepto" placeholder="Concepto (ej. Personal de seguimiento)" style="flex:2 1 200px">
+              <input id="opBenef" placeholder="Beneficiario" style="flex:1 1 140px">
+              <input id="opDoc" placeholder="Documento (ej. DNI ...)" style="width:140px">
+              <input id="opMonto" type="number" min="0" step="any" placeholder="Neto S/" style="width:110px">
+              <button class="button" style="margin:0" onclick="agregarMovimientoPe('OTRO PAGO')">Agregar</button>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Correo al transporte</h2>
+          <textarea id="qCorreo" readonly rows="16" style="width:100%;font-family:inherit;font-size:13px;line-height:1.5"></textarea>
+          <div class="actions"><button class="button" onclick="copiarCorreoPe()">Copiar texto</button></div>
+        </div>
+      </main>
+    </div>
+  </div>
+  <div id="vistaPeruCuadre" class="hidden">
+    <div class="rutas-layout">
+      <aside class="card rutas-panel">
+        <h3>Mes</h3>
+        <select id="cMes" onchange="renderCuadrePeru()" style="width:100%"><option value="">Sin datos</option></select>
+        <p id="estadoCuadrePe" class="nota" role="status"></p>
+        <p id="cTc" class="nota"></p>
+        <h3>Pendiente de cobro</h3>
+        <div id="cPendiente" class="summary-value warnc">S/ 0.00</div>
+        <p id="cPendienteDet" class="nota">Facturas a Sodimac sin fecha de pago.</p>
+        <h3>Cómo se calcula</h3>
+        <details class="reglas">
+          <summary>Margen y diferencias</summary>
+          <ul>
+            <li><b>Cobrado:</b> lo facturado a Sodimac (sin IGV); si no hay factura registrada, lo liquidado.</li>
+            <li><b>Costo:</b> pago neto al transporte, menos los descuentos recuperados (sin IGV), más otros pagos como el personal de seguimiento.</li>
+            <li><b>Diferencia sin explicar:</b> factura menos lo liquidado (cobro) o menos el total a facturar por el transporte (pago). Los ajustes con motivo ya están incluidos en lo liquidado.</li>
+          </ul>
+        </details>
+      </aside>
+      <main style="min-width:0">
+        <div class="summary" style="margin-bottom:18px">
+          <div class="summary-box"><div class="summary-title">Cobrado sin IGV</div><div id="cCobrado" class="summary-value okc">S/ 0.00</div><div id="cCobradoDet" class="nota"></div></div>
+          <div class="summary-box"><div class="summary-title">Costo neto</div><div id="cCosto" class="summary-value">S/ 0.00</div><div class="nota">Transporte, descuentos y otros pagos</div></div>
+          <div class="summary-box"><div class="summary-title">Margen real</div><div id="cMargen" class="summary-value">S/ 0.00</div></div>
+        </div>
+        <div class="tarifas-grid">
+          <div class="card cuadre"><h2>Cuadre del cobro</h2><div id="cCuadreCobro"></div></div>
+          <div class="card cuadre"><h2>Cuadre del pago al transporte</h2><div id="cCuadrePago"></div></div>
+        </div>
+        <div class="card"><h2>KPI del mes</h2><div id="cKpi" class="summary"></div></div>
+        <div class="card cuadre"><h2>Tendencia</h2><div id="cTendencia" class="table-wrap"></div></div>
+      </main>
+    </div>
+  </div>
+  <div id="vistaPeruTarifas" class="hidden">
+    <p id="estadoTarifasPe" class="nota" role="status" style="margin:0 0 10px"></p>
+    <div class="tarifas-grid" id="peTarifarios"></div>
+    <div class="tarifas-grid">
+      <div class="card">
+        <h2>Distritos</h2>
+        <p class="nota" style="margin-top:-6px">Zona de cada distrito según el último tramo de la dirección en SIMPLI. <span id="peDistCuenta"></span></p>
+        <div class="filters" style="margin-top:10px">
+          <input id="peBuscarDist" type="search" placeholder="Buscar distrito" oninput="renderTarifasPeru()">
+        </div>
+        <div class="table-wrap" style="max-height:420px">
+          <table><thead><tr><th>Distrito</th><th>Zona</th><th></th></tr></thead><tbody id="peDistritos"></tbody></table>
+        </div>
+        <div class="filters" style="margin-top:12px">
+          <input id="peNuevoDist" placeholder="Nuevo distrito">
+          <select id="peNuevaZona"><option value="URBANO">Metropolitana</option><option value="PERIFERIA/LEJANO">Periferia</option></select>
+          <button class="button" style="margin:0" onclick="agregarDistritoPe()">Agregar</button>
+        </div>
+        <p class="nota">Un cambio de distrito se aplica al volver a cargar los reportes SIMPLI de esas fechas, porque la zona de cada ruta se define al cargarla.</p>
+      </div>
+      <div class="card">
+        <h2>Feriados</h2>
+        <p class="nota" style="margin-top:-6px">Se cobran como "Tarifa Feriado" y se pagan con la tarifa de domingo.</p>
+        <div class="filters" style="margin-top:10px"><select id="peAnioFer" onchange="renderTarifasPeru()"></select></div>
+        <div class="table-wrap" style="max-height:420px">
+          <table><thead><tr><th>Fecha</th><th>Día</th><th>Feriado</th><th></th></tr></thead><tbody id="peFeriados"></tbody></table>
+        </div>
+        <div class="filters" style="margin-top:12px">
+          <input id="peNuevoFer" type="date">
+          <input id="peNombreFer" placeholder="Nombre">
+          <button class="button" style="margin:0" onclick="agregarFeriadoPe()">Agregar</button>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Costos fijos por quincena</h2>
+      <p class="nota" style="margin-top:-6px">Montos netos que se cargan solos en cada quincena de Pago transporte (por ejemplo el personal de seguimiento) y cuentan como costo en el cuadre. Cada cambio rige desde su fecha.</p>
+      <div class="table-wrap"><table><thead><tr><th>Concepto</th><th>Beneficiario</th><th>Desde</th><th>Neto por quincena</th><th></th></tr></thead><tbody id="peFijos"></tbody></table></div>
+      <div class="filters" style="margin-top:12px">
+        <input id="fjConcepto" placeholder="Concepto" value="Personal de seguimiento" style="flex:1 1 180px">
+        <input id="fjBenef" placeholder="Beneficiario" style="flex:1 1 160px">
+        <input id="fjDoc" placeholder="Documento (DNI ...)" style="width:140px">
+        <label>Desde <input id="fjDesde" type="date"></label>
+        <input id="fjMonto" type="number" min="0" step="any" placeholder="Neto S/" style="width:100px">
+        <button class="button" style="margin:0" onclick="agregarFijoPe()">Agregar</button>
+      </div>
+    </div>
+  </div>
   <div id="vistaPeru" class="hidden">
     <div class="rutas-layout">
       <aside class="card rutas-panel">
@@ -350,36 +538,28 @@
           <b>Reporte de visitas SIMPLI</b><span id="txtSimpli">Uno o varios reportes de 15 días (Excel). Los días repetidos entre archivos se cuentan una vez. Hoja PERU RUTAS.</span>
           <input id="inSimpli" type="file" accept=".xlsx,.xls" multiple>
         </div>
+        <div id="cargaLiqPe" class="carga" onclick="document.getElementById('inLiqPe').click()">
+          <b>Liquidación de cobro (días sin SIMPLI)</b><span id="txtLiqPe">Para meses antiguos: el Excel de liquidación enviado a Sodimac. Solo agrega los días que no tienen rutas de SIMPLI; si después cargas SIMPLI de esos días, lo reemplaza.</span>
+          <input id="inLiqPe" type="file" accept=".xlsx,.xls" multiple>
+        </div>
         <p id="estadoPeru" class="nota" role="status"></p>
+        <p id="pTc" class="nota"></p>
 
         <h3>Mes</h3>
         <select id="pMes" onchange="renderPeru()" style="width:100%"><option value="">Sin datos</option></select>
 
-        <h3>Tarifas sin IGV (S/ por día)</h3>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Unidad</th><th>Metropolitana</th><th>Periferia</th></tr></thead>
-            <tbody id="peruTarifas"></tbody>
-          </table>
-        </div>
-        <p class="nota">Domingo o feriado: +30% como adicional "Tarifa Domingo" o "Tarifa Feriado".</p>
-
-        <h3>Pago al transportista (S/ por día)</h3>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Unidad</th><th>Ruta</th><th>Urbano</th><th>Periferia</th></tr></thead>
-            <tbody id="peruTarifasTr"></tbody>
-          </table>
-        </div>
-        <p class="nota">Tarifario CT ATLANTIS SODIMAC. Los feriados se pagan con la tarifa de domingo.</p>
+        <h3>Tarifas</h3>
+        <p class="nota">Cada ruta se cobra y se paga con la tarifa vigente en su fecha. Domingo y feriado: tarifa de domingo (en el cobro va como adicional "Tarifa Domingo" o "Tarifa Feriado").</p>
+        <button class="button secondary" style="margin:8px 0 0" onclick="mostrarVista('peruTarifas')">Ver y cambiar tarifas</button>
 
         <h3>Reglas</h3>
         <details class="reglas">
           <summary>Cómo se calcula cada ruta</summary>
           <ul>
             <li><b>Ruta:</b> una por placa y fecha planificada, solo vehículos JOINT.</li>
+            <li><b>Días sin SIMPLI</b> (SIMPLI entrega solo 3 meses atrás): se cargan desde la liquidación de cobro enviada a Sodimac, con su placa, unidad, puntos, distrito y zona cobrada. Se marcan en Observación y en el filtro "Cargadas desde liquidación".</li>
             <li><b>Distrito:</b> el último tramo de la dirección después de la coma (así "JR SANTA ROSA, COMAS" es Comas y no Santa Rosa).</li>
-            <li><b>Zona:</b> la del punto más lejano efectivamente entregado. Basta un punto entregado en periferia para cobrar la ruta como Periferia; las visitas fallidas no definen la zona.</li>
+            <li><b>Zona:</b> según la tabla de distritos de Tarifas, la del punto más lejano efectivamente entregado. Basta un punto entregado en periferia para cobrar la ruta como Periferia; las visitas fallidas no definen la zona.</li>
             <li><b>Unidad:</b> 10 y 13 m³ se cobran como F13; 15 y 20 (m³ o TN) como F20.</li>
             <li><b>Puntos:</b> todas las visitas de la ruta, entregadas y fallidas.</li>
             <li>Una ruta queda <b>sin tarifa</b> si ningún punto entregado tiene distrito conocido o si la unidad no se reconoce.</li>
@@ -403,6 +583,7 @@
               <option value="">Todas las rutas</option>
               <option value="obs">Con observación</option>
               <option value="per">Solo periferia</option>
+              <option value="liq">Cargadas desde liquidación</option>
             </select>
             <input id="pBuscar" type="search" placeholder="Buscar placa o distrito" oninput="renderPeru()">
           </div>
@@ -414,7 +595,6 @@
           </div>
           <div class="actions">
             <button class="button green" onclick="descargarLiquidacionPeru()">Descargar liquidación</button>
-            <button class="button" onclick="descargarPagoTransportePeru()">Descargar pago transportista</button>
           </div>
         </div>
       </main>
@@ -1029,6 +1209,9 @@ function mostrarVista(v){
   document.getElementById("vistaProforma").classList.toggle("hidden",v!=="proforma");
   document.getElementById("vistaRutas").classList.toggle("hidden",v!=="rutas");
   document.getElementById("vistaPeru").classList.toggle("hidden",v!=="peru");
+  document.getElementById("vistaPeruTarifas").classList.toggle("hidden",v!=="peruTarifas");
+  document.getElementById("vistaPeruPago").classList.toggle("hidden",v!=="peruPago");
+  document.getElementById("vistaPeruCuadre").classList.toggle("hidden",v!=="peruCuadre");
   document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("active",t.dataset.vista===v));
 }
 
@@ -1555,7 +1738,8 @@ function combinarHoja(actual, op){
 const almacenLocal={
   hojas:{},
   guardarLote(ops){ const res={}; for(const op of ops){ this.hojas[op.hoja]=combinarHoja(this.hojas[op.hoja]||[],op); res[op.hoja]=Math.max(this.hojas[op.hoja].length-1,0); } return res; },
-  leerDatos(){ const h={}; for(const n of ["REGISTRO","GEOSORT","VIAJES PAGADOS","PERU RUTAS"]) h[n]=JSON.parse(JSON.stringify(this.hojas[n]||[])); return {hojas:h,url:""}; }
+  tipoCambioPeru(){ return (this.hojas["PERU TIPO CAMBIO"]||[]).slice(1); },
+  leerDatos(){ const h={}; for(const n of ["REGISTRO","GEOSORT","VIAJES PAGADOS","PERU RUTAS","PERU TARIFAS","PERU DISTRITOS","PERU FERIADOS","PERU AJUSTES","PERU MOVIMIENTOS","PERU CONDUCTORES","PERU QUINCENAS","PERU COSTOS FIJOS","PERU FACTURAS"]) h[n]=JSON.parse(JSON.stringify(this.hojas[n]||[])); return {hojas:h,url:""}; }
 };
 function llamar(fn,...args){
   return new Promise((ok,mal)=>{
@@ -1699,17 +1883,32 @@ recargarDatos().then(()=>{ if(rutasDatos.registro||rutasDatos.proformas.length) 
 // ---------- Perú (Sodimac) ----------
 // Liquidación de cobro a Sodimac Perú - Lurin desde el reporte de visitas de SIMPLI (una fila por visita).
 // Misma lógica que el script peru_v2.py de control de gestión.
-const TARIFAS_PE={F13:{URBANO:420,"PERIFERIA/LEJANO":610},F20:{URBANO:460,"PERIFERIA/LEJANO":640}};
-const RECARGO_PE=0.30;
-// Pago al transportista (tarifario CT ATLANTIS SODIMAC). Domingo y feriado usan la tarifa de domingo.
+// Tarifarios con fecha de vigencia (hoja PERU TARIFAS): cada ruta usa la vigencia más reciente con fecha <= a la de la ruta,
+// así un cambio de tarifa no recalcula los meses ya liquidados. Domingo y feriado usan la columna DOMINGO
+// (en el cobro va como adicional "Tarifa Domingo"/"Tarifa Feriado"). Valores iniciales vigentes desde el 01-01-2025.
 const TRANSPORTISTA_PE="CT ATLANTIS SODIMAC";
-const PAGO_TR_PE={REGULAR:{F13:{URBANO:380,"PERIFERIA/LEJANO":500},F20:{URBANO:410,"PERIFERIA/LEJANO":540}},
-  DOMINGO:{F13:{URBANO:494,"PERIFERIA/LEJANO":650},F20:{URBANO:533,"PERIFERIA/LEJANO":702}}};
-const M3_PE={F13:"13m3",F20:"20m3"};
-const FERIADOS_PE=new Set(["2026-01-01","2026-04-02","2026-04-03","2026-05-01","2026-06-07","2026-06-29","2026-07-23","2026-07-28","2026-07-29",
-  "2026-08-06","2026-08-30","2026-10-08","2026-11-01","2026-12-08","2026-12-09","2026-12-25"]);
+const TIPOS_TARIFA_PE={COBRO:{nombre:"SODIMAC PERU - LURIN",titulo:"Cobro a Sodimac"},PAGO:{nombre:TRANSPORTISTA_PE,titulo:"Pago al transportista"}};
+const H_TARIFAS_PE=["TARIFARIO","TIPO","VIGENTE DESDE","UNIDAD","ZONA","REGULAR","DOMINGO"];
+const TARIFAS_INI_PE=[["COBRO","F13","URBANO",420,546],["COBRO","F13","PERIFERIA/LEJANO",610,793],["COBRO","F20","URBANO",460,598],["COBRO","F20","PERIFERIA/LEJANO",640,832],
+  ["PAGO","F13","URBANO",380,494],["PAGO","F13","PERIFERIA/LEJANO",500,650],["PAGO","F20","URBANO",410,533],["PAGO","F20","PERIFERIA/LEJANO",540,702]]
+  .map(([tipo,unidad,clas,regular,domingo])=>({tipo,desde:"2025-01-01",unidad,clas,regular,domingo}));
+const M3_PE={F13:"13M3",F20:"20M3"};
+const IGV_PE=0.18;
+let ajustesPe=new Map();
+// Feriados nacionales del Perú (hoja PERU FERIADOS)
+const FERIADOS_INI_PE=[["2025-01-01","Año Nuevo"],["2025-04-17","Jueves Santo"],["2025-04-18","Viernes Santo"],["2025-05-01","Día del Trabajo"],
+  ["2025-06-07","Batalla de Arica y Día de la Bandera"],["2025-06-29","San Pedro y San Pablo"],["2025-07-23","Día de la Fuerza Aérea"],["2025-07-28","Fiestas Patrias"],
+  ["2025-07-29","Fiestas Patrias"],["2025-08-06","Batalla de Junín"],["2025-08-30","Santa Rosa de Lima"],["2025-10-08","Combate de Angamos"],["2025-11-01","Todos los Santos"],
+  ["2025-12-08","Inmaculada Concepción"],["2025-12-09","Batalla de Ayacucho"],["2025-12-25","Navidad"],
+  ["2026-01-01","Año Nuevo"],["2026-04-02","Jueves Santo"],["2026-04-03","Viernes Santo"],["2026-05-01","Día del Trabajo"],
+  ["2026-06-07","Batalla de Arica y Día de la Bandera"],["2026-06-29","San Pedro y San Pablo"],["2026-07-23","Día de la Fuerza Aérea"],["2026-07-28","Fiestas Patrias"],
+  ["2026-07-29","Fiestas Patrias"],["2026-08-06","Batalla de Junín"],["2026-08-30","Santa Rosa de Lima"],["2026-10-08","Combate de Angamos"],["2026-11-01","Todos los Santos"],
+  ["2026-12-08","Inmaculada Concepción"],["2026-12-09","Batalla de Ayacucho"],["2026-12-25","Navidad"]];
+let tarifasPe=TARIFAS_INI_PE.map(t=>({...t}));
+let FERIADOS_PE=new Map(FERIADOS_INI_PE);
 const ZONA_PE={URBANO:"Metropolitana","PERIFERIA/LEJANO":"Periferia"};
-const DISTRITOS_PE={"ATE":"URBANO","ASIA":"PERIFERIA/LEJANO","BARRANCO":"URBANO","BELLAVISTA":"URBANO","BRENA":"URBANO","CALLAO":"URBANO",
+// Distritos y su zona (hoja PERU DISTRITOS)
+const DISTRITOS_INI_PE={"ATE":"URBANO","ASIA":"PERIFERIA/LEJANO","BARRANCO":"URBANO","BELLAVISTA":"URBANO","BRENA":"URBANO","CALLAO":"URBANO",
   "CARABAYLLO":"PERIFERIA/LEJANO","CARMEN DE LA LEGUA REYNOSO":"URBANO","CERCADO DE LIMA":"URBANO","CHACLAYO":"PERIFERIA/LEJANO","CHILCA":"PERIFERIA/LEJANO",
   "CHORRILLOS":"URBANO","CIENEGUILLA":"PERIFERIA/LEJANO","COMAS":"URBANO","EL AGUSTINO":"URBANO","INDEPENDENCIA":"URBANO","JESUS MARIA":"URBANO",
   "LA MOLINA":"URBANO","LA PERLA":"URBANO","LA PUNTA":"URBANO","LA VICTORIA":"URBANO","LIMA CENTRO":"URBANO","LINCE":"URBANO","LOS OLIVOS":"URBANO",
@@ -1723,8 +1922,13 @@ const DISTRITOS_PE={"ATE":"URBANO","ASIA":"PERIFERIA/LEJANO","BARRANCO":"URBANO"
 // Cómo viene escrito el distrito en SIMPLI cuando no calza con la tabla
 const ALIAS_DISTRITO_PE={"LIMA":"CERCADO DE LIMA","CARMEN DE LA LEGUA":"CARMEN DE LA LEGUA REYNOSO","CARMEN DE LA LEGUA - REYNOSO":"CARMEN DE LA LEGUA REYNOSO",
   "SAN JUAN DE":"SAN JUAN DE LURIGANCHO","LA VICTORIA I":"LA VICTORIA","CALLAO -":"CALLAO"};
-const DISTRITOS_PE_RE=Object.keys(DISTRITOS_PE).sort((a,b)=>b.length-a.length)
-  .map(d=>[d,new RegExp(`(^|[^A-Z0-9])${d.replace(/[()]/g,"\\$&")}([^A-Z0-9]|$)`)]);
+let DISTRITOS_PE={}, DISTRITOS_PE_RE=[];
+function fijarDistritosPe(tabla){
+  DISTRITOS_PE=tabla;
+  DISTRITOS_PE_RE=Object.keys(tabla).sort((a,b)=>b.length-a.length)
+    .map(d=>[d,new RegExp(`(^|[^A-Z0-9])${d.replace(/[()]/g,"\\$&")}([^A-Z0-9]|$)`)]);
+}
+fijarDistritosPe({...DISTRITOS_INI_PE});
 const H_PERU=["FECHA","PLACA","VEHICULO","TIPO UNIDAD","PUNTOS","ENTREGADOS","DISTRITO","ZONA","PUNTOS PERIFERIA","TARIFA REGULAR","ADICIONAL","DETALLE ADICIONAL","VALOR TOTAL","OBSERVACION"];
 const peruDatos={rutas:[]};
 
@@ -1770,24 +1974,42 @@ function rutasPeru(matrices){
     const ent=g.visitas.filter(v=>v.entregada), per=ent.filter(v=>v.clas==="PERIFERIA/LEJANO"), urb=ent.filter(v=>v.clas==="URBANO");
     const clas=per.length?"PERIFERIA/LEJANO":urb.length?"URBANO":"";
     const distrito=per.length?per[0].dist:urb.length?urb[0].dist:"";
-    const unidad=unidadPeru(g.vehiculo), tarifa=clas&&unidad?TARIFAS_PE[unidad][clas]:null;
-    const det=recargoPeru(g.fecha), adicional=tarifa!==null&&det?Math.round(tarifa*RECARGO_PE*100)/100:null;
+    const unidad=unidadPeru(g.vehiculo);
     const obs=[];
     if(!unidad) obs.push("Unidad no reconocida en el vehículo");
     if(!clas) obs.push("Sin distrito conocido en los puntos entregados");
     // Punto de periferia que no se entregó: no sube la ruta a Periferia, pero conviene saberlo
     if(clas==="URBANO") for(const v of g.visitas.filter(v=>!v.entregada&&v.clas==="PERIFERIA/LEJANO"))
       obs.push(`Punto en ${v.dist} no entregado${v.motivo?` (${v.motivo})`:""}: se cobra Metropolitana`);
-    return {fecha:g.fecha,placa:g.placa,vehiculo:g.vehiculo,unidad,puntos:g.visitas.length,entregados:ent.length,distrito,zona:ZONA_PE[clas]||"SIN TARIFA",
-      perif:per.length,tarifa,adicional,detalle:adicional?det:"",total:tarifa===null?null:tarifa+(adicional||0),obs:obs.join("; ")};
+    return tarificarPeru({fecha:g.fecha,placa:g.placa,vehiculo:g.vehiculo,unidad,puntos:g.visitas.length,entregados:ent.length,distrito,zona:ZONA_PE[clas]||"SIN TARIFA",
+      perif:per.length,obs:obs.join("; ")});
   }).sort((a,b)=>a.fecha.localeCompare(b.fecha)||a.placa.localeCompare(b.placa));
   return {rutas,visitas:vistas.size||rutas.reduce((s,r)=>s+r.puntos,0),otras};
 }
-// Pago al transportista de una ruta (se calcula desde unidad, zona y día; no se guarda)
-function pagoTransportePeru(r){
-  const clas=Object.keys(ZONA_PE).find(k=>ZONA_PE[k]===r.zona), tipo=r.detalle?"DOMINGO":"REGULAR";
-  const pago=clas&&PAGO_TR_PE[tipo][r.unidad]?PAGO_TR_PE[tipo][r.unidad][clas]:null;
-  return {tipoRuta:"RUTA "+tipo,llave:pago===null?"":`${TRANSPORTISTA_PE};RUTA ${tipo};${M3_PE[r.unidad]};${clas}`,pago};
+// Tarifario vigente en una fecha: la vigencia más reciente con fecha <= a la fecha
+function vigenciasPe(tipo){ return [...new Set(tarifasPe.filter(t=>t.tipo===tipo).map(t=>t.desde))].sort(); }
+function vigenciaPe(tipo,iso){ const v=vigenciasPe(tipo).filter(d=>d<=iso); return v.length?v[v.length-1]:""; }
+function tarifaPe(tipo,iso,unidad,clas){ const d=vigenciaPe(tipo,iso); return d?tarifasPe.find(t=>t.tipo===tipo&&t.desde===d&&t.unidad===unidad&&t.clas===clas)||null:null; }
+// Cobro a Sodimac y pago al transportista de una ruta según unidad, zona y fecha (se recalcula al cambiar tarifas o feriados).
+// Un ajuste (hoja PERU AJUSTES) fija la zona con que la ruta se cobró o se pagó de verdad, con su motivo.
+function montosPeru(r,clasC,clasP){
+  const det=recargoPeru(r.fecha);
+  const c=clasC&&r.unidad?tarifaPe("COBRO",r.fecha,r.unidad,clasC):null, p=clasP&&r.unidad?tarifaPe("PAGO",r.fecha,r.unidad,clasP):null;
+  const tarifa=c?c.regular:null, adicional=c&&det&&c.domingo!==c.regular?Math.round((c.domingo-c.regular)*100)/100:null;
+  return {c,p,det,tarifa,adicional,total:tarifa===null?null:tarifa+(adicional||0),pago:p?(det?p.domingo:p.regular):null};
+}
+function tarificarPeru(r){
+  const clas=Object.keys(ZONA_PE).find(k=>ZONA_PE[k]===r.zona)||"", aj=ajustesPe.get(r.fecha+"|"+r.placa);
+  const clasC=aj&&aj.zonaCobro||clas, clasP=aj&&aj.zonaPago||clas;
+  const m=montosPeru(r,clasC,clasP), tipo=m.det?"DOMINGO":"REGULAR";
+  const calc=aj?montosPeru(r,clas,clas):m;
+  const falta=[!m.c&&clasC&&r.unidad?"cobro":"",!m.p&&clasP&&r.unidad?"pago":""].filter(Boolean);
+  return {...r,tarifa:m.tarifa,adicional:m.adicional,detalle:m.adicional?m.det:"",total:m.total,tipoRuta:"RUTA "+tipo,
+    zonaCobro:ZONA_PE[clasC]||r.zona,zonaPago:ZONA_PE[clasP]||r.zona,clasPago:clasP,
+    llave:m.pago===null?"":`${TRANSPORTISTA_PE};RUTA ${tipo};${M3_PE[r.unidad]};${clasP}`,pago:m.pago,margen:m.total!==null&&m.pago!==null?m.total-m.pago:null,
+    totalCalc:calc.total,pagoCalc:calc.pago,ajuste:aj||null,
+    obsTarifa:[falta.length?`Sin tarifa de ${falta.join(" ni de ")} vigente al ${fechaCL(r.fecha)}`:"",
+      aj?`Ajuste: ${[aj.zonaCobro&&aj.zonaCobro!==clas?"cobrada como "+ZONA_PE[aj.zonaCobro]:"",aj.zonaPago&&aj.zonaPago!==clas?"pagada como "+ZONA_PE[aj.zonaPago]:""].filter(Boolean).join(" y ")||"sin cambio de zona"}${aj.motivo?" ("+aj.motivo+")":""}`:""].filter(Boolean).join("; ")};
 }
 function filasPeru(rutas){
   return [H_PERU,...rutas.map(r=>[r.fecha,r.placa,r.vehiculo,r.unidad,r.puntos,r.entregados,r.distrito,r.zona,r.perif,r.tarifa??"",r.adicional??"",r.detalle,r.total??"",r.obs])];
@@ -1805,42 +2027,43 @@ function mesesPeru(){ return [...new Set(peruDatos.rutas.map(r=>r.fecha.slice(0,
 function nombreMes(ym){ const [y,m]=ym.split("-"); return ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"][+m-1]+" "+y; }
 function rutasMesPeru(){
   const mes=document.getElementById("pMes").value;
-  const rutas=peruDatos.rutas.filter(r=>r.fecha.slice(0,7)===mes).map(r=>{
-    const tr=pagoTransportePeru(r);
-    return {...r,...tr,margen:r.total!==null&&tr.pago!==null?r.total-tr.pago:null};
-  });
+  const rutas=peruDatos.rutas.filter(r=>r.fecha.slice(0,7)===mes);
   return {mes,rutas};
 }
 function renderPeru(){
   const sel=document.getElementById("pMes"), meses=mesesPeru(), prev=sel.value;
   sel.innerHTML=meses.length?meses.map(m=>`<option value="${m}">${nombreMes(m)}</option>`).join(""):`<option value="">Sin datos</option>`;
   sel.value=meses.includes(prev)?prev:(meses[0]||"");
-  document.getElementById("peruTarifasTr").innerHTML=Object.entries(PAGO_TR_PE).flatMap(([tipo,us])=>Object.entries(us).map(([u,t])=>
-    `<tr><td>${u}</td><td>${tipo==="DOMINGO"?"Domingo":"Regular"}</td><td>${soles(t.URBANO)}</td><td>${soles(t["PERIFERIA/LEJANO"])}</td></tr>`)).join("");
-  document.getElementById("peruTarifas").innerHTML=Object.entries(TARIFAS_PE).map(([u,t])=>`<tr><td>${u}</td><td>${soles(t.URBANO)}</td><td>${soles(t["PERIFERIA/LEJANO"])}</td></tr>`).join("");
   const {rutas}=rutasMesPeru();
   const total=rutas.reduce((s,r)=>s+(r.total||0),0);
   document.getElementById("pRutas").textContent=rutas.length;
-  document.getElementById("pPeriferia").textContent=rutas.filter(r=>r.zona==="Periferia").length;
+  document.getElementById("pPeriferia").textContent=rutas.filter(r=>r.zonaCobro==="Periferia").length;
   document.getElementById("pDomingo").textContent=rutas.filter(r=>r.detalle).length;
   document.getElementById("pTotal").textContent=soles(total);
   const pago=rutas.reduce((s,r)=>s+(r.pago||0),0), margen=total-pago;
   document.getElementById("pPago").textContent=soles(pago);
   const eM=document.getElementById("pMargen"); eM.textContent=soles(margen)+(total?` (${Math.round(margen/total*100)}%)`:""); eM.className="summary-value "+(margen<0?"errc":"okc");
+  const rgM=document.getElementById("pMes").value?rangoMesPe(document.getElementById("pMes").value):null;
+  clpPe("pTotal",total,rgM); clpPe("pPago",pago,rgM); clpPe("pMargen",margen,rgM);
+  document.getElementById("pTc").textContent=rgM?textoTcPe(rgM):"";
   const f=document.getElementById("pFiltro").value, q=nt(document.getElementById("pBuscar").value);
-  const vis=rutas.filter(r=>(!f||(f==="obs"&&r.obs)||(f==="per"&&r.zona==="Periferia"))&&(!q||nt(r.placa+" "+r.distrito).includes(q)));
+  const vis=rutas.filter(r=>(!f||(f==="obs"&&(r.obs||r.obsTarifa))||(f==="per"&&r.zonaCobro==="Periferia")||(f==="liq"&&r.vehiculo===VEH_LIQ_PE))&&(!q||nt(r.placa+" "+r.distrito).includes(q)));
   const tb=document.getElementById("peruBody");
   if(!peruDatos.rutas.length){ tb.innerHTML=`<tr><td colspan="13">Carga los reportes de visitas de SIMPLI.</td></tr>`; }
   else tb.innerHTML=vis.map(r=>{
-    const zona=r.zona==="Periferia"?`<span class="badge badge-warning">Periferia</span>`:r.zona==="SIN TARIFA"?`<span class="badge badge-error">Sin tarifa</span>`:esc(r.zona);
-    return `<tr class="${r.obs?"obs":""}"><td>${fechaCL(r.fecha)}</td><td>${esc(r.placa)}</td><td>${esc(r.unidad)}</td><td class="n">${r.puntos}</td><td class="n">${r.entregados}</td>
+    const zona=r.zonaCobro==="Periferia"?`<span class="badge badge-warning">Periferia</span>`:r.zonaCobro==="SIN TARIFA"?`<span class="badge badge-error">Sin tarifa</span>`:esc(r.zonaCobro);
+    return `<tr class="${r.obs||r.obsTarifa?"obs":""}"><td>${fechaCL(r.fecha)}</td><td>${esc(r.placa)}</td><td>${esc(r.unidad)}</td><td class="n">${r.puntos}</td><td class="n">${r.entregados}</td>
       <td>${esc(r.distrito)}</td><td>${zona}</td><td class="n">${soles(r.tarifa)}</td><td class="n">${r.adicional?soles(r.adicional):""}</td><td class="n"><b>${soles(r.total)}</b></td>
-      <td class="n">${soles(r.pago)}</td><td class="n ${r.margen<0?"dif-neg":""}">${soles(r.margen)}</td><td>${esc(r.obs)}</td></tr>`;
+      <td class="n">${soles(r.pago)}</td><td class="n ${r.margen<0?"dif-neg":""}">${soles(r.margen)}</td><td>${esc([r.obs,r.obsTarifa].filter(Boolean).join("; "))}</td></tr>`;
   }).join("")||`<tr><td colspan="13">Ninguna ruta con ese filtro.</td></tr>`;
   const fr=peruDatos.rutas.map(r=>r.fecha);
   document.getElementById("txtSimpli").textContent=fr.length?`En la hoja: ${fr.length} rutas del ${fechaCL(fr[0])} al ${fechaCL(fr[fr.length-1])}`
     :"Uno o varios reportes de 15 días (Excel). Los días repetidos entre archivos se cuentan una vez. Hoja PERU RUTAS.";
   document.getElementById("cargaSimpli").classList.toggle("lista",!!fr.length);
+  const liqD=[...new Set(peruDatos.rutas.filter(r=>r.vehiculo===VEH_LIQ_PE).map(r=>r.fecha))];
+  document.getElementById("txtLiqPe").textContent=liqD.length?`En la hoja: ${liqD.length} días cargados desde liquidación`+(liqD.length<=6?` (${liqD.map(fechaCL).join(", ")}).`:`, del ${fechaCL(liqD[0])} al ${fechaCL(liqD[liqD.length-1])}.`)
+    :"Para meses antiguos: el Excel de liquidación enviado a Sodimac. Solo agrega los días que no tienen rutas de SIMPLI; si después cargas SIMPLI de esos días, lo reemplaza.";
+  document.getElementById("cargaLiqPe").classList.toggle("lista",!!liqD.length);
 }
 // Mismo formato que la liquidación que se envía a Sodimac
 function libroLiquidacionPeru(rutas){
@@ -1848,7 +2071,7 @@ function libroLiquidacionPeru(rutas){
   const ws=XLSX.utils.aoa_to_sheet([H]);
   rutas.forEach((r,i)=>{
     const f=i+2, [y,m,d]=r.fecha.split("-").map(Number);
-    XLSX.utils.sheet_add_aoa(ws,[[new Date(y,m-1,d),"JOINT PERU S.A.C.",r.placa,r.unidad,r.puntos,r.distrito,r.zona,r.tarifa??"",r.adicional||"",r.detalle||"",
+    XLSX.utils.sheet_add_aoa(ws,[[new Date(y,m-1,d),"JOINT PERU S.A.C.",r.placa,r.unidad,r.puntos,r.distrito,r.zonaCobro,r.tarifa??"",r.adicional||"",r.detalle||"",
       {t:"n",f:`SUM(H${f}:I${f})`,v:r.total||0}]],{origin:`A${f}`,cellDates:true});
     ws[`A${f}`].z="dd-mm-yyyy";
   });
@@ -1865,25 +2088,484 @@ function descargarLiquidacionPeru(){
   const nombre=["ENERO","FEBRERO","MARZO","ABRIL","MAYO","JUNIO","JULIO","AGOSTO","SEPTIEMBRE","OCTUBRE","NOVIEMBRE","DICIEMBRE"][+m-1];
   XLSX.writeFile(libroLiquidacionPeru(rutas),`Liquidacion JOINT PERU S.A.C. UM SODIMAC - ${m}${nombre} - ${y}.xlsx`,{cellDates:true});
 }
-// Detalle de lo que se le paga al transportista en el mes
-function libroPagoTransportePeru(rutas){
-  const H=["FECHA","TRANSPORTISTA","PLACA","TIPO UNIDAD","PUNTOS","DISTRITO","ZONA","TIPO RUTA","LLAVE TARIFARIO","TARIFA EGRESO"];
-  const ws=XLSX.utils.aoa_to_sheet([H]);
-  rutas.forEach((r,i)=>{
-    const f=i+2, [y,m,d]=r.fecha.split("-").map(Number);
-    XLSX.utils.sheet_add_aoa(ws,[[new Date(y,m-1,d),TRANSPORTISTA_PE,r.placa,r.unidad,r.puntos,r.distrito,r.zona,r.tipoRuta,r.llave,r.pago??""]],{origin:`A${f}`,cellDates:true});
-    ws[`A${f}`].z="dd-mm-yyyy";
-  });
-  const t=rutas.length+2;
-  XLSX.utils.sheet_add_aoa(ws,[["Total","","","","","","","","",{t:"n",f:`SUM(J2:J${t-1})`,v:rutas.reduce((s,r)=>s+(r.pago||0),0)}]],{origin:`A${t}`});
-  ws["!cols"]=[12,22,10,12,9,26,15,15,46,14].map(wch=>({wch}));
-  ws["!autofilter"]={ref:`A1:J${t-1}`};
-  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"PAGO TRANSPORTE");
+// ---------- Perú: tarifas, distritos y feriados (hojas PERU TARIFAS, PERU DISTRITOS, PERU FERIADOS) ----------
+const ZONA_DE_PE=Object.fromEntries(Object.entries(ZONA_PE).map(([k,v])=>[nt(v),k]));
+const clasDeZonaPe=z=>ZONA_DE_PE[nt(z)]||(nt(z)==="URBANO"?"URBANO":/PERIFERIA|LEJANO/.test(nt(z))?"PERIFERIA/LEJANO":"");
+function filasTarifasPe(){
+  return [H_TARIFAS_PE,...[...tarifasPe].sort((a,b)=>a.tipo.localeCompare(b.tipo)||a.desde.localeCompare(b.desde)||a.unidad.localeCompare(b.unidad)||a.clas.localeCompare(b.clas))
+    .map(t=>[TIPOS_TARIFA_PE[t.tipo].nombre,t.tipo,t.desde,t.unidad,ZONA_PE[t.clas],t.regular,t.domingo])];
+}
+function filasDistritosPe(){ return [["DISTRITO","ZONA"],...Object.keys(DISTRITOS_PE).sort().map(d=>[d,ZONA_PE[DISTRITOS_PE[d]]])]; }
+function filasFeriadosPe(){ return [["FECHA","NOMBRE"],...[...FERIADOS_PE].sort((a,b)=>a[0].localeCompare(b[0]))]; }
+// Lee las tres hojas; la que no existe todavía se crea con los valores iniciales
+async function configPeruDesdeHojas(h){
+  const m=n=>h[n]||[], col=(mx,n)=>idx(mx[0]||[],[n]), ops=[];
+  const t=m("PERU TARIFAS");
+  if(!t.length) ops.push({hoja:"PERU TARIFAS",filas:filasTarifasPe(),llave:{todo:true}});
+  else{
+    const c=Object.fromEntries(H_TARIFAS_PE.map(n=>[n,col(t,n)]));
+    tarifasPe=t.slice(1).map(r=>({tipo:nt(r[c.TIPO]),desde:fechaISO(r[c["VIGENTE DESDE"]]),unidad:nt(r[c.UNIDAD]),clas:clasDeZonaPe(r[c.ZONA]),
+      regular:num(r[c.REGULAR]),domingo:num(r[c.DOMINGO])})).filter(x=>TIPOS_TARIFA_PE[x.tipo]&&x.desde&&x.unidad&&x.clas);
+  }
+  const d=m("PERU DISTRITOS");
+  if(!d.length) ops.push({hoja:"PERU DISTRITOS",filas:filasDistritosPe(),llave:{todo:true}});
+  else{
+    const cd=col(d,"DISTRITO"), cz=col(d,"ZONA"), tabla={};
+    for(const r of d.slice(1)){ const k=nt(r[cd]), z=clasDeZonaPe(r[cz]); if(k&&z) tabla[k]=z; }
+    fijarDistritosPe(tabla);
+  }
+  const f=m("PERU FERIADOS");
+  if(!f.length) ops.push({hoja:"PERU FERIADOS",filas:filasFeriadosPe(),llave:{todo:true}});
+  else{
+    const cf=col(f,"FECHA"), cn=col(f,"NOMBRE");
+    FERIADOS_PE=new Map(f.slice(1).map(r=>[fechaISO(r[cf]),String(cn>=0?r[cn]??"":"").trim()]).filter(x=>x[0]));
+  }
+  fijosDesdeHoja(h,ops);
+  if(ops.length) await llamar("guardarLote",ops);
+}
+function avisoTarifasPe(t){ document.getElementById("estadoTarifasPe").innerHTML=t; }
+async function guardarConfigPe(hoja,filas,msg){
+  ocultarError(); avisoTarifasPe(esc("Guardando en "+hoja+"…"));
+  try{
+    await llamar("guardarLote",[{hoja,filas,llave:{todo:true}}]);
+    peruDatos.rutas=peruDatos.rutas.map(tarificarPeru);
+    renderTodoPeru();
+    avisoTarifasPe(esc(msg)+(EN_APPS_SCRIPT?` Guardado en Google Sheets.${urlLibro?` <a href="${esc(urlLibro)}" target="_blank" rel="noopener">Abrir planilla</a>`:""}`
+      :" Vista previa: los datos se guardan solo mientras la página esté abierta."));
+  }catch(err){ avisoTarifasPe(""); mostrarError("No se pudo guardar en Google Sheets.\n\n"+(err.message||err)); }
+}
+
+const tarifaEditPe={tipo:"",vista:{}};
+function renderTarifasPeru(){
+  const hoy=fechaISO(new Date());
+  renderFijosPe();
+  document.getElementById("peTarifarios").innerHTML=Object.entries(TIPOS_TARIFA_PE).map(([tipo,cfg])=>{
+    const vig=vigenciasPe(tipo), actual=vigenciaPe(tipo,hoy)||vig[vig.length-1]||"";
+    const editando=tarifaEditPe.tipo===tipo;
+    if(!vig.includes(tarifaEditPe.vista[tipo])) tarifaEditPe.vista[tipo]=actual;
+    const sel=tarifaEditPe.vista[tipo];
+    const filas=["F13","F20"].flatMap(u=>Object.keys(ZONA_PE).map(clas=>{
+      const t=tarifasPe.find(x=>x.tipo===tipo&&x.desde===sel&&x.unidad===u&&x.clas===clas)||{regular:"",domingo:""};
+      const celda=k=>editando?`<input type="number" min="0" step="any" class="in-tarifa" data-u="${u}" data-c="${clas}" data-k="${k}" value="${t[k]}">`:soles(t[k]);
+      const extra=tipo==="COBRO"&&t.regular?` <span class="nota-inline">${t.domingo>t.regular?"+"+Math.round((t.domingo/t.regular-1)*100)+"%":""}</span>`:"";
+      return `<tr><td>${u}</td><td>${ZONA_PE[clas]}</td><td class="n">${celda("regular")}</td><td class="n">${celda("domingo")}${editando?"":extra}</td></tr>`;
+    })).join("");
+    const opciones=vig.slice().reverse().map(d=>`<option value="${d}" ${d===sel?"selected":""}>Desde ${fechaCL(d)}${d===actual?" (vigente)":d>hoy?" (futura)":""}</option>`).join("");
+    const pie=editando
+      ?`<div class="filters" style="margin-top:12px;align-items:center"><label>Rige desde <input type="date" id="peDesde_${tipo}" value="${tarifaEditPe.desde||""}"></label>
+          <button class="button green" onclick="guardarVigenciaPe('${tipo}')">Guardar vigencia</button><button class="button secondary" onclick="cancelarVigenciaPe()">Cancelar</button></div>
+        <p class="nota">Las rutas desde esa fecha se calculan con estos valores; las anteriores mantienen la tarifa que tenían. Si la fecha ya existe, esa vigencia se reemplaza.</p>`
+      :`<div class="actions"><button class="button" onclick="nuevaVigenciaPe('${tipo}')">Nueva vigencia</button>${vig.length>1?`<button class="button secondary" onclick="eliminarVigenciaPe('${tipo}')">Eliminar esta vigencia</button>`:""}</div>`;
+    return `<div class="card" id="peTar_${tipo}"><h2>${cfg.titulo}</h2><p class="nota" style="margin-top:-6px">Tarifario ${esc(cfg.nombre)} · soles sin IGV por ruta</p>
+      <div class="filters" style="margin-top:10px"><select id="peVig_${tipo}" onchange="tarifaEditPe.vista['${tipo}']=this.value;renderTarifasPeru()" ${editando?"disabled":""}>${opciones}</select></div>
+      <div class="table-wrap"><table><thead><tr><th>Unidad</th><th>Zona</th><th>Regular</th><th>Domingo o feriado</th></tr></thead><tbody>${filas}</tbody></table></div>${pie}</div>`;
+  }).join("");
+  // Distritos
+  const q=nt(document.getElementById("peBuscarDist").value);
+  const ds=Object.keys(DISTRITOS_PE).sort().filter(d=>!q||d.includes(q));
+  document.getElementById("peDistritos").innerHTML=ds.map(d=>`<tr><td>${esc(d)}</td><td><select data-d="${esc(d)}" onchange="zonaDistritoPe(this.dataset.d,this.value)">${Object.entries(ZONA_PE).map(([k,v])=>`<option value="${k}" ${DISTRITOS_PE[d]===k?"selected":""}>${v}</option>`).join("")}</select></td>
+    <td><button class="btn-mini" data-d="${esc(d)}" onclick="quitarDistritoPe(this.dataset.d)">Quitar</button></td></tr>`).join("")||`<tr><td colspan="3">Ningún distrito con ese nombre.</td></tr>`;
+  document.getElementById("peDistCuenta").textContent=`${Object.keys(DISTRITOS_PE).length} distritos, ${Object.values(DISTRITOS_PE).filter(z=>z!=="URBANO").length} en periferia.`;
+  // Feriados
+  const anios=[...new Set([...FERIADOS_PE.keys()].map(f=>f.slice(0,4)))].sort().reverse(), sa=document.getElementById("peAnioFer"), pa=sa.value;
+  sa.innerHTML=anios.map(a=>`<option>${a}</option>`).join("")||`<option value="">Sin feriados</option>`;
+  sa.value=anios.includes(pa)?pa:(anios.includes(hoy.slice(0,4))?hoy.slice(0,4):anios[0]||"");
+  document.getElementById("peFeriados").innerHTML=[...FERIADOS_PE].filter(([f])=>f.slice(0,4)===sa.value).sort((a,b)=>a[0].localeCompare(b[0]))
+    .map(([f,n])=>`<tr><td>${fechaCL(f)}</td><td>${["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"][new Date(f+"T12:00:00").getDay()]}</td><td>${esc(n)}</td>
+      <td><button class="btn-mini" onclick="quitarFeriadoPe('${f}')">Quitar</button></td></tr>`).join("")||`<tr><td colspan="4">Sin feriados ese año.</td></tr>`;
+}
+function nuevaVigenciaPe(tipo){
+  const d=new Date(); d.setMonth(d.getMonth()+1,1);
+  Object.assign(tarifaEditPe,{tipo,desde:fechaISO(d)}); renderTarifasPeru();
+}
+function cancelarVigenciaPe(){ tarifaEditPe.tipo=""; renderTarifasPeru(); }
+function guardarVigenciaPe(tipo){
+  const desde=document.getElementById("peDesde_"+tipo).value;
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(desde)) return mostrarError("Indica desde qué fecha rige la nueva tarifa.");
+  const nuevas=[...document.querySelectorAll(`#peTar_${tipo} .in-tarifa`)].reduce((acc,i)=>{
+    const k=i.dataset.u+"|"+i.dataset.c; acc[k]=acc[k]||{tipo,desde,unidad:i.dataset.u,clas:i.dataset.c}; acc[k][i.dataset.k]=i.value===""?NaN:Number(i.value); return acc; },{});
+  const lista=Object.values(nuevas);
+  if(lista.some(t=>!(t.regular>0)||!(t.domingo>0))) return mostrarError("Completa todas las tarifas con montos mayores a cero.");
+  tarifasPe=tarifasPe.filter(t=>!(t.tipo===tipo&&t.desde===desde)).concat(lista);
+  tarifaEditPe.tipo=""; tarifaEditPe.vista[tipo]=desde;
+  guardarConfigPe("PERU TARIFAS",filasTarifasPe(),`${TIPOS_TARIFA_PE[tipo].titulo}: nueva tarifa desde el ${fechaCL(desde)}.`);
+}
+function eliminarVigenciaPe(tipo){
+  const d=tarifaEditPe.vista[tipo];
+  if(!d||vigenciasPe(tipo).length<2) return;
+  if(!confirm(`¿Eliminar la tarifa de ${TIPOS_TARIFA_PE[tipo].titulo.toLowerCase()} vigente desde el ${fechaCL(d)}? Las rutas de esas fechas pasan a la vigencia anterior.`)) return;
+  tarifasPe=tarifasPe.filter(t=>!(t.tipo===tipo&&t.desde===d));
+  guardarConfigPe("PERU TARIFAS",filasTarifasPe(),`Vigencia del ${fechaCL(d)} eliminada.`);
+}
+function zonaDistritoPe(d,z){ DISTRITOS_PE[d]=z; fijarDistritosPe(DISTRITOS_PE); guardarConfigPe("PERU DISTRITOS",filasDistritosPe(),`${d} queda en ${ZONA_PE[z]}.`); }
+function quitarDistritoPe(d){ delete DISTRITOS_PE[d]; fijarDistritosPe(DISTRITOS_PE); guardarConfigPe("PERU DISTRITOS",filasDistritosPe(),`${d} quitado.`); }
+function agregarDistritoPe(){
+  const n=nt(document.getElementById("peNuevoDist").value).replace(/\s+/g," "), z=document.getElementById("peNuevaZona").value;
+  if(!n) return mostrarError("Escribe el nombre del distrito como viene en la dirección de SIMPLI.");
+  DISTRITOS_PE[n]=z; fijarDistritosPe(DISTRITOS_PE); document.getElementById("peNuevoDist").value="";
+  guardarConfigPe("PERU DISTRITOS",filasDistritosPe(),`${n} agregado en ${ZONA_PE[z]}.`);
+}
+function quitarFeriadoPe(f){ const n=FERIADOS_PE.get(f); FERIADOS_PE.delete(f); guardarConfigPe("PERU FERIADOS",filasFeriadosPe(),`Feriado ${fechaCL(f)}${n?" ("+n+")":""} quitado.`); }
+function agregarFeriadoPe(){
+  const f=document.getElementById("peNuevoFer").value, n=document.getElementById("peNombreFer").value.trim();
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(f)) return mostrarError("Indica la fecha del feriado.");
+  FERIADOS_PE.set(f,n); document.getElementById("peAnioFer").value=f.slice(0,4);
+  document.getElementById("peNuevoFer").value=""; document.getElementById("peNombreFer").value="";
+  guardarConfigPe("PERU FERIADOS",filasFeriadosPe(),`Feriado ${fechaCL(f)} agregado.`);
+}
+// ---------- Perú: pago al transporte por quincena ----------
+// Hojas: PERU AJUSTES (zona con que se cobró o pagó una ruta), PERU MOVIMIENTOS (descuentos y otros pagos de la quincena),
+// PERU CONDUCTORES (conductor y documento por placa) y PERU QUINCENAS (estado de cada quincena).
+const H_AJUSTES_PE=["FECHA","PLACA","ZONA COBRO","ZONA PAGO","MOTIVO"];
+const H_MOV_PE=["QUINCENA","TIPO","CONCEPTO","PLACA","BENEFICIARIO","DOCUMENTO","DETALLE","MONTO"];
+const H_COND_PE=["PLACA","CONDUCTOR","DOCUMENTO"];
+const H_QUIN_PE=["QUINCENA","ESTADO","FECHA ESTADO"];
+let movimientosPe=[], conductoresPe={}, quincenasPe={};
+const quincenaDe=iso=>iso.slice(0,7)+(+iso.slice(8,10)<=15?"-Q1":"-Q2");
+function nombreQuincena(q){
+  const [y,m,n]=q.split("-"), fin=new Date(+y,+m,0).getDate();
+  return `${n==="Q1"?"1ª":"2ª"} quincena ${nombreMes(y+"-"+m).toLowerCase()} (${n==="Q1"?"01 al 15":"16 al "+fin})`;
+}
+const r2=v=>Math.round(v*100)/100;
+function tablaPe(m,head){
+  if(!m||m.length<2) return [];
+  const c=head.map(n=>idx(m[0],[n]));
+  return m.slice(1).map(r=>Object.fromEntries(head.map((n,i)=>[n,c[i]>=0?r[c[i]]??"":""])));
+}
+function pagoPeruDesdeHojas(h){
+  ajustesPe=new Map(tablaPe(h["PERU AJUSTES"],H_AJUSTES_PE).map(a=>[fechaISO(a.FECHA)+"|"+nt(a.PLACA),
+    {zonaCobro:clasDeZonaPe(a["ZONA COBRO"]),zonaPago:clasDeZonaPe(a["ZONA PAGO"]),motivo:String(a.MOTIVO).trim()}]).filter(([k])=>k.length>11));
+  movimientosPe=tablaPe(h["PERU MOVIMIENTOS"],H_MOV_PE).map(x=>({quincena:String(x.QUINCENA),tipo:nt(x.TIPO),concepto:String(x.CONCEPTO),placa:nt(x.PLACA),
+    beneficiario:String(x.BENEFICIARIO),documento:String(x.DOCUMENTO),detalle:String(x.DETALLE),monto:num(x.MONTO)})).filter(x=>x.quincena&&x.monto);
+  conductoresPe=Object.fromEntries(tablaPe(h["PERU CONDUCTORES"],H_COND_PE).filter(x=>nt(x.PLACA)).map(x=>[nt(x.PLACA),{nombre:String(x.CONDUCTOR).trim(),doc:String(x.DOCUMENTO).trim()}]));
+  quincenasPe=Object.fromEntries(tablaPe(h["PERU QUINCENAS"],H_QUIN_PE).filter(x=>x.QUINCENA).map(x=>[String(x.QUINCENA),{estado:String(x.ESTADO),fecha:fechaISO(x["FECHA ESTADO"])}]));
+}
+const filasAjustesPe=()=>[H_AJUSTES_PE,...[...ajustesPe].sort().map(([k,a])=>{ const [f,p]=k.split("|"); return [f,p,ZONA_PE[a.zonaCobro]||"",ZONA_PE[a.zonaPago]||"",a.motivo]; })];
+const filasMovPe=()=>[H_MOV_PE,...movimientosPe.map(x=>[x.quincena,x.tipo,x.concepto,x.placa,x.beneficiario,x.documento,x.detalle,x.monto])];
+const filasCondPe=()=>[H_COND_PE,...Object.keys(conductoresPe).sort().map(p=>[p,conductoresPe[p].nombre,conductoresPe[p].doc])];
+const filasQuinPe=()=>[H_QUIN_PE,...Object.keys(quincenasPe).sort().map(q=>[q,quincenasPe[q].estado,quincenasPe[q].fecha])];
+async function guardarPagoPe(hoja,filas,msg){
+  ocultarError(); const av=document.getElementById("estadoPagoPe"); av.textContent="Guardando en "+hoja+"…";
+  try{
+    await llamar("guardarLote",[{hoja,filas,llave:{todo:true}}]);
+    peruDatos.rutas=peruDatos.rutas.map(tarificarPeru); renderTodoPeru();
+    av.innerHTML=esc(msg)+(EN_APPS_SCRIPT?" Guardado en Google Sheets.":" Vista previa: se guarda solo mientras la página esté abierta.");
+  }catch(err){ av.textContent=""; mostrarError("No se pudo guardar en Google Sheets.\n\n"+(err.message||err)); }
+}
+function quincenaPe(){ return datosQuincenaPe(document.getElementById("qSel").value); }
+// Costo fijo vigente al cierre de la quincena (salvo que la quincena tenga un otro pago con el mismo concepto)
+function fijosQuincenaPe(q,movs){
+  const [y,m,n]=q.split("-"), fin=`${y}-${m}-${n==="Q1"?"15":String(new Date(+y,+m,0).getDate())}`;
+  const porConcepto={};
+  for(const f of [...fijosPe].sort((a,b)=>a.desde.localeCompare(b.desde))) if(f.desde<=fin) porConcepto[nt(f.concepto)]=f;
+  return Object.values(porConcepto).filter(f=>f.monto>0&&!movs.some(x=>nt(x.concepto)===nt(f.concepto)))
+    .map(f=>({quincena:q,tipo:"OTRO PAGO",concepto:f.concepto,beneficiario:f.beneficiario,documento:f.documento,detalle:"",placa:"",monto:f.monto,fijo:true}));
+}
+function datosQuincenaPe(q){
+  const rutas=peruDatos.rutas.filter(r=>quincenaDe(r.fecha)===q).map(r=>({...r,igv:r.pago===null?null:r2(r.pago*(1+IGV_PE)),
+    fallidos:Math.max((r.puntos||0)-(r.entregados||0),0),conductor:conductoresPe[r.placa]||{nombre:"",doc:""}}));
+  const neto=rutas.reduce((s,r)=>s+(r.pago||0),0), conIgv=r2(rutas.reduce((s,r)=>s+(r.igv||0),0));
+  const desc=movimientosPe.filter(x=>x.quincena===q&&x.tipo==="DESCUENTO"), otrosMov=movimientosPe.filter(x=>x.quincena===q&&x.tipo==="OTRO PAGO");
+  const otros=q&&rutas.length?[...fijosQuincenaPe(q,otrosMov),...otrosMov]:otrosMov;
+  const totDesc=r2(desc.reduce((s,x)=>s+x.monto,0));
+  return {q,rutas,neto,conIgv,desc,otros,totDesc,total:r2(conIgv-totDesc),totOtros:r2(otros.reduce((s,x)=>s+x.monto,0))};
+}
+const solesQ=v=>"S/ "+Number(v||0).toLocaleString("es-PE",{minimumFractionDigits:2,maximumFractionDigits:2});
+function renderPagoPeru(){
+  const sel=document.getElementById("qSel"), prev=sel.value;
+  const qs=[...new Set(peruDatos.rutas.map(r=>quincenaDe(r.fecha)))].sort().reverse();
+  sel.innerHTML=qs.length?qs.map(q=>`<option value="${q}">${nombreQuincena(q)}</option>`).join(""):`<option value="">Sin datos</option>`;
+  sel.value=qs.includes(prev)?prev:(qs[0]||"");
+  const d=quincenaPe(), est=quincenasPe[d.q]||{estado:"Borrador",fecha:""};
+  document.getElementById("qEstado").value=est.estado; document.getElementById("qEstado").disabled=!d.q;
+  document.getElementById("qEstadoFecha").textContent=est.fecha?`Desde el ${fechaCL(est.fecha)}.`:"";
+  document.getElementById("qRutas").textContent=d.rutas.length;
+  document.getElementById("qNeto").textContent=solesQ(d.neto);
+  document.getElementById("qIgv").textContent=solesQ(d.conIgv);
+  document.getElementById("qDesc").textContent=solesQ(d.totDesc);
+  document.getElementById("qTotal").textContent=solesQ(d.total);
+  document.getElementById("qOtros").textContent=solesQ(d.totOtros);
+  const rgQ=d.q?rangoQuincenaPe(d.q):null;
+  clpPe("qNeto",d.neto,rgQ); clpPe("qIgv",d.conIgv,rgQ); clpPe("qDesc",d.totDesc,rgQ); clpPe("qTotal",d.total,rgQ); clpPe("qOtros",d.totOtros,rgQ);
+  document.getElementById("qTc").textContent=rgQ?textoTcPe(rgQ):"";
+  const f=document.getElementById("qFiltro").value;
+  const vis=d.rutas.filter(r=>!f||(f==="fal"&&r.fallidos)||(f==="aj"&&r.ajuste));
+  document.getElementById("qBody").innerHTML=!peruDatos.rutas.length?`<tr><td colspan="13">Carga los reportes de visitas de SIMPLI en Cobro Sodimac.</td></tr>`
+    :vis.map(r=>{
+      const tipo=r.clasPago==="PERIFERIA/LEJANO"?`<span class="badge badge-warning">PERIFERIA/LEJANO</span>`:esc(r.clasPago||"SIN TARIFA");
+      const obs=[r.obs,r.obsTarifa].filter(Boolean).join("; ");
+      return `<tr class="${obs||r.fallidos?"obs":""}"><td>${fechaCL(r.fecha)}</td><td>${esc(r.placa)}</td><td>${esc(r.conductor.nombre)}</td><td>${M3_PE[r.unidad]||""}</td>
+        <td class="n">${r.puntos}</td><td class="n">${r.fallidos?`<span class="badge badge-warning">${r.fallidos}</span>`:""}</td><td>${esc(r.distrito)}</td><td>${tipo}</td>
+        <td>${esc(r.tipoRuta)}</td><td class="n">${soles(r.pago)}</td><td class="n">${r.igv===null?"":solesQ(r.igv)}</td><td class="obs-c">${esc(obs)}</td>
+        <td><button class="btn-mini" data-k="${esc(r.fecha+"|"+r.placa)}" onclick="abrirAjustePe(this.dataset.k)">${r.ajuste?"Editar ajuste":"Ajustar"}</button></td></tr>`;
+    }).join("")||`<tr><td colspan="13">Ninguna ruta con ese filtro.</td></tr>`;
+  const fila=(x,cols)=>`<tr>${cols.map(c=>`<td>${esc(x[c])}${c==="concepto"&&x.fijo?' <span class="nota-inline">(fijo, ver Tarifas)</span>':""}</td>`).join("")}<td class="n">${solesQ(x.monto)}</td><td>${x.fijo?"":`<button class="btn-mini" data-i="${movimientosPe.indexOf(x)}" onclick="quitarMovimientoPe(+this.dataset.i)">Quitar</button>`}</td></tr>`;
+  document.getElementById("qDescuentos").innerHTML=d.desc.map(x=>fila(x,["concepto","placa","detalle"])).join("")||`<tr><td colspan="5">Sin descuentos en esta quincena.</td></tr>`;
+  document.getElementById("qOtrosPagos").innerHTML=d.otros.map(x=>fila(x,["concepto","beneficiario","documento"])).join("")||`<tr><td colspan="5">Sin otros pagos en esta quincena.</td></tr>`;
+  const placas=[...new Set([...peruDatos.rutas.map(r=>r.placa),...Object.keys(conductoresPe)])].sort();
+  document.getElementById("qConductores").innerHTML=placas.map(p=>`<tr><td>${esc(p)}</td><td><input class="in-cond" data-p="${esc(p)}" data-k="nombre" value="${esc((conductoresPe[p]||{}).nombre||"")}" style="width:100%"></td>
+    <td><input class="in-cond" data-p="${esc(p)}" data-k="doc" value="${esc((conductoresPe[p]||{}).doc||"")}" placeholder="DNI" style="width:110px"></td></tr>`).join("")||`<tr><td colspan="3">Sin placas todavía.</td></tr>`;
+  document.getElementById("qCorreo").value=d.q?correoPagoPe(d):"";
+}
+function correoPagoPe(d){
+  const [y,m,n]=d.q.split("-"), fin=new Date(+y,+m,0).getDate(), mes=nombreMes(y+"-"+m).split(" ")[0];
+  const L=["Estimado CONDUCTOR.","",
+    `Junto con saludar, se adjunta la información de las entregas realizadas entre los días ${n==="Q1"?"01 al 15":"16 al "+fin} de ${mes} del año ${y}, con el fin de que puedas revisar y validar que la información detallada en los documentos adjuntos esté correcta.`,""];
+  if(d.desc.length){ L.push("DESCUENTOS.",""); d.desc.forEach(x=>L.push(`${x.concepto.toUpperCase()}${x.placa?" "+x.placa:""}    S/. ${montoCorreo(x.monto)}`)); L.push("",`TOTAL DESC. S/. ${montoCorreo(d.totDesc)}`,""); }
+  L.push(`El monto total a facturar asciende a: S/. ${montoCorreo(d.total)} IGV incluido`,"");
+  if(d.otros.length){ L.push("Asimismo, adjunto el valor de "+d.otros.map(x=>x.concepto.toLowerCase()).join(", ")+":",""); d.otros.forEach(x=>L.push(`El monto total a facturar asciende a: S/. ${montoCorreo(r2(x.monto*(1+IGV_PE)))} ${[x.beneficiario,x.documento].filter(Boolean).join(" ")}`.trim())); L.push(""); }
+  L.push(`Adjunto detalle de las rutas realizadas la ${n==="Q1"?"1ª":"2ª"} Q ${mes.slice(0,3).toUpperCase()} ${y.slice(2)}`,"","Saludos,");
+  return L.join("\n");
+}
+function montoCorreo(v){ return Number(v).toLocaleString("de-DE",{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function copiarCorreoPe(){
+  const t=document.getElementById("qCorreo"); t.select();
+  (navigator.clipboard?navigator.clipboard.writeText(t.value):Promise.reject()).catch(()=>document.execCommand("copy"));
+  document.getElementById("estadoPagoPe").textContent="Texto del correo copiado.";
+}
+function cambiarEstadoQuincenaPe(estado){
+  const q=document.getElementById("qSel").value; if(!q) return;
+  quincenasPe[q]={estado,fecha:fechaISO(new Date())};
+  guardarPagoPe("PERU QUINCENAS",filasQuinPe(),`${nombreQuincena(q)}: ${estado}.`);
+}
+function guardarConductoresPe(){
+  document.querySelectorAll("#qConductores .in-cond").forEach(i=>{ const p=i.dataset.p; conductoresPe[p]=conductoresPe[p]||{nombre:"",doc:""}; conductoresPe[p][i.dataset.k]=i.value.trim(); });
+  for(const p of Object.keys(conductoresPe)) if(!conductoresPe[p].nombre&&!conductoresPe[p].doc) delete conductoresPe[p];
+  guardarPagoPe("PERU CONDUCTORES",filasCondPe(),"Conductores guardados.");
+}
+function agregarMovimientoPe(tipo){
+  const q=document.getElementById("qSel").value; if(!q) return mostrarError("Primero carga rutas para tener una quincena.");
+  const v=id=>document.getElementById(id).value.trim(), des=tipo==="DESCUENTO";
+  const x={quincena:q,tipo,concepto:v(des?"dConcepto":"opConcepto"),placa:des?nt(v("dPlaca")):"",beneficiario:des?"":v("opBenef"),documento:des?"":v("opDoc"),
+    detalle:des?v("dDetalle"):"",monto:Number(v(des?"dMonto":"opMonto"))};
+  if(!x.concepto||!(x.monto>0)) return mostrarError("Indica el concepto y un monto mayor a cero.");
+  movimientosPe.push(x);
+  (des?["dConcepto","dPlaca","dDetalle","dMonto"]:["opConcepto","opBenef","opDoc","opMonto"]).forEach(id=>document.getElementById(id).value="");
+  guardarPagoPe("PERU MOVIMIENTOS",filasMovPe(),`${des?"Descuento":"Pago"} agregado: ${x.concepto} ${solesQ(x.monto)}.`);
+}
+function quitarMovimientoPe(i){
+  const x=movimientosPe[i]; if(!x) return;
+  movimientosPe.splice(i,1); guardarPagoPe("PERU MOVIMIENTOS",filasMovPe(),`Quitado: ${x.concepto}.`);
+}
+function abrirAjustePe(k){
+  const r=peruDatos.rutas.find(r=>r.fecha+"|"+r.placa===k); if(!r) return;
+  const a=ajustesPe.get(k)||{zonaCobro:"",zonaPago:"",motivo:""};
+  const op=v=>`<option value="">Como se calculó (${esc(r.zona)})</option>`+Object.entries(ZONA_PE).map(([c,l])=>`<option value="${c}" ${v===c?"selected":""}>${l}</option>`).join("");
+  const box=document.getElementById("qAjuste"); box.classList.remove("hidden"); box.dataset.k=k;
+  box.innerHTML=`<b>Ajuste ${fechaCL(r.fecha)} ${esc(r.placa)}</b><p class="nota" style="margin:4px 0 0">Para rutas que se cobraron o pagaron con otra zona. El cobro, el pago y la liquidación usan la zona ajustada; el cuadre muestra la diferencia con lo calculado.</p>
+    <div class="filters"><label>Se cobró como <select id="ajCobro">${op(a.zonaCobro)}</select></label><label>Se pagó como <select id="ajPago">${op(a.zonaPago)}</select></label>
+    <input id="ajMotivo" placeholder="Motivo" value="${esc(a.motivo)}" style="flex:1 1 220px"></div>
+    <div class="filters"><button class="button green" style="margin:0" onclick="guardarAjustePe()">Guardar ajuste</button>
+    ${ajustesPe.has(k)?`<button class="button secondary" style="margin:0" onclick="quitarAjustePe()">Quitar ajuste</button>`:""}<button class="button secondary" style="margin:0" onclick="document.getElementById('qAjuste').classList.add('hidden')">Cancelar</button></div>`;
+  box.scrollIntoView({block:"nearest"});
+}
+function guardarAjustePe(){
+  const box=document.getElementById("qAjuste"), k=box.dataset.k;
+  const a={zonaCobro:document.getElementById("ajCobro").value,zonaPago:document.getElementById("ajPago").value,motivo:document.getElementById("ajMotivo").value.trim()};
+  if(!a.motivo) return mostrarError("Escribe el motivo del ajuste.");
+  ajustesPe.set(k,a); box.classList.add("hidden");
+  guardarPagoPe("PERU AJUSTES",filasAjustesPe(),`Ajuste guardado: ${fechaCL(k.split("|")[0])} ${k.split("|")[1]}.`);
+}
+function quitarAjustePe(){
+  const box=document.getElementById("qAjuste"), k=box.dataset.k; ajustesPe.delete(k); box.classList.add("hidden");
+  guardarPagoPe("PERU AJUSTES",filasAjustesPe(),`Ajuste quitado: ${fechaCL(k.split("|")[0])} ${k.split("|")[1]}.`);
+}
+// Detalle con el mismo formato que se envía al transporte
+const DIAS_PE=["domingo","lunes","martes","miércoles","jueves","viernes","sábado"];
+function fechaLargaPe(iso){ const [y,m,d]=iso.split("-").map(Number); return `${DIAS_PE[new Date(y,m-1,d).getDay()]}, ${d} de ${nombreMes(iso.slice(0,7)).split(" ")[0].toLowerCase()} de ${y}`; }
+function libroDetallePagoPe(d){
+  const H=["Fecha","CtOrigen","Motivo","Patente","Distrito","Capacidad","PUNTOS","Tipo","Usuario","NoDocumentoUsuario","Tarifario","Neto","IGVInc"];
+  const ws=XLSX.utils.aoa_to_sheet([H,...d.rutas.map(r=>[fechaLargaPe(r.fecha),TRANSPORTISTA_PE,r.tipoRuta,r.placa,r.distrito,M3_PE[r.unidad]||"",r.puntos,r.clasPago,
+    r.conductor.nombre,r.conductor.doc,r.llave,r.pago??"",r.igv??""])]);
+  const n=d.rutas.length, t=n+2;
+  XLSX.utils.sheet_add_aoa(ws,[["","","","","","","","","","","Totales",{t:"n",f:`SUM(L2:L${t-1})`,v:d.neto},{t:"n",f:`SUM(M2:M${t-1})`,v:d.conIgv}]],{origin:`A${t}`});
+  let f=t+2;
+  if(d.desc.length){
+    d.desc.forEach(x=>{ XLSX.utils.sheet_add_aoa(ws,[["","","","","","","","","","","Descuento: "+x.concepto+(x.placa?" "+x.placa:""),"",{t:"n",v:-x.monto}]],{origin:`A${f}`}); f++; });
+    XLSX.utils.sheet_add_aoa(ws,[["","","","","","","","","","","Total a facturar","",{t:"n",f:`M${t}+SUM(M${t+2}:M${f-1})`,v:d.total}]],{origin:`A${f}`});
+  }
+  ws["!cols"]=[32,22,15,10,26,10,8,18,30,16,46,10,10].map(wch=>({wch}));
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"Hoja1");
   return wb;
 }
-function descargarPagoTransportePeru(){
-  const {mes,rutas}=rutasMesPeru(); if(!rutas.length) return mostrarError("No hay rutas de Perú para descargar.");
-  XLSX.writeFile(libroPagoTransportePeru(rutas),`Pago transportista ${TRANSPORTISTA_PE} - ${nombreMes(mes).toUpperCase()}.xlsx`,{cellDates:true});
+function descargarDetallePagoPe(){
+  const d=quincenaPe(); if(!d.rutas.length) return mostrarError("No hay rutas en esta quincena.");
+  const [y,m,n]=d.q.split("-");
+  XLSX.writeFile(libroDetallePagoPe(d),`${n==="Q1"?"1":"2"}Q ${nombreMes(y+"-"+m).split(" ")[0].slice(0,3).toUpperCase()} ${y}.xlsx`);
+}
+// ---------- Perú: costos fijos por quincena (hoja PERU COSTOS FIJOS) ----------
+const H_FIJOS_PE=["CONCEPTO","BENEFICIARIO","DOCUMENTO","VIGENTE DESDE","MONTO NETO"];
+let fijosPe=[{concepto:"Personal de seguimiento",beneficiario:"",documento:"",desde:"2025-01-01",monto:847.46}];
+const filasFijosPe=()=>[H_FIJOS_PE,...[...fijosPe].sort((a,b)=>a.concepto.localeCompare(b.concepto)||a.desde.localeCompare(b.desde)).map(f=>[f.concepto,f.beneficiario,f.documento,f.desde,f.monto])];
+function fijosDesdeHoja(h,ops){
+  const m=h["PERU COSTOS FIJOS"]||[];
+  if(!m.length){ ops.push({hoja:"PERU COSTOS FIJOS",filas:filasFijosPe(),llave:{todo:true}}); return; }
+  fijosPe=tablaPe(m,H_FIJOS_PE).map(x=>({concepto:String(x.CONCEPTO).trim(),beneficiario:String(x.BENEFICIARIO).trim(),documento:String(x.DOCUMENTO).trim(),
+    desde:fechaISO(x["VIGENTE DESDE"]),monto:num(x["MONTO NETO"])})).filter(f=>f.concepto&&f.desde);
+}
+function renderFijosPe(){
+  const hoy=fechaISO(new Date());
+  const vig=[...fijosPe].sort((a,b)=>b.desde.localeCompare(a.desde));
+  document.getElementById("peFijos").innerHTML=vig.map(f=>`<tr><td>${esc(f.concepto)}</td><td>${esc([f.beneficiario,f.documento].filter(Boolean).join(" "))}</td>
+    <td>${fechaCL(f.desde)}${f===vig.find(x=>nt(x.concepto)===nt(f.concepto)&&x.desde<=hoy)?' <span class="nota-inline">(vigente)</span>':""}</td><td class="n">${solesQ(f.monto)}</td>
+    <td>${fijosPe.length>1?`<button class="btn-mini" data-i="${fijosPe.indexOf(f)}" onclick="quitarFijoPe(+this.dataset.i)">Quitar</button>`:""}</td></tr>`).join("")||`<tr><td colspan="5">Sin costos fijos.</td></tr>`;
+}
+function agregarFijoPe(){
+  const v=id=>document.getElementById(id).value.trim();
+  const f={concepto:v("fjConcepto")||"Personal de seguimiento",beneficiario:v("fjBenef"),documento:v("fjDoc"),desde:v("fjDesde"),monto:Number(v("fjMonto"))};
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(f.desde)||!(f.monto>=0)||v("fjMonto")==="") return mostrarError("Indica desde qué fecha rige y el monto neto por quincena (0 para dejar de cargarlo).");
+  fijosPe=fijosPe.filter(x=>!(nt(x.concepto)===nt(f.concepto)&&x.desde===f.desde)).concat(f);
+  ["fjBenef","fjDoc","fjDesde","fjMonto"].forEach(id=>document.getElementById(id).value="");
+  guardarConfigPe("PERU COSTOS FIJOS",filasFijosPe(),`${f.concepto}: ${solesQ(f.monto)} por quincena desde el ${fechaCL(f.desde)}.`);
+}
+function quitarFijoPe(i){ const f=fijosPe[i]; if(!f) return; fijosPe.splice(i,1); guardarConfigPe("PERU COSTOS FIJOS",filasFijosPe(),`Quitado: ${f.concepto} desde el ${fechaCL(f.desde)}.`); }
+
+// ---------- Perú: cuadre y KPI (hoja PERU FACTURAS) ----------
+// COBRO: una factura a Sodimac por mes (monto sin IGV). PAGO: una factura del transporte por quincena (monto con IGV, ya con descuentos).
+const H_FACT_PE=["TIPO","PERIODO","NUMERO","FECHA","MONTO","FECHA PAGO"];
+let facturasPe={};
+const claveFact=(tipo,periodo)=>tipo+"|"+periodo;
+function facturasDesdeHoja(h){
+  facturasPe=Object.fromEntries(tablaPe(h["PERU FACTURAS"],H_FACT_PE).filter(x=>x.TIPO&&x.PERIODO).map(x=>[claveFact(nt(x.TIPO),String(x.PERIODO)),
+    {numero:String(x.NUMERO).trim(),fecha:fechaISO(x.FECHA),monto:x.MONTO===""?null:num(x.MONTO),pago:fechaISO(x["FECHA PAGO"])}]));
+}
+const filasFactPe=()=>[H_FACT_PE,...Object.keys(facturasPe).sort().map(k=>{ const [t,p]=k.split("|"), f=facturasPe[k]; return [t,p,f.numero,f.fecha,f.monto??"",f.pago]; })];
+const finQuincena=q=>{ const [y,m,n]=q.split("-"); return `${y}-${m}-${n==="Q1"?"15":String(new Date(+y,+m,0).getDate())}`; };
+const diasEntre=(a,b)=>Math.round((new Date(b+"T12:00:00")-new Date(a+"T12:00:00"))/864e5);
+// Todo lo del mes en neto (sin IGV): cobro liquidado, pago, descuentos recuperados y otros pagos
+function mesCuadrePe(mes){
+  const rutas=peruDatos.rutas.filter(r=>r.fecha.slice(0,7)===mes);
+  const calc=rutas.reduce((s,r)=>s+(r.totalCalc||0),0), liq=rutas.reduce((s,r)=>s+(r.total||0),0);
+  const fc=facturasPe[claveFact("COBRO",mes)]||null;
+  const cobrado=fc&&fc.monto!==null?fc.monto:liq;
+  const qs=[mes+"-Q1",mes+"-Q2"].map(q=>{
+    const d=datosQuincenaPe(q), fp=facturasPe[claveFact("PAGO",q)]||null;
+    return {...d,calcPago:d.rutas.reduce((s,r)=>s+(r.pagoCalc||0),0),fact:fp,dif:fp&&fp.monto!==null?r2(fp.monto-d.total):null,
+      dias:fp&&fp.pago?diasEntre(finQuincena(q),fp.pago):null,estado:(quincenasPe[q]||{}).estado||"Borrador"};
+  }).filter(d=>d.rutas.length);
+  const pago=qs.reduce((s,d)=>s+d.neto,0), desc=r2(qs.reduce((s,d)=>s+d.totDesc,0)/(1+IGV_PE)), otros=qs.reduce((s,d)=>s+d.totOtros,0);
+  const costo=pago-desc+otros, margen=cobrado-costo;
+  const placas={}; rutas.forEach(r=>placas[r.placa]=(placas[r.placa]||0)+1);
+  const puntos=rutas.reduce((s,r)=>s+(r.puntos||0),0), ent=rutas.reduce((s,r)=>s+(r.entregados||0),0), n=rutas.length;
+  const dias=qs.map(d=>d.dias).filter(x=>x!==null);
+  return {mes,rutas,calc,liq,ajustes:rutas.filter(r=>r.ajuste&&r.total!==r.totalCalc),fc,cobrado,difCobro:fc&&fc.monto!==null?r2(fc.monto-liq):null,qs,pago,desc,otros,costo,margen,
+    kpi:{rutas:n,placas,perif:n?rutas.filter(r=>r.zonaCobro==="Periferia").length/n:0,dom:n?rutas.filter(r=>r.detalle).length/n:0,ptsRuta:n?puntos/n:0,entrega:puntos?ent/puntos:0,
+      ingresoRuta:n?cobrado/n:0,costoRuta:n?costo/n:0,margenRuta:n?margen/n:0,margenPct:cobrado?margen/cobrado:0,diasPago:dias.length?dias.reduce((a,b)=>a+b,0)/dias.length:null}};
+}
+const pctPe=v=>Math.round(v*1000)/10+"%";
+function renderCuadrePeru(){
+  const sel=document.getElementById("cMes"), prev=sel.value, meses=mesesPeru();
+  sel.innerHTML=meses.length?meses.map(m=>`<option value="${m}">${nombreMes(m)}</option>`).join(""):`<option value="">Sin datos</option>`;
+  sel.value=meses.includes(prev)?prev:(meses[0]||"");
+  // Pendiente de cobro: facturas a Sodimac sin fecha de pago
+  const pend=Object.entries(facturasPe).filter(([k,f])=>k.startsWith("COBRO|")&&!f.pago&&f.monto);
+  document.getElementById("cPendiente").textContent=solesQ(pend.reduce((s,[,f])=>s+f.monto,0));
+  document.getElementById("cPendienteDet").textContent=pend.length?pend.map(([k,f])=>`${nombreMes(k.split("|")[1])}${f.numero?" (F "+f.numero+")":""}`).join(", "):"Sin facturas pendientes de cobro.";
+  const mes=sel.value;
+  if(!mes){ ["cCobrado","cCosto","cMargen"].forEach(id=>document.getElementById(id).textContent="S/ 0.00"); document.getElementById("cCuadreCobro").innerHTML=""; document.getElementById("cCuadrePago").innerHTML=""; document.getElementById("cKpi").innerHTML=""; document.getElementById("cTendencia").innerHTML=""; return; }
+  const d=mesCuadrePe(mes);
+  document.getElementById("cCobrado").textContent=solesQ(d.cobrado);
+  document.getElementById("cCobradoDet").textContent=d.fc&&d.fc.monto!==null?"Facturado a Sodimac":"Liquidado (sin factura registrada)";
+  document.getElementById("cCosto").textContent=solesQ(d.costo);
+  const eM=document.getElementById("cMargen"); eM.textContent=`${solesQ(d.margen)} (${pctPe(d.kpi.margenPct)})`; eM.className="summary-value "+(d.margen<0?"errc":"okc");
+  const rgC=rangoMesPe(mes); clpPe("cCobrado",d.cobrado,rgC); clpPe("cCosto",d.costo,rgC); clpPe("cMargen",d.margen,rgC);
+  document.getElementById("cTc").textContent=textoTcPe(rgC);
+  // Cuadre de cobro
+  const dif=v=>v===null?`<span class="nota-inline">sin factura</span>`:v===0?`<span class="okc">Cuadra</span>`:`<span class="${d.ajustes.length&&false?"":"dif-neg"}">${solesQ(v)}</span>`;
+  const fc=d.fc||{numero:"",fecha:"",monto:null,pago:""};
+  document.getElementById("cCuadreCobro").innerHTML=`
+    <table><tbody>
+      <tr><td>Calculado por la web</td><td class="n">${solesQ(d.calc)}</td></tr>
+      ${d.ajustes.map(r=>`<tr><td>Ajuste ${fechaCL(r.fecha)} ${esc(r.placa)}: ${esc(r.ajuste.motivo)}</td><td class="n">${solesQ(r.total-r.totalCalc)}</td></tr>`).join("")}
+      <tr><td><b>Liquidado</b></td><td class="n"><b>${solesQ(d.liq)}</b></td></tr>
+      <tr><td>Facturado a Sodimac</td><td class="n">${fc.monto===null?"":solesQ(fc.monto)}</td></tr>
+      <tr><td><b>Diferencia sin explicar</b></td><td class="n">${dif(d.difCobro)}</td></tr>
+    </tbody></table>
+    <div class="filters" style="margin-top:12px">
+      <input id="fcNumero" placeholder="N° factura" value="${esc(fc.numero)}" style="width:120px">
+      <label>Fecha <input id="fcFecha" type="date" value="${fc.fecha}"></label>
+      <input id="fcMonto" type="number" step="any" placeholder="Monto sin IGV" value="${fc.monto??""}" style="width:130px">
+      <label>Pagada por Sodimac <input id="fcPago" type="date" value="${fc.pago}"></label>
+      <button class="button" style="margin:0" onclick="guardarFacturaPe('COBRO','${mes}','fc')">Guardar factura</button>
+    </div>`;
+  // Cuadre de pago por quincena
+  document.getElementById("cCuadrePago").innerHTML=d.qs.map(q=>{
+    const f=q.fact||{numero:"",fecha:"",monto:null,pago:""}, id="fpQ"+q.q.slice(-1);
+    return `<h3>${nombreQuincena(q.q)} <span class="nota-inline">· ${esc(q.estado)}</span></h3>
+    <table><tbody>
+      <tr><td>Calculado por la web (neto)</td><td class="n">${solesQ(q.calcPago)}</td></tr>
+      ${q.rutas.filter(r=>r.ajuste&&r.pago!==r.pagoCalc).map(r=>`<tr><td>Ajuste ${fechaCL(r.fecha)} ${esc(r.placa)}: ${esc(r.ajuste.motivo)}</td><td class="n">${solesQ(r.pago-r.pagoCalc)}</td></tr>`).join("")}
+      <tr><td>A pagar neto / con IGV</td><td class="n">${solesQ(q.neto)} / ${solesQ(q.conIgv)}</td></tr>
+      ${q.desc.length?`<tr><td>Descuentos (con IGV)</td><td class="n">-${solesQ(q.totDesc)}</td></tr>`:""}
+      <tr><td><b>Total a facturar por el transporte</b></td><td class="n"><b>${solesQ(q.total)}</b></td></tr>
+      <tr><td>Factura del transporte</td><td class="n">${f.monto===null?"":solesQ(f.monto)}</td></tr>
+      <tr><td><b>Diferencia sin explicar</b></td><td class="n">${dif(q.dif)}</td></tr>
+      ${q.otros.length?`<tr><td>Otros pagos (neto): ${q.otros.map(x=>esc(x.concepto)).join(", ")}</td><td class="n">${solesQ(q.totOtros)}</td></tr>`:""}
+    </tbody></table>
+    <div class="filters" style="margin-top:10px">
+      <input id="${id}Numero" placeholder="N° factura" value="${esc(f.numero)}" style="width:120px">
+      <label>Fecha <input id="${id}Fecha" type="date" value="${f.fecha}"></label>
+      <input id="${id}Monto" type="number" step="any" placeholder="Monto con IGV" value="${f.monto??""}" style="width:130px">
+      <label>Pagada <input id="${id}Pago" type="date" value="${f.pago}"></label>
+      <button class="button" style="margin:0" onclick="guardarFacturaPe('PAGO','${q.q}','${id}')">Guardar factura</button>
+    </div>`;
+  }).join("")||`<p class="nota">Sin rutas este mes.</p>`;
+  // KPI del mes
+  const k=d.kpi, tcM=tcPeriodoPe(rgC[0],rgC[1]), clpK=v=>tcM?`<div class="clp">≈ ${pesosPe(v*tcM.tc)} CLP</div>`:"";
+  const caja=(t,v,s="",clp="")=>`<div class="summary-box"><div class="summary-title">${t}</div><div class="summary-value">${v}</div>${clp}${s?`<div class="nota">${s}</div>`:""}</div>`;
+  document.getElementById("cKpi").innerHTML=[
+    caja("Rutas",k.rutas,Object.entries(k.placas).sort((a,b)=>b[1]-a[1]).map(([p,n])=>`${p}: ${n}`).join(" · ")),
+    caja("% periferia",pctPe(k.perif)),caja("% domingo o feriado",pctPe(k.dom)),
+    caja("Puntos por ruta",(Math.round(k.ptsRuta*10)/10).toLocaleString("es-PE")),caja("% entrega efectiva",pctPe(k.entrega)),
+    caja("Ingreso por ruta",solesQ(k.ingresoRuta),"",clpK(k.ingresoRuta)),caja("Costo por ruta",solesQ(k.costoRuta),"",clpK(k.costoRuta)),caja("Margen por ruta",solesQ(k.margenRuta),"",clpK(k.margenRuta)),
+    caja("Margen %",pctPe(k.margenPct)),caja("Días cierre a pago",k.diasPago===null?"–":Math.round(k.diasPago),"Promedio de las quincenas con fecha de pago")].join("");
+  // Tendencia de los últimos 6 meses
+  const ult=meses.slice(0,6).reverse().map(mesCuadrePe), maxM=Math.max(...ult.map(x=>Math.abs(x.margen)),1);
+  document.getElementById("cTendencia").innerHTML=`<table><thead><tr><th>Mes</th><th>Rutas</th><th>% periferia</th><th>% entrega</th><th>Cobrado</th><th>Costo</th><th>Margen</th><th>Margen %</th><th>Margen CLP</th><th></th></tr></thead><tbody>
+    ${ult.map(x=>`<tr${x.mes===mes?' class="sel"':""}><td>${nombreMes(x.mes)}</td><td class="n">${x.kpi.rutas}</td><td class="n">${pctPe(x.kpi.perif)}</td><td class="n">${pctPe(x.kpi.entrega)}</td>
+      <td class="n">${solesQ(x.cobrado)}</td><td class="n">${solesQ(x.costo)}</td><td class="n ${x.margen<0?"dif-neg":""}">${solesQ(x.margen)}</td><td class="n">${pctPe(x.kpi.margenPct)}</td>
+      <td class="n">${(t=>t?pesosPe(x.margen*t.tc):"–")(tcPeriodoPe(...rangoMesPe(x.mes)))}</td>
+      <td style="width:140px"><div class="barra ${x.margen<0?"neg":""}" style="width:${Math.round(Math.abs(x.margen)/maxM*100)}%"></div></td></tr>`).join("")}</tbody></table>`;
+}
+async function guardarFacturaPe(tipo,periodo,id){
+  const v=s=>document.getElementById(id+s).value.trim();
+  const f={numero:v("Numero"),fecha:v("Fecha"),monto:v("Monto")===""?null:Number(v("Monto")),pago:v("Pago")};
+  if(!f.numero&&f.monto===null&&!f.pago) delete facturasPe[claveFact(tipo,periodo)]; else facturasPe[claveFact(tipo,periodo)]=f;
+  ocultarError(); const av=document.getElementById("estadoCuadrePe"); av.textContent="Guardando en PERU FACTURAS…";
+  try{
+    await llamar("guardarLote",[{hoja:"PERU FACTURAS",filas:filasFactPe(),llave:{todo:true}}]);
+    renderCuadrePeru();
+    av.textContent=`Factura ${tipo==="COBRO"?"a Sodimac de "+nombreMes(periodo):"del transporte, "+nombreQuincena(periodo)} guardada.`+(EN_APPS_SCRIPT?" Guardado en Google Sheets.":" Vista previa: se guarda solo mientras la página esté abierta.");
+  }catch(err){ av.textContent=""; mostrarError("No se pudo guardar en Google Sheets.\n\n"+(err.message||err)); }
+}
+// ---------- Perú: montos en pesos chilenos (solo resúmenes y KPI) ----------
+// Tipo de cambio diario de la hoja PERU TIPO CAMBIO (Code.gs: tipoCambioPeru). Todos los montos se convierten al
+// tipo de cambio del día en que se revisa (el último disponible), sin importar el periodo (pedido de Cristian, 16-10).
+let tcPe=[];
+function tcPeriodoPe(){
+  if(!tcPe.length) return null;
+  const u=tcPe[tcPe.length-1]; return {tc:u[1],fecha:u[0]};
+}
+const rangoMesPe=ym=>[ym+"-01",ym+"-"+String(new Date(+ym.slice(0,4),+ym.slice(5,7),0).getDate()).padStart(2,"0")];
+const rangoQuincenaPe=q=>{ const [y,m,n]=q.split("-"); return [`${y}-${m}-${n==="Q1"?"01":"16"}`,finQuincena(q)]; };
+const pesosPe=v=>(v<0?"-":"")+"$ "+Math.abs(Math.round(v)).toLocaleString("es-CL");
+// Agrega bajo el valor de un resumen la línea "≈ $ X CLP"
+function clpPe(id,soles,rango){
+  const el=document.getElementById(id); if(!el) return;
+  let c=el.parentNode.querySelector(".clp");
+  if(!c){ c=document.createElement("div"); c.className="clp"; el.after(c); }
+  const t=rango&&soles!==null&&soles!==undefined?tcPeriodoPe(rango[0],rango[1]):null;
+  c.textContent=t?`≈ ${pesosPe(soles*t.tc)} CLP`:"";
+}
+function textoTcPe(){
+  const t=tcPeriodoPe(); if(!t) return "Sin tipo de cambio todavía: se llena desde Google Finance al abrir la web publicada.";
+  return `Pesos chilenos al tipo de cambio de hoy: 1 S/ = ${pesosPe2(t.tc)} (Google Finance, ${fechaCL(t.fecha)}).`;
+}
+const pesosPe2=v=>"$ "+v.toLocaleString("es-CL",{minimumFractionDigits:2,maximumFractionDigits:2});
+async function cargarTipoCambioPe(){
+  try{ const f=await llamar("tipoCambioPeru"); tcPe=(f||[]).map(([d,v])=>[fechaISO(d),Number(v)]).filter(([d,v])=>d&&v>0).sort((a,b)=>a[0].localeCompare(b[0])); }
+  catch(e){ tcPe=[]; }
+  renderTodoPeru();
 }
 function avisoPeru(t){ document.getElementById("estadoPeru").innerHTML=t; }
 document.getElementById("inSimpli").addEventListener("change",async e=>{
@@ -1903,12 +2585,59 @@ document.getElementById("inSimpli").addEventListener("change",async e=>{
       :"Vista previa: los datos se guardan solo mientras la página esté abierta.");
   }catch(err){ avisoPeru(""); mostrarError(err.message||String(err)); }
 });
+// Liquidación de cobro enviada a Sodimac (FECHA, PLACA, TIPO UNIDAD, PUNTOS, DISTRITOS, ZONA...) -> rutas, para días sin reporte SIMPLI
+// (SIMPLI entrega solo los últimos 3 meses). No trae visitas: entregados = puntos y la zona es la cobrada.
+const VEH_LIQ_PE="LIQUIDACION COBRO";
+function rutasLiquidacionPe(matrices){
+  const rutas=[], vistas=new Set();
+  for(const m of matrices){
+    const fila=m.findIndex(r=>r.some(x=>nt(x)==="PLACA")&&r.some(x=>nt(x)==="FECHA")); if(fila<0) throw new Error("La liquidación no tiene las columnas FECHA y PLACA.");
+    const h=m[fila], c={fecha:idx(h,["FECHA"]),placa:idx(h,["PLACA"]),unidad:idx(h,["TIPO UNIDAD","TIPO DE UNIDAD","UNIDAD"]),puntos:idx(h,["PUNTOS"]),
+      dist:idx(h,["DISTRITOS","DISTRITO"]),zona:idx(h,["ZONA"])};
+    if(c.unidad<0||c.zona<0) throw new Error("La liquidación no tiene las columnas TIPO UNIDAD y ZONA.");
+    for(const r of m.slice(fila+1)){
+      const fecha=fechaISO(r[c.fecha]), placa=nt(r[c.placa]).replace(/\s/g,""); if(!fecha||!placa) continue;
+      const k=fecha+"|"+placa; if(vistas.has(k)) continue; vistas.add(k);
+      const u=nt(r[c.unidad]), d=(u.match(/\d{2}/)||[""])[0], unidad={"10":"F13","13":"F13","15":"F20","20":"F20"}[d]||"";
+      const z=nt(r[c.zona]), zona=/PERIF|LEJANO/.test(z)?"Periferia":/METRO|URBANO/.test(z)?"Metropolitana":"SIN TARIFA";
+      const puntos=c.puntos>=0?num(r[c.puntos]):0, distrito=c.dist>=0?nt(r[c.dist]):"";
+      const obs=["Cargada desde la liquidación de cobro (sin reporte SIMPLI)",unidad?"":"Unidad no reconocida",zona==="SIN TARIFA"?"Zona no reconocida":""].filter(Boolean).join("; ");
+      rutas.push({fecha,placa,vehiculo:VEH_LIQ_PE,unidad,puntos,entregados:puntos,distrito,zona,perif:zona==="Periferia"?1:0,obs});
+    }
+  }
+  return rutas.sort((a,b)=>a.fecha.localeCompare(b.fecha)||a.placa.localeCompare(b.placa));
+}
+document.getElementById("inLiqPe").addEventListener("change",async e=>{
+  const files=[...(e.target.files||[])]; e.target.value=""; if(!files.length) return; ocultarError();
+  try{
+    const ms=[];
+    for(const f of files){ const {wb}=await leerLibroP(f); if(!wb) throw new Error(`${f.name}: la liquidación debe ser un Excel.`); ms.push(matrix(wb.Sheets[wb.SheetNames[0]])); }
+    const liq=rutasLiquidacionPe(ms); if(!liq.length) throw new Error("La liquidación no trae rutas.");
+    // Días con rutas de SIMPLI se respetan; los días que ya venían de una liquidación se reemplazan
+    const conSimpli=new Set(peruDatos.rutas.filter(r=>r.vehiculo!==VEH_LIQ_PE).map(r=>r.fecha));
+    const nuevas=liq.filter(r=>!conSimpli.has(r.fecha)), omitidas=liq.length-nuevas.length;
+    if(!nuevas.length) throw new Error(`Todos los días de la liquidación ya tienen rutas de SIMPLI (${omitidas} rutas omitidas).`);
+    const desde=nuevas[0].fecha, hasta=nuevas[nuevas.length-1].fecha, diasNuevos=new Set(nuevas.map(r=>r.fecha));
+    const quedan=peruDatos.rutas.filter(r=>r.fecha>=desde&&r.fecha<=hasta&&!diasNuevos.has(r.fecha));
+    const filas=[...quedan,...nuevas.map(tarificarPeru)].sort((a,b)=>a.fecha.localeCompare(b.fecha)||a.placa.localeCompare(b.placa));
+    avisoPeru(esc(`Guardando ${nuevas.length} rutas de la liquidación en PERU RUTAS…`));
+    await llamar("guardarLote",[{hoja:"PERU RUTAS",filas:filasPeru(filas),llave:{col:"FECHA",desde,hasta}}]);
+    await recargarPeru();
+    document.getElementById("pMes").value=hasta.slice(0,7); renderPeru();
+    avisoPeru(esc(`${nuevas.length} rutas de ${diasNuevos.size} días agregadas desde la liquidación`+(omitidas?`; ${omitidas} rutas omitidas porque su día ya tiene SIMPLI`:"")+".")
+      +(EN_APPS_SCRIPT?" Guardado en Google Sheets.":" Vista previa: los datos se guardan solo mientras la página esté abierta."));
+  }catch(err){ avisoPeru(""); mostrarError(err.message||String(err)); }
+});
 async function recargarPeru(){
   const d=await llamar("leerDatos"); urlLibro=d.url||urlLibro;
-  peruDatos.rutas=peruDesdeHoja((d.hojas||{})["PERU RUTAS"]);
-  renderPeru();
+  const h=d.hojas||{};
+  await configPeruDesdeHojas(h);
+  pagoPeruDesdeHojas(h); facturasDesdeHoja(h);
+  peruDatos.rutas=peruDesdeHoja(h["PERU RUTAS"]).map(tarificarPeru);
+  renderTodoPeru();
 }
-recargarPeru().catch(()=>{});
+function renderTodoPeru(){ renderPeru(); renderTarifasPeru(); renderPagoPeru(); renderCuadrePeru(); }
+recargarPeru().catch(()=>renderTodoPeru()).then(cargarTipoCambioPe);
 
 function mostrarError(m){ document.getElementById("errorText").textContent=m; document.getElementById("errorArea").classList.remove("hidden"); }
 function ocultarError(){ document.getElementById("errorArea").classList.add("hidden"); }
