@@ -1,10 +1,10 @@
-// usage: node render.mjs <svg> <out-prefix>
+// usage: node render.mjs <svg> <out-prefix> [titulo] [texto]
 import { chromium } from 'playwright';
 import { readFileSync } from 'fs';
 import { dirname, resolve } from 'path';
 import { pathToFileURL } from 'url';
 
-const [svgPath, out] = process.argv.slice(2);
+const [svgPath, out, title = '¡Gran día de ventas!', body = 'Cerraste el torneo con 32 jugadores.'] = process.argv.slice(2);
 const logo = 'data:image/png;base64,' + readFileSync(resolve(dirname(svgPath), 'logo.png')).toString('base64');
 const svg = readFileSync(svgPath, 'utf8').replace('href="logo.png"', `href="${logo}"`);
 const base = pathToFileURL(dirname(resolve(svgPath)) + '/').href;
@@ -27,6 +27,6 @@ await shot(`<div style="display:flex;gap:40px;align-items:center;padding:30px;ba
   ${sized(W, H)}
   <div style="border:1px solid #C9A227;border-radius:14px;padding:18px;display:flex;gap:16px;align-items:center;background:#17171A;width:420px">
     ${sized(sw, 150)}
-    <div><div style="color:#F5C518;font-weight:800;font-size:18px">¡Gran día de ventas!</div><div style="font-size:14px;opacity:.8;margin-top:6px">Cerraste el torneo con 32 jugadores.</div></div>
+    <div><div style="color:#F5C518;font-weight:800;font-size:18px">${title}</div><div style="font-size:14px;opacity:.8;margin-top:6px">${body}</div></div>
   </div></div>`, `${out}-preview.png`, { x: 0, y: 0, width: 1100, height: 560 }, false);
 await browser.close();
