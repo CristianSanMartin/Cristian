@@ -15,6 +15,11 @@ async function abrir(browser, opts = {}) {
   const page = await browser.newPage({ viewport: opts.viewport || { width: 1400, height: 950 } });
   const errores = [];
   page.on("pageerror", (e) => errores.push(e.message));
+  // El saludo diario de GSTin (abonos TUU del día) no se muestra en las pruebas: taparía los botones.
+  await page.addInitScript(() => {
+    const get = Storage.prototype.getItem;
+    Storage.prototype.getItem = function (k) { return /^gstin-/.test(k) ? "1" : get.call(this, k); };
+  });
   await page.goto(url(opts.user));
   await page.waitForSelector("#app:not(.hidden)");
   return { page, errores };
@@ -769,9 +774,6 @@ test("dashboard: facturas por pagar se despliegan y se abonan desde ahí", { ski
   const browser = await chromium.launch();
   try {
     const { page, errores } = await abrir(browser);
-    // Si GSTin saluda al entrar, se cierra primero.
-    await page.waitForTimeout(300);
-    while (await page.locator("#modal-root .modal-overlay").count()) { await page.keyboard.press("Escape"); await page.waitForTimeout(200); }
     await page.click('[data-action="verPorPagar"]');
     const panel = page.locator(".panel", { hasText: "Facturas por pagar" });
     const filas = panel.locator("tbody tr");
