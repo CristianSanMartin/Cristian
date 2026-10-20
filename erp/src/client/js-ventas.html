@@ -63,7 +63,8 @@
   function panelVenta() {
     if (!GS.puede('operador') || !carrito.length) return '';
     if (!borrador.fecha) borrador.fecha = data().hoy;
-    const clientes = data().clientes.filter((c) => c.activo).map((c) => '<option value="' + esc(c.nombre) + '">' + esc(c.id + (c.idPokemon ? ' · ' + c.idPokemon : '')) + '</option>').join('');
+    // Todos los clientes, como en las demás casillas (los migrados del Excel pueden no tener marcado "activo").
+    const clientes = data().clientes.map((c) => '<option value="' + esc(c.nombre) + '">' + esc(c.idPokemon ? 'ID ' + c.idPokemon : '') + '</option>').join('');
     const medios = data().catalogos.mediosPago;
     return '<div class="panel inline-panel" id="nueva-venta"><form novalidate>' +
       '<div class="inline-panel-head"><h3>Venta en curso</h3><span class="muted">Sigue agregando productos desde la lista de abajo. Ajusta cantidades o precios (descuento por producto) aquí.</span></div>' +
