@@ -241,12 +241,15 @@ test("debe quedar al menos un administrador activo", () => {
   assert.match(errorDe(s.call("guardarUsuario", { email: "admin@gsprime.cl", nombre: "Admin", rol: "operador" })), /al menos un administrador/);
 });
 
-test("auditoría registra quién hizo cada cambio", () => {
+test("auditoría registra los cambios de los demás usuarios, no los del creador", () => {
   const s = createServer();
   const { pv: p } = preventa30th(s);
-  s.ok("registrarAsignacion", { lineas: [{ id: p.binderEng.id, asignado: 24 }] });
-  const asig = s.ok("auditoria").data.find(x => x.accion === "asignación");
-  assert.equal(asig.usuario, "admin@gsprime.cl");
+  s.ok("guardarUsuario", { email: "socio@gsprime.cl", nombre: "Socio", rol: "operador" });
+  s.ok("registrarAsignacion", { lineas: [{ id: p.binderEng.id, asignado: 10 }] });
+  assert.ok(!s.ok("auditoria").data.some(x => x.usuario === "admin@gsprime.cl"), "lo del creador no se registra");
+  s.as("socio@gsprime.cl").ok("registrarAsignacion", { lineas: [{ id: p.binderEng.id, asignado: 24 }] });
+  const asig = s.as("admin@gsprime.cl").ok("auditoria").data.find(x => x.accion === "asignación");
+  assert.equal(asig.usuario, "socio@gsprime.cl");
   assert.deepEqual(JSON.parse(asig.detalle), [{ id: "PVI-000001", solicitado: 60, asignado: 24 }]);
 });
 
@@ -713,9 +716,8 @@ test("ventas sin OC: singles, torneos, bazar… con su propio correlativo; las e
   const venta = s.ok("bootstrap").data.ventas.find(x => x.id === "BAZ-0002");
   assert.deepEqual([venta.total, venta.cobros.length, venta.saldo], [4000, 1, 3000]);
   assert.equal(s.run(`Db.get("Migracion_Caja", "MC-1").migrada`), "BAZ-0002");
-  // La OC "Otro" queda como OC y la Validación la marca como OC sin producto
+  // La OC "Otro" queda como OC
   assert.ok(s.ok("bootstrap").data.ventas.some(x => x.id === "OC-0001"));
-  assert.ok(s.ok("validacion").data.hallazgos.some(h => h.regla === "vtOcSinProducto" && h.ref === "OC-0001"));
 });
 
 test("editar venta: N°, cliente, canal, medio de pago y precios; el N° libre se respeta", () => {
@@ -846,41 +848,6 @@ test("agregar un producto que faltó en una factura: preventa recibida, lote y d
   assert.equal(s.as("socio@gsprime.cl").call("agregarLineaCompra", { compraId: c.id, productoId: prods.miniTin.id, cantidad: 1, costoNeto: 1 }).code, "SIN_PERMISO");
 });
 
-test("validación de datos: encuentra inconsistencias, se validan y reaparecen si los datos cambian", () => {
-  const s = createServer();
-  const { prods } = conInventario(s);   // Binder ENG 24, Binder ESP 6, Mini Tin 10
-  // Duplicado, venta con descuento alto y bajo costo, cliente duplicado, movimiento duplicado
-  s.run(`Db.insert("Productos", { id: "GS-9999", nombre: "Mini  Tin", edicion: "30th celebration", idioma: "ENG", tipo: "Tin / Mini Tin", pvp: 13990, activo: true })`);   // como quedó de la migración
-  s.ok("crearVenta", { fecha: "2026-10-05", lineas: [{ productoId: prods.miniTin.id, cantidad: 1, precio: 5000 }] });
-  s.ok("guardarCliente", { nombre: "Ana Rojas" });
-  s.run(`Db.insert("Clientes", { id: "CLI-9999", nombre: "Ana  Rojas.", activo: true })`);
-  const mov = { fecha: "2026-10-01", tipo: "egreso", categoria: "gav", subcategoria: "Luz", monto: 30000 };
-  s.ok("guardarMovimiento", mov);
-  s.ok("guardarMovimiento", mov);
-  let r = s.ok("validacion").data;
-  const de = (regla) => r.hallazgos.filter(h => h.regla === regla);
-  assert.equal(de("prodDuplicado").length, 1);
-  assert.equal(de("vtDescuentoAlto").length, 1);
-  assert.equal(de("vtPerdida").length, 1);
-  assert.equal(de("cliDuplicado").length, 1);
-  assert.equal(de("finDuplicado").length, 1);
-  assert.ok(r.hallazgos.every(h => h.area && h.nivel && h.titulo && h.estado === "pendiente"));
-  // Validar el descuento: queda validado; si cambia la venta (otra firma), vuelve a pendiente
-  const h = de("vtDescuentoAlto")[0];
-  s.ok("validarHallazgos", { items: [{ clave: h.clave, firma: h.firma }], nota: "precio especial" });
-  r = s.ok("validacion").data;
-  assert.deepEqual([de("vtDescuentoAlto")[0].estado, de("vtDescuentoAlto")[0].nota], ["validado", "precio especial"]);
-  s.run(`Db.update("Ventas_Lineas", "${h.ref}", { precio: 4000 })`);
-  r = s.ok("validacion").data;
-  assert.equal(de("vtDescuentoAlto")[0].estado, "pendiente", "cambió el dato: hay que revisarlo de nuevo");
-  // Reabrir y permisos
-  s.ok("validarHallazgos", { items: [{ clave: de("cliDuplicado")[0].clave, firma: de("cliDuplicado")[0].firma }] });
-  s.ok("validarHallazgos", { items: [{ clave: de("cliDuplicado")[0].clave, firma: de("cliDuplicado")[0].firma }], estado: "pendiente" });
-  assert.equal(s.ok("validacion").data.hallazgos.find(x => x.regla === "cliDuplicado").estado, "pendiente");
-  s.ok("guardarUsuario", { email: "socio@gsprime.cl", nombre: "Socio", rol: "operador" });
-  assert.equal(s.as("socio@gsprime.cl").call("validacion", {}).code, "SIN_PERMISO");
-});
-
 test("venta en varios lotes (FIFO) y cuenta por cobrar con abonos", () => {
   const s = createServer();
   const { prods } = conInventario(s);
@@ -919,7 +886,7 @@ test("venta desde un lote elegido en Inventario: sale de ese lote aunque haya un
   assert.equal(lote(s, prods.miniTin.id).find(l => l.id === nuevo.id).disponible, 3);
 });
 
-test("respaldos: activador diario, respaldo antes de instalar con datos y se guardan los últimos 30", () => {
+test("respaldos: activador diario, respaldo antes de instalar con datos y se guardan los de los últimos 7 días", () => {
   const s = createServer();
   assert.deepEqual(JSON.parse(JSON.stringify(s.fake.state.triggers.map(t => [t.fn, t.hour]))), [["respaldoDiario", 3]], "instalar programa el respaldo de las 3 a. m.");
   const copias = () => Object.values(s.fake.state.files).filter(f => f.copyOf && !f.trashed);
@@ -937,10 +904,11 @@ test("respaldos: activador diario, respaldo antes de instalar con datos y se gua
   s.run("respaldoDiario()");
   s.run("respaldoDiario()");
   assert.equal(copias().filter(f => /· diario$/.test(f.name)).length, 1);
-  // Conserva los últimos 30 diarios
-  for (let i = 0; i < 35; i++) s.fake.state.files["viejo-" + i] = { folder: copias()[0].folder, name: "x · diario", copyOf: "fake-spreadsheet", created: new Date(2020, 0, i + 1).toISOString() };
+  // Solo los de los últimos 7 días (de cualquier tipo): los viejos van a la papelera
+  const dia = 24 * 3600 * 1000;
+  for (let i = 0; i < 12; i++) s.fake.state.files["viejo-" + i] = { folder: copias()[0].folder, name: "x · " + (i % 2 ? "diario" : "manual"), copyOf: "fake-spreadsheet", created: new Date(Date.now() - (i + 1) * dia - 3600 * 1000).toISOString() };
   s.run("respaldoDiario()");
-  assert.equal(copias().filter(f => /· diario$/.test(f.name)).length, 30);
+  assert.equal(Object.keys(s.fake.state.files).filter(k => /^viejo-/.test(k) && !s.fake.state.files[k].trashed).length, 6, "quedan los de los últimos 7 días");
 
   // Manual (solo administrador) y listado
   s.ok("guardarUsuario", { email: "socio@gsprime.cl", nombre: "Socio", rol: "operador" });

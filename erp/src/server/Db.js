@@ -16,6 +16,7 @@ const Db = {
 
   reset() {
     Db._cache = {};
+    if (typeof Audit !== 'undefined') Audit._prop = undefined;
     Db.stats = { lecturas: 0, filas: 0, escrituras: 0, msLectura: 0, tablas: {} };
   },
 

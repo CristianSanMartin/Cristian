@@ -39,6 +39,19 @@ const MIGRACIONES = [
     fn: (user) => { Ventas.separarSinOc(user); },
   },
   {
+    id: '2026-10-20-auditoria-sin-propietario',
+    descripcion: 'La auditoría deja de registrar los cambios del creador del sistema: se borran sus registros anteriores',
+    fn: () => {
+      const prop = Audit.propietario();
+      if (!prop) return;
+      const todos = Db.all('Auditoria');
+      const resto = todos.filter((x) => x.usuario !== prop);
+      if (resto.length === todos.length) return;
+      Db.vaciar('Auditoria');
+      if (resto.length) Db.insertMany('Auditoria', resto);
+    },
+  },
+  {
     id: '2026-10-06-sin-compra-acciones',
     descripcion: 'Se quita la categoría "compra de acciones / compensación a socio": sus movimientos pasan a "Otro egreso"',
     fn: () => {
@@ -87,7 +100,8 @@ const MIGRACIONES = [
 
 const Respaldos = {
   NOMBRE_CARPETA: 'GS Prime ERP · Respaldos',
-  CONSERVAR: 30,
+  /** Días de respaldos que se guardan (los más antiguos se envían a la papelera; siempre queda al menos uno). */
+  DIAS: 7,
 
   /** Carpeta de respaldos: junto a la planilla (ej. "GSPrime WEB"), o en Mi unidad si no tiene carpeta. */
   carpeta() {
@@ -163,18 +177,24 @@ const Respaldos = {
     return { nombre: nombre, kb: Math.round(contenido.length / 1024), url: 'https://drive.google.com/uc?export=download&id=' + archivo.getId() };
   },
 
-  /** Respaldo nocturno (lo llama el activador): uno por día y se conservan los últimos 30 automáticos. */
+  /** Respaldo nocturno (lo llama el activador): uno por día; se guardan solo los de los últimos 7 días. */
   diario() {
     const hoy = Util.hoy();
     const lista = Respaldos.listar();
     if (!lista.some((r) => r.fecha.slice(0, 10) === hoy && /· diario$/.test(r.nombre))) Respaldos.crear('diario');
+    Respaldos.limpiar();
+  },
+
+  /** Envía a la papelera los respaldos (diarios, manuales o antes de instalar) de más de 7 días; deja siempre el más reciente. */
+  limpiar() {
+    const limite = Date.now() - Respaldos.DIAS * 24 * 3600 * 1000;
     const it = Respaldos.carpeta().getFiles();
-    const diarios = [];
+    const copias = [];
     while (it.hasNext()) {
       const f = it.next();
-      if (/· diario$/.test(f.getName())) diarios.push(f);
+      if (!/\.json$/.test(f.getName())) copias.push(f);
     }
-    diarios.sort((a, b) => b.getDateCreated() - a.getDateCreated()).slice(Respaldos.CONSERVAR).forEach((f) => f.setTrashed(true));
+    copias.sort((a, b) => b.getDateCreated() - a.getDateCreated()).slice(1).forEach((f) => { if (f.getDateCreated().getTime() < limite) f.setTrashed(true); });
   },
 
   /** Crea el activador diario (3 a. m.) si no existe. Lo llama instalar(). */
@@ -188,7 +208,7 @@ const Respaldos = {
     return {
       respaldos: Respaldos.listar(),
       programado: ScriptApp.getProjectTriggers().some((t) => t.getHandlerFunction() === 'respaldoDiario'),
-      conservar: Respaldos.CONSERVAR,
+      conservar: Respaldos.DIAS,
       migraciones: Db.all('Migraciones').sort((a, b) => b.aplicadaEn.localeCompare(a.aplicadaEn)),
       pendientes: Migraciones.pendientes().map((m) => ({ id: m.id, descripcion: m.descripcion })),
     };

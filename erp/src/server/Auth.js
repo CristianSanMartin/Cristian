@@ -34,7 +34,18 @@ const Auth = {
 
 /** Registro de auditoría: quién hizo qué y cuándo. Se escribe en la hoja Auditoria. */
 const Audit = {
+  /** Correo del creador del sistema (el primer administrador, creado por instalar). Sus cambios no se registran. */
+  propietario() {
+    if (Audit._prop === undefined) {
+      const u = Db.all('Usuarios').find((x) => x.creadoPor === 'instalar');
+      Audit._prop = u ? u.email : '';
+    }
+    return Audit._prop;
+  },
+
   log(user, accion, entidad, entidadId, detalle) {
+    // La auditoría es para los cambios de los demás usuarios, no los del creador del sistema.
+    if (user && user.email && user.email === Audit.propietario()) return;
     let json = detalle == null ? '' : JSON.stringify(detalle);
     if (json.length > 4000) json = json.slice(0, 3997) + '...';
     Db.insert('Auditoria', {

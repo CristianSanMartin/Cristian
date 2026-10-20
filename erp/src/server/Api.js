@@ -100,8 +100,6 @@ function rutas_() {
     eliminarVenta: { rol: 'admin', write: true, fn: Ventas.eliminar },
     guardarCliente: { rol: 'operador', write: true, fn: Clientes.guardar },
 
-    validacion: { rol: 'admin', fn: (p, u) => Validacion.revisar(u) },
-    validarHallazgos: { rol: 'admin', write: true, fn: Validacion.marcar },
     respaldos: { rol: 'admin', fn: () => Respaldos.estado() },
     crearRespaldo: { rol: 'admin', write: true, fn: (p, u) => Respaldos.crear('manual', u) },
     exportarDemo: { rol: 'admin', fn: Respaldos.exportarDemo },
@@ -209,9 +207,9 @@ function instalar() {
 
   HOJAS_OBSOLETAS.concat(['Hoja 1', 'Sheet1']).forEach((nombre) => {
     const hoja = ss.getSheetByName(nombre);
-    if (hoja && hoja.getLastRow() <= 1 && ss.getSheets().length > 1) {
+    if (hoja && (hoja.getLastRow() <= 1 || nombre === 'Validaciones') && ss.getSheets().length > 1) {
       ss.deleteSheet(hoja);
-      if (HOJAS_OBSOLETAS.indexOf(nombre) !== -1) mensaje.push('Se eliminó la hoja vacía "' + nombre + '" de la versión anterior.');
+      if (HOJAS_OBSOLETAS.indexOf(nombre) !== -1) mensaje.push('Se eliminó la hoja "' + nombre + '" de la versión anterior.');
     }
   });
 
@@ -233,7 +231,7 @@ function instalar() {
   }
   const migradas = Migraciones.ejecutar(sistema, { respaldar: conDatos });   // planilla vacía: nada que respaldar
   if (migradas.length) mensaje.push('Migraciones aplicadas: ' + migradas.join(', ') + '.');
-  if (Respaldos.programar()) mensaje.push('Respaldo automático programado todas las noches (se guardan los últimos ' + Respaldos.CONSERVAR + ').');
+  if (Respaldos.programar()) mensaje.push('Respaldo automático programado todas las noches (se guardan los de los últimos ' + Respaldos.DIAS + ' días).');
   if (Imagenes.preparar()) mensaje.push('Se creó la carpeta "' + Imagenes.NOMBRE_CARPETA + '" en tu Google Drive para las imágenes de productos.');
   Audit.log(sistema, 'instalar', 'Sistema', '', { version: APP.version });
   mensaje.push('Hojas listas (versión ' + APP.version + '): ' + Object.keys(SCHEMA).join(', ') + '.');

@@ -242,19 +242,6 @@ abonos y referencias de la migración de la caja, con respaldo previo. Cada vent
 toma también la fecha de esa OC en la caja diaria (la más antigua), aunque sus filas no se hayan migrado. Las OC de la caja que no
 estaban en el stock ya se crean con su número original.
 
-## Validación de datos
-
-**Administración → Validación de datos** revisa toda la información y lista lo que no cuadra,
-agrupado por tipo y con su gravedad (**Error**, **Revisar**, **Completar**): productos sin precio,
-bajo el costo, duplicados o sin idioma/tipo/imagen; preventas sin costo o atrasadas; facturas con
-precio $0, sin despacho bajo el mínimo del proveedor o sin pago; lotes con más ventas que compras y
-facturas con ventas anteriores a su fecha; ventas sin costo, bajo el costo, con descuento alto, con
-la fecha de la migración, con otro N° que su OC original, con tarjeta sin comisión o con deuda
-antigua; clientes y movimientos duplicados; y la caja diaria (filas pendientes, OC sin venta, montos
-distintos). **Corregir** abre el registro; **Validar** lo marca como revisado (con nota) en la hoja
-`Validaciones` y deja de aparecer mientras esos datos no cambien. Las reglas están en
-`server/Validacion.js`.
-
 ## Pagos de facturas, deudas de clientes y cierre de la migración
 
 - **Pagos a proveedores:** en Compras, el detalle de cada factura muestra sus pagos y lo que falta.
@@ -319,7 +306,10 @@ hasta presionar "Importar".
 
 - **Respaldo nocturno automático:** `instalar` programa un activador que todas las noches (3 a. m.)
   copia la planilla completa en la carpeta **"GS Prime ERP · Respaldos"**, junto a la planilla. Se
-  guardan los últimos 30. En **Administración → Respaldos** se ven todos y se puede crear uno a mano.
+  guardan los de los **últimos 7 días** (de cualquier tipo; los más antiguos van a la papelera de Drive y
+  siempre queda al menos uno). En **Administración → Respaldos** se ven todos y se puede crear uno a mano.
+- **Auditoría:** registra solo los cambios de los demás usuarios; los del creador del sistema (el primer
+  administrador, el que ejecutó `instalar`) no se guardan.
 - **Respaldo antes de cada actualización:** si la planilla ya tiene datos, `instalar` crea una copia
   ("antes de instalar v2.x") antes de tocar nada.
 - **Migraciones:** cuando un cambio necesita transformar datos existentes (crear una llave nueva,

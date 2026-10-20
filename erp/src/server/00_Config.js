@@ -15,7 +15,7 @@
 
 const APP = {
   nombre: 'GS Prime ERP',
-  version: '2.20.1',
+  version: '2.21.0',
   tz: 'America/Santiago',
   iva: 0.19,
 };
@@ -172,7 +172,6 @@ const SCHEMA = {
       id: 's', compraId: 's', fecha: 'd', monto: 'n', cuenta: 's', notas: 's', anulado: 'b',
     }, AUDIT_COLS),
   },
-  /** Hallazgos de la Validación de datos que el administrador revisó (clave = regla|registro). */
   /** Caja del día: una por fecha (CJ-20261012). Se abre, se registran tickets y al cerrarla pasa todo a Ventas y Finanzas. */
   Cajas: {
     key: 'id',
@@ -229,18 +228,14 @@ const SCHEMA = {
       id: 's', torneoId: 's', popId: 's', nombre: 's', clienteId: 's', lugar: 'n', sinCosto: 'b',
     }, AUDIT_COLS),
   },
-  Validaciones: {
-    key: 'clave',
-    cols: { clave: 's', firma: 's', estado: 's', nota: 's', actualizadoEn: 't', actualizadoPor: 's' },
-  },
   Auditoria: {
     key: null,
     cols: { fecha: 't', usuario: 's', accion: 's', entidad: 's', entidadId: 's', detalle: 's' },
   },
 };
 
-/** Hojas de versiones anteriores que instalar() elimina si están vacías. */
-const HOJAS_OBSOLETAS = ['Pagos', 'Movimientos', 'Preventas_Lineas'];
+/** Hojas de versiones anteriores que instalar() elimina si están vacías (Validaciones: siempre, ya no se usa). */
+const HOJAS_OBSOLETAS = ['Pagos', 'Movimientos', 'Preventas_Lineas', 'Validaciones'];
 
 const IDIOMAS = ['ENG', 'ESP', 'JPN', 'Otro'];
 
