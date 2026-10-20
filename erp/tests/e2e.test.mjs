@@ -763,7 +763,7 @@ test("torneos: subir el .tdf, cuadrar clientes, cobrar juntos en la caja, premio
     await page.locator("#fin-cuerpo .kpi-grid").waitFor();
     const filaCarla = page.locator("#fin-cuerpo tr.fila-compra", { hasText: "Carla" });
     await filaCarla.click();
-    assert.match(await page.locator("#fin-cuerpo .detalle-row").textContent(), /TK-20301101-03.*caja abierta.*\$8\.000/s);
+    assert.match(await page.locator("#fin-cuerpo .detalle-row").textContent(), /TK-20301101-03.*caja abierta.*Torneo · Chill 01-11 · Carla.*\$8\.000/s);
     assert.deepEqual(errores, []);
   } finally {
     await browser.close();

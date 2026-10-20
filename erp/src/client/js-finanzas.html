@@ -227,7 +227,8 @@
       if (v.anulada || !(v.saldo > 0)) return;
       const r = fila(v.clienteId || v.cliente, v.cliente, v.clienteId);
       r.total += v.saldo;
-      r.docs.push({ id: v.id, fecha: v.fecha, total: v.total, pagado: v.cobrado, saldo: v.saldo });
+      r.docs.push({ id: v.id, fecha: v.fecha, total: v.total, pagado: v.cobrado, saldo: v.saldo,
+        productos: v.lineas.filter((l) => l.categoria !== 'Ajuste').map((l) => (l.cantidad > 1 ? l.cantidad + ' × ' : '') + l.producto) });
     });
     (d.cajas || []).filter((c) => c.estado === 'abierta').forEach((c) => (c.tickets || []).forEach((t) => {
       if (t.estado !== 'abierto' || t.tipo !== 'venta') return;
@@ -236,7 +237,8 @@
       const cli = d.clientes.find((x) => GS.norm(x.nombre) === GS.norm(t.cliente));
       const r = fila(cli ? cli.id : t.cliente, cli ? cli.nombre : t.cliente, cli ? cli.id : '');
       r.total += pend;
-      r.docs.push({ id: t.id, fecha: c.fecha, total: t.total, pagado: t.total - pend, saldo: pend, caja: true });
+      r.docs.push({ id: t.id, fecha: c.fecha, total: t.total, pagado: t.total - pend, saldo: pend, caja: true,
+        productos: t.lineas.map((l) => (l.productoId ? (l.cantidad > 1 ? l.cantidad + ' × ' : '') + l.producto : (l.cantidad > 1 ? l.cantidad + ' × ' : '') + [l.categoria, l.descripcion].filter(Boolean).join(' · '))) });
     }));
     return Object.values(porCli).map((r) => {
       r.docs.sort((a, b) => a.fecha.localeCompare(b.fecha));
@@ -254,7 +256,8 @@
     const tel = String(r.telefono || '').replace(/\D/g, '');
     if (!tel) return '<span class="cell-dim" title="Agrega su teléfono en Clientes">sin teléfono</span>';
     const msg = 'Hola ' + r.cliente.split(' ')[0] + ', te escribimos de GS Prime. Tienes un saldo pendiente de ' + fmt.money(r.total) +
-      (r.docs.length > 1 ? ' (' + r.docs.map((x) => (x.caja ? 'compra' : x.id) + ' del ' + fmt.date(x.fecha) + ': ' + fmt.money(x.saldo)).join('; ') + ')' : ' por tu compra del ' + fmt.date(r.docs[0].fecha)) + '. ¡Gracias!';
+      (r.docs.length > 1 ? ' (' + r.docs.map((x) => (x.caja ? 'compra' : x.id) + ' del ' + fmt.date(x.fecha) + ': ' + fmt.money(x.saldo) + (x.productos.length ? ', ' + x.productos.join(', ') : '')).join('; ') + ')'
+        : ' por tu compra del ' + fmt.date(r.docs[0].fecha) + (r.docs[0].productos.length ? ' (' + r.docs[0].productos.join(', ') + ')' : '')) + '. ¡Gracias!';
     return '<a class="btn small ghost" target="_blank" rel="noopener" href="https://wa.me/' + tel + '?text=' + encodeURIComponent(msg) + '">WhatsApp</a>';
   };
   const abiertosCxc = new Set();
@@ -281,7 +284,8 @@
           '<td class="cell-num right"><strong class="' + (r.dias > 30 ? 'text-danger' : r.dias >= 7 ? 'text-gold' : '') + '">' + fmt.money(r.total) + '</strong></td>' +
           '<td><div class="row-actions">' + wspDeuda(r) + (r.clienteId ? '<button class="btn small ghost" data-nav-cliente="' + esc(r.clienteId) + '" title="Registrar un abono en la ficha del cliente">Abonar</button>' : '') + '</div></td></tr>' +
           (open ? '<tr class="detalle-row"><td colspan="6"><div class="detalle-compra"><table class="mini-table"><thead><tr><th>Documento</th><th>Fecha</th><th class="right">Total</th><th class="right">Pagado</th><th class="right">Debe</th></tr></thead><tbody>' +
-            r.docs.map((x) => '<tr><td class="cell-strong">' + esc(x.id) + (x.caja ? ' <span class="cell-dim">(caja abierta)</span>' : '') + '</td><td class="nowrap">' + fmt.date(x.fecha) + ' <span class="cell-dim">' + antig(diasDesde(x.fecha)) + '</span></td>' +
+            r.docs.map((x) => '<tr><td><span class="cell-strong">' + esc(x.id) + '</span>' + (x.caja ? ' <span class="cell-dim">(caja abierta)</span>' : '') +
+              (x.productos && x.productos.length ? x.productos.map((t) => '<div class="cell-dim">' + esc(t) + '</div>').join('') : '') + '</td><td class="nowrap">' + fmt.date(x.fecha) + ' <span class="cell-dim">' + antig(diasDesde(x.fecha)) + '</span></td>' +
               '<td class="cell-num right">' + fmt.money(x.total) + '</td><td class="cell-num right">' + fmt.money(x.pagado) + '</td><td class="cell-num right"><strong>' + fmt.money(x.saldo) + '</strong></td></tr>').join('') +
             '</tbody></table>' + (r.docs.some((x) => x.caja) ? '<p class="table-note">Lo de la caja abierta se cobra editando el ticket en la Caja del día.</p>' : '') + '</div></td></tr>' : '');
       }).join('') + '</tbody></table></div>' +
