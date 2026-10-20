@@ -625,10 +625,11 @@
             </select>
             <input id="pBuscar" type="search" placeholder="Buscar placa o distrito" oninput="renderPeru()">
           </div>
+          <div id="pAjuste" class="ajuste-box hidden"></div>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>Fecha</th><th>Placa</th><th>Unidad</th><th>Puntos</th><th>Entregados</th><th>Distrito</th><th>Zona</th><th>Tarifa</th><th>Adicional</th><th>Valor total</th><th>Pago transporte</th><th>Margen</th><th>Observación</th></tr></thead>
-              <tbody id="peruBody"><tr><td colspan="13">Carga los reportes de visitas de SIMPLI.</td></tr></tbody>
+              <thead id="peruHead"></thead>
+              <tbody id="peruBody"><tr><td colspan="12">Carga los reportes de visitas de SIMPLI.</td></tr></tbody>
             </table>
           </div>
           <div class="actions">
@@ -1636,16 +1637,22 @@ let menuFiltro=null;
 function cerrarFiltro(){ if(menuFiltro){ menuFiltro.remove(); menuFiltro=null; document.removeEventListener("mousedown",fueraFiltro,true); document.removeEventListener("keydown",escFiltro,true); } }
 function fueraFiltro(e){ if(menuFiltro&&!menuFiltro.contains(e.target)&&!e.target.closest(".btn-filtro")) cerrarFiltro(); }
 function escFiltro(e){ if(e.key==="Escape") cerrarFiltro(); }
-function abrirFiltro(ev,k){
+// Tablas con menú de filtro: columnas, orden, filtros, filas (sin el filtro de una columna) y cómo repintar
+const TABLAS_FILTRO={
+  rutas:{cols:()=>COLS_RUTAS,orden:()=>ordenRutas,filtros:()=>filtrosRutas,filas:k=>cruceRutas?filasFiltradas(k):null,render:()=>{ renderCabeceraRutas(); renderRutas(); }},
+  peru:{cols:()=>COLS_PE,orden:()=>ordenPe,filtros:()=>filtrosPe,filas:k=>filasVisPe(k),render:()=>renderPeru()}
+};
+function abrirFiltro(ev,k,t="rutas"){
   ev.stopPropagation();
-  const abierto=menuFiltro&&menuFiltro.dataset.k===k; cerrarFiltro(); if(abierto||!cruceRutas) return;
-  const c=COLS_RUTAS.find(x=>x.k===k);
+  const T=TABLAS_FILTRO[t], filtrosRutas=T.filtros(), ordenRutas=T.orden(), base=T.filas(k);
+  const abierto=menuFiltro&&menuFiltro.dataset.k===t+"|"+k; cerrarFiltro(); if(abierto||!base) return;
+  const c=T.cols().find(x=>x.k===k);
   // Valores posibles con los demás filtros aplicados, en el orden de la columna
-  const filas=[...filasFiltradas(k)].sort((a,b)=>compararRuta(c,a,b,1));
+  const filas=[...base].sort((a,b)=>compararRuta(c,a,b,1));
   const valores=[...new Set(filas.map(f=>textoCol(c,f)))];
   if(valores.includes(VACIO)) valores.push(valores.splice(valores.indexOf(VACIO),1)[0]);
   const sel=new Set(filtrosRutas[k]||valores);
-  const m=menuFiltro=document.createElement("div"); m.className="menu-filtro"; m.dataset.k=k; m.setAttribute("role","dialog"); m.setAttribute("aria-label","Filtro "+c.t);
+  const m=menuFiltro=document.createElement("div"); m.className="menu-filtro"; m.dataset.k=t+"|"+k; m.setAttribute("role","dialog"); m.setAttribute("aria-label","Filtro "+c.t);
   const az=c.n?["Ordenar de menor a mayor","Ordenar de mayor a menor"]:["Ordenar de A a Z","Ordenar de Z a A"];
   m.innerHTML=`<button class="opc${ordenRutas.k===k&&ordenRutas.dir>0?" sel":""}" data-o="1">▲ ${az[0]}</button>
     <button class="opc${ordenRutas.k===k&&ordenRutas.dir<0?" sel":""}" data-o="-1">▼ ${az[1]}</button>
@@ -1673,10 +1680,10 @@ function abrirFiltro(ev,k){
     // Como en Excel: si se buscó algo, Aceptar deja solo lo marcado entre lo encontrado
     const final=t?valores.filter(v=>nt(v).includes(t)&&sel.has(v)):valores.filter(v=>sel.has(v));
     if(final.length===valores.length) delete filtrosRutas[k]; else filtrosRutas[k]=new Set(final);
-    cerrarFiltro(); renderCabeceraRutas(); renderRutas();
+    cerrarFiltro(); T.render();
   }
-  m.querySelectorAll("[data-o]").forEach(b=>b.onclick=()=>{ ordenRutas.k=k; ordenRutas.dir=+b.dataset.o; cerrarFiltro(); renderCabeceraRutas(); renderRutas(); });
-  const limpiar=m.querySelector("[data-limpiar]"); if(limpiar) limpiar.onclick=()=>{ delete filtrosRutas[k]; cerrarFiltro(); renderCabeceraRutas(); renderRutas(); };
+  m.querySelectorAll("[data-o]").forEach(b=>b.onclick=()=>{ ordenRutas.k=k; ordenRutas.dir=+b.dataset.o; cerrarFiltro(); T.render(); });
+  const limpiar=m.querySelector("[data-limpiar]"); if(limpiar) limpiar.onclick=()=>{ delete filtrosRutas[k]; cerrarFiltro(); T.render(); };
   m.querySelector(".cancel").onclick=cerrarFiltro;
   m.querySelector(".ok").onclick=aplicar;
   buscar.addEventListener("keydown",e=>{ if(e.key==="Enter") aplicar(); });
@@ -2078,6 +2085,35 @@ function rutasMesPeru(){
   const rutas=peruDatos.rutas.filter(r=>r.fecha.slice(0,7)===mes);
   return {mes,rutas};
 }
+// Columnas de la liquidación por ruta (mismo menú de filtro y orden que el registro de rutas)
+const zonaTxtPe=r=>r.zonaCobro==="SIN TARIFA"?"Sin tarifa":r.zonaCobro, obsPe=r=>[r.obs,r.obsTarifa].filter(Boolean).join("; ");
+const COLS_PE=[
+  {k:"fecha",t:"Fecha",v:r=>r.fecha,txt:r=>fechaCL(r.fecha)},
+  {k:"placa",t:"Placa",v:r=>r.placa,txt:r=>r.placa},
+  {k:"unidad",t:"Unidad",v:r=>r.unidad,txt:r=>r.unidad},
+  {k:"distrito",t:"Distrito",v:r=>r.distrito,txt:r=>r.distrito},
+  {k:"zona",t:"Zona",v:zonaTxtPe,txt:zonaTxtPe},
+  {k:"tarifa",t:"Tarifa",n:1,v:r=>r.tarifa,txt:r=>r.tarifa==null?"":soles(r.tarifa)},
+  {k:"adicional",t:"Adicional",n:1,v:r=>r.adicional||null,txt:r=>r.adicional?soles(r.adicional):""},
+  {k:"total",t:"Valor total",n:1,v:r=>r.total,txt:r=>r.total==null?"":soles(r.total)},
+  {k:"pago",t:"Pago transporte",n:1,v:r=>r.pago,txt:r=>r.pago==null?"":soles(r.pago)},
+  {k:"margen",t:"Margen",n:1,v:r=>r.margen,txt:r=>r.margen==null?"":soles(r.margen)},
+  {k:"obs",t:"Observación",v:obsPe,txt:obsPe}
+];
+const ordenPe={k:"",dir:1}, filtrosPe={};
+function renderCabeceraPe(){
+  const flecha=c=>ordenPe.k===c.k?(ordenPe.dir>0?" ▲":" ▼"):"";
+  document.getElementById("peruHead").innerHTML="<tr>"+COLS_PE.map(c=>`<th aria-sort="${ordenPe.k===c.k?(ordenPe.dir>0?"ascending":"descending"):"none"}">
+    <span class="th-col">${esc(c.t)}${flecha(c)}<button class="btn-filtro${filtrosPe[c.k]?" activo":""}" onclick="abrirFiltro(event,'${c.k}','peru')"
+      aria-label="Filtrar y ordenar ${esc(c.t)}" aria-haspopup="true">${filtrosPe[c.k]?"⧩":"▾"}</button></span></th>`).join("")+"<th>Ajuste</th></tr>";
+}
+// Rutas del mes que pasan los selectores de arriba y los filtros de columna (menos la columna "excepto")
+function filasVisPe(excepto){
+  const {rutas}=rutasMesPeru(), f=document.getElementById("pFiltro").value, q=nt(document.getElementById("pBuscar").value);
+  const fc=COLS_PE.filter(c=>c.k!==excepto&&filtrosPe[c.k]);
+  return rutas.filter(r=>(!f||(f==="obs"&&(r.obs||r.obsTarifa))||(f==="per"&&r.zonaCobro==="Periferia")||(f==="liq"&&r.vehiculo===VEH_LIQ_PE))&&(!q||nt(r.placa+" "+r.distrito).includes(q))
+    &&fc.every(c=>filtrosPe[c.k].has(textoCol(c,r))));
+}
 function renderPeru(){
   const sel=document.getElementById("pMes"), meses=mesesPeru(), prev=sel.value;
   sel.innerHTML=meses.length?meses.map(m=>`<option value="${m}">${nombreMes(m)}</option>`).join(""):`<option value="">Sin datos</option>`;
@@ -2094,16 +2130,18 @@ function renderPeru(){
   const rgM=document.getElementById("pMes").value?rangoMesPe(document.getElementById("pMes").value):null;
   clpPe("pTotal",total,rgM); clpPe("pPago",pago,rgM); clpPe("pMargen",margen,rgM);
   document.getElementById("pTc").textContent=rgM?textoTcPe(rgM):"";
-  const f=document.getElementById("pFiltro").value, q=nt(document.getElementById("pBuscar").value);
-  const vis=rutas.filter(r=>(!f||(f==="obs"&&(r.obs||r.obsTarifa))||(f==="per"&&r.zonaCobro==="Periferia")||(f==="liq"&&r.vehiculo===VEH_LIQ_PE))&&(!q||nt(r.placa+" "+r.distrito).includes(q)));
+  renderCabeceraPe();
+  let vis=filasVisPe();
+  if(ordenPe.k){ const c=COLS_PE.find(x=>x.k===ordenPe.k); vis=[...vis].sort((a,b)=>compararRuta(c,a,b,ordenPe.dir)); }
   const tb=document.getElementById("peruBody");
-  if(!peruDatos.rutas.length){ tb.innerHTML=`<tr><td colspan="13">Carga los reportes de visitas de SIMPLI.</td></tr>`; }
+  if(!peruDatos.rutas.length){ tb.innerHTML=`<tr><td colspan="12">Carga los reportes de visitas de SIMPLI.</td></tr>`; }
   else tb.innerHTML=vis.map(r=>{
     const zona=r.zonaCobro==="Periferia"?`<span class="badge badge-warning">Periferia</span>`:r.zonaCobro==="SIN TARIFA"?`<span class="badge badge-error">Sin tarifa</span>`:esc(r.zonaCobro);
-    return `<tr class="${r.obs||r.obsTarifa?"obs":""}"><td>${fechaCL(r.fecha)}</td><td>${esc(r.placa)}</td><td>${esc(r.unidad)}</td><td class="n">${r.puntos}</td><td class="n">${r.entregados}</td>
+    return `<tr class="${r.obs||r.obsTarifa?"obs":""}"><td>${fechaCL(r.fecha)}</td><td>${esc(r.placa)}</td><td>${esc(r.unidad)}</td>
       <td>${esc(r.distrito)}</td><td>${zona}</td><td class="n">${soles(r.tarifa)}</td><td class="n">${r.adicional?soles(r.adicional):""}</td><td class="n"><b>${soles(r.total)}</b></td>
-      <td class="n">${soles(r.pago)}</td><td class="n ${r.margen<0?"dif-neg":""}">${soles(r.margen)}</td><td>${esc([r.obs,r.obsTarifa].filter(Boolean).join("; "))}</td></tr>`;
-  }).join("")||`<tr><td colspan="13">Ninguna ruta con ese filtro.</td></tr>`;
+      <td class="n">${soles(r.pago)}</td><td class="n ${r.margen<0?"dif-neg":""}">${soles(r.margen)}</td><td>${esc(obsPe(r))}</td>
+      <td><button class="btn-mini" data-k="${esc(r.fecha+"|"+r.placa)}" onclick="abrirAjustePe(this.dataset.k,'pAjuste')">${r.ajuste?"Editar ajuste":"Ajustar"}</button></td></tr>`;
+  }).join("")||`<tr><td colspan="12">Ninguna ruta con ese filtro.</td></tr>`;
   const fr=peruDatos.rutas.map(r=>r.fecha);
   document.getElementById("txtSimpli").textContent=fr.length?`En la hoja: ${fr.length} rutas del ${fechaCL(fr[0])} al ${fechaCL(fr[fr.length-1])}`
     :"Uno o varios reportes de 15 días (Excel). Los días repetidos entre archivos se cuentan una vez. Hoja PERU RUTAS.";
@@ -2292,8 +2330,8 @@ const filasAjustesPe=()=>[H_AJUSTES_PE,...[...ajustesPe].sort().map(([k,a])=>{ c
 const filasMovPe=()=>[H_MOV_PE,...movimientosPe.map(x=>[x.quincena,x.tipo,x.concepto,x.placa,x.beneficiario,x.documento,x.detalle,x.monto])];
 const filasCondPe=()=>[H_COND_PE,...Object.keys(conductoresPe).sort().map(p=>[p,conductoresPe[p].nombre,conductoresPe[p].doc])];
 const filasQuinPe=()=>[H_QUIN_PE,...Object.keys(quincenasPe).sort().map(q=>[q,quincenasPe[q].estado,quincenasPe[q].fecha])];
-async function guardarPagoPe(hoja,filas,msg){
-  ocultarError(); const av=document.getElementById("estadoPagoPe"); av.textContent="Guardando en "+hoja+"…";
+async function guardarPagoPe(hoja,filas,msg,avId="estadoPagoPe"){
+  ocultarError(); const av=document.getElementById(avId); av.textContent="Guardando en "+hoja+"…";
   try{
     await llamar("guardarLote",[{hoja,filas,llave:{todo:true}}]);
     peruDatos.rutas=peruDatos.rutas.map(tarificarPeru); renderTodoPeru();
@@ -2395,30 +2433,35 @@ function quitarMovimientoPe(i){
   const x=movimientosPe[i]; if(!x) return;
   movimientosPe.splice(i,1); guardarPagoPe("PERU MOVIMIENTOS",filasMovPe(),`Quitado: ${x.concepto}.`);
 }
-function abrirAjustePe(k){
+// El ajuste se abre en Pago transporte (qAjuste) o en Factura Sodimac (pAjuste); el aviso sale en la vista que lo abrió
+let ajusteBoxPe="qAjuste";
+const avisoAjustePe=()=>ajusteBoxPe==="pAjuste"?"estadoPeru":"estadoPagoPe";
+function abrirAjustePe(k,boxId="qAjuste"){
   const r=peruDatos.rutas.find(r=>r.fecha+"|"+r.placa===k); if(!r) return;
   const a=ajustesPe.get(k)||{zonaCobro:"",zonaPago:"",motivo:"",dia:""};
   const rec=recargoPeru(r.fecha), dop=(v,l)=>`<option value="${v}" ${(a.dia||"")===v?"selected":""}>${l}</option>`;
   const op=v=>`<option value="">Como se calculó (${esc(r.zona)})</option>`+Object.entries(ZONA_PE).map(([c,l])=>`<option value="${c}" ${v===c?"selected":""}>${l}</option>`).join("");
-  const box=document.getElementById("qAjuste"); box.classList.remove("hidden"); box.dataset.k=k;
+  // Un solo editor a la vez (los campos tienen ids fijos)
+  ["qAjuste","pAjuste"].forEach(id=>{ const b=document.getElementById(id); b.classList.add("hidden"); b.innerHTML=""; }); ajusteBoxPe=boxId;
+  const box=document.getElementById(boxId); box.classList.remove("hidden"); box.dataset.k=k;
   box.innerHTML=`<b>Ajuste ${fechaCL(r.fecha)} ${esc(r.placa)}</b><p class="nota" style="margin:4px 0 0">Para rutas que se cobraron o pagaron con otra zona, o que fueron o no feriado. El cobro, el pago y la liquidación usan la zona ajustada; el cuadre muestra la diferencia con lo calculado.</p>
     <div class="filters"><label>Se cobró como <select id="ajCobro">${op(a.zonaCobro)}</select></label><label>Se pagó como <select id="ajPago">${op(a.zonaPago)}</select></label>
     <label>Feriado <select id="ajDia">${dop("",`Según calendario (${rec?rec.replace("Tarifa ","").toLowerCase():"día normal"})`)}${dop("FERIADO","Sí, tarifa de feriado")}${dop("REGULAR","No, tarifa regular")}</select></label>
     <input id="ajMotivo" placeholder="Motivo" value="${esc(a.motivo)}" style="flex:1 1 220px"></div>
     <div class="filters"><button class="button green" style="margin:0" onclick="guardarAjustePe()">Guardar ajuste</button>
-    ${ajustesPe.has(k)?`<button class="button secondary" style="margin:0" onclick="quitarAjustePe()">Quitar ajuste</button>`:""}<button class="button secondary" style="margin:0" onclick="document.getElementById('qAjuste').classList.add('hidden')">Cancelar</button></div>`;
+    ${ajustesPe.has(k)?`<button class="button secondary" style="margin:0" onclick="quitarAjustePe()">Quitar ajuste</button>`:""}<button class="button secondary" style="margin:0" onclick="document.getElementById('${boxId}').classList.add('hidden')">Cancelar</button></div>`;
   box.scrollIntoView({block:"nearest"});
 }
 function guardarAjustePe(){
-  const box=document.getElementById("qAjuste"), k=box.dataset.k;
+  const box=document.getElementById(ajusteBoxPe), k=box.dataset.k;
   const a={zonaCobro:document.getElementById("ajCobro").value,zonaPago:document.getElementById("ajPago").value,motivo:document.getElementById("ajMotivo").value.trim(),dia:document.getElementById("ajDia").value};
   if(!a.motivo) return mostrarError("Escribe el motivo del ajuste.");
   ajustesPe.set(k,a); box.classList.add("hidden");
-  guardarPagoPe("PERU AJUSTES",filasAjustesPe(),`Ajuste guardado: ${fechaCL(k.split("|")[0])} ${k.split("|")[1]}.`);
+  guardarPagoPe("PERU AJUSTES",filasAjustesPe(),`Ajuste guardado: ${fechaCL(k.split("|")[0])} ${k.split("|")[1]}.`,avisoAjustePe());
 }
 function quitarAjustePe(){
-  const box=document.getElementById("qAjuste"), k=box.dataset.k; ajustesPe.delete(k); box.classList.add("hidden");
-  guardarPagoPe("PERU AJUSTES",filasAjustesPe(),`Ajuste quitado: ${fechaCL(k.split("|")[0])} ${k.split("|")[1]}.`);
+  const box=document.getElementById(ajusteBoxPe), k=box.dataset.k; ajustesPe.delete(k); box.classList.add("hidden");
+  guardarPagoPe("PERU AJUSTES",filasAjustesPe(),`Ajuste quitado: ${fechaCL(k.split("|")[0])} ${k.split("|")[1]}.`,avisoAjustePe());
 }
 // Detalle con el mismo formato que se envía al transporte
 const DIAS_PE=["domingo","lunes","martes","miércoles","jueves","viernes","sábado"];

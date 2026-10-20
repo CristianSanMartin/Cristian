@@ -59,6 +59,20 @@ const resumen = await page.evaluate(`["pRutas","pPeriferia","pDomingo","pTotal"]
 await page.selectOption("#pFiltro", "obs");
 const conObs = await page.$$eval("#peruBody tr", trs => trs.map(t => [t.children[0].textContent, t.children[1].textContent]));
 await page.selectOption("#pFiltro", "");
+// Filtro de columna tipo Excel en la liquidación por ruta: Zona = Periferia, ordenado por placa Z-A
+const cabPe = await page.$$eval("#peruHead th", ths => ths.map(t => t.textContent.replace(/[▾⧩▲▼]/g, "").trim()));
+await page.click('#peruHead button[aria-label="Filtrar y ordenar Zona"]');
+await page.click('.menu-filtro [data-todos]'); await page.click('.menu-filtro label:has-text("Periferia") input'); await page.click(".menu-filtro .ok");
+await page.click('#peruHead button[aria-label="Filtrar y ordenar Placa"]'); await page.click('.menu-filtro [data-o="-1"]');
+const filtroZona = await page.$$eval("#peruBody tr", trs => trs.map(t => t.children[4].textContent));
+const ordenPlacas = await page.$$eval("#peruBody tr", trs => trs.map(t => t.children[1].textContent));
+await page.click('#peruHead button[aria-label="Filtrar y ordenar Zona"]'); await page.click('.menu-filtro [data-limpiar]');
+await page.evaluate(`ordenPe.k=""; renderPeru()`);
+const filasSinFiltro = await page.$$eval("#peruBody tr", trs => trs.length);
+// Botón de ajuste en Factura Sodimac abre el mismo editor
+await page.click('#peruBody button[data-k="2026-09-12|AAA111"]');
+const ajFactura = await page.evaluate(`[!document.getElementById("pAjuste").classList.contains("hidden"),!!document.querySelector("#pAjuste #ajDia"),document.querySelector("#pAjuste b").textContent]`);
+await page.click("#pAjuste >> text=Cancelar");
 const pagos = await page.evaluate(`Object.fromEntries(rutasMesPeru().rutas.map(r=>[r.fecha+" "+r.placa,[r.pago,r.margen,r.llave]]))`);
 const resumenPago = await page.evaluate(`["pPago","pMargen"].map(id=>document.getElementById(id).textContent)`);
 const [dl] = await Promise.all([page.waitForEvent("download"), page.click("text=Descargar liquidación")]);
@@ -225,6 +239,11 @@ check("SIMPLI corta 'SAN JUAN DE'", rutas["2026-09-30 AAA111"].slice(3, 6), ["SA
 check("Guardado en PERU RUTAS y recarga sin duplicar", [hoja, hoja2], [6, [6, 6]]);
 check("Resumen", resumen, ["6", "1", "1", "S/ 2,866"]);
 check("Filtro con observación", conObs, [["12-09-2026", "AAA111"]]);
+check("Columnas de la liquidación sin puntos ni entregados", cabPe, ["Fecha","Placa","Unidad","Distrito","Zona","Tarifa","Adicional","Valor total","Pago transporte","Margen","Observación","Ajuste"]);
+check("Filtro de columna Zona = Periferia", [filtroZona.length, filtroZona.every(z => z === "Periferia"), filtroZona.length === Number(resumen[1])], [Number(resumen[1]), true, true]);
+check("Orden Z-A por placa", ordenPlacas, [...ordenPlacas].sort().reverse());
+check("Borrar filtro de columna", filasSinFiltro, Number(resumen[0]));
+check("Ajuste desde Factura Sodimac", ajFactura, [true, true, "Ajuste 12-09-2026 AAA111"]);
 check("Nombre de la liquidación", nombre, "Liquidacion JOINT PERU S.A.C. UM SODIMAC - 09SEPTIEMBRE - 2026.xlsx");
 check("Formato de la liquidación", [wb.SheetNames[0], salida[0], salida[2].slice(1, 9), salida.length, ws["K2"].f, ws["K8"].f],
   ["LIQUIDACIÓN SERVICIOS", LH, ["JOINT PERU S.A.C.", "AAA111", "F13", 2, "COMAS", "Metropolitana", 420, ""], 8, "SUM(H2:I2)", "SUM(K2:K7)"]);
