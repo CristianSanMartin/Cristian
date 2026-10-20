@@ -149,7 +149,11 @@
     .reglas ul { padding-left:18px; margin:8px 0 0; font-size:12px; line-height:1.5; color:var(--muted,#6b7280); }
     #peruBody td { white-space:nowrap; }
     #peruBody td.n { text-align:right; font-variant-numeric:tabular-nums; }
-    #peruBody td:last-child { white-space:normal; min-width:240px; }
+    #peruBody td:nth-last-child(2) { white-space:normal; min-width:240px; }
+    /* Ajuste siempre a la vista al final de la fila; la observación se ajusta en varias líneas */
+    #peruHead th:last-child, #peruBody td:last-child { position:sticky; right:0; width:1%; white-space:nowrap; z-index:1; box-shadow:-6px 0 8px -6px rgba(6,3,21,.18); }
+    #peruHead th:last-child { z-index:2; }
+    #peruBody td:last-child { background:#fff; }
     #peruBody tr.obs td:first-child { box-shadow:inset 3px 0 0 var(--warn,#b45309); }
     .tarifas-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:18px; margin-bottom:18px; }
     .tarifas-grid > .card { margin:0; }
