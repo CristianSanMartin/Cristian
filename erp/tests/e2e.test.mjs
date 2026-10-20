@@ -764,3 +764,29 @@ test("torneos: subir el .tdf, cuadrar clientes, cobrar juntos en la caja, premio
     await browser.close();
   }
 });
+
+test("dashboard: facturas por pagar se despliegan y se abonan desde ahí", { skip }, async () => {
+  const browser = await chromium.launch();
+  try {
+    const { page, errores } = await abrir(browser);
+    // Si GSTin saluda al entrar, se cierra primero.
+    await page.waitForTimeout(300);
+    while (await page.locator("#modal-root .modal-overlay").count()) { await page.keyboard.press("Escape"); await page.waitForTimeout(200); }
+    await page.click('[data-action="verPorPagar"]');
+    const panel = page.locator(".panel", { hasText: "Facturas por pagar" });
+    const filas = panel.locator("tbody tr");
+    const n = await filas.count();
+    assert.ok(n > 0);
+    const antes = await page.evaluate(() => GS.state.data.compras.filter((c) => c.porPagar > 1).sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)))[0]);
+    await filas.first().locator('[data-action="registrarPagoCompra"]').click();
+    await modal(page).locator('input[name="monto"]').fill("1000");
+    await modal(page).locator('button[type="submit"]').click();
+    await toast(page, /Pago de \$1\.000 registrado/);
+    const despues = await page.evaluate((id) => GS.state.data.compras.find((c) => c.id === id), antes.id);
+    assert.equal(despues.porPagar, antes.porPagar - 1000);
+    assert.ok(await page.locator(".panel", { hasText: "Facturas por pagar" }).count(), "el panel sigue abierto");
+    assert.deepEqual(errores, []);
+  } finally {
+    await browser.close();
+  }
+});
