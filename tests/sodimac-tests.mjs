@@ -109,6 +109,29 @@ const del = XLSX.utils.sheet_to_json(wbOut.Sheets.DELIVERY, { header: 1 });
 const cx = del[0].indexOf("x"), cv = del[0].indexOf("Valor");
 check("DELIVERY con x y valor sin repetir", del.slice(1).reduce((a, r) => a + Number(r[cv]), 0) === 4800 * 3 + 5800 && cx === 4, [cx, del.slice(1).map(r => r[cv])], null);
 
+// Registro de operaciones: llave patente + fecha
+const RH = ["FECHA", "CUENTA", "PATENTE", "CATEGORIA", "LOCALIDAD", "ID RUTA", "TERMINADO", "TOTAL", "TOTAL RUTA"];
+const rg = (fecha, pat, loc, id, costo) => [new Date(fecha + "T00:00:00"), "SODIMAC", pat, "C11-20", loc, id, 10, 10, costo];
+const reg = [RH,
+  rg("2026-10-01", "ZP-7469", "URBANO", 1001, 140000),   // DELIVERY 1 y 2 + SERVICE 7
+  rg("2026-10-01", "TA-5271", "URBANO", 1002, 180000),   // SERVICE 5
+  rg("2026-10-01", "BXYF-42", "URBANO", 1003, 140000),   // sin pago -> Pendiente
+  rg("2026-10-02", "GCLG-59", "URBANO", 1004, 140000),   // sin pago, ese día ZP7469 pagado sin registro
+  rg("2026-10-01", "FCZK-98", "POSTURA", "", 40000),     // ajuste
+  rg("2026-11-05", "TA-5271", "URBANO", 1005, 180000),   // fuera del periodo
+  ["2026-10-01", "OTRA", "XX-1111", "C11-20", "URBANO", 9, 1, 1, 1]]; // otra cuenta: no entra
+const wbReg = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wbReg, XLSX.utils.aoa_to_sheet(reg, { cellDates: true }), "Hoja1");
+const archivoReg = path.join(tmp, "registro.xlsx"); XLSX.writeFile(wbReg, archivoReg);
+await page.setInputFiles("#scReg", archivoReg);
+await page.waitForFunction("scDatos.cruce");
+const cr = await page.evaluate(`scDatos.cruce.rutas.map(g=>[g.fecha,g.pat,g.estado,g.sps.map(s=>s.sol).sort().join(","),g.ingreso,!!g.detalle])`);
+const crExp = [["2026-10-01", "BXYF42", "Pendiente", "", 0, true], ["2026-10-01", "FCZK98", "Ajuste", "", 0, false], ["2026-10-01", "TA5271", "Pagada", "5", 142000, false],
+  ["2026-10-01", "ZP7469", "Pagada", "1,2,7", 99600, false], ["2026-10-02", "GCLG59", "Pendiente", "", 0, true], ["2026-11-05", "TA5271", "Fuera del periodo", "", 0, false]];
+check("Cruce con el registro", JSON.stringify(cr) === JSON.stringify(crExp), cr, crExp);
+const sinReg = await page.evaluate(`scDatos.cruce.sinRegistro.map(x=>[x.fecha,x.patente,x.sps.join(",")])`);
+check("Pagado sin registro", JSON.stringify(sinReg) === JSON.stringify([["2026-10-01", "DPKL50", "6"], ["2026-10-02", "ZP7469", "3,4"]]), sinReg, null);
+check("Registro guardado", await page.evaluate(`almacenLocal.hojas["SODIMAC CL REGISTRO"].length-1`) === 7, await page.evaluate(`almacenLocal.hojas["SODIMAC CL REGISTRO"].length-1`), 7);
+
 // Nueva tarifa P10 210.000 desde el 01-10: la SP 6 pasa a OK
 await page.evaluate(`mostrarVista("sodimacClTarifas")`);
 await page.selectOption("#scNTipo", "SERVICE");

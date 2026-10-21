@@ -18,6 +18,8 @@ Grupo "Sodimac Chile" del menú. Las proformas de Sodimac salen del mismo TMS qu
 - Estados: OK, BAJO TARIFA (va a objeciones: Template TMS y Formato mail, con motivo "Tarifa distinta a valor negociado"), SOBRE TARIFA y SIN TARIFA (revisar).
 - **Alertas de modalidad**: patente pagada por parada y como ruta el mismo día.
 
+**Rutas del registro**: el registro de operaciones de Sodimac (FECHA, PATENTE, LOCALIDAD, ID RUTA, TOTAL RUTA) se guarda en la hoja SODIMAC CL REGISTRO (recarga = reemplaza sus fechas) y se cruza con la proforma por patente y fecha, porque el ID RUTA no es el ID Viaje del TMS. La fecha de un viaje es su creación; si no calza se prueba el día anterior (creado de madrugada) y las fechas de entrega. Estados: Pagada (con ingreso y margen contra el costo), Pendiente, Fuera del periodo de la proforma y Ajuste (POSTURA, MULTA o sin ID RUTA). Además lista lo pagado sin registro y deja pistas: posible cambio de patente o fecha mal digitada.
+
 "Tarifas" guarda las hojas SODIMAC CL TARIFAS (TIPO, VIGENTE DESDE, CLAVE, VALOR) y SODIMAC CL COMUNAS (COMUNA, ZONA). Los valores iniciales salen de la proforma 38883 (sep-2026).
 
 ## Control de rutas (Google Sheets)

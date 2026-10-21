@@ -561,6 +561,10 @@
         <input id="scFile" type="file" accept=".xlsx,.xls,.xlsm">
         <div id="scFileName" class="file-name"></div>
       </div>
+      <div class="carga" style="margin-top:12px" onclick="document.getElementById('scReg').click()">
+        <b>Registro de operaciones Sodimac</b><span id="txtRegSc">Excel con FECHA, PATENTE, ID RUTA y TOTAL RUTA. Se guarda en la hoja SODIMAC CL REGISTRO y se cruza con la proforma por patente y fecha.</span>
+        <input id="scReg" type="file" accept=".xlsx,.xls,.xlsm,.csv">
+      </div>
     </div>
     <div id="scResultado" class="hidden">
       <div class="card">
@@ -599,6 +603,32 @@
             <tbody id="scMixtaBody"></tbody>
           </table>
         </div>
+      </div>
+      <div class="card" id="scCruceArea">
+        <h2>Rutas del registro</h2>
+        <div class="info-box">
+          Cada ruta del registro se busca en la proforma por patente y fecha (creación del viaje o, si no calza, fecha de entrega).
+          POSTURA, MULTA y filas sin ID RUTA son ajustes al transporte, no rutas. Las fechas fuera del periodo de la proforma no se marcan como pendientes.
+        </div>
+        <div id="scCruceKpi" class="summary" style="margin-bottom:14px"></div>
+        <div class="filters">
+          <select id="scCruceEstado" onchange="renderCruceSc()"><option value="">Todos los estados</option><option>Pendiente</option><option>Pagada</option><option>Fuera del periodo</option><option>Ajuste</option></select>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Fecha</th><th>Patente</th><th>Categoría</th><th>Localidad</th><th>ID Ruta</th><th>Terminados</th><th>Costo ruta</th>
+              <th>Estado</th><th>Pago</th><th>Ingreso</th><th>Margen</th><th>Detalle</th></tr></thead>
+            <tbody id="scCruceBody"></tbody>
+          </table>
+        </div>
+        <h3 style="margin-top:18px">Pagado sin registro</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Fecha</th><th>Patente</th><th>Tipo</th><th>SP</th><th>Monto</th></tr></thead>
+            <tbody id="scSinRegBody"></tbody>
+          </table>
+        </div>
+        <div class="actions"><button class="button green" onclick="descargarCruceSc()">Descargar cruce</button></div>
       </div>
       <div class="card">
         <h2>Objeciones</h2>
@@ -1901,7 +1931,7 @@ const almacenLocal={
   hojas:{},
   guardarLote(ops){ const res={}; for(const op of ops){ this.hojas[op.hoja]=combinarHoja(this.hojas[op.hoja]||[],op); res[op.hoja]=Math.max(this.hojas[op.hoja].length-1,0); } return res; },
   tipoCambioPeru(){ return (this.hojas["PERU TIPO CAMBIO"]||[]).slice(1); },
-  leerDatos(){ const h={}; for(const n of ["REGISTRO","GEOSORT","VIAJES PAGADOS","PERU RUTAS","PERU TARIFAS","PERU DISTRITOS","PERU FERIADOS","PERU AJUSTES","PERU MOVIMIENTOS","PERU CONDUCTORES","PERU QUINCENAS","PERU COSTOS FIJOS","PERU FACTURAS","PERU REGISTRO","SODIMAC CL TARIFAS","SODIMAC CL COMUNAS"]) h[n]=JSON.parse(JSON.stringify(this.hojas[n]||[])); return {hojas:h,url:""}; }
+  leerDatos(){ const h={}; for(const n of ["REGISTRO","GEOSORT","VIAJES PAGADOS","PERU RUTAS","PERU TARIFAS","PERU DISTRITOS","PERU FERIADOS","PERU AJUSTES","PERU MOVIMIENTOS","PERU CONDUCTORES","PERU QUINCENAS","PERU COSTOS FIJOS","PERU FACTURAS","PERU REGISTRO","SODIMAC CL TARIFAS","SODIMAC CL COMUNAS","SODIMAC CL REGISTRO"]) h[n]=JSON.parse(JSON.stringify(this.hojas[n]||[])); return {hojas:h,url:""}; }
 };
 function llamar(fn,...args){
   return new Promise((ok,mal)=>{
@@ -2059,7 +2089,7 @@ let COMUNAS_SC=Object.fromEntries([
     "QUILICURA","QUINTA NORMAL","RECOLETA","RENCA","SAN JOAQUIN","SAN MIGUEL","SAN RAMON","SANTIAGO","VITACURA","PUENTE ALTO","SAN BERNARDO","NOS","COLINA"].map(c=>[c,"URBANO"]),
   ...["BUIN","CALERA DE TANGO","CURACAVI","EL MONTE","ISLA DE MAIPO","LAMPA","MALLARAUCO","MELIPILLA","PAINE","PENAFLOR","TALAGANTE","TILTIL"].map(c=>[c,"PERIFERIA"])
 ]);
-const scDatos={nombre:"",d:null,revision:[],mixtas:[],objeciones:[],control:null};
+const scDatos={nombre:"",d:null,revision:[],mixtas:[],objeciones:[],control:null,registro:[],cruce:null};
 
 function tarifaSc(tipo,clave,fecha){
   const t=tarifasSc.filter(x=>x.tipo===tipo&&x.clave===clave&&(!fecha||x.desde<=fecha)).sort((a,b)=>b.desde.localeCompare(a.desde))[0];
@@ -2082,9 +2112,13 @@ function revisarSc(d){
     const sols=new Map();
     for(const f of m.slice(1)){ const s=nid(f[c.sol]); if(!s) continue; if(!sols.has(s)) sols.set(s,[]); sols.get(s).push(f); }
     for(const [sol,filas] of sols){
-      const f0=filas[0], fecha=fechaISO(cEnt>=0&&f0[cEnt]?f0[cEnt]:f0[c.fecha]);
-      const pagado=Math.max(...filas.map(f=>num(f[c.valor]))), veh=nt(f0[c.veh]), pat=nt(f0[c.pat]);
-      const r={sol,tipo,fecha,patente:f0[c.pat],veh,proforma:nid(f0[c.prof]),estadoSP:cEst>=0?f0[cEst]:"",pagado,header:h,filas,
+      // Fecha de la ruta = creación del viaje; algunas entregas quedan para el día siguiente
+      const f0=filas[0], fecha=fechaISO(f0[c.fecha])||fechaISO(cEnt>=0?f0[cEnt]:"");
+      // Un viaje creado de madrugada puede ser la ruta del día anterior: se prueba después de la creación y antes de la entrega
+      const cr=f0[c.fecha], madrugada=cr instanceof Date&&cr.getHours()<6&&fecha?[fechaISO(new Date(cr.getFullYear(),cr.getMonth(),cr.getDate()-1))]:[];
+      const fechas=[...new Set([fecha,...madrugada,...(cEnt>=0?filas.map(f=>fechaISO(f[cEnt])):[])].filter(Boolean))];
+      const pagado=Math.max(...filas.map(f=>num(f[c.valor]))), veh=nt(f0[c.veh]), pat=patNorm(f0[c.pat]);
+      const r={sol,tipo,fecha,fechas,pat,patente:f0[c.pat],veh,proforma:nid(f0[c.prof]),estadoSP:cEst>=0?f0[cEst]:"",pagado,header:h,filas,
         viajes:[...new Set(filas.map(f=>nid(f[c.viaje])).filter(Boolean))],aviso:avisoFactura(filas,c)};
       if(tipo==="DELIVERY"){
         r.comuna=comunaSc(f0[cDes],f0[cDir]); r.zona=COMUNAS_SC[r.comuna]||"";
@@ -2102,11 +2136,15 @@ function revisarSc(d){
       else if(r.dif<0){ r.estado="BAJO TARIFA"; r.detalle=`Faltan ${money(-r.dif)}.`; }
       else{ r.estado="SOBRE TARIFA"; r.detalle=`Pagado ${money(r.dif)} sobre la tarifa: revisar si hay otra tarifa.`; }
       rev.push(r);
-      const k=fecha+"|"+pat;
-      if(!porDia.has(k)) porDia.set(k,{fecha,patente:f0[c.pat],DELIVERY:[],SERVICE:[]});
-      porDia.get(k)[tipo].push(r);
     }
   }
+  // Modalidad mixta: el día de una ruta SERVICE coincide con la creación o entrega de DELIVERY de la misma patente
+  for(const r of rev.filter(x=>x.tipo==="SERVICE")){
+    const k=r.fecha+"|"+r.pat;
+    if(!porDia.has(k)) porDia.set(k,{fecha:r.fecha,patente:r.patente,DELIVERY:[],SERVICE:[]});
+    porDia.get(k).SERVICE.push(r);
+  }
+  for(const r of rev.filter(x=>x.tipo==="DELIVERY")) for(const f of r.fechas){ const d=porDia.get(f+"|"+r.pat); if(d) d.DELIVERY.push(r); }
   rev.sort((a,b)=>a.fecha.localeCompare(b.fecha)||a.tipo.localeCompare(b.tipo)||String(a.patente).localeCompare(String(b.patente)));
   const mixtas=[...porDia.values()].filter(x=>x.DELIVERY.length&&x.SERVICE.length).sort((a,b)=>a.fecha.localeCompare(b.fecha));
   return {rev,mixtas};
@@ -2177,6 +2215,7 @@ function renderSc(){
       <td>${x.SERVICE.map(r=>esc(r.sol)).join(", ")}</td><td>${money(s("SERVICE"))}</td><td>${esc([...new Set([...x.DELIVERY,...x.SERVICE].map(r=>r.veh))].join(", "))}</td></tr>`;
   }).join("")||`<tr><td colspan="7">Sin alertas: cada patente se pagó de una sola forma por día.</td></tr>`;
   renderObjecionesSc();
+  renderCruceSc();
 }
 function renderRevisionSc(){
   const est=document.getElementById("scEstado").value, tipo=document.getElementById("scTipo").value, q=nt(document.getElementById("scBuscar").value);
@@ -2222,6 +2261,120 @@ function descargarSc(){
   XLSX.writeFile(out,(scDatos.nombre||"Proforma Sodimac.xlsx").replace(/\.(xlsx|xlsm|xls)$/i,"")+"_PROCESADA_WEB.xlsx");
 }
 
+// ---------- Sodimac Chile: cruce con el registro de operaciones (hoja SODIMAC CL REGISTRO) ----------
+// El ID RUTA del registro no es el ID Viaje del TMS, así que la llave es patente + fecha.
+const ESTADOS_CRUCE_SC={"Pendiente":"badge-error","Pagada":"badge-ok","Fuera del periodo":"badge-warning","Ajuste":""};
+function registroScDesdeMatriz(m){
+  if(!m||m.length<2) return [];
+  const h=m[0], c={fecha:idx(h,["FECHA"]),pat:idx(h,["PATENTE"]),id:idx(h,["ID RUTA"]),cat:idx(h,["CATEGORIA"]),loc:idx(h,["LOCALIDAD"]),
+    term:idx(h,["TERMINADO"]),pts:idx(h,["TOTAL"]),costo:idx(h,["TOTAL RUTA","TARIFA BASE"]),cuenta:idx(h,["CUENTA"])};
+  if(c.fecha<0||c.pat<0) throw new Error("El registro no tiene las columnas FECHA y PATENTE.");
+  const v=(r,i)=>i>=0?r[i]:"";
+  return m.slice(1).map(r=>({fecha:fechaISO(r[c.fecha]),patente:String(v(r,c.pat)??"").split("/")[0].trim(),pat:patNorm(v(r,c.pat)),id:nid(v(r,c.id)),
+    categoria:String(v(r,c.cat)??""),localidad:String(v(r,c.loc)??""),terminado:v(r,c.term),puntos:v(r,c.pts),costo:num(v(r,c.costo)),cuenta:nt(v(r,c.cuenta))}))
+    .filter(g=>g.fecha&&g.pat&&(!g.cuenta||g.cuenta.includes("SODIMAC")));
+}
+// Una ruta es ajuste (postura, multa) si no trae ID RUTA o su localidad lo dice
+const esAjusteSc=g=>!g.id||g.id==="-"||g.id==="0"||/POSTURA|MULTA|BONO|DESCUENTO/.test(nt(g.localidad));
+function cruceSc(){
+  const reg=scDatos.registro||[], rev=scDatos.revision||[];
+  if(!reg.length||!rev.length) return null;
+  const rutas=reg.map(g=>({...g,sps:[],ingreso:0,estado:""}));
+  const porDia=new Map();
+  for(const g of rutas) if(!esAjusteSc(g)){ const k=g.pat+"|"+g.fecha; if(!porDia.has(k)) porDia.set(k,g); }
+  const sinRegistro=new Map();
+  for(const r of rev){
+    const fs=r.fechas;
+    const g=fs.map(f=>porDia.get(r.pat+"|"+f)).find(Boolean);
+    if(g){ g.sps.push(r); g.ingreso+=r.pagado; continue; }
+    const k=r.pat+"|"+r.fecha;
+    if(!sinRegistro.has(k)) sinRegistro.set(k,{fecha:r.fecha,patente:r.patente,tipos:new Set(),sps:[],monto:0});
+    const x=sinRegistro.get(k); x.tipos.add(r.tipo); x.sps.push(r.sol); x.monto+=r.pagado;
+  }
+  // Una ruta sin pago toma una SERVICE de otra ruta de la misma patente que tenga dos, si sus fechas la incluyen (madrugada, entrega al día siguiente)
+  for(const g of porDia.values()){
+    if(g.sps.length) continue;
+    const de=[...porDia.values()].find(o=>o!==g&&o.pat===g.pat&&o.sps.filter(s=>s.tipo==="SERVICE").length>1&&o.sps.some(s=>s.tipo==="SERVICE"&&s.fechas.includes(g.fecha)));
+    if(!de) continue;
+    const s=de.sps.find(s=>s.tipo==="SERVICE"&&s.fechas.includes(g.fecha));
+    de.sps=de.sps.filter(x=>x!==s); de.ingreso-=s.pagado; g.sps.push(s); g.ingreso+=s.pagado;
+  }
+  // Periodo pagado por la proforma: de la primera a la última fecha de ruta
+  const fechas=rev.map(r=>r.fecha).filter(Boolean).sort(), desde=fechas[0], hasta=fechas[fechas.length-1];
+  for(const g of rutas){
+    if(esAjusteSc(g)) g.estado="Ajuste";
+    else if(g.sps.length) g.estado="Pagada";
+    else if(g.fecha<desde||g.fecha>hasta) g.estado="Fuera del periodo";
+    else g.estado="Pendiente";
+    const t=[...new Set(g.sps.map(s=>s.tipo))];
+    g.pago=g.sps.length?t.map(x=>`${x} ${g.sps.filter(s=>s.tipo===x).length} SP`).join(" + "):"";
+    // Pistas para revisar a mano: pagos sin registro el mismo día (otra patente) o de la misma patente el mismo día de otro mes
+    g.detalle="";
+    if(g.estado==="Pendiente"){
+      const otras=[...sinRegistro.values()].filter(x=>x.fecha===g.fecha).map(x=>x.patente);
+      if(otras.length) g.detalle=`Ese día hay pagos sin registro de ${otras.join(", ")}: ¿cambio de patente?`;
+    }else if(g.estado==="Fuera del periodo"){
+      const x=[...sinRegistro.values()].find(x=>patNorm(x.patente)===g.pat&&x.fecha.slice(8)===g.fecha.slice(8));
+      if(x) g.detalle=`¿Fecha mal digitada? Hay pagos sin registro de esta patente el ${fechaCL(x.fecha)}.`;
+    }
+  }
+  rutas.sort((a,b)=>a.fecha.localeCompare(b.fecha)||a.pat.localeCompare(b.pat));
+  return {rutas,desde,hasta,sinRegistro:[...sinRegistro.values()].sort((a,b)=>a.fecha.localeCompare(b.fecha)||a.patente.localeCompare(b.patente))};
+}
+function renderCruceSc(){
+  const area=document.getElementById("scCruceArea"), cr=scDatos.cruce=cruceSc();
+  area.classList.toggle("hidden",!cr);
+  if(!cr) return;
+  const box=(t,v,cl="")=>`<div class="summary-box"><div class="summary-title">${t}</div><div class="summary-value ${cl}">${v}</div></div>`;
+  const de=e=>cr.rutas.filter(g=>g.estado===e), pend=de("Pendiente");
+  document.getElementById("scCruceKpi").innerHTML=box("Periodo proforma",`${fechaCL(cr.desde).slice(0,5)} al ${fechaCL(cr.hasta).slice(0,5)}`)+box("Rutas pagadas",de("Pagada").length,"okc")+
+    box("Pendientes",pend.length,pend.length?"errc":"okc")+box("Costo pendientes",money(pend.reduce((a,g)=>a+g.costo,0)),pend.length?"errc":"")+
+    box("Fuera del periodo",de("Fuera del periodo").length,"warnc")+box("Ajustes",de("Ajuste").length)+box("Pagado sin registro",cr.sinRegistro.length,cr.sinRegistro.length?"warnc":"okc");
+  const est=document.getElementById("scCruceEstado").value;
+  document.getElementById("scCruceBody").innerHTML=cr.rutas.filter(g=>!est||g.estado===est).map(g=>{
+    const pagada=g.estado==="Pagada";
+    return `<tr><td>${fechaCL(g.fecha)}</td><td>${esc(g.patente)}</td><td>${esc(g.categoria)}</td><td>${esc(g.localidad)}</td><td>${esc(g.id)}</td>
+      <td>${g.terminado===""||g.terminado==null?"":esc(g.terminado)+(g.puntos?" / "+esc(g.puntos):"")}</td><td>${money(g.costo)}</td>
+      <td><span class="badge ${ESTADOS_CRUCE_SC[g.estado]}">${g.estado}</span></td><td>${esc(g.pago)}</td><td>${pagada?money(g.ingreso):""}</td>
+      <td>${pagada?`<b class="${g.ingreso<g.costo?"errc":""}">${money(g.ingreso-g.costo)}</b>`:""}</td><td>${esc(g.detalle)}</td></tr>`;
+  }).join("")||`<tr><td colspan="12">Ninguna ruta con ese estado.</td></tr>`;
+  document.getElementById("scSinRegBody").innerHTML=cr.sinRegistro.map(x=>`<tr><td>${fechaCL(x.fecha)}</td><td>${esc(x.patente)}</td><td>${[...x.tipos].join(", ")}</td>
+    <td>${x.sps.length>3?x.sps.length+" SP":esc(x.sps.join(", "))}</td><td>${money(x.monto)}</td></tr>`).join("")
+    ||`<tr><td colspan="5">Todo lo pagado tiene su ruta en el registro.</td></tr>`;
+}
+function descargarCruceSc(){
+  const cr=scDatos.cruce; if(!cr) return;
+  const out=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(out,XLSX.utils.aoa_to_sheet([["FECHA","PATENTE","CATEGORIA","LOCALIDAD","ID RUTA","TERMINADO","TOTAL","COSTO RUTA","ESTADO","PAGO","ID SOL. PAGO","INGRESO","MARGEN","DETALLE"],
+    ...cr.rutas.map(g=>[fechaCL(g.fecha),g.patente,g.categoria,g.localidad,g.id,g.terminado,g.puntos,g.costo,g.estado,g.pago,g.sps.length>5?g.sps.length+" SP":g.sps.map(s=>s.sol).join(", "),
+      g.estado==="Pagada"?g.ingreso:"",g.estado==="Pagada"?g.ingreso-g.costo:"",g.detalle])]),"Rutas");
+  XLSX.utils.book_append_sheet(out,XLSX.utils.aoa_to_sheet([["FECHA","PATENTE","TIPO","ID SOL. PAGO","MONTO"],
+    ...cr.sinRegistro.map(x=>[fechaCL(x.fecha),x.patente,[...x.tipos].join(", "),x.sps.join(", "),x.monto])]),"Pagado sin registro");
+  XLSX.writeFile(out,`Cruce rutas Sodimac ${hoyArchivo()}.xlsx`);
+}
+document.getElementById("scReg").addEventListener("change",e=>{
+  const file=e.target.files?.[0]; e.target.value=""; if(!file) return;
+  ocultarError();
+  const fr=new FileReader();
+  fr.onload=async ev=>{
+    try{
+      const wb=XLSX.read(new Uint8Array(ev.target.result),{type:"array",cellDates:true});
+      const m=matrix(wb.Sheets[wb.SheetNames[0]]), nuevas=registroScDesdeMatriz(m);
+      if(!nuevas.length) throw new Error("El registro no trae rutas de Sodimac.");
+      const fs=nuevas.map(g=>g.fecha).sort(), desde=fs[0], hasta=fs[fs.length-1];
+      await llamar("guardarLote",[{hoja:"SODIMAC CL REGISTRO",filas:paraHoja(m),llave:{col:"FECHA",desde,hasta}}]);
+      scDatos.registro=(scDatos.registro||[]).filter(g=>g.fecha<desde||g.fecha>hasta).concat(nuevas);
+      avisoRegSc();
+      renderCruceSc();
+    }catch(err){ mostrarError("No se pudo cargar el registro.\n\n"+(err.message||err)); }
+  };
+  fr.readAsArrayBuffer(file);
+});
+function avisoRegSc(){
+  const r=scDatos.registro||[], f=r.map(g=>g.fecha).sort();
+  if(r.length) document.getElementById("txtRegSc").textContent=`En la hoja: ${r.length} filas del ${fechaCL(f[0])} al ${fechaCL(f[f.length-1])}.`;
+}
+
 // ---------- Sodimac Chile: tarifas y comunas (hojas SODIMAC CL TARIFAS y SODIMAC CL COMUNAS) ----------
 function filasTarifasSc(){ return [H_TARIFAS_SC,...[...tarifasSc].sort((a,b)=>a.tipo.localeCompare(b.tipo)||a.clave.localeCompare(b.clave)||a.desde.localeCompare(b.desde)).map(t=>[t.tipo,t.desde,t.clave,t.valor])]; }
 function filasComunasSc(){ return [["COMUNA","ZONA"],...Object.keys(COMUNAS_SC).sort().map(c=>[c,COMUNAS_SC[c]])]; }
@@ -2240,6 +2393,7 @@ async function configScDesdeHojas(h){
     for(const r of co.slice(1)){ const k=nt(r[cc]), z=nt(r[cz]); if(k&&ZONA_SC[z]) tabla[k]=z; }
     COMUNAS_SC=tabla;
   }
+  scDatos.registro=registroScDesdeMatriz(h["SODIMAC CL REGISTRO"]); avisoRegSc();
   if(ops.length) await llamar("guardarLote",ops);
 }
 async function guardarConfigSc(hoja,filas,msg){
