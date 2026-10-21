@@ -43,6 +43,7 @@ const errors = [];
 page.on("pageerror", e => errors.push(e.message));
 await page.route("**/xlsx.full.min.js", r => r.fulfill({ path: XLSX_JS, contentType: "application/javascript" }));
 await page.goto("file://" + HTML);
+await page.click(".nav-desplegable"); // Perú parte plegado en el menú
 await page.click("button.tab[data-vista=peru]");
 const vistaVisible = await page.isVisible("#vistaPeru");
 await page.setInputFiles("#inSimpli", [f1, f2]);
@@ -58,6 +59,20 @@ const resumen = await page.evaluate(`["pRutas","pPeriferia","pDomingo","pTotal"]
 await page.selectOption("#pFiltro", "obs");
 const conObs = await page.$$eval("#peruBody tr", trs => trs.map(t => [t.children[0].textContent, t.children[1].textContent]));
 await page.selectOption("#pFiltro", "");
+// Filtro de columna tipo Excel en la liquidación por ruta: Zona = Periferia, ordenado por placa Z-A
+const cabPe = await page.$$eval("#peruHead th", ths => ths.map(t => t.textContent.replace(/[▾⧩▲▼]/g, "").trim()));
+await page.click('#peruHead button[aria-label="Filtrar y ordenar Zona"]');
+await page.click('.menu-filtro [data-todos]'); await page.click('.menu-filtro label:has-text("Periferia") input'); await page.click(".menu-filtro .ok");
+await page.click('#peruHead button[aria-label="Filtrar y ordenar Placa"]'); await page.click('.menu-filtro [data-o="-1"]');
+const filtroZona = await page.$$eval("#peruBody tr", trs => trs.map(t => t.children[4].textContent));
+const ordenPlacas = await page.$$eval("#peruBody tr", trs => trs.map(t => t.children[1].textContent));
+await page.click('#peruHead button[aria-label="Filtrar y ordenar Zona"]'); await page.click('.menu-filtro [data-limpiar]');
+await page.evaluate(`ordenPe.k=""; renderPeru()`);
+const filasSinFiltro = await page.$$eval("#peruBody tr", trs => trs.length);
+// Botón de ajuste en Factura Sodimac abre el mismo editor
+await page.click('#peruBody button[data-k="2026-09-12|AAA111"]');
+const ajFactura = await page.evaluate(`[!document.getElementById("pAjuste").classList.contains("hidden"),!!document.querySelector("#pAjuste #ajDia"),document.querySelector("#pAjuste b").textContent]`);
+await page.click("#pAjuste >> text=Cancelar");
 const pagos = await page.evaluate(`Object.fromEntries(rutasMesPeru().rutas.map(r=>[r.fecha+" "+r.placa,[r.pago,r.margen,r.llave]]))`);
 const resumenPago = await page.evaluate(`["pPago","pMargen"].map(id=>document.getElementById(id).textContent)`);
 const [dl] = await Promise.all([page.waitForEvent("download"), page.click("text=Descargar liquidación")]);
@@ -74,6 +89,7 @@ const resumenQ1 = await resumenQ();
 await page.selectOption("#qFiltro", "fal");
 const conFallidos = await page.$$eval("#qBody tr", trs => trs.map(t => [t.children[0].textContent, t.children[1].textContent, t.children[5].textContent]));
 await page.selectOption("#qFiltro", "");
+await page.click("#vistaPeruPago .conductores-card summary");
 await page.fill('#qConductores input[data-p=AAA111][data-k=nombre]', "JUAN PEREZ");
 await page.fill('#qConductores input[data-p=AAA111][data-k=doc]', "DNI 123");
 await page.click("text=Guardar conductores"); await page.waitForTimeout(200);
@@ -89,8 +105,14 @@ await page.selectOption("#ajCobro", "PERIFERIA/LEJANO"); await page.selectOption
 await page.click("text=Guardar ajuste"); await page.waitForTimeout(200);
 const ajustada = await page.evaluate(`(r=>[r.zonaCobro,r.total,r.pago,r.totalCalc,r.pagoCalc,r.obsTarifa,r.llave])(peruDatos.rutas.find(r=>r.fecha==="2026-09-12"&&r.placa==="AAA111"))`);
 const hojaAj = await page.evaluate(`almacenLocal.hojas["PERU AJUSTES"]`);
+// Ajuste de feriado: un día normal marcado como feriado usa tarifa domingo, y uno domingo marcado "no" usa regular
+const ferAj = await page.evaluate(`(()=>{ const t=(r,dia)=>{ const k=r.fecha+"|"+r.placa, prev=ajustesPe.get(k); ajustesPe.set(k,{zonaCobro:"",zonaPago:"",motivo:"t",dia});
+  const x=tarificarPeru(r); prev?ajustesPe.set(k,prev):ajustesPe.delete(k); return [x.detalle,x.tipoRuta,x.total,x.pago]; };
+  const n=peruDatos.rutas.find(r=>!recargoPeru(r.fecha)&&r.zona==="Metropolitana"&&r.unidad==="F13"), d=peruDatos.rutas.find(r=>recargoPeru(r.fecha)==="Tarifa Domingo"&&r.zona==="Metropolitana"&&r.unidad==="F13");
+  abrirAjustePe(n.fecha+"|"+n.placa); const ops=[...document.querySelectorAll("#ajDia option")].map(o=>o.value); document.getElementById("qAjuste").classList.add("hidden");
+  return [t(n,"FERIADO"),t(d,"REGULAR"),ops]; })()`);
 const resumenQ1b = await resumenQ();
-await page.selectOption("#qEstado", "Enviado al transporte"); await page.waitForTimeout(200);
+await page.evaluate(`cambiarEstadoQuincenaPe("Enviado al transporte")`); await page.waitForTimeout(200);
 const hojaQuin = await page.evaluate(`almacenLocal.hojas["PERU QUINCENAS"].slice(1).map(r=>r.slice(0,2))`);
 const correo = await page.inputValue("#qCorreo");
 const [dlQ] = await Promise.all([page.waitForEvent("download"), page.click("text=Descargar detalle quincena")]);
@@ -98,7 +120,7 @@ const outQ = path.join(tmp, "q_out.xlsx"); await dlQ.saveAs(outQ);
 const nombreQ = dlQ.suggestedFilename();
 // Recargar desde las hojas conserva ajustes, descuentos, conductores y estado
 await page.evaluate("recargarPeru()"); await page.waitForTimeout(200);
-const trasRecargarPago = [await resumenQ(), await page.inputValue("#qEstado"), await page.evaluate(`peruDatos.rutas.find(r=>r.fecha==="2026-09-12"&&r.placa==="AAA111").pago`)];
+const trasRecargarPago = [await resumenQ(), await page.evaluate(`quincenasPe["2026-09-Q1"].estado`), await page.evaluate(`peruDatos.rutas.find(r=>r.fecha==="2026-09-12"&&r.placa==="AAA111").pago`)];
 
 // ---------- Cuadre y KPI ----------
 await page.click("button.tab[data-vista=peruCuadre]");
@@ -217,6 +239,11 @@ check("SIMPLI corta 'SAN JUAN DE'", rutas["2026-09-30 AAA111"].slice(3, 6), ["SA
 check("Guardado en PERU RUTAS y recarga sin duplicar", [hoja, hoja2], [6, [6, 6]]);
 check("Resumen", resumen, ["6", "1", "1", "S/ 2,866"]);
 check("Filtro con observación", conObs, [["12-09-2026", "AAA111"]]);
+check("Columnas de la liquidación sin puntos ni entregados", cabPe, ["Fecha","Placa","Unidad","Distrito","Zona","Tarifa","Adicional","Valor total","Pago transporte","Margen","Observación","Ajuste"]);
+check("Filtro de columna Zona = Periferia", [filtroZona.length, filtroZona.every(z => z === "Periferia"), filtroZona.length === Number(resumen[1])], [Number(resumen[1]), true, true]);
+check("Orden Z-A por placa", ordenPlacas, [...ordenPlacas].sort().reverse());
+check("Borrar filtro de columna", filasSinFiltro, Number(resumen[0]));
+check("Ajuste desde Factura Sodimac", ajFactura, [true, true, "Ajuste 12-09-2026 AAA111"]);
 check("Nombre de la liquidación", nombre, "Liquidacion JOINT PERU S.A.C. UM SODIMAC - 09SEPTIEMBRE - 2026.xlsx");
 check("Formato de la liquidación", [wb.SheetNames[0], salida[0], salida[2].slice(1, 9), salida.length, ws["K2"].f, ws["K8"].f],
   ["LIQUIDACIÓN SERVICIOS", LH, ["JOINT PERU S.A.C.", "AAA111", "F13", 2, "COMAS", "Metropolitana", 420, ""], 8, "SUM(H2:I2)", "SUM(K2:K7)"]);
@@ -232,7 +259,8 @@ check("Descuento y otro pago guardados", hojaMov, 2);
 check("Ajuste cambia cobro y pago y guarda lo calculado", ajustada, ["Periferia", 610, 500, 420, 380,
   "Punto en PUENTE PIEDRA no entregado (Distrito errado): se cobra Metropolitana; Ajuste: cobrada como Periferia y pagada como Periferia (Validado por Sodimac)".split("; ").slice(1).join("; "),
   "CT ATLANTIS SODIMAC;RUTA REGULAR;13M3;PERIFERIA/LEJANO"]);
-check("Hoja PERU AJUSTES", hojaAj, [["FECHA", "PLACA", "ZONA COBRO", "ZONA PAGO", "MOTIVO"], ["2026-09-12", "AAA111", "Periferia", "Periferia", "Validado por Sodimac"]]);
+check("Ajuste de feriado por ruta", ferAj, [["Tarifa Feriado","RUTA DOMINGO",546,494],["","RUTA REGULAR",420,380],["","FERIADO","REGULAR"]]);
+check("Hoja PERU AJUSTES", hojaAj, [["FECHA", "PLACA", "ZONA COBRO", "ZONA PAGO", "MOTIVO", "TARIFA DIA"], ["2026-09-12", "AAA111", "Periferia", "Periferia", "Validado por Sodimac", ""]]);
 check("Resumen con ajuste, descuento y otros pagos", resumenQ1b, ["5", "S/ 2,294.00", "S/ 2,706.92", "S/ 100.00", "S/ 2,606.92", "S/ 1,000.00"]);
 check("Estado de la quincena", hojaQuin, [["2026-09-Q1", "Enviado al transporte"]]);
 check("Correo", [correo.includes("entre los días 01 al 15 de Septiembre del año 2026"), correo.includes("PAGOS EN EXCESO PERIODOS ANTERIORES    S/. 100,00"),
