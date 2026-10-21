@@ -43,7 +43,7 @@ const errors = [];
 page.on("pageerror", e => errors.push(e.message));
 await page.route("**/xlsx.full.min.js", r => r.fulfill({ path: XLSX_JS, contentType: "application/javascript" }));
 await page.goto("file://" + HTML);
-await page.click(".nav-desplegable"); // Perú parte plegado en el menú
+await page.click("[aria-controls=navPeru]"); // Perú parte plegado en el menú
 await page.click("button.tab[data-vista=peru]");
 const vistaVisible = await page.isVisible("#vistaPeru");
 await page.setInputFiles("#inSimpli", [f1, f2]);
