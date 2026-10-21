@@ -22,12 +22,34 @@ async function abrir(browser, opts = {}) {
   });
   await page.goto(url(opts.user));
   await page.waitForSelector("#app:not(.hidden)");
+  await historialToasts(page);
   return { page, errores };
 }
 
+/** Guarda cada mensaje que se muestra: con la máquina ocupada, un mensaje puede cambiar antes de que la prueba lo lea. */
+const historialToasts = (page) => page.evaluate(() => {
+  if (window.__toasts) return;
+  window.__toasts = [];
+  window.__vistos = 0;
+  const original = GS.toast;
+  GS.toast = function (msg, peligro) { window.__toasts.push(String(msg)); return original.apply(this, arguments); };
+});
+
 const modal = (page) => page.locator("#modal-root .modal-overlay").last();
 const cerrado = (page) => page.waitForSelector("#modal-root .modal-overlay", { state: "detached" });
-const toast = async (page, re) => page.waitForFunction((src) => new RegExp(src).test(document.getElementById("toast-msg").textContent), re.source);
+// Espera un mensaje que calce (el visible o uno de los que aún no se han revisado) y lo marca como visto.
+const toast = async (page, re) => esperarToast(page, re).catch(async (e) => {
+  console.log("DIAG", JSON.stringify(await page.evaluate(() => ({ toasts: window.__toasts, vistos: window.__vistos,
+    error: Array.from(document.querySelectorAll('.form-error.show')).map((x) => x.textContent), modal: (document.querySelector('#modal-root') || {}).innerText.slice(0, 300),
+    boton: Array.from(document.querySelectorAll('#modal-root [type=submit]')).map((b) => b.textContent + (b.disabled ? ' (deshabilitado)' : '')) }))));
+  throw e;
+});
+const esperarToast = async (page, re) => page.waitForFunction((src) => {
+  const r = new RegExp(src);
+  const lista = window.__toasts || [];
+  for (let i = window.__vistos || 0; i < lista.length; i++) if (r.test(lista[i])) { window.__vistos = i + 1; return true; }
+  return r.test(document.getElementById("toast-msg").textContent);
+}, re.source);
 
 test("preventas como carrito: agregar productos uno a uno, asignar en la tabla y en bloque", { skip }, async () => {
   const browser = await chromium.launch();

@@ -228,7 +228,8 @@
     openModals.push(modal);
     modal.render();
     const first = overlay.querySelector('input:not([type=hidden]):not(:disabled), select, textarea');
-    if (first && !opts.noAutofocus) setTimeout(() => first.focus(), 30);
+    // Foco en el primer campo, salvo que ya se esté escribiendo en otro campo de la ventana.
+    if (first && !opts.noAutofocus) setTimeout(() => { if (!overlay.contains(document.activeElement)) first.focus(); }, 30);
     return modal;
   };
 

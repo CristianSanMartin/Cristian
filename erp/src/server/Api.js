@@ -23,6 +23,7 @@ function rutas_() {
   return {
     bootstrap: { rol: 'lectura', fn: (p, u) => Snapshot.build(u) },
     auditoria: { rol: 'admin', fn: () => Snapshot.auditoria() },
+    vaciarAuditoria: { rol: 'admin', write: true, fn: () => { Db.vaciar('Auditoria'); } },
 
     guardarProveedor: { rol: 'operador', write: true, fn: Proveedores.guardar },
     archivarProveedor: { rol: 'operador', write: true, fn: Proveedores.cambiarActivo },

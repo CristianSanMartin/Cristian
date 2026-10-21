@@ -150,6 +150,13 @@
   };
 
   GS.actions.recargarAuditoria = () => { auditoria = null; GS.render(); };
+  GS.actions.eliminarAuditoria = () => GS.confirm({
+    title: 'Eliminar el registro de auditoría',
+    message: 'Se borran todos los registros de cambios. No se puede deshacer (queda en los respaldos de los últimos 7 días).',
+    confirmLabel: 'Sí, eliminar',
+    danger: true,
+    onConfirm: () => GS.mutate('vaciarAuditoria', {}, 'Registro de auditoría eliminado').then(() => { auditoria = null; GS.render(); }),
+  });
 
   function usuarioForm(u) {
     const nuevo = !u;

@@ -251,6 +251,10 @@ test("auditoría registra los cambios de los demás usuarios, no los del creador
   const asig = s.as("admin@gsprime.cl").ok("auditoria").data.find(x => x.accion === "asignación");
   assert.equal(asig.usuario, "socio@gsprime.cl");
   assert.deepEqual(JSON.parse(asig.detalle), [{ id: "PVI-000001", solicitado: 60, asignado: 24 }]);
+  // Eliminar registros (solo administrador)
+  assert.equal(s.as("socio@gsprime.cl").call("vaciarAuditoria", {}).code, "SIN_PERMISO");
+  s.as("admin@gsprime.cl").ok("vaciarAuditoria", {});
+  assert.equal(s.ok("auditoria").data.length, 0);
 });
 
 test("fechas se guardan como texto y se leen bien si Sheets las convirtió", () => {
