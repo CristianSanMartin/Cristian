@@ -11,6 +11,17 @@ Al procesar una proforma, la app arma la lista de objeciones y la acumula con la
 
 Botones: "Descargar Template TMS" (carga en TMS) y "Descargar Formato mail" (para el ejecutivo de Falabella, con la hoja Proforma de respaldo).
 
+## Sodimac Chile
+Grupo "Sodimac Chile" del menú. Las proformas de Sodimac salen del mismo TMS que Falabella (mismas hojas y columnas), así que se procesan igual (x/y, Valor solo en x=1) y además se revisa cada ID Sol. Pago contra la tarifa vigente a la fecha del viaje:
+- **DELIVERY**: tarifa por parada según la zona (urbano o periferia) de la comuna de destino. Si Destino viene vacío, la comuna se toma del penúltimo tramo de la dirección.
+- **SERVICE**: tarifa por ruta según el tipo de vehículo (F5, P5, P10...).
+- Estados: OK, BAJO TARIFA (va a objeciones: Template TMS y Formato mail, con motivo "Tarifa distinta a valor negociado"), SOBRE TARIFA y SIN TARIFA (revisar).
+- **Alertas de modalidad**: patente pagada por parada y como ruta el mismo día.
+
+**Rutas del registro**: el registro de operaciones de Sodimac (FECHA, PATENTE, LOCALIDAD, ID RUTA, TOTAL RUTA) se guarda en la hoja SODIMAC CL REGISTRO (recarga = reemplaza sus fechas) y se cruza con la proforma por patente y fecha, porque el ID RUTA no es el ID Viaje del TMS. La fecha de un viaje es su creación; si no calza se prueba el día anterior (creado de madrugada) y las fechas de entrega. Estados: Pagada (con ingreso y margen contra el costo), Pendiente, Fuera del periodo de la proforma y Ajuste (POSTURA, MULTA o sin ID RUTA). Además lista lo pagado sin registro y deja pistas: posible cambio de patente o fecha mal digitada.
+
+"Tarifas" guarda las hojas SODIMAC CL TARIFAS (TIPO, VIGENTE DESDE, CLAVE, VALOR) y SODIMAC CL COMUNAS (COMUNA, ZONA). Los valores iniciales salen de la proforma 38883 (sep-2026).
+
 ## Control de rutas (Google Sheets)
 Pestaña "Control de rutas". Cada botón de carga guarda la información en su hoja del Google Sheet y la app arma el control desde ahí, así que los datos quedan disponibles la próxima vez que se abra.
 

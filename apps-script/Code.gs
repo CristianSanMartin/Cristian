@@ -19,8 +19,8 @@ function libro_() {
   return nuevo;
 }
 
-// Hojas que la app lee para armar el control de rutas y la liquidación de Perú
-const HOJAS_LECTURA = ['REGISTRO', 'GEOSORT', 'VIAJES PAGADOS', 'PERU RUTAS', 'PERU TARIFAS', 'PERU DISTRITOS', 'PERU FERIADOS', 'PERU AJUSTES', 'PERU MOVIMIENTOS', 'PERU CONDUCTORES', 'PERU QUINCENAS', 'PERU COSTOS FIJOS', 'PERU FACTURAS', 'PERU REGISTRO'];
+// Hojas que la app lee para armar el control de rutas, la liquidación de Perú y las tarifas de Sodimac Chile
+const HOJAS_LECTURA = ['REGISTRO', 'GEOSORT', 'VIAJES PAGADOS', 'PERU RUTAS', 'PERU TARIFAS', 'PERU DISTRITOS', 'PERU FERIADOS', 'PERU AJUSTES', 'PERU MOVIMIENTOS', 'PERU CONDUCTORES', 'PERU QUINCENAS', 'PERU COSTOS FIJOS', 'PERU FACTURAS', 'PERU REGISTRO', 'SODIMAC CL TARIFAS', 'SODIMAC CL COMUNAS', 'SODIMAC CL REGISTRO'];
 
 function norm_(v) {
   return String(v == null ? '' : v).trim().normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
