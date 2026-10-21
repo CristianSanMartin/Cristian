@@ -462,7 +462,8 @@ test("venta por monto, Finanzas y migración de la caja diaria", { skip }, async
     const panel = page.locator("#nueva-venta");
     await panel.locator('[data-carrito-campo$="|categoria"]').selectOption("Torneo");
     await panel.locator('[data-carrito-campo$="|descripcion"]').fill("Torneo martes");
-    await panel.locator('[data-carrito-campo$="|monto"]').fill("12000");
+    await panel.locator('[data-carrito-campo$="|monto"]').fill("6000");
+    await panel.locator('[data-carrito-campo$="|cantidad"]').fill("2");
     assert.match(await panel.locator("[data-nv-totales]").textContent(), /\$12\.000/);
     await panel.locator('select[name="medioPago"]').selectOption("efectivo");
     await panel.locator('button[type="submit"]').click();

@@ -95,14 +95,16 @@
     let descuento = 0;
     form.querySelector('[data-carrito]').innerHTML = carrito.length ? carrito.map((x, i) => {
       if (x.porMonto) {
-        const monto = Number(x.monto) || 0;
+        // Cantidad × precio unitario (ej. 3 bebidas a $1.500).
+        const cant = Number(x.cantidad == null ? 1 : x.cantidad) || 0;
+        const monto = (Number(x.monto) || 0) * cant;
         const g = monto / (1 + iva());
         total += monto;
         ganancia += g;
         return '<tr><td><div class="field-row"><select data-carrito-campo="' + i + '|categoria" aria-label="Categoría">' + GS.options(data().catalogos.categoriasVenta.filter((c) => c !== 'Ajuste'), x.categoria) + '</select>' +
           '<input data-carrito-campo="' + i + '|descripcion" value="' + esc(x.descripcion) + '" placeholder="Detalle (opcional)" aria-label="Detalle"></div></td>' +
-          '<td class="right cell-dim">—</td><td class="right cell-dim">por monto</td>' +
-          '<td class="right"><input class="qty-input price-input" type="number" min="1" step="1" data-carrito-campo="' + i + '|monto" value="' + esc(x.monto) + '" placeholder="Monto" aria-label="Monto"></td>' +
+          '<td class="right"><input class="qty-input" style="width:64px" type="number" min="1" step="1" data-carrito-campo="' + i + '|cantidad" value="' + esc(x.cantidad == null ? 1 : x.cantidad) + '" aria-label="Cantidad"></td><td class="right cell-dim">por monto</td>' +
+          '<td class="right"><input class="qty-input price-input" type="number" min="1" step="1" data-carrito-campo="' + i + '|monto" value="' + esc(x.monto) + '" placeholder="Precio" aria-label="Precio unidad"></td>' +
           '<td class="cell-num right">' + fmt.money(monto) + '</td>' +
           '<td class="cell-num right ' + signo(g) + '">' + fmt.money(g) + '<div class="cell-dim">sin costo de inventario</div></td>' +
           '<td><div class="row-actions">' + GS.iconBtn('quitarDelCarrito', String(i), 'trash', 'Quitar', 'danger') + '</div></td></tr>';
@@ -184,7 +186,7 @@
         fecha: v.fecha, cliente: v.cliente, canal: v.canal, evento: v.evento, medioPago: v.medioPago, boleta: v.boleta,
         pagada: v.pagada, abono: v.abono,
         lineas: carrito.map((x) => (x.porMonto
-          ? { categoria: x.categoria, descripcion: x.descripcion, monto: x.monto }
+          ? { categoria: x.categoria, descripcion: x.descripcion, monto: (Number(x.monto) || 0) * (Number(x.cantidad == null ? 1 : x.cantidad) || 0), cantidad: x.cantidad == null ? 1 : x.cantidad }
           : { productoId: x.productoId, cantidad: x.cantidad, precio: x.precio, loteId: x.loteId || '' })),
       });
       GS.state.data = r.data;
@@ -205,7 +207,7 @@
     conectarVenta(cont);
   };
   const remontar = () => GS.montarVenta(document.getElementById('inv-venta'));
-  GS.enCarrito = () => carrito.reduce((t, x) => t + (Number(x.cantidad) || 0), 0);
+  GS.enCarrito = () => carrito.reduce((t, x) => t + (x.porMonto ? 0 : Number(x.cantidad) || 0), 0);
 
   /** Agrega un producto al carrito de la nueva venta (desde Inventario). */
   GS.agregarAVenta = (productoId, n, loteId) => {
@@ -221,7 +223,7 @@
   };
   /** Línea por monto (singles, torneo, bazar…): no descuenta inventario. Abre el panel si estaba cerrado. */
   GS.actions.agregarMontoVenta = (categoria) => {
-    carrito.push({ porMonto: true, categoria: categoria || 'Singles', descripcion: '', monto: '' });
+    carrito.push({ porMonto: true, categoria: categoria || 'Singles', descripcion: '', monto: '', cantidad: 1 });
     remontar();
     const inputs = document.querySelectorAll('[data-carrito-campo$="|monto"]');
     if (inputs.length) { inputs[inputs.length - 1].focus(); inputs[inputs.length - 1].scrollIntoView({ block: 'center' }); }
@@ -796,7 +798,7 @@
       const deudores = data().clientes.filter((c) => c.deuda > 0);
       document.getElementById('cl-resumen').innerHTML = deudores.length
         ? '<div class="notice">' + GS.icon('money') + ' <strong>' + deudores.length + (deudores.length === 1 ? ' cliente debe' : ' clientes deben') + ' ' + fmt.money(deudores.reduce((t, c) => t + c.deuda, 0)) + '</strong>: ' +
-          deudores.map((c) => esc(c.nombre) + ' (' + fmt.money(c.deuda) + ')').join(', ') + '.</div>'
+          deudores.map((c) => esc(c.nombre) + ' (' + fmt.money(c.deuda) + ')').join(', ') + '. <a href="#" data-action="irCuentasPorCobrar">Ver cuentas por cobrar →</a></div>'
         : '';
     },
   };
