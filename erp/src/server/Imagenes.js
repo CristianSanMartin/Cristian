@@ -11,6 +11,7 @@ const Imagenes = {
   NOMBRE_CARPETA: 'GS Prime ERP · Imágenes',
   TIPOS: { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp' },
   MAX_BYTES: 3 * 1024 * 1024,
+  MAX_PDF: 5 * 1024 * 1024,
 
   carpeta() {
     const id = PropertiesService.getScriptProperties().getProperty('CARPETA_IMAGENES');
@@ -72,5 +73,42 @@ const Imagenes = {
       console.error('No se pudo compartir la imagen por enlace: ' + e);
     }
     return 'drive:' + archivo.getId();
+  },
+
+  /** Valida un PDF que llega del navegador ({ base64, mime }). */
+  validarPdf(arch) {
+    if (!arch || !arch.base64) throw new AppError('Elige el archivo PDF.');
+    if (String(arch.mime || '') !== 'application/pdf') throw new AppError('El comprobante debe ser un PDF.');
+    const base64 = String(arch.base64).replace(/^data:[^,]*,/, '');
+    if (base64.length * 0.75 > Imagenes.MAX_PDF) throw new AppError('El PDF es muy pesado (máximo 5 MB).');
+    return base64;
+  },
+
+  /** Guarda un PDF en la misma carpeta de Drive (solo lo ven quienes tienen acceso a ella) y devuelve "drive:<id>". */
+  subirPdf(base64, nombre) {
+    const blob = Utilities.newBlob(Utilities.base64Decode(base64), 'application/pdf',
+      String(nombre || 'comprobante').replace(/[\\/:*?"<>|]+/g, ' ').slice(0, 120) + '.pdf');
+    return 'drive:' + Imagenes.carpeta().createFile(blob).getId();
+  },
+
+  /** Lee un archivo guardado ("drive:<id>") para mostrarlo en el navegador. */
+  leer(ref) {
+    const id = String(ref).replace(/^drive:/, '');
+    let archivo;
+    try {
+      archivo = DriveApp.getFileById(id);
+    } catch (e) {
+      throw new AppError('No se encontró el archivo en Drive (puede que lo hayan borrado o que no tengas acceso).');
+    }
+    return { nombre: archivo.getName(), base64: Utilities.base64Encode(archivo.getBlob().getBytes()), url: 'https://drive.google.com/file/d/' + id + '/view' };
+  },
+
+  /** Manda a la papelera de Drive un archivo que se reemplazó o quitó (si falla, queda en la carpeta). */
+  papelera(ref) {
+    try {
+      DriveApp.getFileById(String(ref).replace(/^drive:/, '')).setTrashed(true);
+    } catch (e) {
+      console.error('No se pudo mandar a la papelera ' + ref + ': ' + e);
+    }
   },
 };

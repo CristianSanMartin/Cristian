@@ -89,6 +89,8 @@ function rutas_() {
     anularMovimiento: { rol: 'admin', write: true, fn: Finanzas.anular },
     movimientoACobroVenta: { rol: 'admin', write: true, fn: Finanzas.aCobroVenta },
     movimientoAPagoFactura: { rol: 'admin', write: true, fn: Finanzas.aPagoFactura },
+    comprobanteMovimiento: { rol: 'operador', write: true, fn: Finanzas.guardarComprobante },
+    verComprobante: { rol: 'operador', fn: Finanzas.verComprobante },
     iniciarToma: { rol: 'operador', write: true, fn: Tomas.iniciar },
     guardarToma: { rol: 'operador', write: true, fn: Tomas.guardar },
     cerrarToma: { rol: 'admin', write: true, fn: Tomas.cerrar },

@@ -170,6 +170,7 @@ var createGasFake = function (opts) {
         });
       },
       base64Decode: function (b64) { return String(b64); },
+      base64Encode: function (bytes) { return String(bytes); },
       newBlob: function (bytes, mime, name) { return { bytes: bytes, mime: mime, name: name }; },
       formatDate: function (date, tz, fmt) {
         var parts = {};
@@ -206,6 +207,14 @@ var createGasFake = function (opts) {
               state.files[fid] = { folder: folder.getId(), name: name, copyOf: id, created: new Date().toISOString(), sheets: JSON.parse(JSON.stringify(state.sheets.map(function (x) { return { name: x.name, rows: x.values.length }; }))) };
               return { getId: function () { return fid; } };
             },
+          };
+        }
+        var f = state.files[id];
+        if (f && !f.trashed) {
+          return {
+            getId: function () { return id; }, getName: function () { return f.name; },
+            getBlob: function () { return { getBytes: function () { return f.base64; } }; },
+            setTrashed: function (v) { f.trashed = v; },
           };
         }
         throw new Error('Archivo no encontrado: ' + id);

@@ -15,7 +15,7 @@
 
 const APP = {
   nombre: 'GS Prime ERP',
-  version: '2.21.7',
+  version: '2.22.0',
   tz: 'America/Santiago',
   iva: 0.19,
 };
@@ -121,6 +121,8 @@ const SCHEMA = {
       id: 's', fecha: 'd', tipo: 's', categoria: 's', subcategoria: 's', monto: 'n', cuenta: 's', referencia: 's', notas: 's', anulado: 'b',
       // IVA incluido en el monto de un egreso con factura (crédito fiscal). 0 = boleta o sin documento.
       iva: 'n',
+      // Comprobante en PDF guardado en Drive ("drive:<id>"), por ejemplo el del pago al SII.
+      comprobante: 's',
     }, AUDIT_COLS),
   },
   /** Zona de migración de la caja diaria: una fila por movimiento del Excel. */

@@ -1239,6 +1239,23 @@ test("ventas por monto y movimientos de Finanzas", () => {
   assert.deepEqual([m2.monto, m2.subcategoria, m2.anulado, m2.cuentaLabel, m2.categoriaLabel], [310000, "Arriendo octubre", true, "Banco", "GAV"]);
 });
 
+test("comprobante en PDF de un pago al SII: subir, ver, reemplazar y quitar", () => {
+  const s = createServer();
+  const mv = s.ok("guardarMovimiento", { fecha: "2026-10-06", tipo: "egreso", categoria: "sii", subcategoria: "F29 septiembre", monto: 120000, cuenta: "banco" }).result;
+  assert.match(errorDe(s.call("comprobanteMovimiento", { id: mv.id, archivo: { mime: "image/png", base64: "AAAA" } })), /PDF/);
+  assert.match(errorDe(s.call("verComprobante", { id: mv.id })), /no tiene comprobante/);
+  const r = s.ok("comprobanteMovimiento", { id: mv.id, archivo: { mime: "application/pdf", base64: "JVBERi0xLjQK" } });
+  const ref = r.data.movimientos.find(m => m.id === mv.id).comprobante;
+  assert.match(ref, /^drive:/);
+  const v = s.ok("verComprobante", { id: mv.id }).data;
+  assert.equal(v.base64, "JVBERi0xLjQK");
+  assert.match(v.nombre, /^Comprobante MOV-00001 · Pago SII · F29 septiembre\.pdf$/);
+  s.ok("comprobanteMovimiento", { id: mv.id, archivo: { mime: "application/pdf", base64: "JVBERi0xLjcK" } });
+  assert.equal(s.ok("verComprobante", { id: mv.id }).data.base64, "JVBERi0xLjcK", "el nuevo reemplaza al anterior");
+  s.ok("comprobanteMovimiento", { id: mv.id, quitar: true });
+  assert.equal(s.ok("bootstrap").data.movimientos.find(m => m.id === mv.id).comprobante, "");
+});
+
 test("salida sin venta (uso interno): rebaja stock al costo del lote, sin OC, y se anula", () => {
   const s = createServer();
   const { prods } = conInventario(s);

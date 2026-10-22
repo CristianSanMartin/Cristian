@@ -815,3 +815,43 @@ test("dashboard: facturas por pagar se despliegan y se abonan desde ahí", { ski
     await browser.close();
   }
 });
+
+/** PDF mínimo de una página con un texto (para probar el comprobante). */
+function pdfDePrueba(texto) {
+  const st = "BT /F1 24 Tf 72 760 Td (" + texto + ") Tj ET";
+  const objs = ["<< /Type /Catalog /Pages 2 0 R >>", "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+    "<< /Length " + st.length + " >>\nstream\n" + st + "\nendstream", "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"];
+  let out = "%PDF-1.4\n";
+  const offs = objs.map((o, i) => { const at = out.length; out += (i + 1) + " 0 obj\n" + o + "\nendobj\n"; return at; });
+  const xref = out.length;
+  out += "xref\n0 " + (objs.length + 1) + "\n0000000000 65535 f \n" + offs.map((o) => String(o).padStart(10, "0") + " 00000 n \n").join("");
+  return Buffer.from(out + "trailer\n<< /Size " + (objs.length + 1) + " /Root 1 0 R >>\nstartxref\n" + xref + "\n%%EOF\n", "latin1");
+}
+
+test("Finanzas: comprobante en PDF del pago al SII (subir, ver y reabrir)", { skip }, async () => {
+  const browser = await chromium.launch();
+  try {
+    const { page, errores } = await abrir(browser);
+    // pdf.js viene de cdnjs: en la prueba se sirve el mismo paquete desde node_modules (sin red).
+    const pdfjs = path.join(ERP, "..", "node_modules", "pdfjs-dist", "build");
+    await page.route("https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/*", (r) =>
+      r.fulfill({ path: path.join(pdfjs, r.request().url().split("/").pop()), contentType: "application/javascript" }));
+    await page.click('[data-nav="finanzas"]');
+    const fila = page.locator("#mov-tbody tr", { hasText: "Pago SII" }).first();
+    assert.equal(await fila.locator('[data-action="movimientoAPagoFactura"]').count(), 0, "el pago al SII no se asocia a una factura");
+    await fila.locator('[data-action="comprobanteMovimiento"]').click();
+    await modal(page).locator('input[name="pdf"]').setInputFiles({ name: "f29.pdf", mimeType: "application/pdf", buffer: pdfDePrueba("Comprobante F29") });
+    await modal(page).locator(".pdf-visor canvas").waitFor();
+    await modal(page).locator('button[type="submit"]').click();
+    await toast(page, /Comprobante guardado en MOV-\d{5}/);
+    await cerrado(page);
+    const ver = page.locator('#mov-tbody [data-action="comprobanteMovimiento"]', { hasText: "Ver PDF" }).first();
+    await ver.click();
+    await modal(page).locator(".pdf-visor canvas").waitFor();
+    assert.match(await modal(page).locator("[data-pdf-nombre]").textContent(), /Comprobante MOV-\d{5} · Pago SII/);
+    assert.deepEqual(errores, []);
+  } finally {
+    await browser.close();
+  }
+});

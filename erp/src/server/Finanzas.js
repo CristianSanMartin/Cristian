@@ -91,6 +91,27 @@ const Finanzas = {
     return m;
   },
 
+  /**
+   * Sube (o reemplaza) el comprobante en PDF de un movimiento, por ejemplo el del pago al SII.
+   * p: { id, archivo: { base64, mime } } o { id, quitar: true }. El archivo anterior va a la papelera de Drive.
+   */
+  guardarComprobante(p, user) {
+    const mov = Finanzas.requerir(p.id);
+    if (mov.anulado) throw new AppError('El movimiento ' + mov.id + ' está anulado.');
+    const nuevo = p.quitar ? '' : Imagenes.subirPdf(Imagenes.validarPdf(p.archivo), 'Comprobante ' + mov.id + ' · ' + ((CATEGORIAS_MOVIMIENTO[mov.tipo] || {})[mov.categoria] || mov.categoria) + (mov.subcategoria ? ' · ' + mov.subcategoria : ''));
+    if (mov.comprobante) Imagenes.papelera(mov.comprobante);
+    Db.update('Finanzas', mov.id, Object.assign({ comprobante: nuevo }, Util.sello(user)));
+    Audit.log(user, p.quitar ? 'quitar comprobante' : 'subir comprobante', 'Movimiento', mov.id, {});
+    return { id: mov.id, comprobante: nuevo };
+  },
+
+  /** Devuelve el PDF del comprobante para mostrarlo en la pantalla: { nombre, base64, url }. */
+  verComprobante(p) {
+    const mov = Finanzas.requerir(p.id);
+    if (!mov.comprobante) throw new AppError('El movimiento ' + mov.id + ' no tiene comprobante.');
+    return Imagenes.leer(mov.comprobante);
+  },
+
   vista() {
     return Db.all('Finanzas').map((m) => Object.assign(m, {
       categoriaLabel: (CATEGORIAS_MOVIMIENTO[m.tipo] || {})[m.categoria] || m.categoria,
