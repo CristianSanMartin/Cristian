@@ -693,7 +693,10 @@ const TDF = `<?xml version="1.0" encoding="UTF-8"?>
     <player userid="9002"><firstname>Beto</firstname><lastname>Díaz</lastname></player>
     <player userid="9003"><firstname>Carla</firstname><lastname>.</lastname></player>
   </players>
-  <pods><pod><rounds><round number="1"></round><round number="2"></round></rounds></pod></pods>
+  <pods><pod><rounds>
+    <round number="1"><matches><match outcome="1"><player1 userid="9002"/><player2 userid="9001"/></match><match outcome="5"><player userid="9003"/></match></matches></round>
+    <round number="2"><matches><match outcome="2"><player1 userid="9003"/><player2 userid="9002"/></match><match outcome="5"><player userid="9001"/></match></matches></round>
+  </rounds></pod></pods>
   <standings><pod category="2" type="finished"><player id="9002" place="1" /><player id="9001" place="2" /><player id="9003" place="3" /></pod></standings>
 </tournament>`;
 
@@ -707,12 +710,16 @@ test("torneos: subir el .tdf, cuadrar clientes, cobrar juntos en la caja, premio
     await m.locator('input[name="nombre"]').waitFor();
     assert.equal(await m.locator('input[name="fecha"]').inputValue(), "2030-11-01");
     // Ordenados por lugar; Ana Rojas ya es cliente (por nombre), los demás son nuevos.
-    assert.match(await m.locator("tbody").textContent(), /1Beto Díaz9002.*2Ana Rojas9001.*~ nombre.*3Carla9003/s);
+    // Récord desde las partidas (el bye cuenta como victoria).
+    assert.match(await m.locator("tbody").textContent(), /1Beto Díaz90022-0-0.*2Ana Rojas90011-1-0.*~ nombre.*3Carla90031-1-0/s);
     await m.locator('input[name="inscripcion"]').fill("8000");
     await m.locator(".modal-head h3").click();
     await m.locator('button[type="submit"]').click();
     await toast(page, /3 jugadores, 3 inscripciones por cobrar/);
     await cerrado(page);
+    const creado = await page.evaluate(() => GS.state.data.torneos.find((t) => t.nombre === "Chill 01-11"));
+    assert.match(creado.tdf, /^drive:/, "el .tdf queda guardado");
+    assert.deepEqual(creado.jugadores.map((j) => [j.nombrePila, j.apellido, j.w, j.l, j.t]), [["Beto", "Díaz", 2, 0, 0], ["Ana", "Rojas", 1, 1, 0], ["Carla", "", 1, 1, 0]]);
     const fila = page.locator("#view tr.fila-compra", { hasText: "Chill 01-11" });
     assert.match(await fila.textContent(), /3.*\$24\.000.*\$24\.000/s);
     assert.equal(await page.locator(".detalle-row .badge", { hasText: "Por cobrar" }).count(), 3);
@@ -850,6 +857,45 @@ test("Finanzas: comprobante en PDF del pago al SII (subir, ver y reabrir)", { sk
     await ver.click();
     await modal(page).locator(".pdf-visor canvas").waitFor();
     assert.match(await modal(page).locator("[data-pdf-nombre]").textContent(), /Comprobante MOV-\d{5} · Pago SII/);
+    assert.deepEqual(errores, []);
+  } finally {
+    await browser.close();
+  }
+});
+
+test("Story Top 5: Pokémon con imagen, vista previa, guardar y descargar el PNG", { skip }, async () => {
+  const browser = await chromium.launch();
+  try {
+    const { page, errores } = await abrir(browser);
+    await page.click('[data-nav="story"]');
+    await page.waitForSelector("#story-out[src^='data:image/png']");
+    // El torneo de ejemplo trae el Top 5 con récord del .tdf y Pokémon elegidos.
+    assert.equal(await page.inputValue('[data-story="0|nombrePila"]'), "Martín");
+    assert.equal(await page.inputValue('[data-story="0|w"]'), "4");
+    assert.equal(await page.inputValue('[data-story="0|principal"]'), "Charizard");
+    // Subir una imagen a Charizard: se reduce, se guarda en "Drive" y la Story la dibuja (pide solo esa imagen).
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFklEQVR4nGNgYGD4z8DAwMDAwMDAAAANAAH/1zLbAAAAAElFTkSuQmCC", "base64");
+    const charizard = page.locator(".story-poke", { hasText: "Charizard" });
+    const [elegir] = await Promise.all([page.waitForEvent("filechooser"), charizard.locator('[data-action="storyPokeImagen"]').click()]);
+    await elegir.setFiles({ name: "charizard.png", mimeType: "image/png", buffer: png });
+    await toast(page, /Imagen guardada para Charizard/);
+    await page.waitForSelector('.story-poke:has-text("Charizard") .story-thumb img');
+    // Cambiar el principal del 5º y el nombre que se muestra: queda marcado como cambio sin guardar.
+    await page.selectOption('[data-story="4|principal"]', "Lucario");
+    await page.selectOption('[data-story-modo="nombre"]', "initial");
+    await page.waitForSelector("[data-story-estado] .text-gold");
+    await page.click('[data-action="storyGuardar"]');
+    await toast(page, /Story guardada en el torneo/);
+    const t = await page.evaluate(() => GS.state.data.torneos.find((x) => x.nombre === "Torneo Chill"));
+    assert.deepEqual(t.jugadores.slice(0, 5).map((j) => j.principal), ["Charizard", "Dragapult", "Gardevoir", "Raging Bolt", "Lucario"]);
+    // Descargar el PNG.
+    const [descarga] = await Promise.all([page.waitForEvent("download"), page.click('[data-action="storyDescargar"]')]);
+    assert.match(descarga.suggestedFilename(), /^top5-torneo-chill-\d{4}-\d{2}-\d{2}\.png$/);
+    // Agregar un Pokémon nuevo a la biblioteca.
+    await page.fill("[data-story-nuevo]", "Kyogre");
+    await page.click('[data-action="storyPokeAgregar"]');
+    await toast(page, /Kyogre agregado/);
+    await page.waitForSelector('.story-poke:has-text("Kyogre")');
     assert.deepEqual(errores, []);
   } finally {
     await browser.close();

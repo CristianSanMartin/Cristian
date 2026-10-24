@@ -15,7 +15,7 @@
 
 const APP = {
   nombre: 'GS Prime ERP',
-  version: '2.22.0',
+  version: '2.23.0',
   tz: 'America/Santiago',
   iva: 0.19,
 };
@@ -221,6 +221,9 @@ const SCHEMA = {
       sobres: 'n', sobresMonto: 'n',
       // Sobres de participación (uno por jugador, comprados informalmente): cantidad y total al precio torneo.
       participacion: 'n', participacionMonto: 'n',
+      // Story del Top 5 y rankings: categoría (Interno, League Challenge, Cup), temporada y tipo de evento que
+      // escribe el usuario, y el .tdf original guardado en Drive ("drive:<id>") para poder recalcular.
+      categoria: 's', temporada: 's', tipoEvento: 's', tdf: 's',
     }, AUDIT_COLS),
   },
   /** Jugador de un torneo (TJ-000001): Player ID de Play! Pokémon, cliente, lugar final y si juega sin costo. */
@@ -228,7 +231,14 @@ const SCHEMA = {
     key: 'id',
     cols: Object.assign({
       id: 's', torneoId: 's', popId: 's', nombre: 's', clienteId: 's', lugar: 'n', sinCosto: 'b',
+      // Nombre y apellido como vienen en el .tdf, récord (victorias, derrotas, empates) y Pokémon del mazo.
+      nombrePila: 's', apellido: 's', w: 'n', l: 'n', t: 'n', principal: 's', secundario: 's',
     }, AUDIT_COLS),
+  },
+  /** Biblioteca de Pokémon para la Story del Top 5 (POK-0001): nombre e imagen en Drive ("drive:<id>"). */
+  Pokemon: {
+    key: 'id',
+    cols: Object.assign({ id: 's', nombre: 's', imagen: 's' }, AUDIT_COLS),
   },
   Auditoria: {
     key: null,
@@ -259,6 +269,10 @@ const EGRESOS_CAJA = {
 };
 /** Formatos de torneo sugeridos (el valor de inscripción por defecto sale del último torneo de ese formato). */
 const FORMATOS_TORNEO = ['Torneo The Chill'];
+/** Categorías de torneo (Story del Top 5 y rankings). */
+const CATEGORIAS_TORNEO = ['Interno', 'League Challenge', 'Cup'];
+/** Pokémon con los que parte la biblioteca de la Story (sin imagen: se suben desde la pantalla). */
+const POKEMON_INICIALES = ['Archeops', 'Charizard', 'Dragapult', 'Dusknoir', 'Gardevoir', 'Gholdengo', 'Lucario', 'Lugia', 'Mewtwo', 'Ogerpon', 'Pidgeot', 'Pikachu', 'Raging Bolt', 'Snorlax'];
 /** PVP de un sobre suelto (premio de torneo sin control de stock). */
 const PRECIO_SOBRE_SUELTO = 6000;
 /** Precio torneo de un sobre de participación (se entrega uno a cada jugador). */

@@ -55,6 +55,7 @@ const Torneos = {
     const inscripcion = Util.entero(p.inscripcion, 'El valor de la inscripción', { requerido: true, min: 1 });
     const entrada = Array.isArray(p.jugadores) ? p.jugadores : [];
     if (!entrada.length) throw new AppError('El torneo no tiene jugadores.');
+    const story = Torneos._datosStory(p);
     if (Db.all('Torneos').some((t) => t.fecha === fecha && Util.normalizar(t.nombre) === Util.normalizar(nombre))) {
       throw new AppError('Ya existe el torneo "' + nombre + '" del ' + fecha + '.');
     }
@@ -64,20 +65,24 @@ const Torneos = {
       const popId = Util.texto(j.popId, 'El Player ID de ' + nom, { max: 20 });
       if (popId && ids[popId]) throw new AppError('El Player ID ' + popId + ' está repetido.');
       if (popId) ids[popId] = true;
-      return { popId: popId, nombre: nom, lugar: Util.entero(j.lugar, 'El lugar de ' + nom, { min: 0 }), clienteId: j.clienteId || '', cliente: j.cliente || '', sinCosto: j.sinCosto === true };
+      return Object.assign({ popId: popId, nombre: nom, lugar: Util.entero(j.lugar, 'El lugar de ' + nom, { min: 0 }), clienteId: j.clienteId || '', cliente: j.cliente || '', sinCosto: j.sinCosto === true },
+        Torneos._record(j, nom));
     });
+    const tdf = Torneos._validarTdf(p.tdf);
     const caja = Cajas.abrir({ fecha: fecha }, user);
     const torneo = Object.assign({
       id: Util.siguienteId('TRN', 4), fecha: fecha, nombre: nombre, formato: formato, inscripcion: inscripcion, cajaId: caja.id,
       ciudad: Util.texto(p.ciudad, 'La ciudad', { max: 60 }), rondas: Util.entero(p.rondas, 'Las rondas', { min: 0 }),
       juez: 0, juezTicket: '', notas: Util.texto(p.notas, 'Las notas', { max: 300 }),
-    }, Util.sello(user, true));
+    }, story, Util.sello(user, true));
     // Primero los clientes (si algo falla, aún no hay torneo ni tickets).
     const clientes = jugadores.map((j) => Torneos._cliente(j, user));
+    if (tdf) torneo.tdf = Torneos._subirTdf(tdf, torneo);
     Db.insert('Torneos', torneo);
     const tjIds = Util.reservarIds('TJ', 6, jugadores.length);
     const filas = jugadores.map((j, i) => Object.assign({
       id: tjIds[i], torneoId: torneo.id, popId: j.popId, nombre: j.nombre, clienteId: clientes[i].id, lugar: j.lugar, sinCosto: j.sinCosto,
+      nombrePila: j.nombrePila, apellido: j.apellido, w: j.w, l: j.l, t: j.t, principal: '', secundario: '',
     }, Util.sello(user, true)));
     Db.insertMany('Torneo_Jugadores', filas);
     let tickets = 0;
@@ -93,6 +98,8 @@ const Torneos = {
       formato: Util.texto(p.formato, 'El formato', { requerido: true, max: 60 }),
       notas: Util.texto(p.notas, 'Las notas', { max: 300 }),
     };
+    if (p.categoria !== undefined) datos.categoria = Torneos._datosStory(p).categoria;
+    if (p.temporada !== undefined) datos.temporada = Torneos._datosStory(p).temporada;
     const nuevo = Db.update('Torneos', t.id, Object.assign(datos, Util.sello(user)));
     Audit.log(user, 'editar', 'Torneo', t.id, Audit.diff(t, nuevo));
     return { id: t.id };
@@ -313,6 +320,93 @@ const Torneos = {
    * Torneos con jugadores (estado de pago de cada inscripción), premios, juez y resultado.
    * ventas: la vista de Ventas (para saber si una inscripción que ya pasó a Ventas quedó pagada o debe).
    */
+  /* ---------- Story del Top 5 ---------- */
+
+  /** Categoría, temporada y tipo de evento (los escribe el usuario; la categoría sale de la lista). */
+  _datosStory(p) {
+    return {
+      categoria: p.categoria ? Util.opcion(p.categoria, 'La categoría', CATEGORIAS_TORNEO) : '',
+      temporada: Util.texto(p.temporada, 'La temporada', { max: 60 }),
+      tipoEvento: Util.texto(p.tipoEvento, 'El tipo de evento', { max: 40 }),
+    };
+  },
+
+  /** Nombre y apellido del .tdf y récord del jugador (victorias, derrotas, empates). */
+  _record(j, nombre) {
+    return {
+      nombrePila: Util.texto(j.nombrePila, 'El nombre de ' + nombre, { max: 60 }),
+      apellido: Util.texto(j.apellido, 'El apellido de ' + nombre, { max: 60 }),
+      w: Util.entero(j.w, 'Las victorias de ' + nombre, { min: 0 }),
+      l: Util.entero(j.l, 'Las derrotas de ' + nombre, { min: 0 }),
+      t: Util.entero(j.t, 'Los empates de ' + nombre, { min: 0 }),
+    };
+  },
+
+  /** El .tdf como texto ({ nombre, texto }); null si no viene. */
+  _validarTdf(tdf) {
+    if (!tdf || !tdf.texto) return null;
+    const texto = String(tdf.texto);
+    if (texto.length > 2 * 1024 * 1024) throw new AppError('El archivo .tdf es muy pesado (máximo 2 MB).');
+    if (!/<tournament[\s>]/.test(texto)) throw new AppError('El archivo no parece un torneo de TOM (.tdf).');
+    return { nombre: Util.texto(tdf.nombre, 'El nombre del archivo', { max: 120 }) || 'torneo.tdf', texto: texto };
+  },
+
+  _subirTdf(tdf, torneo) {
+    return Imagenes.subirTexto(tdf.texto, 'application/xml', torneo.id + ' · ' + torneo.fecha + ' · ' + tdf.nombre.replace(/\.tdf$/i, '') + '.tdf');
+  },
+
+  /**
+   * Sube el .tdf de un torneo ya creado (ej. de antes de guardar los archivos): lo guarda en Drive y
+   * completa nombre, apellido, récord y lugar de cada jugador por su Player ID.
+   * p: { id, tdf: { nombre, texto }, jugadores: [{ popId, nombrePila, apellido, w, l, t, lugar }] }
+   */
+  subirTdf(p, user) {
+    const t = Torneos.requerir(p.id);
+    const tdf = Torneos._validarTdf(p.tdf);
+    if (!tdf) throw new AppError('Elige el archivo .tdf del torneo.');
+    const porId = {};
+    (Array.isArray(p.jugadores) ? p.jugadores : []).forEach((j) => { if (j.popId) porId[String(j.popId).trim()] = j; });
+    const mios = Db.all('Torneo_Jugadores').filter((j) => j.torneoId === t.id);
+    const encontrados = mios.filter((j) => porId[j.popId]);
+    if (!encontrados.length) throw new AppError('Ningún jugador del archivo coincide con los de ' + t.id + ' (por Player ID). ¿Es el .tdf de este torneo?');
+    Db.actualizarVarios('Torneo_Jugadores', encontrados.reduce((o, j) => {
+      const x = porId[j.popId];
+      o[j.id] = Object.assign(Torneos._record(x, j.nombre), { lugar: Util.entero(x.lugar, 'El lugar de ' + j.nombre, { min: 0 }) || j.lugar }, Util.sello(user));
+      return o;
+    }, {}));
+    const ref = Torneos._subirTdf(tdf, t);
+    if (t.tdf) Imagenes.papelera(t.tdf);
+    Db.update('Torneos', t.id, Object.assign({ tdf: ref }, Util.sello(user)));
+    Audit.log(user, 'subir tdf', 'Torneo', t.id, { jugadores: encontrados.length, sinCoincidir: mios.length - encontrados.length });
+    return { id: t.id, jugadores: encontrados.length, sinCoincidir: mios.length - encontrados.length };
+  },
+
+  /**
+   * Guarda lo elegido en la Story: datos del evento y, del Top 5, nombre, récord y Pokémon de cada jugador.
+   * p: { id, tipoEvento, temporada, categoria, jugadores: [{ id, nombrePila, apellido, w, l, t, principal, secundario }] }
+   */
+  guardarStory(p, user) {
+    const t = Torneos.requerir(p.id);
+    const pokes = {};
+    Db.all('Pokemon').forEach((x) => { pokes[Util.normalizar(x.nombre)] = x.nombre; });
+    const poke = (v, j) => {
+      const n = String(v || '').trim();
+      if (!n) return '';
+      if (!pokes[Util.normalizar(n)]) throw new AppError(n + ' (' + j.nombre + ') no está en la biblioteca de Pokémon.');
+      return pokes[Util.normalizar(n)];
+    };
+    const cambios = {};
+    (Array.isArray(p.jugadores) ? p.jugadores : []).forEach((x) => {
+      const j = Db.get('Torneo_Jugadores', String(x.id || ''));
+      if (!j || j.torneoId !== t.id) throw new AppError('El jugador ' + (x.id || '') + ' no es de este torneo.');
+      cambios[j.id] = Object.assign(Torneos._record(x, j.nombre), { principal: poke(x.principal, j), secundario: poke(x.secundario, j) }, Util.sello(user));
+    });
+    if (Object.keys(cambios).length) Db.actualizarVarios('Torneo_Jugadores', cambios);
+    Db.update('Torneos', t.id, Object.assign(Torneos._datosStory(p), Util.sello(user)));
+    Audit.log(user, 'guardar story', 'Torneo', t.id, { jugadores: Object.keys(cambios).length });
+    return { id: t.id };
+  },
+
   vista(ventas, clientes) {
     const torneos = Db.all('Torneos');
     if (!torneos.length) return [];
@@ -337,7 +431,8 @@ const Torneos = {
     return torneos.map((t) => {
       const jugadores = (porTorneo[t.id] || []).map((j) => {
         const c = cli[j.clienteId];
-        const r = { id: j.id, popId: j.popId, nombre: j.nombre, lugar: j.lugar, sinCosto: j.sinCosto, clienteId: j.clienteId, cliente: c ? c.nombre : '', monto: 0, comision: 0, estado: j.sinCosto ? 'sin_costo' : 'sin_ticket', ticketId: '', ventaId: '', pagadoPor: '', debe: 0 };
+        const r = { id: j.id, popId: j.popId, nombre: j.nombre, lugar: j.lugar, sinCosto: j.sinCosto, clienteId: j.clienteId,
+          nombrePila: j.nombrePila || '', apellido: j.apellido || '', w: j.w || 0, l: j.l || 0, t: j.t || 0, principal: j.principal || '', secundario: j.secundario || '', cliente: c ? c.nombre : '', monto: 0, comision: 0, estado: j.sinCosto ? 'sin_costo' : 'sin_ticket', ticketId: '', ventaId: '', pagadoPor: '', debe: 0 };
         const e = enTicket[j.id];
         if (!e || j.sinCosto) return r;
         const tk = e.ticket;

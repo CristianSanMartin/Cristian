@@ -1690,6 +1690,56 @@ test("torneos: varios premios a la vez, todo o nada", () => {
   assert.deepEqual(pr.map(x => [x.cantidad, x.precio]).sort(), [[1, 30000], [2, 18000]]);
 });
 
+test("story del top 5: récord y .tdf guardado al crear, subir .tdf después, Pokémon y guardar la story", () => {
+  const s = createServer();
+  const lib = s.ok("bootstrap").data.pokemon;
+  assert.ok(lib.length >= 10 && lib.some(x => x.nombre === "Charizard"), "la biblioteca parte con Pokémon de ejemplo");
+  const tdf = { nombre: "chill.tdf", texto: '<?xml version="1.0"?><tournament type="2"><data><name>Chill</name></data></tournament>' };
+  const base = { nombre: "Chill 25-10", fecha: "2026-10-25", formato: "Torneo The Chill", inscripcion: 8000, categoria: "Interno", temporada: "Temporada 2026", tipoEvento: "Liga Pokémon" };
+  const jugadores = [
+    { popId: "2001", nombre: "Ana Rojas", nombrePila: "Ana", apellido: "Rojas", lugar: 1, w: 3, l: 0, t: 1 },
+    { popId: "2002", nombre: "Beto Díaz", nombrePila: "Beto", apellido: "Díaz", lugar: 2, w: 2, l: 1, t: 1 },
+  ];
+  assert.match(errorDe(s.call("crearTorneo", { ...base, categoria: "Mundial", jugadores })), /categoría no es válid/);
+  assert.match(errorDe(s.call("crearTorneo", { ...base, jugadores, tdf: { nombre: "x.tdf", texto: "hola" } })), /no parece un torneo/);
+  const r = s.ok("crearTorneo", { ...base, jugadores, tdf }).result;
+  let t = s.ok("bootstrap").data.torneos.find(x => x.id === r.id);
+  assert.deepEqual([t.categoria, t.temporada, t.tipoEvento], ["Interno", "Temporada 2026", "Liga Pokémon"]);
+  assert.match(t.tdf, /^drive:/, "el .tdf queda guardado en Drive");
+  assert.deepEqual(t.jugadores.map(j => [j.nombrePila, j.apellido, j.w, j.l, j.t]), [["Ana", "Rojas", 3, 0, 1], ["Beto", "Díaz", 2, 1, 1]]);
+
+  // Subir el .tdf de nuevo (o de un torneo antiguo): completa el récord por Player ID y reemplaza el archivo.
+  assert.match(errorDe(s.call("tdfTorneo", { id: r.id, tdf, jugadores: [{ popId: "9999", w: 1 }] })), /Ningún jugador/);
+  const anterior = t.tdf;
+  const sub = s.ok("tdfTorneo", { id: r.id, tdf, jugadores: [{ popId: "2001", nombrePila: "Ana", apellido: "Rojas", w: 4, l: 0, t: 0, lugar: 1 }] }).result;
+  assert.deepEqual([sub.jugadores, sub.sinCoincidir], [1, 1]);
+  t = s.ok("bootstrap").data.torneos.find(x => x.id === r.id);
+  assert.notEqual(t.tdf, anterior);
+  assert.deepEqual([t.jugadores[0].w, t.jugadores[0].t, t.jugadores[1].w], [4, 0, 2]);
+
+  // Biblioteca: agregar, subir imagen, leerla para el canvas, quitarla y eliminar.
+  assert.match(errorDe(s.call("agregarPokemon", { nombre: "charizard" })), /ya está/);
+  const kyo = s.ok("agregarPokemon", { nombre: "Kyogre" }).result;
+  assert.match(errorDe(s.call("imagenPokemon", { id: kyo.id, archivo: { mime: "image/gif", base64: "R0lG" } })), /JPG, PNG o WEBP/);
+  s.ok("imagenPokemon", { id: kyo.id, archivo: { mime: "image/png", base64: "iVBORw0KGgo" } });
+  assert.match(s.ok("bootstrap").data.pokemon.find(x => x.id === kyo.id).imagen, /^drive:/);
+  const imgs = s.ok("imagenesPokemon", { ids: [kyo.id, lib[0].id] }).data;
+  assert.deepEqual(Object.keys(imgs), [kyo.id], "solo vienen las que tienen imagen");
+  assert.equal(imgs[kyo.id], "data:image/png;base64,iVBORw0KGgo");
+
+  // Guardar la story: datos del evento y Pokémon del Top 5 (deben existir en la biblioteca).
+  const [ana, beto] = t.jugadores;
+  assert.match(errorDe(s.call("storyTorneo", { id: r.id, jugadores: [{ id: ana.id, principal: "Mew", w: 4 }] })), /Mew .*no está en la biblioteca/);
+  s.ok("storyTorneo", { id: r.id, tipoEvento: "Liga Pokémon", temporada: "Temporada 2027", categoria: "Cup",
+    jugadores: [{ id: ana.id, nombrePila: "Ana", apellido: "Rojas", w: 4, l: 0, t: 0, principal: "kyogre", secundario: "Charizard" }, { id: beto.id, nombrePila: "Beto", apellido: "Díaz", w: 2, l: 1, t: 1, principal: "Lugia" }] });
+  t = s.ok("bootstrap").data.torneos.find(x => x.id === r.id);
+  assert.deepEqual([t.temporada, t.categoria], ["Temporada 2027", "Cup"]);
+  assert.deepEqual(t.jugadores.map(j => [j.principal, j.secundario]), [["Kyogre", "Charizard"], ["Lugia", ""]]);
+  s.ok("imagenPokemon", { id: kyo.id, quitar: true });
+  s.ok("eliminarPokemon", { id: kyo.id });
+  assert.equal(s.ok("bootstrap").data.pokemon.some(x => x.id === kyo.id), false);
+});
+
 test("caja: líneas por monto con cantidad (bazar: 3 bebidas) pasan a la venta con su cantidad", () => {
   const s = createServer();
   const caja = s.ok("abrirCaja", { fecha: "2026-10-20" }).result;

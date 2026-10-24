@@ -387,6 +387,28 @@ Menú **Torneos**. Al terminar un torneo, TOM (Tournament Operations Manager) ex
   punto de equilibrio (jugadores necesarios para cubrir premios y juez).
 - Requiere "Instalar / actualizar hojas" (hojas nuevas `Torneos` y `Torneo_Jugadores`, columnas nuevas en
   `Salidas`).
+- Al subir el `.tdf` también se calcula el **récord** de cada jugador (victorias, derrotas, empates; el bye
+  cuenta como victoria), se eligen **categoría** (Interno, League Challenge, Cup) y **temporada**, y el archivo
+  se guarda en la carpeta de Drive del ERP para poder recalcular después.
+
+## Story Top 5
+
+Menú **Story Top 5**: arma la imagen del Top 5 de un torneo (1080 × 1920, para la Story de Instagram) con el
+diseño de GS Prime.
+
+- Se elige el torneo: nombre, apellido y récord salen de su `.tdf`. Un torneo subido antes de esta versión
+  no tiene récord: se sube su `.tdf` desde la misma pantalla (se cruza por Player ID) o se escribe en la tabla.
+- Datos del evento: tipo de evento (arriba a la izquierda), nombre del torneo en la imagen, temporada (abajo),
+  categoría y cómo se muestra el nombre (solo nombre, nombre + inicial o completo).
+- A cada jugador del Top 5 se le elige su **Pokémon principal** y, si se quiere, uno **secundario** (65/35 con
+  corte inclinado). Se ven como silueta del color de la fila o con la imagen original; sin imagen, el nombre.
+- **Biblioteca de Pokémon** (hoja `Pokemon`): cualquier operador agrega Pokémon y les sube su imagen (PNG con
+  fondo transparente funciona mejor; se reduce a 700 × 520). Se guardan en Drive para todo el equipo; la
+  pantalla trae solo las imágenes de los 5 jugadores para dibujar.
+- **Descargar PNG** (o clic derecho en la vista previa → Guardar imagen como…). **Guardar** deja el Pokémon y
+  el récord en el torneo, para los rankings de temporada.
+- Requiere "Instalar / actualizar hojas" (hoja nueva `Pokemon` con 14 Pokémon de partida, columnas nuevas en
+  `Torneos` y `Torneo_Jugadores`).
 
 ## Cuentas por cobrar
 

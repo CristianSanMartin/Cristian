@@ -21,7 +21,12 @@
 
   /* ---------- archivo .tdf de TOM ---------- */
 
-  /** Lee el XML del .tdf: nombre, fecha, ciudad, rondas y jugadores con su Player ID y lugar final. */
+  /**
+   * Lee el XML del .tdf: nombre, fecha, ciudad, rondas y jugadores con su Player ID, nombre y apellido,
+   * récord (victorias, derrotas, empates, contando el bye como victoria) y lugar final. Si el torneo no
+   * tiene el standing final, el lugar sale de los puntos (3 por victoria, 1 por empate) y luego del % de
+   * victorias de los rivales.
+   */
   function leerTdf(texto) {
     const xml = new DOMParser().parseFromString(texto, 'application/xml');
     if (xml.querySelector('parsererror') || !xml.querySelector('tournament')) throw new Error('El archivo no parece un torneo de TOM (.tdf).');
@@ -30,13 +35,38 @@
     const fecha = f.length === 3 ? f[2] + '-' + f[0].padStart(2, '0') + '-' + f[1].padStart(2, '0') : '';
     const lugar = {};
     xml.querySelectorAll('standings pod[type="finished"] player').forEach((p) => { lugar[p.getAttribute('id')] = Number(p.getAttribute('place')) || 0; });
+    const limpio = (x) => (x === '.' ? '' : x);
     const jugadores = Array.from(xml.querySelectorAll('tournament > players > player')).map((p) => {
       const id = p.getAttribute('userid') || '';
-      const nombre = [txt('firstname', p), txt('lastname', p)].filter((x) => x && x !== '.').join(' ');
-      return { popId: id, nombre: nombre || id, lugar: lugar[id] || 0 };
-    }).sort((a, b) => (a.lugar || 999) - (b.lugar || 999));
+      const nombrePila = limpio(txt('firstname', p));
+      const apellido = limpio(txt('lastname', p));
+      const nombre = [nombrePila, apellido].filter(Boolean).join(' ');
+      return { popId: id, nombre: nombre || id, nombrePila: nombrePila || nombre || id, apellido: apellido, lugar: lugar[id] || 0, w: 0, l: 0, t: 0, rivales: [] };
+    });
     if (!jugadores.length) throw new Error('El archivo no tiene jugadores.');
+    const porId = {};
+    jugadores.forEach((j) => { porId[j.popId] = j; });
+    xml.querySelectorAll('match').forEach((m) => {
+      const o = m.getAttribute('outcome');
+      const p1 = m.querySelector('player1') || m.querySelector('player');
+      const p2 = m.querySelector('player2');
+      const a = p1 && porId[p1.getAttribute('userid')];
+      const b = p2 && porId[p2.getAttribute('userid')];
+      if (o === '5') { if (a) a.w++; return; }   // bye
+      if (!a || !b) return;
+      a.rivales.push(b); b.rivales.push(a);
+      if (o === '1') { a.w++; b.l++; } else if (o === '2') { b.w++; a.l++; } else if (o === '3') { a.t++; b.t++; } else if (o === '4') { a.l++; b.l++; }
+    });
+    if (!jugadores.some((j) => j.lugar)) {
+      const pts = (j) => j.w * 3 + j.t;
+      const pct = (j) => { const g = j.w + j.l + j.t; return g ? Math.max(0.25, (j.w + j.t / 2) / g) : 0.25; };
+      const owp = (j) => (j.rivales.length ? j.rivales.reduce((s, r) => s + pct(r), 0) / j.rivales.length : 0);
+      jugadores.slice().sort((x, y) => pts(y) - pts(x) || owp(y) - owp(x)).forEach((j, i) => { j.lugar = i + 1; });
+    }
+    jugadores.forEach((j) => { delete j.rivales; });
+    jugadores.sort((a, b) => (a.lugar || 999) - (b.lugar || 999));
     return {
+      texto: texto,
       nombre: txt('tournament > data > name'), fecha: fecha, ciudad: txt('tournament > data > city'),
       rondas: xml.querySelectorAll('pods round').length, jugadores: jugadores,
     };
@@ -58,11 +88,13 @@
     return t ? t.inscripcion : '';
   };
 
+  GS.leerTdf = leerTdf;
   GS.actions.subirTdf = () => document.getElementById('tdf-input').click();
 
   function importar(tdf) {
     const formatos = Array.from(new Set(data().catalogos.formatosTorneo.concat(torneos().map((t) => t.formato))));
     const formato0 = torneos()[0] ? torneos()[0].formato : formatos[0] || '';
+    const ultimo = torneos()[0] || {};
     const comoTxt = { id: '<span class="text-success" title="Enlazado por su ID Pokémon">✓ ID</span>', nombre: '<span class="text-gold" title="Mismo nombre: revisa que sea la misma persona">~ nombre</span>', nuevo: '<span class="muted" title="Se crea como cliente nuevo">nuevo</span>' };
     GS.formModal({
       title: 'Nuevo torneo desde TOM',
@@ -73,10 +105,12 @@
         '<div class="form-field"><label>Fecha *</label><input type="date" name="fecha" value="' + esc(tdf.fecha) + '"></div>' +
         '<div class="form-field"><label>Formato *</label><input name="formato" list="trn-formatos" value="' + esc(formato0) + '"><datalist id="trn-formatos">' + formatos.map((x) => '<option value="' + esc(x) + '">').join('') + '</datalist></div>' +
         '<div class="form-field"><label>Inscripción *</label><input type="number" name="inscripcion" min="1" step="1" value="' + esc(inscripcionDe(formato0)) + '" placeholder="Ej.: 8000"></div>' +
-        '<div class="form-field full"><label>Jugadores (' + tdf.jugadores.length + ')</label><div class="table-wrap"><table class="data-table" style="min-width:0"><thead><tr><th class="right">Lugar</th><th>Jugador (TOM)</th><th>Player ID</th><th>Cliente</th><th></th><th class="center" title="No paga inscripción (invitado, juez que juega…)">Sin costo</th></tr></thead><tbody>' +
+        '<div class="form-field"><label>Categoría</label><select name="categoria">' + GS.options(data().catalogos.categoriasTorneo, ultimo.categoria || 'Interno') + '</select></div>' +
+        '<div class="form-field"><label>Temporada</label><input name="temporada" maxlength="60" value="' + esc(ultimo.temporada || '') + '" placeholder="Ej.: Temporada 2026"></div>' +
+        '<div class="form-field full"><label>Jugadores (' + tdf.jugadores.length + ')</label><div class="table-wrap"><table class="data-table" style="min-width:0"><thead><tr><th class="right">Lugar</th><th>Jugador (TOM)</th><th>Player ID</th><th class="center" title="Victorias - derrotas - empates">Récord</th><th>Cliente</th><th></th><th class="center" title="No paga inscripción (invitado, juez que juega…)">Sin costo</th></tr></thead><tbody>' +
           tdf.jugadores.map((j, i) => {
             const m = clienteDe(j);
-            return '<tr data-trn-j="' + i + '"><td class="cell-num right">' + (j.lugar || '—') + '</td><td class="cell-strong">' + esc(j.nombre) + '</td><td class="cell-dim">' + esc(j.popId) + '</td>' +
+            return '<tr data-trn-j="' + i + '"><td class="cell-num right">' + (j.lugar || '—') + '</td><td class="cell-strong">' + esc(j.nombre) + '</td><td class="cell-dim">' + esc(j.popId) + '</td><td class="center nowrap">' + j.w + '-' + j.l + '-' + j.t + '</td>' +
               '<td><input name="cli' + i + '" list="trn-clientes" autocomplete="off" value="' + esc(m.cliente ? m.cliente.nombre : '') + '" placeholder="' + esc(j.nombre) + ' (nuevo)" data-cli-id="' + esc(m.cliente ? m.cliente.id : '') + '" data-cli-nombre="' + esc(m.cliente ? m.cliente.nombre : '') + '"></td>' +
               '<td class="nowrap" data-trn-como>' + comoTxt[m.como] + '</td>' +
               '<td class="center"><input type="checkbox" name="sin' + i + '"></td></tr>';
@@ -101,12 +135,13 @@
         const jugadores = tdf.jugadores.map((j, i) => {
           const inp = form.elements['cli' + i];
           const val = inp.value.trim();
-          const r = { popId: j.popId, nombre: j.nombre, lugar: j.lugar, sinCosto: form.elements['sin' + i].checked };
+          const r = { popId: j.popId, nombre: j.nombre, nombrePila: j.nombrePila, apellido: j.apellido, lugar: j.lugar, w: j.w, l: j.l, t: j.t, sinCosto: form.elements['sin' + i].checked };
           if (val && inp.dataset.cliId && val === inp.dataset.cliNombre) r.clienteId = inp.dataset.cliId;
           else if (val) r.cliente = val;
           return r;
         });
-        return GS.mutate('crearTorneo', { nombre: v.nombre, fecha: v.fecha, formato: v.formato, inscripcion: v.inscripcion, ciudad: tdf.ciudad, rondas: tdf.rondas, jugadores: jugadores },
+        return GS.mutate('crearTorneo', { nombre: v.nombre, fecha: v.fecha, formato: v.formato, inscripcion: v.inscripcion, ciudad: tdf.ciudad, rondas: tdf.rondas,
+          categoria: v.categoria, temporada: v.temporada, tipoEvento: ultimo.tipoEvento || 'Liga Pokémon', tdf: { nombre: tdf.archivo || '', texto: tdf.texto }, jugadores: jugadores },
           (r) => 'Torneo creado: ' + r.jugadores + ' jugadores, ' + r.tickets + ' inscripciones por cobrar en la caja').then((r) => { abiertos.add(r.id); GS.render(); return r; });
       },
     });
@@ -149,7 +184,7 @@
         const f = input.files[0];
         input.value = '';
         if (!f) return;
-        try { importar(leerTdf(await f.text())); } catch (e) { GS.toast(e.message, true); }
+        try { importar(Object.assign(leerTdf(await f.text()), { archivo: f.name })); } catch (e) { GS.toast(e.message, true); }
       });
     },
   };

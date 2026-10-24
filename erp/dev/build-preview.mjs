@@ -171,6 +171,21 @@ const preview = `
         call('guardarMovimiento', { fecha: mes(n, 12), tipo: 'egreso', categoria: 'gopm', subcategoria: 'Bolsas y embalaje', monto: 15000 + 1000 * n, cuenta: 'caja' });
         call('guardarMovimiento', { fecha: mes(n, 20), tipo: 'egreso', categoria: 'sii', subcategoria: 'F29', monto: 80000 + 5000 * n, cuenta: 'banco' });
       }
+      // Torneo de ejemplo (jugadores inventados) con récord y Pokémon elegidos para la Story del Top 5.
+      var jug = [['Martín', 'Fuentes', 4, 0, 0], ['Sofía', 'Lagos', 3, 1, 0], ['Diego', 'Araya', 3, 1, 0], ['Valentina', 'Muñoz', 2, 1, 1], ['Tomás', 'Reyes', 2, 2, 0],
+        ['Camila', 'Soto', 1, 2, 1], ['Benjamín', 'Vera', 1, 3, 0], ['Isidora', 'Pino', 0, 4, 0]];
+      var trn = call('crearTorneo', { nombre: 'Torneo Chill', fecha: dia(-6), formato: 'Torneo The Chill', inscripcion: 8000, rondas: 4, categoria: 'Interno', temporada: 'Temporada 2026', tipoEvento: 'Liga Pokémon',
+        jugadores: jug.map(function (j, i) { return { popId: String(3100 + i), nombre: j[0] + ' ' + j[1], nombrePila: j[0], apellido: j[1], w: j[2], l: j[3], t: j[4], lugar: i + 1 }; }) });
+      // Todos pagaron la inscripción (efectivo o débito), para no sumar deudas al resto de la demo.
+      server.api('bootstrap', {}).data.cajas.find(function (c) { return c.id === trn.cajaId; }).tickets.forEach(function (tk, i) {
+        if (!tk.lineas.some(function (l) { return l.tj; })) return;
+        call('guardarTicket', { id: tk.id, cajaId: tk.cajaId, tipo: tk.tipo, cliente: tk.cliente, canal: tk.canal, evento: tk.evento, lineas: tk.lineas,
+          pagos: [{ medio: i % 2 ? 'debito' : 'efectivo', monto: tk.total }] });
+      });
+      var tjs = server.api('bootstrap', {}).data.torneos.find(function (t) { return t.id === trn.id; }).jugadores;
+      var decks = [['Charizard', 'Pidgeot'], ['Dragapult', 'Dusknoir'], ['Gardevoir', ''], ['Raging Bolt', 'Ogerpon'], ['Gholdengo', '']];
+      call('storyTorneo', { id: trn.id, tipoEvento: 'Liga Pokémon', temporada: 'Temporada 2026', categoria: 'Interno',
+        jugadores: tjs.slice(0, 5).map(function (j, i) { return { id: j.id, nombrePila: j.nombrePila, apellido: j.apellido, w: j.w, l: j.l, t: j.t, principal: decks[i][0], secundario: decks[i][1] }; }) });
     }
   }
 

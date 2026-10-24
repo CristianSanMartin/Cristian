@@ -60,6 +60,12 @@ function rutas_() {
     registrarSalida: { rol: 'operador', write: true, fn: Salidas.registrar },
     crearTorneo: { rol: 'operador', write: true, fn: Torneos.crear },
     editarTorneo: { rol: 'operador', write: true, fn: Torneos.editar },
+    tdfTorneo: { rol: 'operador', write: true, fn: Torneos.subirTdf },
+    storyTorneo: { rol: 'operador', write: true, fn: Torneos.guardarStory },
+    agregarPokemon: { rol: 'operador', write: true, fn: Pokemon.agregar },
+    imagenPokemon: { rol: 'operador', write: true, fn: Pokemon.imagen },
+    eliminarPokemon: { rol: 'operador', write: true, fn: Pokemon.eliminar },
+    imagenesPokemon: { rol: 'operador', fn: Pokemon.verImagenes },
     eliminarTorneo: { rol: 'admin', write: true, fn: Torneos.eliminar },
     vincularJugador: { rol: 'operador', write: true, fn: Torneos.vincularJugador },
     cobroJugador: { rol: 'operador', write: true, fn: Torneos.cambiarCobro },
@@ -232,6 +238,7 @@ function instalar() {
     }, Util.sello(sistema, true)));
     mensaje.push('Proveedor Asmodee creado con su regla de despacho.');
   }
+  if (Pokemon.sembrar(sistema)) mensaje.push('Biblioteca de Pokémon creada para la Story del Top 5 (súbeles imagen desde Story Top 5).');
   const migradas = Migraciones.ejecutar(sistema, { respaldar: conDatos });   // planilla vacía: nada que respaldar
   if (migradas.length) mensaje.push('Migraciones aplicadas: ' + migradas.join(', ') + '.');
   if (Respaldos.programar()) mensaje.push('Respaldo automático programado todas las noches (se guardan los de los últimos ' + Respaldos.DIAS + ' días).');
@@ -304,7 +311,7 @@ const Snapshot = {
       user: { email: user.email, nombre: user.nombre, rol: user.rol },
       catalogos: {
         idiomas: IDIOMAS, tipos: TIPOS_PRODUCTO, canales: CANALES, mediosPago: MEDIOS_PAGO, comisiones: COMISIONES_PAGO,
-        categoriasVenta: CATEGORIAS_VENTA, motivosSalida: MOTIVOS_SALIDA, mediosCaja: MEDIOS_CAJA, egresosCaja: EGRESOS_CAJA, categoriasMovimiento: CATEGORIAS_MOVIMIENTO, cuentas: CUENTAS, formatosTorneo: FORMATOS_TORNEO, tiposBazar: TIPOS_BAZAR, precioSobre: PRECIO_SOBRE_SUELTO, precioParticipacion: PRECIO_SOBRE_PARTICIPACION,
+        categoriasVenta: CATEGORIAS_VENTA, motivosSalida: MOTIVOS_SALIDA, mediosCaja: MEDIOS_CAJA, egresosCaja: EGRESOS_CAJA, categoriasMovimiento: CATEGORIAS_MOVIMIENTO, cuentas: CUENTAS, formatosTorneo: FORMATOS_TORNEO, categoriasTorneo: CATEGORIAS_TORNEO, tiposBazar: TIPOS_BAZAR, precioSobre: PRECIO_SOBRE_SUELTO, precioParticipacion: PRECIO_SOBRE_PARTICIPACION,
       },
       proveedores: proveedores,
       productos: prods,
@@ -316,6 +323,7 @@ const Snapshot = {
       pagosFacturas: Compras.pagos(),
       salidas: Salidas.vista(),
       torneos: Torneos.vista(ventas.ventas, clis),
+      pokemon: Pokemon.vista(),
       cajas: Cajas.vista(),
       tuu: {
         esperados: Cajas.abonosEsperados(),

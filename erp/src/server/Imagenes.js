@@ -91,6 +91,12 @@ const Imagenes = {
     return 'drive:' + Imagenes.carpeta().createFile(blob).getId();
   },
 
+  /** Guarda un archivo de texto (ej. el .tdf de un torneo) en la carpeta y devuelve "drive:<id>". */
+  subirTexto(texto, mime, nombre) {
+    const blob = Utilities.newBlob(String(texto), mime || 'text/plain', String(nombre || 'archivo').replace(/[\\/:*?"<>|]+/g, ' ').slice(0, 140));
+    return 'drive:' + Imagenes.carpeta().createFile(blob).getId();
+  },
+
   /** Lee un archivo guardado ("drive:<id>") para mostrarlo en el navegador. */
   leer(ref) {
     const id = String(ref).replace(/^drive:/, '');
@@ -100,7 +106,8 @@ const Imagenes = {
     } catch (e) {
       throw new AppError('No se encontró el archivo en Drive (puede que lo hayan borrado o que no tengas acceso).');
     }
-    return { nombre: archivo.getName(), base64: Utilities.base64Encode(archivo.getBlob().getBytes()), url: 'https://drive.google.com/file/d/' + id + '/view' };
+    const blob = archivo.getBlob();
+    return { nombre: archivo.getName(), mime: blob.getContentType(), base64: Utilities.base64Encode(blob.getBytes()), url: 'https://drive.google.com/file/d/' + id + '/view' };
   },
 
   /** Manda a la papelera de Drive un archivo que se reemplazó o quitó (si falla, queda en la carpeta). */

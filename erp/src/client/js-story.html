@@ -1,0 +1,454 @@
+<script>
+/* =========================================================
+   Story Top 5: arma la imagen del Top 5 de un torneo (1080×1920,
+   lista para la Story de Instagram) con el diseño de GS Prime.
+   Usa los jugadores y el récord que vienen del .tdf del torneo;
+   a cada uno se le elige su Pokémon principal y, si se quiere,
+   uno secundario, de la biblioteca guardada en Drive.
+========================================================= */
+(function () {
+  'use strict';
+  const { esc, fmt } = GS;
+  const data = () => GS.state.data;
+  const torneos = () => data().torneos || [];
+  const biblioteca = () => data().pokemon || [];
+
+  /* ---------- diseño (no cambiar: es el de la Story de GS Prime) ---------- */
+  const LOGO = 'data:image/webp;base64,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';
+  const W = 1080, H = 1920;
+  const TINTS = ['#e3b43c', '#d9772f', '#8d5fd0', '#3d73c4', '#2f9e8f'];
+  const TIERS = [
+    { a: '#f6cd55', b: '#d8a42c', num: '#141005', border: '#e3b43c' },
+    { a: '#eeeff1', b: '#8e9196', num: '#151515', border: '#a9acb1' },
+    { a: '#d79a64', b: '#87532c', num: '#141008', border: '#8a6ab8' },
+    { a: '#2b2f34', b: '#1d2024', num: '#e8e8e8', border: '#35506f' },
+    { a: '#2b2f34', b: '#1d2024', num: '#e8e8e8', border: '#2c5a55' },
+  ];
+  const FUENTES = 'https://fonts.googleapis.com/css2?family=Anton&family=Saira+Condensed:wght@600;800&family=Montserrat:wght@600;700&display=swap';
+
+  /* ---------- estado de la pantalla ---------- */
+  const pref = {
+    get(k, d) { try { return localStorage.getItem('story-' + k) || d; } catch (e) { return d; } },
+    set(k, v) { try { localStorage.setItem('story-' + k, v); } catch (e) { /* sin almacenamiento: solo esta vez */ } },
+  };
+  const vacio = () => ({ id: '', nombrePila: '', apellido: '', w: 0, l: 0, t: 0, principal: '', secundario: '' });
+  const st = { torneoId: null, ev: {}, top: [0, 1, 2, 3, 4].map(vacio), nombreModo: pref.get('nombre', 'first'), imgModo: pref.get('img', 'tint'), cambios: false };
+
+  /** Carga el torneo elegido: datos del evento y los 5 primeros lugares con su récord y Pokémon. */
+  function cargar(t) {
+    st.torneoId = t ? t.id : '';
+    st.ev = { tipoEvento: (t && t.tipoEvento) || 'Liga Pokémon', nombre: t ? t.nombre : '', temporada: (t && t.temporada) || '', categoria: (t && t.categoria) || 'Interno' };
+    const js = t ? t.jugadores.slice().sort((a, b) => (a.lugar || 999) - (b.lugar || 999)) : [];
+    st.top = [0, 1, 2, 3, 4].map((i) => {
+      const j = js[i];
+      if (!j) return vacio();
+      const partes = j.nombre.split(/\s+/);
+      return { id: j.id, nombrePila: j.nombrePila || partes[0] || '', apellido: j.nombrePila ? j.apellido : partes.slice(1).join(' '), w: j.w, l: j.l, t: j.t, principal: j.principal, secundario: j.secundario };
+    });
+    st.cambios = false;
+  }
+
+  /* ---------- imágenes de la biblioteca (solo las que se dibujan) ---------- */
+  const imgs = {};
+  const pedidas = {};
+  const pokePorNombre = (n) => biblioteca().find((p) => GS.norm(p.nombre) === GS.norm(n || ''));
+  const clave = (p) => p.id + '|' + p.version;
+  function imagenDe(nombre) {
+    const p = pokePorNombre(nombre);
+    if (!p || !p.imagen) return null;
+    const im = imgs[clave(p)];
+    return im && im.complete && im.naturalWidth ? im : null;
+  }
+  function pedirImagenes() {
+    const faltan = [];
+    st.top.forEach((r) => [r.principal, r.secundario].forEach((n) => {
+      const p = pokePorNombre(n);
+      if (p && p.imagen && !imgs[clave(p)] && !pedidas[clave(p)] && faltan.indexOf(p) === -1) faltan.push(p);
+    }));
+    if (!faltan.length) return;
+    faltan.forEach((p) => { pedidas[clave(p)] = true; });
+    GS.api('imagenesPokemon', { ids: faltan.map((p) => p.id) }).then((r) => {
+      faltan.forEach((p) => {
+        delete pedidas[clave(p)];
+        if (!r.data[p.id]) return;
+        const im = new Image();
+        im.onload = programar;
+        im.src = r.data[p.id];
+        imgs[clave(p)] = im;
+      });
+    }).catch((e) => { faltan.forEach((p) => { delete pedidas[clave(p)]; }); GS.toast(e.message, true); });
+  }
+
+  /* ---------- dibujo de la Story (igual al diseño original) ---------- */
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d');
+  const logo = new Image();
+  logo.src = LOGO;
+
+  function spaced(text, x, y, sp, align) {
+    const chars = [...text], widths = chars.map((c) => ctx.measureText(c).width);
+    const total = widths.reduce((a, b) => a + b, 0) + sp * (chars.length - 1);
+    let cx = align === 'center' ? x - total / 2 : align === 'right' ? x - total : x;
+    const prev = ctx.textAlign; ctx.textAlign = 'left';
+    chars.forEach((c, i) => { ctx.fillText(c, cx, y); cx += widths[i] + sp; });
+    ctx.textAlign = prev; return total;
+  }
+  function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+  function fitFont(text, fam, size, maxW) {
+    let s = size; ctx.font = fam.replace('{s}', s);
+    while (ctx.measureText(text).width > maxW && s > 20) { s -= 2; ctx.font = fam.replace('{s}', s); }
+  }
+  function displayName(p) {
+    const mode = st.nombreModo;
+    if (mode === 'full') return (p.nombrePila + ' ' + p.apellido).trim();
+    if (mode === 'initial' && p.apellido) return p.nombrePila + ' ' + p.apellido[0] + '.';
+    return p.nombrePila;
+  }
+  function drawBackground() {
+    ctx.fillStyle = '#101010'; ctx.fillRect(0, 0, W, H);
+    const corner = (pts, from, to) => {
+      const g = ctx.createLinearGradient(from[0], from[1], to[0], to[1]);
+      g.addColorStop(0, 'rgba(201,160,62,0.85)'); g.addColorStop(1, 'rgba(201,160,62,0)');
+      ctx.fillStyle = g; ctx.beginPath(); pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath(); ctx.fill();
+    };
+    corner([[0, 0], [110, 0], [0, 120]], [0, 0], [90, 90]);
+    corner([[0, 155], [150, 0], [168, 0], [0, 180]], [0, 0], [150, 150]);
+    corner([[1080, 1590], [1080, 1640], [860, 1920], [810, 1920]], [1080, 1600], [880, 1880]);
+    corner([[1080, 1760], [1080, 1800], [990, 1920], [950, 1920]], [1080, 1770], [980, 1900]);
+    const cx = 830, cy = 255, R = 268;
+    ctx.save();
+    ctx.beginPath(); ctx.arc(cx, cy, R, Math.PI, 0); ctx.closePath(); ctx.fillStyle = 'rgba(255,255,255,0.15)'; ctx.fill();
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI); ctx.closePath(); ctx.fillStyle = 'rgba(255,255,255,0.06)'; ctx.fill();
+    ctx.fillStyle = '#101010'; ctx.fillRect(cx - R, cy - 24, R * 2, 48);
+    ctx.beginPath(); ctx.arc(cx, cy, 112, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx, cy, 76, 0, Math.PI * 2); ctx.fillStyle = 'rgba(255,255,255,0.10)'; ctx.fill();
+    let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;   // grano fijo: la imagen sale igual cada vez
+    for (let i = 0; i < 1800; i++) {
+      const a = rnd() * Math.PI * 2, r = Math.sqrt(rnd()) * R;
+      ctx.fillStyle = 'rgba(0,0,0,' + rnd() * 0.25 + ')';
+      ctx.fillRect(cx + Math.cos(a) * r, cy + Math.sin(a) * r, 3, 3);
+    }
+    ctx.restore();
+  }
+  function drawHeader() {
+    ctx.fillStyle = '#e8e8e8'; ctx.textBaseline = 'alphabetic';
+    ctx.font = '600 30px Montserrat, Arial, sans-serif';
+    const words = st.ev.tipoEvento.toUpperCase().trim().split(/\s+/);
+    const l1 = words.length > 1 ? words.slice(0, -1).join(' ') : '', l2 = words[words.length - 1] || '';
+    if (l1) spaced(l1, 76, 136, 15);
+    const w2 = spaced(l2, 76, 167, 15);
+    ctx.fillStyle = 'rgba(232,232,232,0.6)'; ctx.fillRect(76 + w2 + 12, 157, 210, 2);
+    ctx.font = '230px Anton, Impact, sans-serif';
+    ctx.fillStyle = '#e8e8e8'; ctx.fillText('TOP', 62, 380);
+    const topW = ctx.measureText('TOP').width;
+    ctx.fillStyle = '#e3b43c'; ctx.fillText('5', 62 + topW + 18, 380);
+    ctx.fillStyle = '#e8e8e8';
+    const ev = st.ev.nombre.toUpperCase().trim();
+    ctx.font = '700 40px Montserrat, Arial, sans-serif';
+    let sp = 17; while (ctx.measureText(ev).width + sp * (ev.length - 1) > 900 && sp > 4) sp--;
+    spaced(ev, 64, 427, sp);
+  }
+  function tinted(im, dw, dh, tint) {
+    const off = document.createElement('canvas'); off.width = dw; off.height = dh;
+    const o = off.getContext('2d');
+    o.drawImage(im, 0, 0, dw, dh);
+    o.globalCompositeOperation = 'source-in';
+    const g = o.createLinearGradient(0, 0, dw, 0);
+    g.addColorStop(0, tint + '60'); g.addColorStop(0.5, tint + 'c8'); g.addColorStop(1, tint + 'f0');
+    o.fillStyle = g; o.fillRect(0, 0, dw, dh);
+    return off;
+  }
+  function drawSlot(poly, x0, x1, name, tint, i, h, y) {
+    ctx.save();
+    ctx.beginPath(); poly.forEach(([px, py], j) => (j ? ctx.lineTo(px, py) : ctx.moveTo(px, py))); ctx.closePath(); ctx.clip();
+    const im = imagenDe(name), cx = (x0 + x1) / 2, maxW = (x1 - x0) * 1.05;
+    if (im) {
+      let k = (h * 1.2) / im.naturalHeight;
+      if (im.naturalWidth * k > maxW) k = maxW / im.naturalWidth;
+      const dw = Math.round(im.naturalWidth * k), dh = Math.round(im.naturalHeight * k);
+      const dx = Math.round(cx - dw / 2), dy = Math.round(y + h + 6 - dh);
+      if (st.imgModo === 'tint') ctx.drawImage(tinted(im, dw, dh, tint), dx, dy);
+      else { ctx.globalAlpha = 0.92; ctx.drawImage(im, dx, dy, dw, dh); }
+    } else {
+      const t = name.toUpperCase();
+      fitFont(t, '{s}px Anton, Impact, sans-serif', 96, (x1 - x0) - 40);
+      ctx.textAlign = 'center'; ctx.fillStyle = tint + (i === 0 ? '88' : '70');
+      ctx.fillText(t, cx, y + h / 2 + 36);
+    }
+    ctx.restore();
+  }
+  function drawRow(i, p) {
+    const x = 66, w = 950, h = 152, y = 576 + i * 200, r = 22;
+    const T = TIERS[i], tint = TINTS[i];
+    ctx.save();
+    rr(x, y, w, h, r); ctx.clip();
+    const body = ctx.createLinearGradient(x, y, x + w, y);
+    body.addColorStop(0, '#14171a'); body.addColorStop(1, '#1b2024');
+    ctx.fillStyle = body; ctx.fillRect(x, y, w, h);
+    const glow = ctx.createRadialGradient(x + 700, y + h / 2, 10, x + 700, y + h / 2, 360);
+    glow.addColorStop(0, tint + (i === 0 ? '55' : '40')); glow.addColorStop(1, tint + '00');
+    ctx.fillStyle = glow; ctx.fillRect(x, y, w, h);
+    if (p.principal) {
+      const L = x + 430, R = x + w;
+      if (p.secundario) {
+        const sx = L + (R - L) * 0.65, sl = 30;
+        drawSlot([[L, y], [sx + sl, y], [sx - sl, y + h], [L, y + h]], L, sx + sl, p.principal, tint, i, h, y);
+        drawSlot([[sx + sl, y], [R, y], [R, y + h], [sx - sl, y + h]], sx - sl, R, p.secundario, tint, i, h, y);
+        ctx.beginPath(); ctx.moveTo(sx + sl + 4, y - 2); ctx.lineTo(sx - sl - 4, y + h + 2);
+        ctx.lineWidth = 9; ctx.strokeStyle = '#101214'; ctx.stroke();
+        ctx.lineWidth = 2.5; ctx.strokeStyle = tint + 'cc'; ctx.stroke();
+      } else {
+        drawSlot([[L, y], [R, y], [R, y + h], [L, y + h]], L, R, p.principal, tint, i, h, y);
+      }
+    }
+    const tg = ctx.createLinearGradient(x, y, x + 180, y + h);
+    tg.addColorStop(0, T.a); tg.addColorStop(1, T.b);
+    ctx.fillStyle = tg;
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 170, y); ctx.lineTo(x + 136, y + h); ctx.lineTo(x, y + h); ctx.closePath(); ctx.fill();
+    ctx.restore();
+    rr(x, y, w, h, r); ctx.lineWidth = 3; ctx.strokeStyle = T.border + (i < 2 ? '' : 'aa'); ctx.stroke();
+    ctx.font = '112px Anton, Impact, sans-serif'; ctx.fillStyle = T.num; ctx.textAlign = 'center';
+    ctx.fillText(String(i + 1), x + 76, y + h / 2 + 42); ctx.textAlign = 'left';
+    if (i === 0) {
+      const cx = x + 76, cy = y - 6;
+      ctx.fillStyle = '#141005'; ctx.beginPath();
+      ctx.moveTo(cx - 26, cy + 4); ctx.lineTo(cx - 28, cy - 22); ctx.lineTo(cx - 13, cy - 10); ctx.lineTo(cx, cy - 30);
+      ctx.lineTo(cx + 13, cy - 10); ctx.lineTo(cx + 28, cy - 22); ctx.lineTo(cx + 26, cy + 4); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#f6cd55'; ctx.beginPath();
+      ctx.moveTo(cx - 22, cy); ctx.lineTo(cx - 23, cy - 15); ctx.lineTo(cx - 11, cy - 5); ctx.lineTo(cx, cy - 23);
+      ctx.lineTo(cx + 11, cy - 5); ctx.lineTo(cx + 23, cy - 15); ctx.lineTo(cx + 22, cy); ctx.closePath(); ctx.fill();
+    }
+    const name = displayName(p).toUpperCase() || '—';
+    fitFont(name, "800 {s}px 'Saira Condensed', 'Arial Narrow', sans-serif", 66, 215);
+    ctx.fillStyle = '#f1f1f1'; ctx.fillText(name, x + 206, y + 74);
+    ctx.font = '700 34px Montserrat, Arial, sans-serif';
+    ctx.fillStyle = i === 0 ? '#e3b43c' : i === 2 ? '#c9935a' : '#c4c6ca';
+    spaced(p.w + ' - ' + p.l + ' - ' + p.t, x + 208, y + 124, 6);
+  }
+  function drawFooter() {
+    ctx.font = '600 22px Montserrat, Arial, sans-serif'; ctx.fillStyle = '#cfd0d2';
+    const tw = spaced(st.ev.temporada.toUpperCase().trim(), 540, 1593, 11, 'center');
+    ctx.fillStyle = 'rgba(207,208,210,0.5)';
+    ctx.fillRect(540 - tw / 2 - 112, 1584, 90, 2);
+    ctx.fillRect(540 + tw / 2 + 22, 1584, 90, 2);
+    if (logo.complete && logo.naturalWidth) ctx.drawImage(logo, (W - logo.naturalWidth) / 2, 1638);
+  }
+  function dibujar() {
+    const out = document.getElementById('story-out');
+    if (!out) return;
+    ctx.clearRect(0, 0, W, H);
+    drawBackground(); drawHeader();
+    st.top.forEach((p, i) => drawRow(i, p));
+    drawFooter();
+    out.src = cv.toDataURL('image/png');
+  }
+  let timer;
+  function programar() { clearTimeout(timer); timer = setTimeout(dibujar, 120); }
+
+  // Fuentes del diseño (Anton, Saira Condensed, Montserrat): se cargan la primera vez que se abre la pantalla.
+  let fuentes = null;
+  function cargarFuentes() {
+    if (fuentes) return fuentes;
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = FUENTES;
+    document.head.appendChild(link);
+    const espera = (ms) => new Promise((ok) => setTimeout(ok, ms));
+    fuentes = Promise.race([espera(4000), new Promise((ok) => { link.onload = ok; link.onerror = ok; }).then(() => Promise.all([
+      document.fonts.load('230px Anton'), document.fonts.load("800 66px 'Saira Condensed'"),
+      document.fonts.load('700 40px Montserrat'), document.fonts.load('600 30px Montserrat'),
+    ]))]).catch(() => {}).then(() => new Promise((ok) => { if (logo.complete) ok(); else { logo.onload = ok; logo.onerror = ok; } }));
+    return fuentes;
+  }
+
+  /* ---------- pantalla ---------- */
+
+  const opcionesPoke = (sel, vacioTxt) => {
+    const nombres = biblioteca().map((p) => p.nombre);
+    if (sel && !nombres.some((n) => GS.norm(n) === GS.norm(sel))) nombres.unshift(sel);
+    return '<option value="">' + vacioTxt + '</option>' + nombres.map((n) => '<option value="' + esc(n) + '"' + (GS.norm(n) === GS.norm(sel) ? ' selected' : '') + '>' + esc(n) + '</option>').join('');
+  };
+
+  function filas() {
+    return st.top.map((p, i) => '<tr' + (p.id ? '' : ' class="row-muted"') + '><td class="story-pos">' + (i + 1) + '</td>' +
+      '<td class="story-txt"><input data-story="' + i + '|nombrePila" value="' + esc(p.nombrePila) + '" aria-label="Nombre ' + (i + 1) + '"' + (p.id ? '' : ' disabled') + '></td>' +
+      '<td class="story-txt"><input data-story="' + i + '|apellido" value="' + esc(p.apellido) + '" aria-label="Apellido ' + (i + 1) + '"' + (p.id ? '' : ' disabled') + '></td>' +
+      ['w', 'l', 't'].map((k) => '<td class="story-num"><input type="number" min="0" step="1" data-story="' + i + '|' + k + '" value="' + p[k] + '" aria-label="' + { w: 'Victorias', l: 'Derrotas', t: 'Empates' }[k] + ' ' + (i + 1) + '"' + (p.id ? '' : ' disabled') + '></td>').join('') +
+      '<td><select data-story="' + i + '|principal" aria-label="Pokémon principal ' + (i + 1) + '"' + (p.id ? '' : ' disabled') + '>' + opcionesPoke(p.principal, 'Elegir…') + '</select></td>' +
+      '<td><select data-story="' + i + '|secundario" aria-label="Pokémon secundario ' + (i + 1) + '"' + (p.id ? '' : ' disabled') + '>' + opcionesPoke(p.secundario, 'Ninguno') + '</select></td></tr>').join('');
+  }
+
+  function bibliotecaHtml() {
+    const lib = biblioteca();
+    return lib.length ? lib.map((p) => '<div class="story-poke">' +
+      '<div class="story-thumb">' + (p.imagen ? '<img src="' + esc(GS.imagenUrl(p.imagen)) + '" alt="' + esc(p.nombre) + '" loading="lazy">' : '<span>Sin imagen</span>') + '</div>' +
+      '<b>' + esc(p.nombre) + '</b>' +
+      '<div class="story-poke-acc">' +
+      '<button type="button" class="icon-btn" data-action="storyPokeImagen" data-id="' + esc(p.id) + '" title="' + (p.imagen ? 'Cambiar imagen' : 'Subir imagen') + '" aria-label="' + (p.imagen ? 'Cambiar imagen de ' : 'Subir imagen de ') + esc(p.nombre) + '">' + GS.icon('upload') + '</button>' +
+      (p.imagen ? '<button type="button" class="icon-btn" data-action="storyPokeQuitar" data-id="' + esc(p.id) + '" title="Quitar imagen" aria-label="Quitar imagen de ' + esc(p.nombre) + '">' + GS.icon('close') + '</button>' : '') +
+      GS.iconBtn('storyPokeEliminar', p.id, 'trash', 'Eliminar ' + p.nombre, 'danger') + '</div></div>').join('')
+      : '<p class="hint">La biblioteca está vacía. Agrega el primer Pokémon abajo.</p>';
+  }
+
+  GS.views.story = {
+    title: 'Story Top 5',
+    parent: 'torneos',
+    rol: 'operador',
+    render(el) {
+      const ts = torneos();
+      if (st.torneoId === null || (st.torneoId && !ts.some((t) => t.id === st.torneoId))) cargar(ts[0]);
+      const t = ts.find((x) => x.id === st.torneoId);
+      const sinRecord = t && !t.tdf && t.jugadores.every((j) => !j.w && !j.l && !j.t);
+      el.innerHTML =
+        '<div class="page-head"><div><h1>Story Top 5</h1><p>Elige el torneo, el Pokémon de cada jugador del Top 5 y descarga la imagen para la Story de Instagram (1080 × 1920).</p></div></div>' +
+        (!ts.length ? GS.empty('Sin torneos', 'Primero sube el .tdf del torneo en Torneos: de ahí salen los jugadores y su récord.', 'torneos') :
+        '<div class="story-wrap" id="story"><div class="story-col">' +
+          '<h3 class="section-title">1 · Torneo</h3><div class="panel story-card">' +
+            '<div class="form-field"><label>Torneo</label><select data-story-torneo>' + ts.map((x) => '<option value="' + esc(x.id) + '"' + (x.id === st.torneoId ? ' selected' : '') + '>' + esc(fmt.date(x.fecha) + ' · ' + x.nombre + ' · ' + x.jugadores.length + ' jugadores') + '</option>').join('') + '</select></div>' +
+            (sinRecord
+              ? '<div class="notice warn">Este torneo se subió antes de guardar el récord: sube su <strong>.tdf</strong> para traer victorias, derrotas y empates (o escríbelos en la tabla). <button type="button" class="btn small" data-action="storyTdf">Subir .tdf de este torneo</button></div>'
+              : '<p class="hint">' + (t && t.tdf ? '✓ El .tdf de este torneo está guardado en Drive.' : 'Este torneo no tiene el .tdf guardado. <a href="#" data-action="storyTdf">Subirlo</a>') + '</p>') +
+            '<input type="file" id="story-tdf" accept=".tdf,.xml,text/xml" hidden>' +
+          '</div>' +
+          '<h3 class="section-title">2 · Datos del evento</h3><div class="panel story-card"><div class="form-grid">' +
+            '<div class="form-field"><label>Tipo de evento</label><input data-story-ev="tipoEvento" maxlength="40" value="' + esc(st.ev.tipoEvento) + '"></div>' +
+            '<div class="form-field"><label>Nombre del torneo (en la imagen)</label><input data-story-ev="nombre" maxlength="80" value="' + esc(st.ev.nombre) + '"></div>' +
+            '<div class="form-field"><label>Temporada</label><input data-story-ev="temporada" maxlength="60" value="' + esc(st.ev.temporada) + '" placeholder="Ej.: Temporada 2026"></div>' +
+            '<div class="form-field"><label>Categoría</label><select data-story-ev="categoria">' + GS.options(data().catalogos.categoriasTorneo, st.ev.categoria) + '</select></div>' +
+            '<div class="form-field"><label>Nombre que se muestra</label><select data-story-modo="nombre">' + GS.options([{ value: 'first', label: 'Solo nombre' }, { value: 'initial', label: 'Nombre + inicial' }, { value: 'full', label: 'Nombre completo' }], st.nombreModo) + '</select></div>' +
+            '<div class="form-field"><label>Cómo se muestra el Pokémon</label><select data-story-modo="img">' + GS.options([{ value: 'tint', label: 'Silueta del color de la fila' }, { value: 'original', label: 'Imagen original' }], st.imgModo) + '</select></div>' +
+          '</div></div>' +
+          '<h3 class="section-title">3 · Top 5 y Pokémon</h3><div class="panel story-card"><div class="table-wrap"><table class="data-table story-tabla"><thead><tr><th class="c-pos">#</th><th>Nombre</th><th>Apellido</th><th class="c-num center" title="Victorias">W</th><th class="c-num center" title="Derrotas">L</th><th class="c-num center" title="Empates">T</th><th>Pokémon principal</th><th>Secundario</th></tr></thead><tbody>' + filas() + '</tbody></table></div>' +
+            '<p class="hint">Nombre, apellido y récord vienen del .tdf (TOM no guarda el mazo, por eso el Pokémon se elige aquí). Solo principal: ocupa todo el espacio; con secundario: 65/35 con corte inclinado. Un Pokémon sin imagen se muestra con su nombre.</p></div>' +
+          '<h3 class="section-title">4 · Biblioteca de Pokémon</h3><div class="panel story-card">' +
+            '<p class="hint">PNG con fondo transparente funciona mejor. Las imágenes se guardan en Drive y las ve todo el equipo.</p>' +
+            '<div class="story-lib">' + bibliotecaHtml() + '</div>' +
+            '<input type="file" id="story-poke-file" accept="image/png,image/webp,image/jpeg" hidden>' +
+            '<div class="story-add"><input data-story-nuevo placeholder="Nombre del Pokémon" maxlength="40" aria-label="Nombre del Pokémon nuevo"><button type="button" class="btn secondary" data-action="storyPokeAgregar">' + GS.icon('plus', 2.4) + 'Agregar Pokémon</button></div>' +
+          '</div>' +
+        '</div>' +
+        '<aside class="story-preview"><h3 class="section-title">Vista previa · 1080 × 1920</h3>' +
+          '<div class="story-frame"><img id="story-out" alt="Vista previa de la Story del Top 5"></div>' +
+          '<div class="story-actions"><button type="button" class="btn" data-action="storyDescargar">' + GS.icon('download') + 'Descargar PNG</button>' +
+          '<button type="button" class="btn secondary" data-action="storyGuardar"' + (t ? '' : ' disabled') + '>' + GS.icon('check') + 'Guardar</button></div>' +
+          '<p class="hint" data-story-estado>' + (st.cambios ? '<span class="text-gold">Cambios sin guardar.</span> ' : '') + 'Guardar deja el Pokémon y el récord de cada jugador en el torneo (sirve para los rankings de temporada).</p>' +
+        '</aside></div>');
+      pedirImagenes();
+      cargarFuentes().then(dibujar);
+      dibujar();
+    },
+  };
+
+  const marcarCambios = () => {
+    st.cambios = true;
+    const e = document.querySelector('[data-story-estado]');
+    if (e && !e.querySelector('.text-gold')) e.insertAdjacentHTML('afterbegin', '<span class="text-gold">Cambios sin guardar.</span> ');
+  };
+
+  document.addEventListener('input', (e) => {
+    if (!e.target.closest || !e.target.closest('#story')) return;
+    const d = e.target.dataset;
+    if (d.story) {
+      const [i, k] = d.story.split('|');
+      st.top[+i][k] = ['w', 'l', 't'].indexOf(k) !== -1 ? Math.max(0, parseInt(e.target.value, 10) || 0) : e.target.value;
+      if (k === 'principal' || k === 'secundario') pedirImagenes();
+      marcarCambios();
+    } else if (d.storyEv) {
+      st.ev[d.storyEv] = e.target.value;
+      if (d.storyEv !== 'nombre') marcarCambios();
+    } else if (d.storyModo) {
+      st[d.storyModo === 'nombre' ? 'nombreModo' : 'imgModo'] = e.target.value;
+      pref.set(d.storyModo, e.target.value);
+    } else return;
+    programar();
+  });
+  document.addEventListener('change', (e) => {
+    if (!e.target.closest || !e.target.closest('#story')) return;
+    if (e.target.matches('[data-story-torneo]')) {
+      cargar(torneos().find((t) => t.id === e.target.value));
+      GS.render();
+    } else if (e.target.id === 'story-tdf') subirTdf(e.target);
+    else if (e.target.id === 'story-poke-file') subirImagen(e.target);
+  });
+
+  /* ---------- acciones ---------- */
+
+  GS.actions.storyTdf = () => document.getElementById('story-tdf').click();
+  async function subirTdf(input) {
+    const f = input.files[0];
+    input.value = '';
+    if (!f) return;
+    try {
+      const tdf = GS.leerTdf(await f.text());
+      const r = await GS.mutate('tdfTorneo', { id: st.torneoId, tdf: { nombre: f.name, texto: tdf.texto }, jugadores: tdf.jugadores },
+        (x) => '.tdf guardado: récord de ' + x.jugadores + ' jugadores' + (x.sinCoincidir ? ' (' + x.sinCoincidir + ' sin coincidir por Player ID)' : ''));
+      cargar(torneos().find((t) => t.id === r.id));
+      GS.render();
+    } catch (e) { GS.toast(e.message, true); }
+  }
+
+  GS.actions.storyGuardar = () => GS.mutate('storyTorneo', {
+    id: st.torneoId, tipoEvento: st.ev.tipoEvento, temporada: st.ev.temporada, categoria: st.ev.categoria,
+    jugadores: st.top.filter((p) => p.id).map((p) => ({ id: p.id, nombrePila: p.nombrePila, apellido: p.apellido, w: p.w, l: p.l, t: p.t, principal: p.principal, secundario: p.secundario })),
+  }, 'Story guardada en el torneo').then(() => { st.cambios = false; GS.render(); }).catch((e) => GS.toast(e.message, true));
+
+  GS.actions.storyDescargar = () => {
+    dibujar();
+    const slug = GS.norm(st.ev.nombre).replace(/[^\w]+/g, '-').replace(/^-|-$/g, '') || 'torneo';
+    const t = torneos().find((x) => x.id === st.torneoId);
+    cv.toBlob((blob) => {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'top5-' + slug + '-' + (t ? t.fecha : 'story') + '.png';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      GS.toast('Imagen lista. Si la descarga no parte, haz clic derecho en la vista previa → Guardar imagen como…');
+    }, 'image/png');
+  };
+
+  GS.actions.storyPokeAgregar = () => {
+    const inp = document.querySelector('[data-story-nuevo]');
+    const n = inp.value.trim();
+    if (!n) { GS.toast('Escribe el nombre del Pokémon.', true); return; }
+    GS.mutate('agregarPokemon', { nombre: n }, n + ' agregado: súbele una imagen con el botón ↑').catch((e) => GS.toast(e.message, true));
+  };
+
+  let destino = '';
+  GS.actions.storyPokeImagen = (id) => { destino = id; document.getElementById('story-poke-file').click(); };
+  /** Reduce la imagen (máx. 700 × 520, como la usa la Story) y la sube como PNG, conservando la transparencia. */
+  function subirImagen(input) {
+    const f = input.files[0];
+    input.value = '';
+    if (!f || !destino) return;
+    const lector = new FileReader();
+    lector.onload = () => {
+      const im = new Image();
+      im.onload = () => {
+        const k = Math.min(1, 520 / im.naturalHeight, 700 / im.naturalWidth);
+        const c = document.createElement('canvas');
+        c.width = Math.round(im.naturalWidth * k); c.height = Math.round(im.naturalHeight * k);
+        c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+        const p = biblioteca().find((x) => x.id === destino);
+        GS.mutate('imagenPokemon', { id: destino, archivo: { mime: 'image/png', base64: c.toDataURL('image/png').split(',')[1] } }, 'Imagen guardada para ' + (p ? p.nombre : destino))
+          .catch((e) => GS.toast(e.message, true));
+      };
+      im.onerror = () => GS.toast('No se pudo abrir la imagen. Prueba con un PNG, WEBP o JPG.', true);
+      im.src = lector.result;
+    };
+    lector.readAsDataURL(f);
+  }
+  GS.actions.storyPokeQuitar = (id) => {
+    const p = biblioteca().find((x) => x.id === id);
+    GS.mutate('imagenPokemon', { id: id, quitar: true }, 'Imagen quitada de ' + (p ? p.nombre : id)).catch((e) => GS.toast(e.message, true));
+  };
+  GS.actions.storyPokeEliminar = (id) => {
+    const p = biblioteca().find((x) => x.id === id);
+    GS.confirm({
+      title: 'Eliminar ' + (p ? p.nombre : id), danger: true, confirmLabel: 'Eliminar',
+      message: 'Se quita de la biblioteca (y su imagen va a la papelera de Drive). Los torneos que ya lo tienen guardado conservan el nombre.',
+      onConfirm: () => GS.mutate('eliminarPokemon', { id: id }, (p ? p.nombre : id) + ' eliminado'),
+    });
+  };
+})();
+</script>

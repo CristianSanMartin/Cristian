@@ -213,7 +213,7 @@ var createGasFake = function (opts) {
         if (f && !f.trashed) {
           return {
             getId: function () { return id; }, getName: function () { return f.name; },
-            getBlob: function () { return { getBytes: function () { return f.base64; } }; },
+            getBlob: function () { return { getBytes: function () { return f.base64; }, getContentType: function () { return f.mime; } }; },
             setTrashed: function (v) { f.trashed = v; },
           };
         }
