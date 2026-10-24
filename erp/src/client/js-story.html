@@ -301,7 +301,7 @@
       const t = ts.find((x) => x.id === st.torneoId);
       const sinRecord = t && !t.tdf && t.jugadores.every((j) => !j.w && !j.l && !j.t);
       el.innerHTML =
-        '<div class="page-head"><div><h1>Story Top 5</h1><p>Elige el torneo, el Pokémon de cada jugador del Top 5 y descarga la imagen para la Story de Instagram (1080 × 1920).</p></div></div>' +
+        '<div class="page-head"><div><a href="#" class="back-link" data-nav="torneos">' + GS.icon('back') + 'Torneos</a><h1>Story Top 5</h1><p>Elige el torneo, el Pokémon de cada jugador del Top 5 y descarga la imagen para la Story de Instagram (1080 × 1920).</p></div></div>' +
         (!ts.length ? GS.empty('Sin torneos', 'Primero sube el .tdf del torneo en Torneos: de ahí salen los jugadores y su récord.', 'torneos') :
         '<div class="story-wrap" id="story"><div class="story-col">' +
           '<h3 class="section-title">1 · Torneo</h3><div class="panel story-card">' +

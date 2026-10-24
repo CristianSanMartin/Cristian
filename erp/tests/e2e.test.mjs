@@ -867,8 +867,11 @@ test("Story Top 5: Pokémon con imagen, vista previa, guardar y descargar el PNG
   const browser = await chromium.launch();
   try {
     const { page, errores } = await abrir(browser);
-    await page.click('[data-nav="story"]');
+    await page.click('[data-nav="torneos"]');
+    await page.click('#view [data-nav="story"]');
     await page.waitForSelector("#story-out[src^='data:image/png']");
+    assert.equal(await page.locator('#nav [data-nav="story"]').count(), 0, "Story Top 5 está dentro de Torneos, no en el menú");
+    assert.match(await page.locator("#nav .nav-item.active").textContent(), /Torneos/);
     // El torneo de ejemplo trae el Top 5 con récord del .tdf y Pokémon elegidos.
     assert.equal(await page.inputValue('[data-story="0|nombrePila"]'), "Martín");
     assert.equal(await page.inputValue('[data-story="0|w"]'), "4");

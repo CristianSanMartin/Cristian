@@ -393,7 +393,7 @@ Menú **Torneos**. Al terminar un torneo, TOM (Tournament Operations Manager) ex
 
 ## Story Top 5
 
-Menú **Story Top 5**: arma la imagen del Top 5 de un torneo (1080 × 1920, para la Story de Instagram) con el
+Torneos → botón **Story Top 5**: arma la imagen del Top 5 de un torneo (1080 × 1920, para la Story de Instagram) con el
 diseño de GS Prime.
 
 - Se elige el torneo: nombre, apellido y récord salen de su `.tdf`. Un torneo subido antes de esta versión
