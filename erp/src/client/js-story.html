@@ -72,11 +72,34 @@
         delete pedidas[clave(p)];
         if (!r.data[p.id]) return;
         const im = new Image();
-        im.onload = programar;
+        im.onload = () => { im.opaca = esOpaca(im); programar(); };
         im.src = r.data[p.id];
         imgs[clave(p)] = im;
       });
     }).catch((e) => { faltan.forEach((p) => { delete pedidas[clave(p)]; }); GS.toast(e.message, true); });
+  }
+
+  /**
+   * ¿La imagen no tiene fondo transparente (ej. la ilustración de una carta)? Se revisa el borde en una
+   * copia pequeña: si casi todo es opaco, la silueta saldría como un rectángulo de color, así que se
+   * dibuja como foto.
+   */
+  function esOpaca(im) {
+    const n = 48;
+    const c = document.createElement('canvas');
+    c.width = n; c.height = n;
+    const o = c.getContext('2d');
+    o.drawImage(im, 0, 0, n, n);
+    const px = o.getImageData(0, 0, n, n).data;
+    let borde = 0, opacos = 0;
+    for (let y = 0; y < n; y++) {
+      for (let x = 0; x < n; x++) {
+        if (x > 1 && x < n - 2 && y > 1 && y < n - 2) continue;
+        borde++;
+        if (px[(y * n + x) * 4 + 3] > 240) opacos++;
+      }
+    }
+    return opacos / borde > 0.9;
   }
 
   /* ---------- dibujo de la Story (igual al diseño original) ---------- */
@@ -163,7 +186,22 @@
     ctx.save();
     ctx.beginPath(); poly.forEach(([px, py], j) => (j ? ctx.lineTo(px, py) : ctx.moveTo(px, py))); ctx.closePath(); ctx.clip();
     const im = imagenDe(name), cx = (x0 + x1) / 2, maxW = (x1 - x0) * 1.05;
-    if (im) {
+    if (im && im.opaca) {
+      // Imagen con fondo (ej. una carta): rellena el espacio como foto y se funde con la fila por la izquierda.
+      const sw = Math.ceil(x1 - x0), k = Math.max(sw / im.naturalWidth, h / im.naturalHeight);
+      const dw = im.naturalWidth * k, dh = im.naturalHeight * k;
+      const off = document.createElement('canvas'); off.width = sw; off.height = h;
+      const o = off.getContext('2d');
+      o.drawImage(im, (sw - dw) / 2, (h - dh) / 2, dw, dh);
+      const velo = o.createLinearGradient(0, 0, 0, h);
+      velo.addColorStop(0, tint + '30'); velo.addColorStop(1, 'rgba(0,0,0,0.3)');
+      o.fillStyle = velo; o.fillRect(0, 0, sw, h);
+      o.globalCompositeOperation = 'destination-in';
+      const fade = o.createLinearGradient(0, 0, sw * 0.5, 0);
+      fade.addColorStop(0, 'rgba(0,0,0,0)'); fade.addColorStop(1, 'rgba(0,0,0,0.92)');
+      o.fillStyle = fade; o.fillRect(0, 0, sw, h);
+      ctx.drawImage(off, x0, y);
+    } else if (im) {
       let k = (h * 1.2) / im.naturalHeight;
       if (im.naturalWidth * k > maxW) k = maxW / im.naturalWidth;
       const dw = Math.round(im.naturalWidth * k), dh = Math.round(im.naturalHeight * k);
@@ -318,7 +356,7 @@
         '<h3 class="section-title">3 · Top 5 y Pokémon</h3><div class="panel story-card"><div class="table-wrap"><table class="data-table story-tabla"><thead><tr><th class="c-pos">#</th><th>Nombre</th><th>Apellido</th><th class="c-num center" title="Victorias">W</th><th class="c-num center" title="Derrotas">L</th><th class="c-num center" title="Empates">T</th><th>Pokémon principal</th><th>Secundario</th></tr></thead><tbody>' + filas() + '</tbody></table></div>' +
           '<p class="hint">Nombre, apellido y récord vienen del .tdf (TOM no guarda el mazo, por eso el Pokémon se elige aquí). Solo principal: ocupa todo el espacio; con secundario: 65/35 con corte inclinado. Un Pokémon sin imagen se muestra con su nombre.</p></div>' +
         '<h3 class="section-title">4 · Biblioteca de Pokémon</h3><div class="panel story-card">' +
-          '<p class="hint">PNG con fondo transparente funciona mejor. Las imágenes se guardan en Drive y las ve todo el equipo.</p>' +
+          '<p class="hint">PNG con fondo transparente funciona mejor (sale como silueta del color de la fila). Una imagen con fondo, como la ilustración de una carta, se muestra completa como foto. Las imágenes se guardan en Drive y las ve todo el equipo.</p>' +
           '<div class="story-lib">' + bibliotecaHtml() + '</div>' +
           '<input type="file" id="story-poke-file" accept="image/png,image/webp,image/jpeg" hidden>' +
           '<div class="story-add"><input data-story-nuevo placeholder="Nombre del Pokémon" maxlength="40" aria-label="Nombre del Pokémon nuevo"><button type="button" class="btn secondary" data-action="storyPokeAgregar">' + GS.icon('plus', 2.4) + 'Agregar Pokémon</button></div>' +

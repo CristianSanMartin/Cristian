@@ -15,7 +15,7 @@
 
 const APP = {
   nombre: 'GS Prime ERP',
-  version: '2.23.2',
+  version: '2.23.3',
   tz: 'America/Santiago',
   iva: 0.19,
 };
