@@ -157,9 +157,20 @@
       const mes = data().hoy.slice(0, 7);
       const delMes = ts.filter((t) => t.fecha.slice(0, 7) === mes);
       const suma = (arr, k) => arr.reduce((s, t) => s + t.resultado[k], 0);
-      el.innerHTML =
-        '<div class="page-head"><div><h1>Torneos</h1><p>Sube el archivo .tdf de TOM: los jugadores quedan por cobrar en la caja del día. Agrega premios del inventario y el pago al juez para ver el margen.</p></div>' +
-        (op ? '<div class="btn-row"><button class="btn secondary" data-nav="story">' + GS.icon('story') + 'Story Top 5</button><button class="btn" data-action="subirTdf">' + GS.icon('plus', 2.4) + 'Subir torneo (.tdf)</button><input type="file" id="tdf-input" accept=".tdf,.xml,text/xml" hidden></div>' : '') + '</div>' +
+      const f = GS.filters('torneos', { tab: 'lista' });
+      const story = op && f.tab === 'story';
+      const tab = (id, label) => '<button class="tab' + ((id === 'story') === story ? ' active' : '') + '" data-action="tab" data-id="torneos.' + id + '">' + label + '</button>';
+      const cabecera =
+        '<div class="page-head"><div><h1>Torneos</h1><p>' + (story ? 'Imagen del Top 5 de un torneo para la Story de Instagram (1080 × 1920): elige el torneo, el Pokémon de cada jugador y descárgala.'
+          : 'Sube el archivo .tdf de TOM: los jugadores quedan por cobrar en la caja del día. Agrega premios del inventario y el pago al juez para ver el margen.') + '</p></div>' +
+        (op && !story ? '<div class="btn-row"><button class="btn" data-action="subirTdf">' + GS.icon('plus', 2.4) + 'Subir torneo (.tdf)</button><input type="file" id="tdf-input" accept=".tdf,.xml,text/xml" hidden></div>' : '') + '</div>' +
+        (op ? '<div class="tabs">' + tab('lista', 'Torneos') + tab('story', 'Story Top 5') + '</div>' : '');
+      if (story) {
+        el.innerHTML = cabecera + '<div id="trn-story"></div>';
+        GS.story(document.getElementById('trn-story'));
+        return;
+      }
+      el.innerHTML = cabecera +
         '<div class="kpi-grid">' +
         kpi('Torneos del mes', delMes.length, fmt.num(suma(delMes, 'jugadores')) + ' jugadores') +
         kpi('Inscripciones del mes', fmt.money(suma(delMes, 'inscripciones')), 'con IVA') +

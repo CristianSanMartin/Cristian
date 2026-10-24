@@ -291,53 +291,48 @@
       : '<p class="hint">La biblioteca está vacía. Agrega el primer Pokémon abajo.</p>';
   }
 
-  GS.views.story = {
-    title: 'Story Top 5',
-    parent: 'torneos',
-    rol: 'operador',
-    render(el) {
-      const ts = torneos();
-      if (st.torneoId === null || (st.torneoId && !ts.some((t) => t.id === st.torneoId))) cargar(ts[0]);
-      const t = ts.find((x) => x.id === st.torneoId);
-      const sinRecord = t && !t.tdf && t.jugadores.every((j) => !j.w && !j.l && !j.t);
-      el.innerHTML =
-        '<div class="page-head"><div><a href="#" class="back-link" data-nav="torneos">' + GS.icon('back') + 'Torneos</a><h1>Story Top 5</h1><p>Elige el torneo, el Pokémon de cada jugador del Top 5 y descarga la imagen para la Story de Instagram (1080 × 1920).</p></div></div>' +
-        (!ts.length ? GS.empty('Sin torneos', 'Primero sube el .tdf del torneo en Torneos: de ahí salen los jugadores y su récord.', 'torneos') :
-        '<div class="story-wrap" id="story"><div class="story-col">' +
-          '<h3 class="section-title">1 · Torneo</h3><div class="panel story-card">' +
-            '<div class="form-field"><label>Torneo</label><select data-story-torneo>' + ts.map((x) => '<option value="' + esc(x.id) + '"' + (x.id === st.torneoId ? ' selected' : '') + '>' + esc(fmt.date(x.fecha) + ' · ' + x.nombre + ' · ' + x.jugadores.length + ' jugadores') + '</option>').join('') + '</select></div>' +
-            (sinRecord
-              ? '<div class="notice warn">Este torneo se subió antes de guardar el récord: sube su <strong>.tdf</strong> para traer victorias, derrotas y empates (o escríbelos en la tabla). <button type="button" class="btn small" data-action="storyTdf">Subir .tdf de este torneo</button></div>'
-              : '<p class="hint">' + (t && t.tdf ? '✓ El .tdf de este torneo está guardado en Drive.' : 'Este torneo no tiene el .tdf guardado. <a href="#" data-action="storyTdf">Subirlo</a>') + '</p>') +
-            '<input type="file" id="story-tdf" accept=".tdf,.xml,text/xml" hidden>' +
-          '</div>' +
-          '<h3 class="section-title">2 · Datos del evento</h3><div class="panel story-card"><div class="form-grid">' +
-            '<div class="form-field"><label>Tipo de evento</label><input data-story-ev="tipoEvento" maxlength="40" value="' + esc(st.ev.tipoEvento) + '"></div>' +
-            '<div class="form-field"><label>Nombre del torneo (en la imagen)</label><input data-story-ev="nombre" maxlength="80" value="' + esc(st.ev.nombre) + '"></div>' +
-            '<div class="form-field"><label>Temporada</label><input data-story-ev="temporada" maxlength="60" value="' + esc(st.ev.temporada) + '" placeholder="Ej.: Temporada 2026"></div>' +
-            '<div class="form-field"><label>Categoría</label><select data-story-ev="categoria">' + GS.options(data().catalogos.categoriasTorneo, st.ev.categoria) + '</select></div>' +
-            '<div class="form-field"><label>Nombre que se muestra</label><select data-story-modo="nombre">' + GS.options([{ value: 'first', label: 'Solo nombre' }, { value: 'initial', label: 'Nombre + inicial' }, { value: 'full', label: 'Nombre completo' }], st.nombreModo) + '</select></div>' +
-            '<div class="form-field"><label>Cómo se muestra el Pokémon</label><select data-story-modo="img">' + GS.options([{ value: 'tint', label: 'Silueta del color de la fila' }, { value: 'original', label: 'Imagen original' }], st.imgModo) + '</select></div>' +
-          '</div></div>' +
-          '<h3 class="section-title">3 · Top 5 y Pokémon</h3><div class="panel story-card"><div class="table-wrap"><table class="data-table story-tabla"><thead><tr><th class="c-pos">#</th><th>Nombre</th><th>Apellido</th><th class="c-num center" title="Victorias">W</th><th class="c-num center" title="Derrotas">L</th><th class="c-num center" title="Empates">T</th><th>Pokémon principal</th><th>Secundario</th></tr></thead><tbody>' + filas() + '</tbody></table></div>' +
-            '<p class="hint">Nombre, apellido y récord vienen del .tdf (TOM no guarda el mazo, por eso el Pokémon se elige aquí). Solo principal: ocupa todo el espacio; con secundario: 65/35 con corte inclinado. Un Pokémon sin imagen se muestra con su nombre.</p></div>' +
-          '<h3 class="section-title">4 · Biblioteca de Pokémon</h3><div class="panel story-card">' +
-            '<p class="hint">PNG con fondo transparente funciona mejor. Las imágenes se guardan en Drive y las ve todo el equipo.</p>' +
-            '<div class="story-lib">' + bibliotecaHtml() + '</div>' +
-            '<input type="file" id="story-poke-file" accept="image/png,image/webp,image/jpeg" hidden>' +
-            '<div class="story-add"><input data-story-nuevo placeholder="Nombre del Pokémon" maxlength="40" aria-label="Nombre del Pokémon nuevo"><button type="button" class="btn secondary" data-action="storyPokeAgregar">' + GS.icon('plus', 2.4) + 'Agregar Pokémon</button></div>' +
-          '</div>' +
+  /** Pestaña "Story Top 5" de Torneos: dibuja la pantalla en el contenedor. */
+  GS.story = function (el) {
+    const ts = torneos();
+    if (st.torneoId === null || (st.torneoId && !ts.some((t) => t.id === st.torneoId))) cargar(ts[0]);
+    const t = ts.find((x) => x.id === st.torneoId);
+    const sinRecord = t && !t.tdf && t.jugadores.every((j) => !j.w && !j.l && !j.t);
+    el.innerHTML =
+      (!ts.length ? GS.empty('Sin torneos', 'Primero sube el .tdf del torneo en Torneos: de ahí salen los jugadores y su récord.', 'torneos') :
+      '<div class="story-wrap" id="story"><div class="story-col">' +
+        '<h3 class="section-title">1 · Torneo</h3><div class="panel story-card">' +
+          '<div class="form-field"><label>Torneo</label><select data-story-torneo>' + ts.map((x) => '<option value="' + esc(x.id) + '"' + (x.id === st.torneoId ? ' selected' : '') + '>' + esc(fmt.date(x.fecha) + ' · ' + x.nombre + ' · ' + x.jugadores.length + ' jugadores') + '</option>').join('') + '</select></div>' +
+          (sinRecord
+            ? '<div class="notice warn">Este torneo se subió antes de guardar el récord: sube su <strong>.tdf</strong> para traer victorias, derrotas y empates (o escríbelos en la tabla). <button type="button" class="btn small" data-action="storyTdf">Subir .tdf de este torneo</button></div>'
+            : '<p class="hint">' + (t && t.tdf ? '✓ El .tdf de este torneo está guardado en Drive.' : 'Este torneo no tiene el .tdf guardado. <a href="#" data-action="storyTdf">Subirlo</a>') + '</p>') +
+          '<input type="file" id="story-tdf" accept=".tdf,.xml,text/xml" hidden>' +
         '</div>' +
-        '<aside class="story-preview"><h3 class="section-title">Vista previa · 1080 × 1920</h3>' +
-          '<div class="story-frame"><img id="story-out" alt="Vista previa de la Story del Top 5"></div>' +
-          '<div class="story-actions"><button type="button" class="btn" data-action="storyDescargar">' + GS.icon('download') + 'Descargar PNG</button>' +
-          '<button type="button" class="btn secondary" data-action="storyGuardar"' + (t ? '' : ' disabled') + '>' + GS.icon('check') + 'Guardar</button></div>' +
-          '<p class="hint" data-story-estado>' + (st.cambios ? '<span class="text-gold">Cambios sin guardar.</span> ' : '') + 'Guardar deja el Pokémon y el récord de cada jugador en el torneo (sirve para los rankings de temporada).</p>' +
-        '</aside></div>');
-      pedirImagenes();
-      cargarFuentes().then(dibujar);
-      dibujar();
-    },
+        '<h3 class="section-title">2 · Datos del evento</h3><div class="panel story-card"><div class="form-grid">' +
+          '<div class="form-field"><label>Tipo de evento</label><input data-story-ev="tipoEvento" maxlength="40" value="' + esc(st.ev.tipoEvento) + '"></div>' +
+          '<div class="form-field"><label>Nombre del torneo (en la imagen)</label><input data-story-ev="nombre" maxlength="80" value="' + esc(st.ev.nombre) + '"></div>' +
+          '<div class="form-field"><label>Temporada</label><input data-story-ev="temporada" maxlength="60" value="' + esc(st.ev.temporada) + '" placeholder="Ej.: Temporada 2026"></div>' +
+          '<div class="form-field"><label>Categoría</label><select data-story-ev="categoria">' + GS.options(data().catalogos.categoriasTorneo, st.ev.categoria) + '</select></div>' +
+          '<div class="form-field"><label>Nombre que se muestra</label><select data-story-modo="nombre">' + GS.options([{ value: 'first', label: 'Solo nombre' }, { value: 'initial', label: 'Nombre + inicial' }, { value: 'full', label: 'Nombre completo' }], st.nombreModo) + '</select></div>' +
+          '<div class="form-field"><label>Cómo se muestra el Pokémon</label><select data-story-modo="img">' + GS.options([{ value: 'tint', label: 'Silueta del color de la fila' }, { value: 'original', label: 'Imagen original' }], st.imgModo) + '</select></div>' +
+        '</div></div>' +
+        '<h3 class="section-title">3 · Top 5 y Pokémon</h3><div class="panel story-card"><div class="table-wrap"><table class="data-table story-tabla"><thead><tr><th class="c-pos">#</th><th>Nombre</th><th>Apellido</th><th class="c-num center" title="Victorias">W</th><th class="c-num center" title="Derrotas">L</th><th class="c-num center" title="Empates">T</th><th>Pokémon principal</th><th>Secundario</th></tr></thead><tbody>' + filas() + '</tbody></table></div>' +
+          '<p class="hint">Nombre, apellido y récord vienen del .tdf (TOM no guarda el mazo, por eso el Pokémon se elige aquí). Solo principal: ocupa todo el espacio; con secundario: 65/35 con corte inclinado. Un Pokémon sin imagen se muestra con su nombre.</p></div>' +
+        '<h3 class="section-title">4 · Biblioteca de Pokémon</h3><div class="panel story-card">' +
+          '<p class="hint">PNG con fondo transparente funciona mejor. Las imágenes se guardan en Drive y las ve todo el equipo.</p>' +
+          '<div class="story-lib">' + bibliotecaHtml() + '</div>' +
+          '<input type="file" id="story-poke-file" accept="image/png,image/webp,image/jpeg" hidden>' +
+          '<div class="story-add"><input data-story-nuevo placeholder="Nombre del Pokémon" maxlength="40" aria-label="Nombre del Pokémon nuevo"><button type="button" class="btn secondary" data-action="storyPokeAgregar">' + GS.icon('plus', 2.4) + 'Agregar Pokémon</button></div>' +
+        '</div>' +
+      '</div>' +
+      '<aside class="story-preview"><h3 class="section-title">Vista previa · 1080 × 1920</h3>' +
+        '<div class="story-frame"><img id="story-out" alt="Vista previa de la Story del Top 5"></div>' +
+        '<div class="story-actions"><button type="button" class="btn" data-action="storyDescargar">' + GS.icon('download') + 'Descargar PNG</button>' +
+        '<button type="button" class="btn secondary" data-action="storyGuardar"' + (t ? '' : ' disabled') + '>' + GS.icon('check') + 'Guardar</button></div>' +
+        '<p class="hint" data-story-estado>' + (st.cambios ? '<span class="text-gold">Cambios sin guardar.</span> ' : '') + 'Guardar deja el Pokémon y el récord de cada jugador en el torneo (sirve para los rankings de temporada).</p>' +
+      '</aside></div>');
+    pedirImagenes();
+    cargarFuentes().then(dibujar);
+    dibujar();
   };
 
   const marcarCambios = () => {
