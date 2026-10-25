@@ -147,7 +147,7 @@
       // Venta con TUU de la caja del día: "por abonar" hasta que el informe de TUU la confirma (no suma al saldo).
       const tuu = v.tuuAbono;
       const estadoTuu = (medio) => (tuu && ['debito', 'credito'].indexOf(medio) !== -1
-        ? (tuu.porAbonar ? { porAbonar: true, estadoLabel: 'Por abonar · ' + fmt.date(tuu.fechaAbono) } : { estadoLabel: 'Abonado · ' + fmt.date(tuu.abonadoEl) }) : {});
+        ? (tuu.porAbonar ? { porAbonar: true, fechaAbono: tuu.fechaAbono, medioLabel: data().catalogos.mediosPago[medio] || medio, estadoLabel: 'Por abonar · ' + fmt.date(tuu.fechaAbono) } : { estadoLabel: 'Abonado · ' + fmt.date(tuu.abonadoEl) }) : {});
       if (v.abono) res.push(Object.assign({}, base, { id: v.id + '·v', fecha: v.fecha, categoriaLabel: 'Venta', subcategoria: v.cliente + ' · ' + v.medioPagoLabel,
         monto: conCom ? v.abono - v.comision : v.abono, bruto: v.abono, comision: conCom ? v.comision : 0,
         notas: conCom ? 'venta ' + fmt.money(v.abono) + ' − comisión ' + fmt.money(v.comision) : '' }, estadoTuu(v.medioPago)));
@@ -175,15 +175,21 @@
   // Resumen del dinero para el Dashboard: todo lo registrado en Finanzas (con ventas y pagos de facturas)
   // más los tickets de la caja abierta, que pasan a Finanzas recién al cerrarla.
   GS.resumenDinero = function () {
-    const r = { saldo: 0, caja: 0, banco: 0, porAbonar: 0, nPorAbonar: 0, cuotas: 0, porCobrar: 0, nPorCobrar: 0, abierta: null };
+    // abonos: detalle de lo que TUU aún no abona (ventas ya pasadas y pagos de la caja abierta); listaCuotas: cuotas pendientes.
+    const r = { saldo: 0, caja: 0, banco: 0, porAbonar: 0, nPorAbonar: 0, cuotas: 0, porCobrar: 0, nPorCobrar: 0, abierta: null, abonos: [], listaCuotas: [] };
     const sumar = (cuenta, s) => { r.saldo += s; if (cuenta === 'caja') r.caja += s; else if (cuenta === 'banco') r.banco += s; };
     const CUENTA = { 'Caja (efectivo)': 'caja', Banco: 'banco', TUU: 'banco' };
     (data().movimientos || []).concat(movsVentas()).forEach((m) => {
       if (m.anulado) return;
-      if (m.porAbonar) { r.porAbonar += m.monto; r.nPorAbonar++; return; }
+      if (m.porAbonar) {
+        r.porAbonar += m.monto; r.nPorAbonar++;
+        r.abonos.push({ fecha: m.fecha, ref: m.venta || m.referencia, detalle: m.subcategoria, medio: m.medioLabel || '', bruto: m.bruto || m.monto, comision: m.comision || 0, neto: m.monto, abono: m.fechaAbono || '' });
+        return;
+      }
       sumar(CUENTA[m.cuentaLabel], m.tipo === 'ingreso' ? m.monto : -m.monto);
     });
-    r.cuotas = ((data().tuu || {}).cuotas || []).filter((c) => c.estado === 'pendiente').reduce((s, c) => s + c.monto, 0);
+    r.listaCuotas = ((data().tuu || {}).cuotas || []).filter((c) => c.estado === 'pendiente').sort((a, b) => String(a.fechaEsperada).localeCompare(String(b.fechaEsperada)));
+    r.cuotas = r.listaCuotas.reduce((s, c) => s + c.monto, 0);
     data().ventas.forEach((v) => { if (!v.anulada && v.saldo > 0) { r.porCobrar += v.saldo; r.nPorCobrar++; } });
     // Facturas de compra con saldo por pagar al proveedor (total con IVA − pagos registrados).
     r.porPagar = 0; r.nPorPagar = 0; r.pagarDesde = '';
@@ -203,8 +209,10 @@
           else if (p.medio === 'transferencia') { sumar('banco', p.monto); a.banco += p.monto; }
           else if (p.medio === 'pendiente') { r.porCobrar += p.monto; r.nPorCobrar++; }
           else {
-            const neto = p.monto - GS.comisionPago(data().catalogos.comisiones[p.medio], p.monto);
+            const com = GS.comisionPago(data().catalogos.comisiones[p.medio], p.monto);
+            const neto = p.monto - com;
             r.porAbonar += neto; r.nPorAbonar++; a.tuu += neto;
+            r.abonos.push({ fecha: c.fecha, ref: t.id, detalle: (t.cliente || 'Sin cliente') + ' · caja abierta', medio: data().catalogos.mediosPago[p.medio] || p.medio, bruto: p.monto, comision: com, neto: neto, abono: '' });
           }
         });
       });

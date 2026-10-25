@@ -931,3 +931,23 @@ test("Story IG (Top 5): Pokémon con imagen, vista previa, guardar y descargar e
     await browser.close();
   }
 });
+
+test("Dashboard: Por abonar (TUU) se despliega con el detalle de pagos y cuotas", { skip }, async () => {
+  const browser = await chromium.launch();
+  try {
+    const { page, errores } = await abrir(browser);
+    const kpiTuu = page.locator('[data-action="verPorAbonar"]');
+    const total = (await kpiTuu.locator(".kpi-value").textContent()).trim();
+    await kpiTuu.click();
+    const panel = page.locator(".panel", { hasText: "Por abonar (TUU)" });
+    await panel.waitFor();
+    // El total de la tabla calza con el del resumen.
+    assert.equal((await panel.locator("tfoot .text-gold").textContent()).trim(), total);
+    assert.ok(await panel.locator("tbody tr").count() >= 1);
+    await panel.locator('[data-action="irAbonosTuu"]').click();
+    await page.waitForSelector('.tab.active[data-id="caja.tuu"]');
+    assert.deepEqual(errores, []);
+  } finally {
+    await browser.close();
+  }
+});

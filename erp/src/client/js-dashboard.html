@@ -20,12 +20,13 @@
     return '<div class="dash-titulo"><h3>Dinero</h3></div>' +
       '<div class="kpi-grid dinero">' +
       kpi('Saldo disponible', '<span class="' + (neg(r.saldo) || 'text-gold') + '">' + fmt.money(r.saldo) + '</span>', 'Ingresos − egresos registrados' + (a ? ' + caja abierta' : '')) +
-      kpi('Por abonar (TUU)', fmt.money(r.porAbonar), r.nPorAbonar + (r.nPorAbonar === 1 ? ' pago' : ' pagos') + ' sin confirmar' + (r.cuotas ? ' · + ' + fmt.money(r.cuotas) + ' en cuotas' : '')) +
+      '<div class="kpi-clic" data-action="verPorAbonar" title="Ver pagos con tarjeta que TUU aún no abona">' + kpi('Por abonar (TUU)', fmt.money(r.porAbonar), r.nPorAbonar + (r.nPorAbonar === 1 ? ' pago' : ' pagos') + ' sin confirmar' + (r.cuotas ? ' · + ' + fmt.money(r.cuotas) + ' en cuotas' : '') + ' · ' + (verAbonar ? 'ocultar ▴' : 'ver ▾')) + '</div>' +
       '<div class="kpi-clic" data-action="verPorPagar" title="Ver facturas pendientes de pago">' + kpi('Facturas por pagar', '<span class="' + (r.porPagar ? 'text-danger' : '') + '">' + fmt.money(r.porPagar) + '</span>', (r.nPorPagar
         ? r.nPorPagar + (r.nPorPagar === 1 ? ' factura de compra' : ' facturas de compra') + ' · la más antigua del ' + fmt.date(r.pagarDesde)
         : 'Todas pagadas') + ' · ' + (verPagar ? 'ocultar ▴' : 'ver ▾')) + '</div>' +
       '<div class="kpi-clic" data-action="verPorCobrar" title="Ver quién debe">' + kpi('Por cobrar a clientes', fmt.money(r.porCobrar), (r.nPorCobrar ? r.nPorCobrar + (r.nPorCobrar === 1 ? ' venta con deuda' : ' ventas con deuda') : 'Nadie debe') + ' · ' + (verCobrar ? 'ocultar ▴' : 'ver ▾')) + '</div>' +
       '</div>' +
+      (verAbonar ? '<div class="panel" style="margin:-8px 0 20px;"><div class="panel-head"><h3>Por abonar (TUU)</h3><a href="#" class="tag" data-action="irAbonosTuu">Ver en Caja → Abonos TUU →</a></div><div class="panel-body">' + tablaPorAbonar(r) + '</div></div>' : '') +
       (verPagar ? '<div class="panel" style="margin:-8px 0 20px;"><div class="panel-head"><h3>Facturas por pagar</h3><a href="#" class="tag" data-nav="compras">Ver en Compras →</a></div><div class="panel-body">' + tablaPorPagar() + '</div></div>' : '') +
       (verCobrar ? '<div class="panel" style="margin:-8px 0 20px;"><div class="panel-head"><h3>Cuentas por cobrar</h3><a href="#" class="tag" data-action="irCuentasPorCobrar">Ver todo en Finanzas →</a></div><div class="panel-body">' + GS.tablaPorCobrar({ max: 8 }) + '</div></div>' : '') +
       (a ? '<p class="table-note" style="margin:-4px 0 12px;">Caja abierta del ' + a.fechas.map(fmt.date).join(', ') + ': ' + a.tickets + ' tickets aún no pasan a Finanzas (efectivo ' + fmt.money(a.efectivo) + ', banco ' + fmt.money(a.banco) + ', TUU neto estimado ' + fmt.money(a.tuu) + ').</p>' : '');
@@ -50,6 +51,27 @@
       }).join('') + '</tbody></table></div>';
   }
 
+  /** Pagos con débito/crédito que TUU aún no abona (neto de comisión) y cuotas pendientes, por fecha de abono. */
+  function tablaPorAbonar(r) {
+    if (!r.abonos.length && !r.listaCuotas.length) return GS.empty('Todo abonado', 'No hay pagos con tarjeta pendientes de abono.', 'money');
+    const hoy = GS.state.data.hoy;
+    const abono = (f) => (f ? '<span class="' + (f < hoy ? 'text-danger' : f === hoy ? 'text-gold' : '') + '">' + fmt.date(f) + (f < hoy ? ' · atrasado' : f === hoy ? ' · hoy' : '') + '</span>' : '<span class="cell-dim">al cerrar la caja</span>');
+    const lista = r.abonos.slice().sort((a, b) => String(a.abono || '9999').localeCompare(String(b.abono || '9999')) || String(a.fecha).localeCompare(String(b.fecha)));
+    return (lista.length ? '<div class="table-wrap"><table class="data-table"><thead><tr><th>Abono esperado</th><th>Venta</th><th>Documento</th><th>Detalle</th><th class="right">Pagado</th><th class="right">Comisión</th><th class="right">Por abonar</th></tr></thead><tbody>' +
+      lista.map((x) => '<tr><td class="nowrap">' + abono(x.abono) + '</td><td class="nowrap">' + fmt.date(x.fecha) + '</td><td class="cell-strong">' + esc(x.ref || '') + '</td>' +
+        '<td>' + esc(x.detalle || '') + (x.medio ? '<div class="cell-dim">' + esc(x.medio) + '</div>' : '') + '</td>' +
+        '<td class="cell-num right">' + fmt.money(x.bruto) + '</td><td class="cell-num right">' + (x.comision ? '−' + fmt.money(x.comision) : '—') + '</td>' +
+        '<td class="cell-num right"><strong>' + fmt.money(x.neto) + '</strong></td></tr>').join('') +
+      '</tbody><tfoot><tr><td colspan="6" class="right">Total por abonar</td><td class="cell-num right"><strong class="text-gold">' + fmt.money(r.porAbonar) + '</strong></td></tr></tfoot></table></div>' : '') +
+      (r.listaCuotas.length ? '<h4 class="section-title" style="margin-top:14px;">Cuotas pendientes · ' + fmt.money(r.cuotas) + '</h4><div class="table-wrap"><table class="data-table"><thead><tr><th>Abono esperado</th><th>Ticket</th><th class="center">Cuota</th><th class="right">Monto</th></tr></thead><tbody>' +
+        r.listaCuotas.map((c) => '<tr><td class="nowrap">' + abono(c.fechaEsperada) + '</td><td class="cell-strong">' + esc(c.ticketId) + '</td><td class="center">' + c.numero + ' de ' + c.de + '</td><td class="cell-num right">' + fmt.money(c.monto) + '</td></tr>').join('') +
+        '</tbody></table></div>' : '') +
+      '<p class="table-note">Los montos ya descuentan la comisión estimada de TUU; se confirman al subir el informe de abono en Caja del día → Abonos TUU.</p>';
+  }
+
+  let verAbonar = false;
+  GS.actions.verPorAbonar = () => { verAbonar = !verAbonar; GS.render(); };
+  GS.actions.irAbonosTuu = () => { GS.filters('caja', { caja: '', tab: 'caja' }).tab = 'tuu'; GS.go('caja'); };
   let verPagar = false;
   GS.actions.verPorPagar = () => { verPagar = !verPagar; GS.render(); };
   let verCobrar = false;
