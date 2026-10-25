@@ -46,6 +46,7 @@
       return { id: j.id, nombrePila: j.nombrePila || partes[0] || '', apellido: j.nombrePila ? j.apellido : partes.slice(1).join(' '), w: j.w, l: j.l, t: j.t, principal: j.principal, secundario: j.secundario };
     });
     st.cambios = false;
+    st.version = t ? t.actualizadoEn : '';
   }
 
   /* ---------- imágenes de la biblioteca (solo las que se dibujan) ---------- */
@@ -331,16 +332,14 @@
     const ts = torneos();
     if (st.torneoId === null || (st.torneoId && !ts.some((t) => t.id === st.torneoId))) cargar(ts[0]);
     const t = ts.find((x) => x.id === st.torneoId);
-    const sinRecord = t && !t.tdf && t.jugadores.every((j) => !j.w && !j.l && !j.t);
+    // Si el torneo cambió (ej. se volvió a subir su .tdf en Torneos) y no hay cambios sin guardar, se recarga.
+    if (t && !st.cambios && st.version !== t.actualizadoEn) cargar(t);
     el.innerHTML =
       (!ts.length ? GS.empty('Sin torneos', 'Primero sube el .tdf del torneo en Torneos: de ahí salen los jugadores y su récord.', 'torneos') :
       '<div class="story-wrap" id="story"><div class="story-col">' +
         '<h3 class="section-title">1 · Torneo</h3><div class="panel story-card">' +
           '<div class="form-field"><label>Torneo</label><select data-story-torneo>' + ts.map((x) => '<option value="' + esc(x.id) + '"' + (x.id === st.torneoId ? ' selected' : '') + '>' + esc(fmt.date(x.fecha) + ' · ' + x.nombre + ' · ' + x.jugadores.length + ' jugadores') + '</option>').join('') + '</select></div>' +
-          (sinRecord
-            ? '<div class="notice warn">Este torneo se subió antes de guardar el récord: sube su <strong>.tdf</strong> para traer victorias, derrotas y empates (o escríbelos en la tabla). <button type="button" class="btn small" data-action="storyTdf">Subir .tdf de este torneo</button></div>'
-            : '<p class="hint">' + (t && t.tdf ? '✓ El .tdf de este torneo está guardado en Drive.' : 'Este torneo no tiene el .tdf guardado. <a href="#" data-action="storyTdf">Subirlo</a>') + '</p>') +
-          '<input type="file" id="story-tdf" accept=".tdf,.xml,text/xml" hidden>' +
+          '<p class="hint">Jugadores, lugar y récord vienen del .tdf subido en la pestaña Torneos.</p>' +
         '</div>' +
         '<h3 class="section-title">2 · Datos del evento</h3><div class="panel story-card"><div class="form-grid">' +
           '<div class="form-field"><label>Tipo de evento</label><input data-story-ev="tipoEvento" maxlength="40" value="' + esc(st.ev.tipoEvento) + '"></div>' +
@@ -398,25 +397,10 @@
     if (e.target.matches('[data-story-torneo]')) {
       cargar(torneos().find((t) => t.id === e.target.value));
       GS.render();
-    } else if (e.target.id === 'story-tdf') subirTdf(e.target);
-    else if (e.target.id === 'story-poke-file') subirImagen(e.target);
+    } else if (e.target.id === 'story-poke-file') subirImagen(e.target);
   });
 
   /* ---------- acciones ---------- */
-
-  GS.actions.storyTdf = () => document.getElementById('story-tdf').click();
-  async function subirTdf(input) {
-    const f = input.files[0];
-    input.value = '';
-    if (!f) return;
-    try {
-      const tdf = GS.leerTdf(await f.text());
-      const r = await GS.mutate('tdfTorneo', { id: st.torneoId, tdf: { nombre: f.name, texto: tdf.texto }, jugadores: tdf.jugadores },
-        (x) => '.tdf guardado: récord de ' + x.jugadores + ' jugadores' + (x.sinCoincidir ? ' (' + x.sinCoincidir + ' sin coincidir por Player ID)' : ''));
-      cargar(torneos().find((t) => t.id === r.id));
-      GS.render();
-    } catch (e) { GS.toast(e.message, true); }
-  }
 
   GS.actions.storyGuardar = () => GS.mutate('storyTorneo', {
     id: st.torneoId, tipoEvento: st.ev.tipoEvento, temporada: st.ev.temporada, categoria: st.ev.categoria,

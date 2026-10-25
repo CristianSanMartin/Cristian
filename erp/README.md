@@ -396,8 +396,9 @@ Menú **Torneos**. Al terminar un torneo, TOM (Tournament Operations Manager) ex
 Torneos → pestaña **Story IG**: arma la imagen del Top 5 de un torneo (1080 × 1920, para la Story de Instagram) con el
 diseño de GS Prime.
 
-- Se elige el torneo: nombre, apellido y récord salen de su `.tdf`. Un torneo subido antes de esta versión
-  no tiene récord: se sube su `.tdf` desde la misma pantalla (se cruza por Player ID) o se escribe en la tabla.
+- Se elige el torneo: nombre, apellido y récord salen del `.tdf` subido en la pestaña Torneos. Un torneo subido
+  antes de esta versión no tiene récord: se vuelve a subir su `.tdf` en Torneos (se reconoce por fecha y Player
+  ID y solo actualiza récord, nombre y lugar) o se escribe en la tabla.
 - Datos del evento: tipo de evento (arriba a la izquierda), nombre del torneo en la imagen, temporada (abajo),
   categoría y cómo se muestra el nombre (solo nombre, nombre + inicial o completo).
 - A cada jugador del Top 5 se le elige su **Pokémon principal** y, si se quiere, uno **secundario** (65/35 con

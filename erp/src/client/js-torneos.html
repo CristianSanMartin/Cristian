@@ -149,6 +149,25 @@
     });
   }
 
+  /** Torneo ya creado con este .tdf: misma fecha y la mayoría de sus jugadores (por Player ID). */
+  function torneoDelTdf(tdf) {
+    const ids = new Set(tdf.jugadores.map((j) => j.popId).filter(Boolean));
+    return torneos().find((t) => t.fecha === tdf.fecha && t.jugadores.length &&
+      t.jugadores.filter((j) => ids.has(j.popId)).length >= Math.max(1, Math.ceil(t.jugadores.length / 2))) || null;
+  }
+
+  /** Volver a subir el .tdf de un torneo existente: guarda el archivo y actualiza nombre, récord y lugar de cada jugador. */
+  function actualizarDesdeTdf(t, tdf) {
+    GS.confirm({
+      title: 'Actualizar ' + t.nombre,
+      confirmLabel: 'Actualizar récord',
+      message: 'Este .tdf es del torneo <strong>' + esc(t.nombre) + '</strong> del ' + esc(fmt.date(t.fecha)) + ' (' + esc(t.id) + '), que ya existe. ' +
+        'Se guarda el archivo y se actualizan nombre, récord (victorias, derrotas, empates) y lugar de cada jugador. No cambia inscripciones, caja ni premios.',
+      onConfirm: () => GS.mutate('tdfTorneo', { id: t.id, tdf: { nombre: tdf.archivo || '', texto: tdf.texto }, jugadores: tdf.jugadores },
+        (x) => 'Récord actualizado: ' + x.jugadores + ' jugadores' + (x.sinCoincidir ? ' (' + x.sinCoincidir + ' sin coincidir por Player ID)' : '')),
+    });
+  }
+
   /* ---------- vista ---------- */
 
   GS.views.torneos = {
@@ -197,7 +216,11 @@
         const f = input.files[0];
         input.value = '';
         if (!f) return;
-        try { importar(Object.assign(leerTdf(await f.text()), { archivo: f.name })); } catch (e) { GS.toast(e.message, true); }
+        try {
+          const tdf = Object.assign(leerTdf(await f.text()), { archivo: f.name });
+          const existe = torneoDelTdf(tdf);
+          if (existe) actualizarDesdeTdf(existe, tdf); else importar(tdf);
+        } catch (e) { GS.toast(e.message, true); }
       });
     },
   };

@@ -720,6 +720,13 @@ test("torneos: subir el .tdf, cuadrar clientes, cobrar juntos en la caja, premio
     const creado = await page.evaluate(() => GS.state.data.torneos.find((t) => t.nombre === "Chill 01-11"));
     assert.match(creado.tdf, /^drive:/, "el .tdf queda guardado");
     assert.deepEqual(creado.jugadores.map((j) => [j.nombrePila, j.apellido, j.w, j.l, j.t]), [["Beto", "Díaz", 2, 0, 0], ["Ana", "Rojas", 1, 1, 0], ["Carla", "", 1, 1, 0]]);
+    // Volver a subir el mismo .tdf no crea otro torneo: actualiza el récord del existente.
+    await page.locator("#tdf-input").setInputFiles({ name: "chill.tdf", mimeType: "text/xml", buffer: Buffer.from(TDF) });
+    assert.match(await modal(page).locator(".modal-head h3").textContent(), /Actualizar Chill 01-11/);
+    await modal(page).locator('button[type="submit"]').click();
+    await toast(page, /Récord actualizado: 3 jugadores/);
+    await cerrado(page);
+    assert.equal(await page.evaluate(() => GS.state.data.torneos.filter((t) => t.nombre === "Chill 01-11").length), 1);
     const fila = page.locator("#view tr.fila-compra", { hasText: "Chill 01-11" });
     assert.match(await fila.textContent(), /3.*\$24\.000.*\$24\.000/s);
     assert.equal(await page.locator(".detalle-row .badge", { hasText: "Por cobrar" }).count(), 3);
