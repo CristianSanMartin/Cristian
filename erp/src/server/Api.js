@@ -65,6 +65,7 @@ function rutas_() {
     agregarPokemon: { rol: 'operador', write: true, fn: Pokemon.agregar },
     imagenPokemon: { rol: 'operador', write: true, fn: Pokemon.imagen },
     eliminarPokemon: { rol: 'operador', write: true, fn: Pokemon.eliminar },
+    renombrarPokemon: { rol: 'operador', write: true, fn: Pokemon.renombrar },
     imagenesPokemon: { rol: 'operador', fn: Pokemon.verImagenes },
     eliminarTorneo: { rol: 'admin', write: true, fn: Torneos.eliminar },
     vincularJugador: { rol: 'operador', write: true, fn: Torneos.vincularJugador },

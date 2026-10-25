@@ -402,8 +402,10 @@ diseño de GS Prime.
   categoría y cómo se muestra el nombre (solo nombre, nombre + inicial o completo).
 - A cada jugador del Top 5 se le elige su **Pokémon principal** y, si se quiere, uno **secundario** (65/35 con
   corte inclinado). Se ven como silueta del color de la fila o con la imagen original; sin imagen, el nombre.
-- **Biblioteca de Pokémon** (hoja `Pokemon`): cualquier operador agrega Pokémon y les sube su imagen (PNG con
-  fondo transparente funciona mejor; se reduce a 700 × 520). Se guardan en Drive para todo el equipo; la
+- **Biblioteca de Pokémon** (hoja `Pokemon`): cualquier operador agrega Pokémon; el botón **Editar** de cada uno
+  permite subir o cambiar la imagen, eliminarla, editar el nombre (los torneos guardados pasan al nombre nuevo) y
+  eliminarlo. PNG con fondo transparente sale como silueta; una imagen con fondo (ej. la ilustración de una carta)
+  sale como foto fundida con la fila. Se reduce a 700 × 520. Se guardan en Drive para todo el equipo; la
   pantalla trae solo las imágenes de los 5 jugadores para dibujar.
 - **Descargar PNG** (o clic derecho en la vista previa → Guardar imagen como…). **Guardar** deja el Pokémon y
   el récord en el torneo, para los rankings de temporada.

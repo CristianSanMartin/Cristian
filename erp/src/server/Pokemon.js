@@ -30,6 +30,26 @@ const Pokemon = {
     return { id: x.id, nombre: nombre };
   },
 
+  /** Cambia el nombre; los torneos que ya lo tienen elegido pasan al nombre nuevo. */
+  renombrar(p, user) {
+    const x = Pokemon.requerir(p.id);
+    const nombre = Util.texto(p.nombre, 'El nombre del Pokémon', { requerido: true, max: 40 });
+    if (Db.all('Pokemon').some((o) => o.id !== x.id && Util.normalizar(o.nombre) === Util.normalizar(nombre))) throw new AppError(nombre + ' ya está en la biblioteca.');
+    if (nombre === x.nombre) return { id: x.id, nombre: nombre, torneos: 0 };
+    const viejo = Util.normalizar(x.nombre);
+    const cambios = {};
+    Db.all('Torneo_Jugadores').forEach((j) => {
+      const c = {};
+      if (Util.normalizar(j.principal) === viejo) c.principal = nombre;
+      if (Util.normalizar(j.secundario) === viejo) c.secundario = nombre;
+      if (Object.keys(c).length) cambios[j.id] = Object.assign(c, Util.sello(user));
+    });
+    if (Object.keys(cambios).length) Db.actualizarVarios('Torneo_Jugadores', cambios);
+    Db.update('Pokemon', x.id, Object.assign({ nombre: nombre }, Util.sello(user)));
+    Audit.log(user, 'renombrar', 'Pokémon', x.id, { antes: x.nombre, nombre: nombre, jugadores: Object.keys(cambios).length });
+    return { id: x.id, nombre: nombre, antes: x.nombre, jugadores: Object.keys(cambios).length };
+  },
+
   /** Sube o reemplaza la imagen (p.archivo: { base64, mime }), o la quita (p.quitar). La anterior va a la papelera. */
   imagen(p, user) {
     const x = Pokemon.requerir(p.id);

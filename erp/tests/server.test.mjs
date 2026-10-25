@@ -1735,6 +1735,11 @@ test("story del top 5: récord y .tdf guardado al crear, subir .tdf después, Po
   t = s.ok("bootstrap").data.torneos.find(x => x.id === r.id);
   assert.deepEqual([t.temporada, t.categoria], ["Temporada 2027", "Cup"]);
   assert.deepEqual(t.jugadores.map(j => [j.principal, j.secundario]), [["Kyogre", "Charizard"], ["Lugia", ""]]);
+  // Renombrar: los torneos que lo tienen elegido pasan al nombre nuevo.
+  const chari = s.ok("bootstrap").data.pokemon.find(x => x.nombre === "Charizard");
+  assert.match(errorDe(s.call("renombrarPokemon", { id: chari.id, nombre: "lugia" })), /ya está/);
+  assert.equal(s.ok("renombrarPokemon", { id: chari.id, nombre: "Charizard ex" }).result.jugadores, 1);
+  assert.equal(s.ok("bootstrap").data.torneos.find(x => x.id === r.id).jugadores[0].secundario, "Charizard ex");
   s.ok("imagenPokemon", { id: kyo.id, quitar: true });
   s.ok("eliminarPokemon", { id: kyo.id });
   assert.equal(s.ok("bootstrap").data.pokemon.some(x => x.id === kyo.id), false);

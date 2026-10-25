@@ -319,13 +319,10 @@
 
   function bibliotecaHtml() {
     const lib = biblioteca();
-    return lib.length ? lib.map((p) => '<div class="story-poke">' +
-      '<div class="story-thumb">' + (p.imagen ? '<img src="' + esc(GS.imagenUrl(p.imagen)) + '" alt="' + esc(p.nombre) + '" loading="lazy">' : '<span>Sin imagen</span>') + '</div>' +
+    return lib.length ? lib.map((p) => '<div class="story-poke" data-poke="' + esc(p.id) + '">' +
+      (p.imagen ? '<img class="story-thumb" src="' + esc(GS.imagenUrl(p.imagen)) + '" alt="' + esc(p.nombre) + '" loading="lazy">' : '<span class="story-thumb vacia">Sin imagen</span>') +
       '<b>' + esc(p.nombre) + '</b>' +
-      '<div class="story-poke-acc">' +
-      '<button type="button" class="icon-btn" data-action="storyPokeImagen" data-id="' + esc(p.id) + '" title="' + (p.imagen ? 'Cambiar imagen' : 'Subir imagen') + '" aria-label="' + (p.imagen ? 'Cambiar imagen de ' : 'Subir imagen de ') + esc(p.nombre) + '">' + GS.icon('upload') + '</button>' +
-      (p.imagen ? '<button type="button" class="icon-btn" data-action="storyPokeQuitar" data-id="' + esc(p.id) + '" title="Quitar imagen" aria-label="Quitar imagen de ' + esc(p.nombre) + '">' + GS.icon('close') + '</button>' : '') +
-      GS.iconBtn('storyPokeEliminar', p.id, 'trash', 'Eliminar ' + p.nombre, 'danger') + '</div></div>').join('')
+      '<button type="button" class="story-editar" data-action="storyPokeMenu" data-id="' + esc(p.id) + '" aria-haspopup="true" aria-label="Editar ' + esc(p.nombre) + '">' + GS.icon('edit') + 'Editar</button></div>').join('')
       : '<p class="hint">La biblioteca está vacía. Agrega el primer Pokémon abajo.</p>';
   }
 
@@ -471,6 +468,40 @@
     };
     lector.readAsDataURL(f);
   }
+  /* Menú "Editar" de cada Pokémon: subir o cambiar imagen, eliminar imagen, editar nombre y eliminar todo. */
+  const cerrarMenu = () => document.querySelectorAll('.story-menu').forEach((m) => m.remove());
+  GS.actions.storyPokeMenu = (id) => {
+    const abierto = document.querySelector('.story-menu[data-menu="' + id + '"]');
+    cerrarMenu();
+    if (abierto) return;
+    const p = biblioteca().find((x) => x.id === id);
+    const card = document.querySelector('.story-poke[data-poke="' + id + '"]');
+    if (!p || !card) return;
+    const op = (accion, txt, cls) => '<button type="button" role="menuitem" class="' + (cls || '') + '" data-action="' + accion + '" data-id="' + esc(id) + '">' + txt + '</button>';
+    card.insertAdjacentHTML('beforeend', '<div class="story-menu" role="menu" data-menu="' + esc(id) + '">' +
+      op('storyPokeImagen', p.imagen ? 'Cambiar imagen' : 'Subir imagen') +
+      (p.imagen ? op('storyPokeQuitar', 'Eliminar imagen') : '') +
+      op('storyPokeNombre', 'Editar nombre') +
+      op('storyPokeEliminar', 'Eliminar todo', 'text-danger') + '</div>');
+  };
+  // Clic afuera o en una opción cierra el menú (la opción ya se ejecutó: este listener va después del de acciones).
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('[data-action="storyPokeMenu"]') && (!e.target.closest('.story-menu') || e.target.closest('.story-menu [data-action]'))) cerrarMenu();
+  });
+  GS.actions.storyPokeNombre = (id) => {
+    const p = biblioteca().find((x) => x.id === id);
+    GS.formModal({
+      title: 'Editar nombre',
+      submitLabel: 'Guardar',
+      fields: () => '<div class="form-field"><label>Nombre del Pokémon *</label><input name="nombre" maxlength="40" value="' + esc(p.nombre) + '"></div>' +
+        '<p class="hint">Los torneos que ya lo tienen elegido pasan al nombre nuevo.</p>',
+      onSubmit: (v) => GS.mutate('renombrarPokemon', { id: id, nombre: v.nombre }, (r) => 'Nombre cambiado a ' + r.nombre).then((r) => {
+        // Lo elegido en pantalla (aún sin guardar) también sigue al nombre nuevo.
+        if (r.antes) st.top.forEach((x) => ['principal', 'secundario'].forEach((k) => { if (GS.norm(x[k]) === GS.norm(r.antes)) x[k] = r.nombre; }));
+        GS.render();
+      }),
+    });
+  };
   GS.actions.storyPokeQuitar = (id) => {
     const p = biblioteca().find((x) => x.id === id);
     GS.mutate('imagenPokemon', { id: id, quitar: true }, 'Imagen quitada de ' + (p ? p.nombre : id)).catch((e) => GS.toast(e.message, true));

@@ -879,10 +879,28 @@ test("Story IG (Top 5): Pokémon con imagen, vista previa, guardar y descargar e
     // Subir una imagen a Charizard: se reduce, se guarda en "Drive" y la Story la dibuja (pide solo esa imagen).
     const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFklEQVR4nGNgYGD4z8DAwMDAwMDAAAANAAH/1zLbAAAAAElFTkSuQmCC", "base64");
     const charizard = page.locator(".story-poke", { hasText: "Charizard" });
-    const [elegir] = await Promise.all([page.waitForEvent("filechooser"), charizard.locator('[data-action="storyPokeImagen"]').click()]);
+    // Un solo botón "Editar" por Pokémon, con sus opciones en un menú.
+    assert.equal(await charizard.locator("button").count(), 1);
+    await charizard.locator('[data-action="storyPokeMenu"]').click();
+    assert.deepEqual(await charizard.locator(".story-menu button").allTextContents(), ["Subir imagen", "Editar nombre", "Eliminar todo"]);
+    const [elegir] = await Promise.all([page.waitForEvent("filechooser"), charizard.locator('.story-menu [data-action="storyPokeImagen"]').click()]);
     await elegir.setFiles({ name: "charizard.png", mimeType: "image/png", buffer: png });
     await toast(page, /Imagen guardada para Charizard/);
-    await page.waitForSelector('.story-poke:has-text("Charizard") .story-thumb img');
+    await page.waitForSelector('.story-poke:has-text("Charizard") img.story-thumb');
+    assert.equal(await page.locator(".story-menu").count(), 0, "el menú se cierra");
+    await charizard.locator('[data-action="storyPokeMenu"]').click();
+    assert.deepEqual(await charizard.locator(".story-menu button").allTextContents(), ["Cambiar imagen", "Eliminar imagen", "Editar nombre", "Eliminar todo"]);
+    await page.click(".page-head h1");
+    await page.locator(".story-menu").waitFor({ state: "detached" });   // clic afuera cierra el menú
+    // Editar nombre: el 3º (Gardevoir) pasa al nombre nuevo en la tabla.
+    const gard = page.locator(".story-poke", { hasText: "Gardevoir" });
+    await gard.locator('[data-action="storyPokeMenu"]').click();
+    await gard.locator('.story-menu [data-action="storyPokeNombre"]').click();
+    await modal(page).locator('input[name="nombre"]').fill("Gardevoir ex");
+    await modal(page).locator(".modal-head h3").click();
+    await modal(page).locator('button[type="submit"]').click();
+    await toast(page, /Nombre cambiado a Gardevoir ex/);
+    assert.equal(await page.inputValue('[data-story="2|principal"]'), "Gardevoir ex");
     // Cambiar el principal del 5º y el nombre que se muestra: queda marcado como cambio sin guardar.
     await page.selectOption('[data-story="4|principal"]', "Lucario");
     await page.selectOption('[data-story-modo="nombre"]', "initial");
@@ -890,7 +908,7 @@ test("Story IG (Top 5): Pokémon con imagen, vista previa, guardar y descargar e
     await page.click('[data-action="storyGuardar"]');
     await toast(page, /Story guardada en el torneo/);
     const t = await page.evaluate(() => GS.state.data.torneos.find((x) => x.nombre === "Torneo Chill"));
-    assert.deepEqual(t.jugadores.slice(0, 5).map((j) => j.principal), ["Charizard", "Dragapult", "Gardevoir", "Raging Bolt", "Lucario"]);
+    assert.deepEqual(t.jugadores.slice(0, 5).map((j) => j.principal), ["Charizard", "Dragapult", "Gardevoir ex", "Raging Bolt", "Lucario"]);
     // Descargar el PNG.
     const [descarga] = await Promise.all([page.waitForEvent("download"), page.click('[data-action="storyDescargar"]')]);
     assert.match(descarga.suggestedFilename(), /^top5-torneo-chill-\d{4}-\d{2}-\d{2}\.png$/);
