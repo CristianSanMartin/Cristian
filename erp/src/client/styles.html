@@ -856,6 +856,11 @@ td.prod-cell{display:table-cell;vertical-align:middle;}
 .dash-card-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:12px;}
 .dash-card-head h3{margin:0;font-family:var(--font-display);font-size:15px;letter-spacing:.06em;text-transform:uppercase;color:var(--white);}
 .dash-card-head .muted{font-size:12px;}
+.dash-card-head.desplegable{cursor:pointer;margin-bottom:0;align-items:center;}
+.dash-card-head.desplegable + div:not([hidden]){margin-top:12px;}
+.dash-card-head.desplegable .chev{color:var(--gold);}
+.dash-card-head.desplegable .desplegable-txt{margin-left:auto;}
+.dash-card-head.desplegable:hover h3{color:var(--gold);}
 .dash-2{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:18px;}
 .dash-3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;}
 .dash-2 > .dash-card,.dash-3 > .dash-card{margin-bottom:18px;}

@@ -432,11 +432,15 @@
     });
   };
 
+  GS.actions.verOc = () => { const f = GS.filters('ventas', { q: '', mes: '' }); f.verOc = !f.verOc; GS.render(); };
+
   GS.views.ventas = {
     title: 'Ventas',
     render(el) {
-      if (GS.state.param) { abiertas.add(GS.state.param); GS.state.param = null; }
       const f = GS.filters('ventas', { q: '', mes: '' });
+      // La lista de OC parte cerrada (es larga); se abre sola al llegar a una venta o si hay una búsqueda.
+      if (GS.state.param) { abiertas.add(GS.state.param); GS.state.param = null; f.verOc = true; }
+      if (f.q) f.verOc = true;
       const hoy = data().hoy.slice(0, 7);
       const meses = Array.from(new Set([hoy].concat(data().ventas.map((v) => v.fecha.slice(0, 7))))).sort().reverse();
       if (!f.mes) f.mes = hoy;
@@ -446,9 +450,10 @@
         (GS.puede('operador') ? '<button class="btn" data-nav="inventario">' + GS.icon('plus', 2.4) + 'Nueva venta</button>' : '') +
         '<button class="btn ghost" data-action="exportarVentas">' + GS.icon('download') + 'Exportar</button></div></div>' +
         '<div id="vt-tablero"></div>' +
-        '<div class="panel dash-card"><div class="dash-card-head"><h3>Órdenes de compra (OC)</h3><span class="muted">Todas las ventas</span></div>' +
-        '<div class="filters-bar"><div class="search-box">' + GS.icon('search') + '<input type="text" data-filter="ventas.q" value="' + esc(f.q) + '" placeholder="Buscar OC, cliente, evento, boleta o producto..."></div></div>' +
-        '<div class="table-wrap"><table class="data-table wide"><thead><tr id="vt-thead"></tr></thead><tbody id="vt-tbody"></tbody></table></div></div>' +
+        '<div class="panel dash-card"><div class="dash-card-head desplegable" data-action="verOc" role="button" aria-expanded="' + !!f.verOc + '"><span class="chev">' + (f.verOc ? '▾' : '▸') + '</span><h3>Órdenes de compra (OC)</h3>' +
+          '<span class="muted" id="vt-resumen"></span><span class="muted desplegable-txt">' + (f.verOc ? 'ocultar' : 'ver todas') + '</span></div>' +
+        '<div' + (f.verOc ? '' : ' hidden') + '><div class="filters-bar"><div class="search-box">' + GS.icon('search') + '<input type="text" data-filter="ventas.q" value="' + esc(f.q) + '" placeholder="Buscar OC, cliente, evento, boleta o producto..."></div></div>' +
+        '<div class="table-wrap"><table class="data-table wide"><thead><tr id="vt-thead"></tr></thead><tbody id="vt-tbody"></tbody></table></div></div></div>' +
         '<div class="panel dash-card"><div class="dash-card-head"><h3>Singles, torneos y otros</h3><span class="muted">Ventas sin OC: SGL singles · TOR torneos · SOB sobres sueltos · BAZ bazar · ACC accesorios</span></div>' +
         '<div class="table-wrap"><table class="data-table wide"><thead><tr id="vm-thead"></tr></thead><tbody id="vm-tbody"></tbody></table></div></div>';
       this.update();
@@ -458,6 +463,9 @@
       document.getElementById('vt-tablero').innerHTML = tablero(f.mes || data().hoy.slice(0, 7));
       // La lista muestra todas las OC (el mes elegido solo cambia el tablero), las más recientes primero.
       const recientes = buscadas().sort((a, b) => (b.fecha + b.id).localeCompare(a.fecha + a.id));
+      const conOc = data().ventas.filter((v) => !v.anulada && esOc(v));
+      const res = document.getElementById('vt-resumen');
+      if (res) res.textContent = conOc.length + ' OC · ' + fmt.money(conOc.reduce((s, v) => s + v.total, 0));
       const admin = GS.puede('admin');
       const tabla = (tbody, thead, id, cols, filas, vacio) => {
         const rows = GS.tablaAplicar(id, filas, cols);

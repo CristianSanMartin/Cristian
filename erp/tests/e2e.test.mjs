@@ -318,6 +318,9 @@ test("venta desde Inventario: cantidad en la fila, descuento, comisión TUU, sto
     // Tablero de Ventas: la OC aparece en la lista del mes y en el ranking
     await page.click('[data-nav="ventas"]');
     assert.equal(await page.locator("#nueva-venta").count(), 0, "Ventas es informativo: sin formulario");
+    // La lista de OC parte cerrada y se despliega.
+    assert.equal(await page.locator("#vt-tbody").isVisible(), false);
+    await page.click('[data-action="verOc"]');
     const fila = page.locator("#vt-tbody tr.fila-compra", { hasText: "Maria Soto" });
     assert.match(await fila.textContent(), /Tienda.*Débito.*2.*\$49\.980.*\$536.*Pagada/s);
     assert.match(await page.locator(".dash-card", { hasText: "Mejores clientes del mes" }).textContent(), /Maria Soto.*\$49\.980/s);
@@ -524,6 +527,7 @@ test("filtro de fechas como Excel: año, mes y día en orden cronológico", { sk
   try {
     const { page, errores } = await abrir(browser);
     await page.click('[data-nav="ventas"]');
+    await page.click('[data-action="verOc"]');
     const total = await page.locator("#vt-tbody tr.fila-compra").count();
     await page.click('[data-action="menuColumna"][data-id="ventas|fecha"]');
     const menu = page.locator(".col-menu");
