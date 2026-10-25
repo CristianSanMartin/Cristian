@@ -378,7 +378,11 @@ const Torneos = {
     if (t.tdf) Imagenes.papelera(t.tdf);
     Db.update('Torneos', t.id, Object.assign({ tdf: ref }, Util.sello(user)));
     Audit.log(user, 'subir tdf', 'Torneo', t.id, { jugadores: encontrados.length, sinCoincidir: mios.length - encontrados.length });
-    return { id: t.id, jugadores: encontrados.length, sinCoincidir: mios.length - encontrados.length };
+    // Jugadores del archivo que no están inscritos en el torneo: no se agregan (no tienen inscripción en la caja).
+    const mismos = {};
+    mios.forEach((j) => { mismos[j.popId] = true; });
+    const nuevos = Object.keys(porId).filter((id) => !mismos[id]).map((id) => String(porId[id].nombre || id));
+    return { id: t.id, jugadores: encontrados.length, sinCoincidir: mios.length - encontrados.length, nuevos: nuevos };
   },
 
   /**

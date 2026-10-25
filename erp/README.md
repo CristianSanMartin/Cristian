@@ -390,6 +390,10 @@ Menú **Torneos**. Al terminar un torneo, TOM (Tournament Operations Manager) ex
 - Al subir el `.tdf` también se calcula el **récord** de cada jugador (victorias, derrotas, empates; el bye
   cuenta como victoria), se eligen **categoría** (Interno, League Challenge, Cup) y **temporada**, y el archivo
   se guarda en la carpeta de Drive del ERP para poder recalcular después.
+- **Dos archivos por torneo:** se puede subir el `.tdf` al inicio (solo inscritos: crea el torneo y las inscripciones
+  por cobrar, sin lugar ni récord) y el `.tdf` final al terminar. El final se reconoce por la fecha y los Player ID:
+  no crea otro torneo ni otras inscripciones, solo completa lugar, récord y nombre (y guarda el archivo nuevo). Si
+  trae jugadores que no estaban inscritos, avisa y no los agrega.
 
 ## Story IG (Top 5)
 

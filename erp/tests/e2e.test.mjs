@@ -955,3 +955,42 @@ test("Dashboard: Por abonar (TUU) se despliega con el detalle de pagos y cuotas"
     await browser.close();
   }
 });
+
+test("torneos: .tdf de inicio (solo inscritos) y luego el final: complementa, no duplica", { skip }, async () => {
+  const browser = await chromium.launch();
+  try {
+    const { page, errores } = await abrir(browser);
+    const jugadores = '<players><player userid="7001"><firstname>Pía</firstname><lastname>Mora</lastname></player><player userid="7002"><firstname>Leo</firstname><lastname>Paz</lastname></player><player userid="7003"><firstname>Ema</firstname><lastname>Ríos</lastname></player></players>';
+    const inicio = '<?xml version="1.0"?><tournament type="2"><data><name>Chill 08-11</name><city>Santiago</city><startdate>11/08/2030</startdate></data>' + jugadores + '<pods></pods><standings></standings></tournament>';
+    const final = '<?xml version="1.0"?><tournament type="2"><data><name>Chill 08-11</name><city>Santiago</city><startdate>11/08/2030</startdate></data>' + jugadores.replace('</players>', '<player userid="7004"><firstname>Tardío</firstname><lastname>X</lastname></player></players>') +
+      '<pods><pod><rounds><round number="1"><matches><match outcome="2"><player1 userid="7001"/><player2 userid="7002"/></match><match outcome="5"><player userid="7003"/></match></matches></round></rounds></pod></pods>' +
+      '<standings><pod category="2" type="finished"><player id="7002" place="1"/><player id="7003" place="2"/><player id="7001" place="3"/></pod></standings></tournament>';
+    await page.click('[data-nav="torneos"]');
+    // 1) Inicio: crea el torneo con sus inscripciones por cobrar, sin lugar ni récord.
+    await page.locator("#tdf-input").setInputFiles({ name: "inicio.tdf", mimeType: "text/xml", buffer: Buffer.from(inicio) });
+    const m = modal(page);
+    await m.locator('input[name="inscripcion"]').fill("8000");
+    assert.match(await m.locator("tbody").textContent(), /—Pía Mora70010-0-0/);
+    await m.locator(".modal-head h3").click();
+    await m.locator('button[type="submit"]').click();
+    await toast(page, /3 jugadores, 3 inscripciones por cobrar/);
+    await cerrado(page);
+    const tickets = () => page.evaluate(() => GS.state.data.cajas.reduce((n, c) => n + c.tickets.filter((t) => t.lineas.some((l) => /Chill 08-11/.test(l.descripcion || ""))).length, 0));
+    assert.equal(await tickets(), 3);
+    let t = await page.evaluate(() => GS.state.data.torneos.find((x) => x.nombre === "Chill 08-11"));
+    assert.deepEqual(t.jugadores.map((j) => j.lugar), [0, 0, 0], "sin resultados no hay lugar");
+    // 2) Final: el mismo torneo se reconoce y se completa (lugar y récord); no hay torneo ni tickets nuevos.
+    await page.locator("#tdf-input").setInputFiles({ name: "final.tdf", mimeType: "text/xml", buffer: Buffer.from(final) });
+    assert.match(await modal(page).locator(".modal-head h3").textContent(), /Actualizar Chill 08-11/);
+    await modal(page).locator('button[type="submit"]').click();
+    await toast(page, /Récord actualizado: 3 jugadores · no se agregaron 1 que no estaban inscritos: Tardío X/);
+    await cerrado(page);
+    t = await page.evaluate(() => GS.state.data.torneos.filter((x) => x.nombre === "Chill 08-11"));
+    assert.equal(t.length, 1, "no se duplica el torneo");
+    assert.deepEqual(t[0].jugadores.map((j) => [j.nombre, j.lugar, j.w, j.l, j.t]), [["Leo Paz", 1, 1, 0, 0], ["Ema Ríos", 2, 1, 0, 0], ["Pía Mora", 3, 0, 1, 0]]);
+    assert.equal(await tickets(), 3, "no se duplican las inscripciones en la caja");
+    assert.deepEqual(errores, []);
+  } finally {
+    await browser.close();
+  }
+});

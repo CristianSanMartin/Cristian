@@ -57,7 +57,9 @@
       a.rivales.push(b); b.rivales.push(a);
       if (o === '1') { a.w++; b.l++; } else if (o === '2') { b.w++; a.l++; } else if (o === '3') { a.t++; b.t++; } else if (o === '4') { a.l++; b.l++; }
     });
-    if (!jugadores.some((j) => j.lugar)) {
+    // Sin standing final, el lugar sale de las partidas jugadas; el .tdf de inicio (solo inscritos, sin partidas) queda sin lugar.
+    const jugado = jugadores.some((j) => j.w || j.l || j.t);
+    if (!jugadores.some((j) => j.lugar) && jugado) {
       const pts = (j) => j.w * 3 + j.t;
       const pct = (j) => { const g = j.w + j.l + j.t; return g ? Math.max(0.25, (j.w + j.t / 2) / g) : 0.25; };
       const owp = (j) => (j.rivales.length ? j.rivales.reduce((s, r) => s + pct(r), 0) / j.rivales.length : 0);
@@ -162,9 +164,11 @@
       title: 'Actualizar ' + t.nombre,
       confirmLabel: 'Actualizar récord',
       message: 'Este .tdf es del torneo <strong>' + esc(t.nombre) + '</strong> del ' + esc(fmt.date(t.fecha)) + ' (' + esc(t.id) + '), que ya existe. ' +
-        'Se guarda el archivo y se actualizan nombre, récord (victorias, derrotas, empates) y lugar de cada jugador. No cambia inscripciones, caja ni premios.',
+        'Se guarda el archivo y se actualizan nombre, récord (victorias, derrotas, empates) y lugar de cada jugador. No cambia inscripciones, caja ni premios.' +
+        (tdf.jugadores.some((j) => j.lugar) ? '' : '<br><span class="text-gold">Este archivo aún no tiene resultados (sin partidas ni standing): sube el .tdf final al terminar el torneo.</span>'),
       onConfirm: () => GS.mutate('tdfTorneo', { id: t.id, tdf: { nombre: tdf.archivo || '', texto: tdf.texto }, jugadores: tdf.jugadores },
-        (x) => 'Récord actualizado: ' + x.jugadores + ' jugadores' + (x.sinCoincidir ? ' (' + x.sinCoincidir + ' sin coincidir por Player ID)' : '')),
+        (x) => 'Récord actualizado: ' + x.jugadores + ' jugadores' + (x.sinCoincidir ? ' · ' + x.sinCoincidir + ' del torneo no vienen en el archivo' : '') +
+          (x.nuevos.length ? ' · no se agregaron ' + x.nuevos.length + ' que no estaban inscritos: ' + x.nuevos.join(', ') : '')),
     });
   }
 
