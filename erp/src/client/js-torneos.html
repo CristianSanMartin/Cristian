@@ -89,6 +89,8 @@
   };
 
   GS.leerTdf = leerTdf;
+  /** Temporada por defecto: la del último torneo que la tenga (se cambia a mano); si ninguno, "Temporada 2026". */
+  GS.temporadaPorDefecto = () => (torneos().find((t) => t.temporada) || {}).temporada || 'Temporada 2026';
   GS.actions.subirTdf = () => document.getElementById('tdf-input').click();
 
   function importar(tdf) {
@@ -106,7 +108,7 @@
         '<div class="form-field"><label>Formato *</label><input name="formato" list="trn-formatos" value="' + esc(formato0) + '"><datalist id="trn-formatos">' + formatos.map((x) => '<option value="' + esc(x) + '">').join('') + '</datalist></div>' +
         '<div class="form-field"><label>Inscripción *</label><input type="number" name="inscripcion" min="1" step="1" value="' + esc(inscripcionDe(formato0)) + '" placeholder="Ej.: 8000"></div>' +
         '<div class="form-field"><label>Categoría</label><select name="categoria">' + GS.options(data().catalogos.categoriasTorneo, ultimo.categoria || 'Interno') + '</select></div>' +
-        '<div class="form-field"><label>Temporada</label><input name="temporada" maxlength="60" value="' + esc(ultimo.temporada || '') + '" placeholder="Ej.: Temporada 2026"></div>' +
+        '<div class="form-field"><label>Temporada</label><input name="temporada" maxlength="60" value="' + esc(GS.temporadaPorDefecto()) + '" placeholder="Ej.: Temporada 2026"></div>' +
         '<div class="form-field full"><label>Jugadores (' + tdf.jugadores.length + ')</label><div class="table-wrap"><table class="data-table" style="min-width:0"><thead><tr><th class="right">Lugar</th><th>Jugador (TOM)</th><th>Player ID</th><th class="center" title="Victorias - derrotas - empates">Récord</th><th>Cliente</th><th></th><th class="center" title="No paga inscripción (invitado, juez que juega…)">Sin costo</th></tr></thead><tbody>' +
           tdf.jugadores.map((j, i) => {
             const m = clienteDe(j);

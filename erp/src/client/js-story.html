@@ -32,12 +32,12 @@
     set(k, v) { try { localStorage.setItem('story-' + k, v); } catch (e) { /* sin almacenamiento: solo esta vez */ } },
   };
   const vacio = () => ({ id: '', nombrePila: '', apellido: '', w: 0, l: 0, t: 0, principal: '', secundario: '' });
-  const st = { torneoId: null, ev: {}, top: [0, 1, 2, 3, 4].map(vacio), nombreModo: pref.get('nombre', 'first'), imgModo: pref.get('img', 'tint'), cambios: false };
+  const st = { torneoId: null, ev: {}, top: [0, 1, 2, 3, 4].map(vacio), nombreModo: pref.get('nombreModo', 'full'), imgModo: pref.get('img', 'tint'), cambios: false };
 
   /** Carga el torneo elegido: datos del evento y los 5 primeros lugares con su récord y Pokémon. */
   function cargar(t) {
     st.torneoId = t ? t.id : '';
-    st.ev = { tipoEvento: (t && t.tipoEvento) || 'Liga Pokémon', nombre: t ? t.nombre : '', temporada: (t && t.temporada) || '', categoria: (t && t.categoria) || 'Interno' };
+    st.ev = { tipoEvento: (t && t.tipoEvento) || 'Liga Pokémon', nombre: t ? t.nombre : '', temporada: (t && t.temporada) || GS.temporadaPorDefecto(), categoria: (t && t.categoria) || 'Interno' };
     const js = t ? t.jugadores.slice().sort((a, b) => (a.lugar || 999) - (b.lugar || 999)) : [];
     st.top = [0, 1, 2, 3, 4].map((i) => {
       const j = js[i];
@@ -389,7 +389,7 @@
       if (d.storyEv !== 'nombre') marcarCambios();
     } else if (d.storyModo) {
       st[d.storyModo === 'nombre' ? 'nombreModo' : 'imgModo'] = e.target.value;
-      pref.set(d.storyModo, e.target.value);
+      pref.set(d.storyModo === 'nombre' ? 'nombreModo' : 'img', e.target.value);
     } else return;
     programar();
   });

@@ -874,6 +874,8 @@ test("Story IG (Top 5): Pokémon con imagen, vista previa, guardar y descargar e
     assert.match(await page.locator(".tabs .tab.active").textContent(), /Story IG/);
     // El torneo de ejemplo trae el Top 5 con récord del .tdf y Pokémon elegidos.
     assert.equal(await page.inputValue('[data-story="0|nombrePila"]'), "Martín");
+    assert.equal(await page.inputValue('[data-story-modo="nombre"]'), "full", "por defecto, nombre completo");
+    assert.equal(await page.inputValue('[data-story-ev="temporada"]'), "Temporada 2026");
     assert.equal(await page.inputValue('[data-story="0|w"]'), "4");
     assert.equal(await page.inputValue('[data-story="0|principal"]'), "Charizard");
     // Subir una imagen a Charizard: se reduce, se guarda en "Drive" y la Story la dibuja (pide solo esa imagen).
