@@ -164,7 +164,7 @@
         '<div class="page-head"><div><h1>Torneos</h1><p>' + (story ? 'Imagen del Top 5 de un torneo para la Story de Instagram (1080 × 1920): elige el torneo, el Pokémon de cada jugador y descárgala.'
           : 'Sube el archivo .tdf de TOM: los jugadores quedan por cobrar en la caja del día. Agrega premios del inventario y el pago al juez para ver el margen.') + '</p></div>' +
         (op && !story ? '<div class="btn-row"><button class="btn" data-action="subirTdf">' + GS.icon('plus', 2.4) + 'Subir torneo (.tdf)</button><input type="file" id="tdf-input" accept=".tdf,.xml,text/xml" hidden></div>' : '') + '</div>' +
-        (op ? '<div class="tabs">' + tab('lista', 'Torneos') + tab('story', 'Story Top 5') + '</div>' : '');
+        (op ? '<div class="tabs">' + tab('lista', 'Torneos') + tab('story', 'Story IG') + '</div>' : '');
       if (story) {
         el.innerHTML = cabecera + '<div id="trn-story"></div>';
         GS.story(document.getElementById('trn-story'));

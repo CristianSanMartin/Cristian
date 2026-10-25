@@ -391,9 +391,9 @@ Menú **Torneos**. Al terminar un torneo, TOM (Tournament Operations Manager) ex
   cuenta como victoria), se eligen **categoría** (Interno, League Challenge, Cup) y **temporada**, y el archivo
   se guarda en la carpeta de Drive del ERP para poder recalcular después.
 
-## Story Top 5
+## Story IG (Top 5)
 
-Torneos → pestaña **Story Top 5**: arma la imagen del Top 5 de un torneo (1080 × 1920, para la Story de Instagram) con el
+Torneos → pestaña **Story IG**: arma la imagen del Top 5 de un torneo (1080 × 1920, para la Story de Instagram) con el
 diseño de GS Prime.
 
 - Se elige el torneo: nombre, apellido y récord salen de su `.tdf`. Un torneo subido antes de esta versión
