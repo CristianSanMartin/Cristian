@@ -21,7 +21,7 @@
   const asigPendiente = {};   // id -> valor escrito en "Nuevo cant." aún sin guardar
   const precioPendiente = {}; // productoId -> precio de venta escrito aún sin guardar ('' = usar el sugerido)
   const seleccion = new Set();
-  const factura = { abierta: false, numero: '', fecha: '', despacho: null, notas: '' };  // panel "Crear factura de compra"
+  const factura = { abierta: false, esOc: false, numero: '', fecha: '', despacho: null, notas: '' };  // panel "Crear factura de compra"
 
   // Búsqueda libre arriba; el resto de los filtros va en el encabezado de cada columna.
   const DEF = { q: '' };
@@ -400,16 +400,19 @@
     el.innerHTML = '<div class="panel inline-panel" id="crear-factura"><form novalidate>' + cab +
       '<div class="form-grid factura-grid">' +
       '<div class="form-field"><label>Proveedor</label><div class="static-field">' + esc(prov ? prov.nombre : '') + '</div></div>' +
-      '<div class="form-field"><label for="cf-numero">N° de factura *</label><input id="cf-numero" name="factura" value="' + esc(factura.numero) + '" autocomplete="off" placeholder="Ej: 30th2"></div>' +
-      '<div class="form-field"><label for="cf-fecha">Fecha de la factura *</label><input id="cf-fecha" type="date" name="fecha" value="' + esc(factura.fecha) + '"></div>' +
+      '<div class="form-field"><label for="cf-tipo">Documento</label><select id="cf-tipo" name="tipoDoc">' + GS.options([{ value: 'factura', label: 'Factura' }, { value: 'oc', label: 'Orden de compra (OC)' }], factura.esOc ? 'oc' : 'factura') + '</select></div>' +
+      '<div class="form-field"><label for="cf-numero">' + (factura.esOc ? 'N° de OC del proveedor *' : 'N° de factura *') + '</label><input id="cf-numero" name="factura" value="' + esc(factura.numero) + '" autocomplete="off" placeholder="' + (factura.esOc ? 'Ej: 4500123' : 'Ej: 30th2') + '"></div>' +
+      '<div class="form-field"><label for="cf-fecha">' + (factura.esOc ? 'Fecha de la OC *' : 'Fecha de la factura *') + '</label><input id="cf-fecha" type="date" name="fecha" value="' + esc(factura.fecha) + '"></div>' +
       '<div class="form-field"><label for="cf-despacho">Despacho neto</label><input id="cf-despacho" type="number" min="0" step="1" name="despacho" value="' + esc(factura.despacho == null ? '' : factura.despacho) + '"><span class="hint" data-despacho-hint></span></div>' +
       '<div class="form-field"><label for="cf-notas">Notas</label><input id="cf-notas" name="notas" value="' + esc(factura.notas) + '"></div>' +
       '</div>' +
       '<div class="table-wrap"><table class="data-table"><thead><tr><th>Producto</th><th class="right">Cant.</th><th class="right">Precio unidad</th><th class="right">Total neto</th>' +
       '</tr></thead><tbody data-cf-lineas></tbody><tfoot data-cf-totales></tfoot></table></div>' +
+      (factura.esOc ? '<div class="notice">Es una <strong>orden de compra</strong>: los productos entran al Inventario <strong>en tránsito</strong> (con su costo y precio, pero sin poder venderse). ' +
+        'En Compras queda como "OC" y se puede pagar; cuando llegue la factura, usa <strong>Confirmar factura</strong> y el stock se libera.</div>' : '') +
       '<p class="table-note">El despacho se prorratea por participación en $ en el costo de cada producto al pasar al inventario.</p>' +
       '<div class="form-error"></div>' +
-      '<div class="btn-row"><button type="submit" class="btn">' + GS.icon('check') + 'Registrar factura</button><button type="button" class="btn ghost" data-action="cerrarFactura">Cancelar</button></div>' +
+      '<div class="btn-row"><button type="submit" class="btn">' + GS.icon('check') + (factura.esOc ? 'Registrar OC' : 'Registrar factura') + '</button><button type="button" class="btn ghost" data-action="cerrarFactura">Cancelar</button></div>' +
       '</form></div>';
     const form = el.querySelector('form');
     const calc = () => {
@@ -436,8 +439,9 @@
       form.querySelector('[data-cf-totales]').innerHTML =
         total('Neto', fmt.money(neto + despacho)) +
         total('IVA 19%', fmt.money((neto + despacho) * data().app.iva)) +
-        total('<strong>Total factura</strong>', '<strong>' + fmt.money((neto + despacho) * (1 + data().app.iva)) + '</strong>', 'total-row');
+        total('<strong>Total ' + (factura.esOc ? 'OC' : 'factura') + '</strong>', '<strong>' + fmt.money((neto + despacho) * (1 + data().app.iva)) + '</strong>', 'total-row');
     };
+    form.elements.tipoDoc.addEventListener('change', (e) => { factura.esOc = e.target.value === 'oc'; barraAcciones(); });
     form.addEventListener('input', (e) => {
       if (e.target.name === 'factura') factura.numero = e.target.value;
       if (e.target.name === 'fecha') factura.fecha = e.target.value;
@@ -446,11 +450,14 @@
     });
     GS.bindForm(form, async (v) => {
       const ids = lineas.map((p) => p.id);
-      const r = await GS.api('crearCompra', { preventas: ids, factura: v.factura, fecha: v.fecha, despacho: v.despacho, notas: v.notas });
+      const esOc = factura.esOc;
+      const r = await GS.api('crearCompra', Object.assign({ preventas: ids, fecha: v.fecha, despacho: v.despacho, notas: v.notas }, esOc ? { esOc: true, oc: v.factura } : { factura: v.factura }));
       GS.state.data = r.data;
       ids.forEach((id) => seleccion.delete(id));
-      Object.assign(factura, { abierta: false, numero: '', fecha: '', despacho: null, notas: '' });
-      GS.toast('Factura ' + r.result.factura + ' registrada: ' + ids.length + (ids.length === 1 ? ' producto pasó' : ' productos pasaron') + ' a Inventario');
+      Object.assign(factura, { abierta: false, esOc: false, numero: '', fecha: '', despacho: null, notas: '' });
+      GS.toast(esOc
+        ? r.result.documento + ' registrada: ' + ids.length + (ids.length === 1 ? ' producto quedó' : ' productos quedaron') + ' en tránsito en Inventario'
+        : 'Factura ' + r.result.factura + ' registrada: ' + ids.length + (ids.length === 1 ? ' producto pasó' : ' productos pasaron') + ' a Inventario');
       GS.go('compras', r.result.id);
       return r.result;
     });

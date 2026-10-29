@@ -994,3 +994,49 @@ test("torneos: .tdf de inicio (solo inscritos) y luego el final: complementa, no
     await browser.close();
   }
 });
+
+test("orden de compra: desde Preventas queda en tránsito (no vendible) y al confirmar la factura se libera", { skip }, async () => {
+  const browser = await chromium.launch();
+  try {
+    const { page, errores } = await abrir(browser);
+    await page.click('[data-nav="preventas"]');
+    const fila = (id) => page.locator(`#pv-tbody tr[data-pv="${id}"]`);
+    for (const id of ["PVI-000001", "PVI-000002", "PVI-000003"]) await fila(id).locator("[data-sel]").check();
+    await page.click('[data-action="abrirFactura"]');
+    let panel = page.locator("#crear-factura");
+    await panel.locator('[name="tipoDoc"]').selectOption("oc");
+    panel = page.locator("#crear-factura");
+    assert.match(await panel.textContent(), /N° de OC del proveedor.*en tránsito/s);
+    await panel.locator('[name="factura"]').fill("4500123");
+    await panel.locator('button[type="submit"]').click();
+    await toast(page, /OC 4500123 registrada: 3 productos quedaron en tránsito/);
+
+    // Compras: aparece como OC pendiente de factura, en tránsito.
+    const cp = page.locator("#cp-tbody tr.fila-compra", { hasText: "OC 4500123" });
+    assert.match(await cp.textContent(), /OC 4500123.*Pendiente de factura.*En tránsito/s);
+    assert.match(await page.locator(".detalle-compra").textContent(), /orden de compra 4500123.*en tránsito/s);
+
+    // Inventario: el Mini Tin está en tránsito, sin unidades para vender.
+    await page.click('[data-nav="inventario"]');
+    const tin = page.locator("#inv-tbody tr.fila-compra", { hasText: "Mini Tin" });
+    assert.match(await tin.textContent(), /0\s*\+10 en tránsito/);
+    assert.equal(await tin.locator('[data-action="agregarProductoVenta"]').count(), 0, "no se puede vender");
+
+    // Confirmar la factura: el stock se libera.
+    await page.click('[data-nav="compras"]');
+    await page.locator(".detalle-compra").waitFor().catch(async () => { await cp.click(); });
+    await page.click('.detalle-compra [data-action="confirmarFacturaOc"]');
+    await modal(page).locator('input[name="factura"]').fill("F-778");
+    await modal(page).locator(".modal-head h3").click();
+    await modal(page).locator('button[type="submit"]').click();
+    await toast(page, /Factura F-778 confirmada: 40 unidades disponibles/);
+    await cerrado(page);
+    assert.match(await page.locator("#cp-tbody tr.fila-compra", { hasText: "F-778" }).textContent(), /F-778.*OC 4500123.*Sin ventas/s);
+    await page.click('[data-nav="inventario"]');
+    assert.match(await page.locator("#inv-tbody tr.fila-compra", { hasText: "Mini Tin" }).textContent(), /^(?!.*en tránsito).*10/s);
+    assert.equal(await page.locator("#inv-tbody tr.fila-compra", { hasText: "Mini Tin" }).locator('[data-action="agregarProductoVenta"]').count(), 1);
+    assert.deepEqual(errores, []);
+  } finally {
+    await browser.close();
+  }
+});

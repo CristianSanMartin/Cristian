@@ -43,6 +43,7 @@ function rutas_() {
     anularCompra: { rol: 'admin', write: true, fn: Compras.anular },
     quitarLineaCompra: { rol: 'admin', write: true, fn: Compras.quitarLinea },
     editarCompra: { rol: 'admin', write: true, fn: Compras.editar },
+    confirmarFacturaOc: { rol: 'operador', write: true, fn: Compras.confirmarFactura },
     agregarLineaCompra: { rol: 'admin', write: true, fn: Compras.agregarLinea },
     registrarPagoCompra: { rol: 'operador', write: true, fn: Compras.registrarPago },
     anularPagoCompra: { rol: 'admin', write: true, fn: Compras.anularPago },

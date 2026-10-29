@@ -9,6 +9,10 @@
  *   - el despacho se decide con la regla del proveedor (Asmodee: gratis desde
  *     $1.000.000 neto) y se prorratea por participación en $ de cada línea,
  *     así el costo de cada unidad lleva su parte del despacho.
+ *
+ * Orden de compra (OC del proveedor): se registra igual, pero con el N° de OC en vez del de factura
+ * (pendienteFactura). Sus lotes quedan "en tránsito": están en el inventario con su costo y precio,
+ * pero no se pueden vender (disponible 0) hasta que se confirma la factura (confirmarFactura).
  */
 const Compras = {
   crear(p, user) {
@@ -24,10 +28,10 @@ const Compras = {
     if (new Set(pvs.map((pv) => pv.proveedorId)).size > 1) throw new AppError('Todas las preventas de una factura deben ser del mismo proveedor.');
     const prov = Proveedores.requerir(pvs[0].proveedorId);
 
-    const factura = Util.texto(p.factura, 'El N° de factura', { requerido: true, max: 40 });
-    const repetida = Db.all('Compras').find((c) => c.proveedorId === prov.id && Util.normalizar(c.factura) === Util.normalizar(factura));
-    if (repetida) throw new AppError('La factura ' + factura + ' de ' + prov.nombre + ' ya está registrada (' + repetida.id + ').');
-    const fecha = Util.fecha(p.fecha, 'La fecha de la factura', { requerido: true });
+    const esOc = p.esOc === true;
+    const factura = esOc ? '' : Compras._numeroFactura(p.factura, prov);
+    const oc = esOc ? Compras._numeroOc(p.oc, prov) : '';
+    const fecha = Util.fecha(p.fecha, esOc ? 'La fecha de la OC' : 'La fecha de la factura', { requerido: true });
     const notas = Util.texto(p.notas, 'Las notas', { max: 500 });
 
     const neto = pvs.reduce((s, pv) => s + pv.asignado * pv.costoNeto, 0);
@@ -36,7 +40,8 @@ const Compras = {
       : Util.monto(p.despacho, 'El despacho');
 
     const sello = Util.sello(user, true);
-    const compra = Object.assign({ id: Util.siguienteId('CP', 4), proveedorId: prov.id, factura: factura, fecha: fecha, despacho: despacho, notas: notas }, sello);
+    const compra = Object.assign({ id: Util.siguienteId('CP', 4), proveedorId: prov.id, factura: factura, fecha: fecha, despacho: despacho, notas: notas,
+      oc: oc, pendienteFactura: esOc, fechaOc: esOc ? fecha : '' }, sello);
     const lineas = pvs.map((pv) => {
       const netoLinea = pv.asignado * pv.costoNeto;
       return Object.assign({
@@ -50,9 +55,46 @@ const Compras = {
     Db.insertMany('Compras_Lineas', lineas);
     pvs.forEach((pv) => Db.update('Preventas', pv.id, Object.assign({ estado: 'recibida' }, Util.sello(user))));
     Audit.log(user, 'crear', 'Compra', compra.id, {
-      proveedor: prov.nombre, factura: factura, neto: neto, despacho: despacho, preventas: ids.join(', '),
+      proveedor: prov.nombre, factura: factura, oc: oc, neto: neto, despacho: despacho, preventas: ids.join(', '),
     });
-    return compra;
+    return Object.assign({}, compra, { documento: Compras.documento(compra) });
+  },
+
+  /** N° de factura obligatorio y sin repetir para el proveedor. */
+  _numeroFactura(valor, prov, excepto) {
+    const factura = Util.texto(valor, 'El N° de factura', { requerido: true, max: 40 });
+    const repetida = Db.all('Compras').find((c) => c.id !== excepto && c.proveedorId === prov.id && Util.normalizar(c.factura) === Util.normalizar(factura));
+    if (repetida) throw new AppError('La factura ' + factura + ' de ' + prov.nombre + ' ya está registrada (' + repetida.id + ').');
+    return factura;
+  },
+
+  /** N° de OC del proveedor obligatorio y sin repetir. */
+  _numeroOc(valor, prov, excepto) {
+    const oc = Util.texto(valor, 'El N° de OC', { requerido: true, max: 40 });
+    const repetida = Db.all('Compras').find((c) => c.id !== excepto && c.proveedorId === prov.id && Util.normalizar(c.oc) === Util.normalizar(oc));
+    if (repetida) throw new AppError('La OC ' + oc + ' de ' + prov.nombre + ' ya está registrada (' + repetida.id + ').');
+    return oc;
+  },
+
+  /** Cómo se nombra la compra: su factura, o "OC …" mientras espera la factura. */
+  documento(c) {
+    return c.pendienteFactura ? 'OC ' + c.oc : c.factura;
+  },
+
+  /**
+   * Confirma la factura de una OC: queda como una factura normal (con su N° y fecha) y su stock en
+   * tránsito pasa a estar disponible para la venta. p: { id, factura, fecha }
+   */
+  confirmarFactura(p, user) {
+    const compra = Compras.requerir(p.id);
+    if (!compra.pendienteFactura) throw new AppError('La compra ' + compra.id + ' ya tiene factura (' + compra.factura + ').');
+    const prov = Proveedores.requerir(compra.proveedorId);
+    const factura = Compras._numeroFactura(p.factura, prov, compra.id);
+    const fecha = Util.fecha(p.fecha, 'La fecha de la factura', { requerido: true });
+    Db.update('Compras', compra.id, Object.assign({ factura: factura, fecha: fecha, pendienteFactura: false }, Util.sello(user)));
+    const unidades = Db.all('Compras_Lineas').filter((l) => l.compraId === compra.id).reduce((s, l) => s + l.cantidad, 0);
+    Audit.log(user, 'confirmar factura', 'Compra', compra.id, { oc: compra.oc, factura: factura, fecha: fecha, unidades: unidades });
+    return { id: compra.id, oc: compra.oc, factura: factura, unidades: unidades };
   },
 
   /**
@@ -78,10 +120,11 @@ const Compras = {
         cantidades[l.id] = cant;
       }
     });
-    const factura = p.factura == null ? compra.factura : Util.texto(p.factura, 'El N° de factura', { requerido: true, max: 40 });
-    const repetida = Db.all('Compras').find((c) => c.id !== compra.id && c.proveedorId === compra.proveedorId && Util.normalizar(c.factura) === Util.normalizar(factura));
-    if (repetida) throw new AppError('La factura ' + factura + ' de ese proveedor ya está registrada (' + repetida.id + ').');
-    const fecha = p.fecha == null ? compra.fecha : Util.fecha(p.fecha, 'La fecha de la factura', { requerido: true });
+    // Una OC sin factura conserva la factura vacía (se confirma con confirmarFactura); se puede corregir su N° de OC.
+    const prov = Proveedores.requerir(compra.proveedorId);
+    const factura = compra.pendienteFactura || p.factura == null ? compra.factura : Compras._numeroFactura(p.factura, prov, compra.id);
+    const oc = compra.pendienteFactura && p.oc != null ? Compras._numeroOc(p.oc, prov, compra.id) : compra.oc;
+    const fecha = p.fecha == null ? compra.fecha : Util.fecha(p.fecha, compra.pendienteFactura ? 'La fecha de la OC' : 'La fecha de la factura', { requerido: true });
     const despacho = Util.monto(p.despacho, 'El despacho');
     const costoNeto = (l) => (l.id in nuevos ? nuevos[l.id] : l.costoNeto);
     const cantidad = (l) => (l.id in cantidades ? cantidades[l.id] : l.cantidad);
@@ -94,7 +137,7 @@ const Compras = {
       cambios[l.id] = Object.assign({ cantidad: cantidad(l), costoNeto: costoNeto(l), despacho: desp }, sello);
       costoUnidad[l.id] = cantidad(l) ? costoNeto(l) + desp / cantidad(l) : costoNeto(l);
     });
-    Db.update('Compras', compra.id, Object.assign({ factura: factura, fecha: fecha, despacho: despacho }, sello));
+    Db.update('Compras', compra.id, Object.assign({ factura: factura, oc: oc, fecha: fecha, despacho: despacho }, compra.pendienteFactura ? { fechaOc: fecha } : {}, sello));
     if (lineas.length) Db.actualizarVarios('Compras_Lineas', cambios);
     // Lo ya vendido o entregado de estos lotes pasa a tener el costo corregido.
     const vl = {};
@@ -185,7 +228,7 @@ const Compras = {
     const lineas = Db.all('Compras_Lineas').filter((l) => l.compraId === compra.id);
     const vendidas = Ventas.vendidasPorLote();
     if (lineas.some((l) => vendidas[l.id])) {
-      throw new AppError('La factura ' + compra.factura + ' tiene productos vendidos: anula primero esas ventas.');
+      throw new AppError('La factura ' + Compras.documento(compra) + ' tiene productos vendidos: anula primero esas ventas.');
     }
     lineas.forEach((l) => {
       const pv = Db.get('Preventas', l.preventaId);
@@ -193,7 +236,7 @@ const Compras = {
     });
     lineas.forEach((l) => Db.remove('Compras_Lineas', l.id));
     Db.remove('Compras', compra.id);
-    Audit.log(user, 'anular', 'Compra', compra.id, { factura: compra.factura, lineas: lineas.map((l) => l.preventaId).join(', ') });
+    Audit.log(user, 'anular', 'Compra', compra.id, { factura: Compras.documento(compra), lineas: lineas.map((l) => l.preventaId).join(', ') });
   },
 
   /**
@@ -330,7 +373,8 @@ const Compras = {
     const compraPorId = {};
     const compras = Db.all('Compras').map((c) => {
       const prov = provPorId[c.proveedorId];
-      compraPorId[c.id] = Object.assign(c, { proveedor: prov ? prov.nombre : '(proveedor eliminado)', lineas: [] });
+      // Mientras es OC, se muestra como "OC …" donde se muestra la factura (la hoja guarda la factura vacía).
+      compraPorId[c.id] = Object.assign(c, { proveedor: prov ? prov.nombre : '(proveedor eliminado)', lineas: [], esOc: !!c.pendienteFactura, factura: Compras.documento(c) });
       return c;
     });
 
@@ -346,7 +390,10 @@ const Compras = {
       const e = Economia.unidad(costo, precio);
       const vendido = porLote[l.id] || { vendidas: 0, ventas: 0, ganancia: 0, unidades: [] };
       const salidas = vendido.salidas || 0;
-      const disponible = l.cantidad - vendido.vendidas - salidas;
+      // Stock de una OC sin factura: en tránsito, no disponible para la venta.
+      const quedan = l.cantidad - vendido.vendidas - salidas;
+      const enTransito = !!(c && c.esOc);
+      const disponible = enTransito ? 0 : quedan;
       const lote = Object.assign(l, {
         factura: c ? c.factura : '',
         fecha: c ? c.fecha : '',
@@ -376,6 +423,7 @@ const Compras = {
         salidas: salidas,
         costoSalidas: vendido.costoSalidas || 0,
         disponible: disponible,
+        transito: enTransito ? quedan : 0,
         valorInventario: disponible * costo,
         gananciaProyectada: disponible * e.ganancia,
         ventaProyectada: disponible * precio,

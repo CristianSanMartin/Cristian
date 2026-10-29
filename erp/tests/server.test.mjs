@@ -471,6 +471,39 @@ function conInventario(s) {
 }
 const lote = (s, prodId) => s.ok("bootstrap").data.lotes.filter(l => l.productoId === prodId);
 
+test("orden de compra del proveedor: stock en tránsito hasta confirmar la factura", () => {
+  const s = createServer();
+  const r = preventa30th(s);
+  const { pv: p, prods } = r;
+  s.ok("registrarAsignacion", { lineas: [{ id: p.binderEng.id, asignado: 24 }, { id: p.miniTin.id, asignado: 10 }] });
+  assert.match(errorDe(s.call("crearCompra", { preventas: [p.miniTin.id], esOc: true, fecha: "2026-10-02" })), /N° de OC es obligatorio/);
+  const c = s.ok("crearCompra", { preventas: [p.binderEng.id, p.miniTin.id], esOc: true, oc: "AS-7781", fecha: "2026-10-02" }).result;
+  assert.equal(c.documento, "OC AS-7781");
+  let d = s.ok("bootstrap").data;
+  let compra = d.compras.find(x => x.id === c.id);
+  assert.deepEqual([compra.esOc, compra.factura, compra.oc], [true, "OC AS-7781", "AS-7781"]);
+  const tin = () => s.ok("bootstrap").data.lotes.find(l => l.productoId === prods.miniTin.id);
+  assert.deepEqual([tin().disponible, tin().transito, tin().factura], [0, 10, "OC AS-7781"], "en tránsito: en inventario pero no disponible");
+  assert.equal(d.preventas.find(x => x.id === p.miniTin.id).estado, "recibida");
+  // No se puede vender ni sacar como premio/uso interno.
+  assert.match(errorDe(s.call("crearVenta", { fecha: "2026-10-05", lineas: [{ productoId: prods.miniTin.id, cantidad: 1 }] })), /no hay unidades/);
+  assert.match(errorDe(s.call("registrarSalida", { productoId: prods.miniTin.id, cantidad: 1, motivo: "interno", fecha: "2026-10-05" })), /no hay|quedan 0|Stock/i);
+  assert.match(errorDe(s.call("crearCompra", { preventas: [p.binderEsp.id], esOc: true, oc: "as-7781", fecha: "2026-10-02" })), /no está asignada|ya está registrada/);
+  // El pago va a la OC como a cualquier factura.
+  s.ok("registrarPagoCompra", { compraId: c.id, fecha: "2026-10-03", monto: Math.round(compra.total), cuenta: "banco" });
+  assert.equal(s.ok("bootstrap").data.compras.find(x => x.id === c.id).porPagar, 0);
+  // Confirmar la factura: número sin repetir; el stock pasa a disponible y la compra queda como factura normal.
+  assert.match(errorDe(s.call("confirmarFacturaOc", { id: c.id, fecha: "2026-10-04" })), /N° de factura es obligatorio/);
+  const conf = s.ok("confirmarFacturaOc", { id: c.id, factura: "F-5521", fecha: "2026-10-04" }).result;
+  assert.deepEqual([conf.factura, conf.unidades], ["F-5521", 34]);
+  compra = s.ok("bootstrap").data.compras.find(x => x.id === c.id);
+  assert.deepEqual([compra.esOc, compra.factura, compra.oc, compra.fecha, compra.fechaOc, compra.porPagar], [false, "F-5521", "AS-7781", "2026-10-04", "2026-10-02", 0]);
+  assert.deepEqual([tin().disponible, tin().transito], [10, 0]);
+  assert.match(errorDe(s.call("confirmarFacturaOc", { id: c.id, factura: "F-1", fecha: "2026-10-04" })), /ya tiene factura/);
+  s.ok("crearVenta", { fecha: "2026-10-05", medioPago: "efectivo", lineas: [{ productoId: prods.miniTin.id, cantidad: 2 }] });
+  assert.equal(tin().disponible, 8);
+});
+
 test("venta: sale del inventario, calcula ganancia real y comisión TUU, y acumula en su factura", () => {
   const s = createServer();
   const { prods } = conInventario(s);

@@ -22,7 +22,8 @@
   const colsCompras = [
     { id: 'fecha', label: 'Fecha', valor: (c) => c.fecha, texto: (c) => fmt.date(c.fecha), celda: (c) => '<span class="nowrap">' + fmt.date(c.fecha) + '</span>' },
     { id: 'proveedor', label: 'Proveedor', valor: (c) => c.proveedor, celda: (c) => esc(c.proveedor) },
-    { id: 'factura', label: 'Factura', valor: (c) => c.factura, celda: (c) => '<span class="cell-strong">' + esc(c.factura) + '</span>' },
+    { id: 'factura', label: 'Factura', valor: (c) => c.factura, celda: (c) => '<span class="cell-strong">' + esc(c.factura) + '</span>' +
+      (c.esOc ? '<div><span class="badge st-pedido" title="Orden de compra sin factura: el stock está en tránsito y no se puede vender">Pendiente de factura</span></div>' : c.oc ? '<div class="cell-dim">OC ' + esc(c.oc) + '</div>' : '') },
     { id: 'productos', label: 'Productos', right: true, valor: (c) => c.lineas.length, celda: (c) => fmt.num(c.lineas.length) },
     { id: 'unidades', label: 'Unidades', right: true, valor: (c) => c.unidades, celda: (c) => fmt.num(c.unidades) },
     { id: 'neto', label: 'Neto', right: true, valor: (c) => c.neto, texto: (c) => fmt.money(c.neto), celda: (c) => fmt.money(c.neto) },
@@ -41,7 +42,7 @@
     { id: 'pago', label: 'Pago', valor: (c) => (c.porPagar <= 1 ? 'Pagada' : c.pagado ? 'Abonada' : 'Por pagar'), celda: (c) => (c.porPagar <= 1
       ? '<span class="badge st-ok">Pagada</span>'
       : '<span class="badge ' + (c.pagado ? 'st-parcial' : 'st-cancelada') + '">' + (c.pagado ? 'Abonada' : 'Por pagar') + '</span><div class="cell-dim">debe ' + fmt.money(c.porPagar) + '</div>') },
-    { id: 'estadoVenta', label: 'Estado', valor: (c) => ESTADO_VENTA[c.estadoVenta], celda: (c) =>
+    { id: 'estadoVenta', label: 'Estado', valor: (c) => (c.esOc ? 'En tránsito' : ESTADO_VENTA[c.estadoVenta]), celda: (c) => c.esOc ? '<span class="badge st-parcial">En tránsito</span>' :
       '<span class="badge ' + { sin_ventas: 'st-pedido', vendiendo: 'st-parcial', vendida: 'st-ok' }[c.estadoVenta] + '">' + ESTADO_VENTA[c.estadoVenta] + '</span>' },
   ];
   const buscadasCompras = () => buscar(data().compras, GS.filters('compras', DEF_C).q, (c) => c.id + ' ' + c.factura + ' ' + c.proveedor + ' ' + c.lineas.map((l) => l.producto + ' ' + l.preventaId).join(' '));
@@ -63,11 +64,16 @@
       ? '<tr class="item-despacho"><td><span class="thumb thumb-icon" aria-hidden="true">🚚</span></td><td class="cell-strong">Despacho</td><td class="cell-num right">1</td><td class="cell-num right">' + fmt.money(c.despacho) + '</td>' +
         '<td class="cell-num right">' + fmt.money(c.despacho) + '</td><td class="cell-dim right col-inv">incluido en el costo ↑</td>' + (admin ? '<td></td>' : '') + '</tr>'
       : '';
-    return '<div class="detalle-compra"><table class="data-table"><thead><tr><th></th><th>Ítem</th><th class="right">Cant.</th><th class="right">Precio unidad</th><th class="right">Total neto</th>' +
+    const aviso = c.esOc
+      ? '<div class="notice warn aviso-oc"><span>Es la <strong>orden de compra ' + esc(c.oc) + '</strong> del ' + fmt.date(c.fecha) + ' (aún sin factura): sus ' + fmt.num(c.unidades) +
+        ' unidades están <strong>en tránsito</strong> en Inventario y no se pueden vender. Se puede pagar como cualquier factura; cuando llegue la factura, confírmala para liberar el stock.</span>' +
+        (GS.puede('operador') ? '<button class="btn small" data-action="confirmarFacturaOc" data-id="' + esc(c.id) + '">' + GS.icon('check') + 'Confirmar factura</button>' : '') + '</div>'
+      : c.oc ? '<p class="table-note">Vino de la orden de compra <strong>' + esc(c.oc) + '</strong> del ' + fmt.date(c.fechaOc) + '.</p>' : '';
+    return '<div class="detalle-compra">' + aviso + '<table class="data-table"><thead><tr><th></th><th>Ítem</th><th class="right">Cant.</th><th class="right">Precio unidad</th><th class="right">Total neto</th>' +
       '<th class="right">Costo unidad en inventario</th>' + (admin ? '<th></th>' : '') + '</tr></thead><tbody>' +
       c.lineas.map(fila).join('') + filaDespacho +
       '</tbody><tfoot>' +
-      total('Neto', fmt.money(c.neto)) + total('IVA 19%', fmt.money(c.iva)) + total('<strong>Total factura</strong>', '<strong>' + fmt.money(c.total) + '</strong>', 'total-row') +
+      total('Neto', fmt.money(c.neto)) + total('IVA 19%', fmt.money(c.iva)) + total('<strong>Total ' + (c.esOc ? 'OC' : 'factura') + '</strong>', '<strong>' + fmt.money(c.total) + '</strong>', 'total-row') +
       '</tfoot></table>' +
       (c.despacho ? '' : '<p class="table-note text-success">✓ Sin cobro de despacho' + (c.despachoGratisDesde ? ' (neto ≥ ' + fmt.money(c.despachoGratisDesde) + ')' : '') + '</p>') +
       pagosCompra(c) +
@@ -324,11 +330,12 @@
     const iva = data().app.iva;
     const netoOrig = c.lineas.reduce((t, l) => t + l.cantidad * l.costoNeto, 0);
     GS.formModal({
-      title: 'Editar factura ' + c.factura,
-      submitLabel: 'Guardar factura',
+      title: 'Editar ' + (c.esOc ? c.factura : 'factura ' + c.factura),
+      submitLabel: c.esOc ? 'Guardar OC' : 'Guardar factura',
       size: 'wide',
       fields: () => '<div class="form-grid">' +
-        '<div class="form-field"><label>N° de factura *</label><input name="factura" value="' + esc(c.factura) + '"></div>' +
+        (c.esOc ? '<div class="form-field"><label>N° de OC *</label><input name="oc" value="' + esc(c.oc) + '"></div>'
+          : '<div class="form-field"><label>N° de factura *</label><input name="factura" value="' + esc(c.factura) + '"></div>') +
         '<div class="form-field"><label>Fecha *</label><input type="date" name="fecha" value="' + esc(c.fecha) + '"></div>' +
         '<div class="form-field"><label>Despacho (neto)</label><input type="number" name="despacho" min="0" step="1" value="' + esc(c.despacho || 0) + '"></div>' +
         '<div class="form-field"><label class="check" style="margin-top:22px;"><input type="checkbox" name="descontar"' + (c.despacho ? '' : ' checked') + '> Descontar el despacho de los precios (mantener el total)</label></div></div>' +
@@ -379,10 +386,26 @@
         recalc();
       },
       onSubmit: (v, form) => GS.mutate('editarCompra', {
-        id: id, factura: v.factura, fecha: v.fecha, despacho: v.despacho,
+        id: id, factura: c.esOc ? undefined : v.factura, oc: c.esOc ? v.oc : undefined, fecha: v.fecha, despacho: v.despacho,
         lineas: Array.from(form.querySelectorAll('[data-ec-linea]')).map((inp) => ({ id: inp.dataset.ecLinea, costoNeto: inp.value,
           cantidad: form.querySelector('[data-ec-cant="' + CSS.escape(inp.dataset.ecLinea) + '"]').value })),
-      }, 'Factura ' + v.factura + ' actualizada'),
+      }, c.esOc ? 'OC ' + v.oc + ' actualizada' : 'Factura ' + v.factura + ' actualizada'),
+    });
+  };
+
+  /** OC del proveedor → factura: con su N° y fecha, el stock en tránsito queda disponible para la venta. */
+  GS.actions.confirmarFacturaOc = (id) => {
+    const c = data().compras.find((x) => x.id === id);
+    GS.formModal({
+      title: 'Confirmar factura de la ' + c.factura,
+      submitLabel: 'Confirmar factura',
+      fields: () => '<p class="hint">' + esc(c.proveedor) + ' · ' + fmt.num(c.unidades) + ' unidades · total ' + fmt.money(c.total) + (c.porPagar <= 1 ? ' · <span class="text-success">pagada</span>' : '') + '</p>' +
+        '<div class="form-grid">' +
+        '<div class="form-field"><label>N° de factura *</label><input name="factura" autocomplete="off"></div>' +
+        '<div class="form-field"><label>Fecha de la factura *</label><input type="date" name="fecha" value="' + esc(data().hoy) + '"></div></div>' +
+        '<p class="hint">La compra queda como una factura normal (con esta fecha para el IVA crédito y los informes) y sus productos pasan de "en tránsito" a disponibles para la venta. Los pagos ya registrados se mantienen.</p>',
+      onSubmit: (v) => GS.mutate('confirmarFacturaOc', { id: id, factura: v.factura, fecha: v.fecha },
+        (r) => 'Factura ' + r.factura + ' confirmada: ' + r.unidades + ' unidades disponibles para la venta'),
     });
   };
 
@@ -424,13 +447,14 @@
   function pools() {
     const porProd = {};
     data().lotes.forEach((l) => {
-      const r = porProd[l.productoId] = porProd[l.productoId] || { productoId: l.productoId, ref: l, lotes: [], cantidad: 0, vendidas: 0, disponible: 0,
+      const r = porProd[l.productoId] = porProd[l.productoId] || { productoId: l.productoId, ref: l, lotes: [], cantidad: 0, vendidas: 0, disponible: 0, transito: 0,
         valorInventario: 0, gananciaProyectada: 0, ventaProyectada: 0, creditoDisp: 0, gananciaAcumulada: 0 };
       r.lotes.push(l);
       r.cantidad += l.cantidad;
       r.vendidas += l.vendidas;
       r.salidas = (r.salidas || 0) + (l.salidas || 0);
       r.disponible += l.disponible;
+      r.transito += l.transito || 0;   // de una OC sin factura: aún no se puede vender
       r.reservado = (r.reservado || 0) + (l.reservado || 0);
       r.valorInventario += l.valorInventario;
       r.gananciaProyectada += l.gananciaProyectada;
@@ -457,7 +481,8 @@
     { id: 'producto', label: 'Producto', clase: 'col-prod', valor: (r) => r.ref.productoNombre, texto: (r) => r.ref.productoNombre + ' ' + r.ref.idioma, celda: (r) => producto(r.ref) },
     { id: 'cantidad', label: 'Comprado', right: true, valor: (r) => r.cantidad, celda: (r) => fmt.num(r.cantidad) },
     { id: 'vendidas', label: 'Vendidas', right: true, valor: (r) => r.vendidas, celda: (r) => (r.vendidas ? fmt.num(r.vendidas) : '—') + (r.salidas ? '<div class="cell-dim">+' + fmt.num(r.salidas) + ' salidas</div>' : '') },
-    { id: 'disponible', label: 'Disponible', right: true, valor: (r) => r.disponible, celda: (r) => '<strong class="stock-num">' + fmt.num(r.disponible) + '</strong>' + (r.reservado ? '<div class="cell-dim" title="Reservadas en tickets de la caja del día">+' + r.reservado + ' reserv.</div>' : '') },
+    { id: 'disponible', label: 'Disponible', right: true, valor: (r) => r.disponible, celda: (r) => '<strong class="stock-num">' + fmt.num(r.disponible) + '</strong>' + (r.reservado ? '<div class="cell-dim" title="Reservadas en tickets de la caja del día">+' + r.reservado + ' reserv.</div>' : '') +
+      (r.transito ? '<div><span class="badge st-parcial" title="De una orden de compra sin factura: se libera al confirmar la factura en Compras">+' + fmt.num(r.transito) + ' en tránsito</span></div>' : '') },
     // Costo con IVA (comparable con el precio de venta) y su desglose: neto + despacho + IVA.
     { id: 'costo', label: 'Costo u. c/IVA', right: true, valor: (r) => r.costo, texto: (r) => fmt.money(r.costo * (1 + data().app.iva)),
       celda: (r) => {
@@ -490,13 +515,14 @@
         const u = l.unidadesVendidas[i - 1];
         // Las primeras unidades libres del lote están reservadas en la caja del día.
         const reservada = !u && i - l.unidadesVendidas.length <= (l.reservado || 0);
+        const transito = !u && l.transito > 0;
         const clave = l.id + '|' + i;
-        const marcable = !u && !reservada && GS.puede('operador');
+        const marcable = !u && !reservada && !transito && GS.puede('operador');
         const precio = u ? u.precio : l.precioVenta;
         filas.push('<tr' + (u ? '' : ' class="unidad-libre' + (selUnidades.has(clave) ? ' row-selected' : '') + '"') + '>' +
           '<td>' + (marcable ? '<input type="checkbox" class="row-check" data-sel-unidad="' + esc(clave) + '"' + (selUnidades.has(clave) ? ' checked' : '') + ' aria-label="Seleccionar unidad ' + n + '">' : '') + '</td>' +
           '<td class="cell-num right">' + n + '<span class="cell-dim"> / ' + r.cantidad + '</span></td>' +
-          '<td>' + (u ? (u.salida ? '<span class="badge st-pedido">' + esc(u.oc) + '</span>' : '<span class="badge st-parcial">Vendida</span>') : reservada ? '<span class="badge st-parcial">Reservada (caja)</span>' : '<span class="badge st-ok">Disponible</span>') +
+          '<td>' + (u ? (u.salida ? '<span class="badge st-pedido">' + esc(u.oc) + '</span>' : '<span class="badge st-parcial">Vendida</span>') : reservada ? '<span class="badge st-parcial">Reservada (caja)</span>' : transito ? '<span class="badge st-pedido" title="Orden de compra ' + esc(l.factura) + ' sin factura">En tránsito</span>' : '<span class="badge st-ok">Disponible</span>') +
             (u && u.salidaId && GS.puede('admin') ? ' <a href="#" class="cell-dim" data-action="anularSalida" data-id="' + esc(u.salidaId) + '" title="Devolver la unidad al stock">anular</a>' : '') + '</td>' +
           '<td>' + (u && !u.salida ? '<span class="cell-strong">' + esc(u.oc) + '</span>' : '—') + '</td><td>' + (u ? esc(u.cliente) : '—') + '</td>' +
           // Premio de torneo: traspaso sin IVA (el IVA va en la inscripción): neto = precio, sin débito fiscal.
@@ -556,8 +582,8 @@
       if (f.tab === 'toma') return GS.toma.update();
       if (!document.getElementById('inv-tbody')) return;
       const rows = GS.tablaAplicar('inventario', buscadasInv(), colsInv);
-      const conDisp = rows.filter((r) => r.disponible > 0);
-      const agotados = rows.filter((r) => !r.disponible);
+      const conDisp = rows.filter((r) => r.disponible > 0 || r.transito > 0);
+      const agotados = rows.filter((r) => !r.disponible && !r.transito);
       const op = GS.puede('operador');
       const n = colsInv.length + 2;
       document.getElementById('inv-thead').innerHTML = '<th></th>' + GS.tablaEncabezado('inventario', colsInv) + '<th></th>';
@@ -596,7 +622,7 @@
       const sum = (k) => rows.reduce((t, r) => t + r[k], 0);
       const conStock = rows.filter((r) => r.disponible > 0).length;
       document.getElementById('inv-resumen').innerHTML = '<div class="kpi-grid">' +
-        kpi('Unidades disponibles', fmt.num(sum('disponible')), conStock + (conStock === 1 ? ' producto' : ' productos')) +
+        kpi('Unidades disponibles', fmt.num(sum('disponible')), conStock + (conStock === 1 ? ' producto' : ' productos') + (sum('transito') ? ' · + ' + fmt.num(sum('transito')) + ' en tránsito' : '')) +
         kpi('Valor a costo', fmt.money(sum('valorInventario')), fmt.money(sum('creditoDisp')) + ' de crédito fiscal') +
         kpi('Venta proyectada', fmt.money(sum('ventaProyectada')), 'Vendiendo todo al precio de venta') +
         kpi('Ganancia proyectada', '<span class="text-success">' + fmt.money(sum('gananciaProyectada')) + '</span>', 'Real neta') + '</div>';

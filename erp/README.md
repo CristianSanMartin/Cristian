@@ -191,6 +191,20 @@ y la recuerda en `erp/.implementacion`. Después solo queda el paso 2 cuando cor
    Si se te olvida, el ERP no guarda nada y muestra "ERP sin instalar" indicando qué columnas faltan.
 3. **Implementar → Administrar implementaciones → ✏️ → Nueva versión → Implementar.**
 
+## Orden de compra del proveedor (stock en tránsito)
+
+Cuando el proveedor (ej. Asmodee) envía la **orden de compra** antes de la factura: en Preventas se seleccionan las
+preventas asignadas como siempre y en **Documento** se elige **Orden de compra (OC)** con el N° de OC del proveedor.
+
+- La compra queda en Compras igual que una factura (productos, despacho, totales y pagos), mostrada como "OC …" con
+  el aviso **Pendiente de factura**.
+- Sus productos entran al Inventario con su costo y precio, pero **en tránsito**: no se pueden vender, sacar como
+  premio ni marcar en la toma de inventario. En Inventario se ven como "+N en tránsito".
+- La OC se puede pagar como cualquier factura.
+- **Confirmar factura** (en el detalle de la compra): N° y fecha de la factura. La compra pasa a ser una factura
+  normal (con esa fecha para el IVA crédito y los informes; la OC queda anotada) y el stock se libera.
+- Requiere "Instalar / actualizar hojas" (columnas nuevas `oc`, `pendienteFactura` y `fechaOc` en `Compras`).
+
 ## Inventario: productos y toma de inventario
 
 - **Inventario → Productos:** todos los productos con foto, idioma, precio y stock. Filtro rápido

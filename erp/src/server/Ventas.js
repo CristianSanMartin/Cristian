@@ -493,14 +493,16 @@ const Ventas = {
   lotesDisponibles() {
     const vendidas = Ventas.vendidasPorLote();
     const fechaCompra = {};
-    Db.all('Compras').forEach((c) => { fechaCompra[c.id] = c.fecha; });
+    const transito = {};
+    Db.all('Compras').forEach((c) => { fechaCompra[c.id] = c.fecha; if (c.pendienteFactura) transito[c.id] = true; });
     Db.all('Tomas').forEach((t) => { fechaCompra[t.id] = t.fecha; });   // lotes de ajuste por sobrantes
     const lotes = Db.all('Compras_Lineas').map((l) => ({
       id: l.id,
       productoId: l.productoId,
       fecha: fechaCompra[l.compraId] || '',
       costo: l.cantidad ? l.costoNeto + l.despacho / l.cantidad : l.costoNeto,
-      disponible: l.cantidad - (vendidas[l.id] || 0),
+      // Lo de una OC sin factura está en tránsito: no se puede vender ni sacar.
+      disponible: transito[l.compraId] ? 0 : l.cantidad - (vendidas[l.id] || 0),
     })).sort((a, b) => (a.fecha + a.id).localeCompare(b.fecha + b.id));
     // Las unidades reservadas en la caja del día no están disponibles (se toman de los lotes más antiguos).
     const res = Cajas.reservas();
