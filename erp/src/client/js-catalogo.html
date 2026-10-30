@@ -122,6 +122,7 @@
     });
   };
 
+  const bruto = (neto) => (neto || 0) * (1 + data().app.iva);
   const colsProd = [
     { id: 'img', label: '', sinMenu: true, valor: () => '', celda: (p) => GS.thumb(p.imagen) },
     { id: 'sku', label: 'SKU', clase: 'nowrap', valor: (p) => p.id, celda: (p) => '<span class="cell-dim">' + esc(p.id) + '</span>' },
@@ -137,7 +138,9 @@
     { id: 'precio', label: 'Precio venta', right: true, valor: (p) => p.precio, texto: (p) => fmt.money(p.precio),
       celda: (p) => '<strong>' + (p.precio ? fmt.money(p.precio) : '—') + '</strong>' + (p.precioManual ? '<div><span class="pill soon">manual</span></div>' : '') },
     { id: 'stock', label: 'Stock', right: true, valor: (p) => p.stock, celda: (p) => (p.stock ? '<strong>' + fmt.num(p.stock) + '</strong>' : '—') },
-    { id: 'costo', label: 'Último costo neto', right: true, valor: (p) => p.ultimoCosto, texto: (p) => fmt.money(p.ultimoCosto), celda: (p) => (p.ultimoCosto ? fmt.cost(p.ultimoCosto) : '—') },
+    // Con IVA, para compararlo directo con el precio de venta (el neto sale de su preventa más reciente).
+    { id: 'costo', label: 'Último costo bruto', right: true, valor: (p) => bruto(p.ultimoCosto), texto: (p) => fmt.money(bruto(p.ultimoCosto)),
+      celda: (p) => (p.ultimoCosto ? fmt.money(bruto(p.ultimoCosto)) + '<div class="cell-dim">' + fmt.cost(p.ultimoCosto) + ' neto</div>' : '—') },
   ];
   GS.tablaRegistrar('productos', { filas: productosFiltrados, columnas: colsProd, alCambiar: () => GS.views.productos.update() });
 
@@ -171,7 +174,7 @@
         '<div class="select-input"><select data-filter="productos.estado">' + GS.options([{ value: 'activos', label: 'Activos' }, { value: 'archivados', label: 'Archivados' }, { value: '', label: 'Todos' }], f.estado) + '</select></div>' +
         '<span class="count" id="prod-count"></span></div>' +
         '<div class="table-wrap"><table class="data-table compacta"><thead><tr id="prod-thead"></tr></thead><tbody id="prod-tbody"></tbody></table></div>' +
-        '<p class="table-note">Stock = unidades disponibles en Inventario. Último costo neto = el de su preventa más reciente.</p>';
+        '<p class="table-note">Stock = unidades disponibles en Inventario. Último costo bruto = costo neto de su preventa más reciente + IVA, para compararlo con el precio de venta.</p>';
       this.update();
     },
     update() {
@@ -186,8 +189,8 @@
 
   GS.actions.exportarProductos = () => {
     GS.downloadCsv('productos-' + data().hoy + '.csv',
-      ['SKU', 'Nombre', 'Edición', 'Idioma', 'Tipo', 'Factor', 'Código proveedor', 'PVP', 'Precio venta', 'Precio manual', 'Último costo neto', 'Stock mínimo', 'Activo'],
-      productosFiltrados().map((p) => [p.id, p.nombre, p.edicion, p.idioma, p.tipo, p.factor, p.codigoProveedor, p.pvp, p.precio, p.precioManual ? 'Sí' : 'No', p.ultimoCosto, p.stockMinimo, p.activo ? 'Sí' : 'No']));
+      ['SKU', 'Nombre', 'Edición', 'Idioma', 'Tipo', 'Factor', 'Código proveedor', 'PVP', 'Precio venta', 'Precio manual', 'Último costo neto', 'Último costo bruto', 'Stock mínimo', 'Activo'],
+      productosFiltrados().map((p) => [p.id, p.nombre, p.edicion, p.idioma, p.tipo, p.factor, p.codigoProveedor, p.pvp, p.precio, p.precioManual ? 'Sí' : 'No', p.ultimoCosto, Math.round(bruto(p.ultimoCosto)), p.stockMinimo, p.activo ? 'Sí' : 'No']));
   };
 
   /** Formulario de producto. También lo usa Preventas para crear un producto sin salir de la línea. */
