@@ -1021,6 +1021,8 @@ test("orden de compra: desde Preventas queda en tránsito (no vendible) y al con
     const tin = page.locator("#inv-tbody tr.fila-compra", { hasText: "Mini Tin" });
     assert.match(await tin.textContent(), /0\s*\+10 en tránsito/);
     assert.equal(await tin.locator('[data-action="agregarProductoVenta"]').count(), 0, "no se puede vender");
+    assert.match(await tin.textContent(), /\$[1-9][\d.]* c\/u · en tránsito/, "muestra el margen proyectado aunque esté en tránsito");
+    assert.doesNotMatch(await tin.textContent(), /obtenida/);
 
     // Confirmar la factura: el stock se libera.
     await page.click('[data-nav="compras"]');
