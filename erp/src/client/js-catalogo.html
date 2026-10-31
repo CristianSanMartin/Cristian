@@ -23,19 +23,22 @@
     const notas = {};
     data().compras.forEach((c) => { notas[c.id] = c.notas || ''; });
     const stock = {};
+    const transito = {};   // de una OC sin factura: viene en camino, aún no se puede vender
     const migrados = new Set();
     data().lotes.forEach((l) => {
       stock[l.productoId] = (stock[l.productoId] || 0) + l.disponible;
+      if (l.transito) transito[l.productoId] = (transito[l.productoId] || 0) + l.transito;
       if (/^Migración/.test(notas[l.compraId] || '')) migrados.add(l.productoId);
     });
-    return { stock: stock, migrados: migrados };
+    return { stock: stock, transito: transito, migrados: migrados };
   }
   const RAPIDOS = [
     { value: '', label: 'Todos' },
     { value: 'sinImagen', label: 'Sin imagen' },
     { value: 'sinIdioma', label: 'Sin idioma' },
     { value: 'migracion', label: 'Creados en la migración' },
-    { value: 'conStock', label: 'Con stock' },
+    { value: 'conStock', label: 'Con stock (incluye en tránsito)' },
+    { value: 'transito', label: 'En tránsito' },
     { value: 'sinStock', label: 'Sin stock' },
   ];
 
@@ -45,19 +48,20 @@
     const info = infoStock();
     return data().productos
       .filter((p) => {
-        const st = info.stock[p.id] || 0;
+        const st = (info.stock[p.id] || 0) + (info.transito[p.id] || 0);
         if (f.rapido === 'sinImagen' && p.imagen) return false;
         if (f.rapido === 'sinIdioma' && p.idioma) return false;
         if (f.rapido === 'migracion' && !info.migrados.has(p.id)) return false;
         if (f.rapido === 'conStock' && !st) return false;
         if (f.rapido === 'sinStock' && st) return false;
+        if (f.rapido === 'transito' && !info.transito[p.id]) return false;
         if (f.estado === 'activos' ? !p.activo : f.estado === 'archivados' ? p.activo : false) return false;
         if (f.edicion && p.edicion !== f.edicion) return false;
         if (f.idioma && p.idioma !== f.idioma) return false;
         if (f.tipo && p.tipo !== f.tipo) return false;
         return !q || GS.norm(p.id + ' ' + p.nombreCompleto + ' ' + p.tipo + ' ' + p.codigoProveedor).includes(q);
       })
-      .map((p) => Object.assign(p, { stock: info.stock[p.id] || 0, migrado: info.migrados.has(p.id) }))
+      .map((p) => Object.assign(p, { stock: info.stock[p.id] || 0, transito: info.transito[p.id] || 0, migrado: info.migrados.has(p.id) }))
       .sort((a, b) => a.nombreCompleto.localeCompare(b.nombreCompleto));
   }
 
@@ -136,7 +140,10 @@
     { id: 'pvp', label: 'PVP', right: true, valor: (p) => p.pvp, texto: (p) => fmt.money(p.pvp), celda: (p) => (p.pvp ? fmt.money(p.pvp) : '—') },
     { id: 'precio', label: 'Precio venta', right: true, valor: (p) => p.precio, texto: (p) => fmt.money(p.precio),
       celda: (p) => '<strong>' + (p.precio ? fmt.money(p.precio) : '—') + '</strong>' + (p.precioManual ? '<div><span class="pill soon">manual</span></div>' : '') },
-    { id: 'stock', label: 'Stock', right: true, valor: (p) => p.stock, celda: (p) => (p.stock ? '<strong>' + fmt.num(p.stock) + '</strong>' : '—') },
+    // Disponible para vender y, aparte, lo que viene en tránsito (OC sin factura): se ve, pero no se puede vender aún.
+    { id: 'stock', label: 'Stock', right: true, valor: (p) => p.stock + p.transito, texto: (p) => fmt.num(p.stock) + (p.transito ? ' + ' + fmt.num(p.transito) + ' en tránsito' : ''),
+      celda: (p) => (p.stock ? '<strong>' + fmt.num(p.stock) + '</strong>' : (p.transito ? '<strong>0</strong>' : '—')) +
+        (p.transito ? '<div><span class="badge st-parcial" title="De una orden de compra sin factura: se podrá vender al confirmar la factura">+' + fmt.num(p.transito) + ' en tránsito</span></div>' : '') },
     // Con IVA, para compararlo directo con el precio de venta (el neto sale de su preventa más reciente).
     { id: 'costo', label: 'Último costo bruto', right: true, valor: (p) => bruto(p.ultimoCosto), texto: (p) => fmt.money(bruto(p.ultimoCosto)),
       celda: (p) => (p.ultimoCosto ? fmt.money(bruto(p.ultimoCosto)) + '<div class="cell-dim">' + fmt.cost(p.ultimoCosto) + ' neto</div>' : '—') },
@@ -177,7 +184,7 @@
         '<div class="select-input"><select data-filter="productos.estado">' + GS.options([{ value: 'activos', label: 'Activos' }, { value: 'archivados', label: 'Archivados' }, { value: '', label: 'Todos' }], f.estado) + '</select></div>' +
         '<span class="count" id="prod-count"></span></div>' +
         '<div class="table-wrap"><table class="data-table compacta"><thead><tr id="prod-thead"></tr></thead><tbody id="prod-tbody"></tbody></table></div>' +
-        '<p class="table-note">Stock = unidades disponibles en Inventario. Último costo bruto = costo neto de su preventa más reciente + IVA. Margen = precio de venta − último costo bruto (y su % del precio de venta).</p>';
+        '<p class="table-note">Stock = unidades disponibles para vender; las de una OC sin factura se muestran aparte como "en tránsito". Último costo bruto = costo neto de su preventa más reciente + IVA. Margen = precio de venta − último costo bruto (y su % del precio de venta).</p>';
       this.update();
     },
     update() {

@@ -1024,6 +1024,13 @@ test("orden de compra: desde Preventas queda en tránsito (no vendible) y al con
     assert.match(await tin.textContent(), /\$[1-9][\d.]* c\/u · en tránsito/, "muestra el margen proyectado aunque esté en tránsito");
     assert.doesNotMatch(await tin.textContent(), /obtenida/);
 
+    // Productos: el stock disponible es 0, pero se ve lo que viene en tránsito (y entra en "Con stock").
+    await page.click('[data-action="tab"][data-id$="productos"]');
+    await page.selectOption('[data-filter="productos.rapido"]', "transito");
+    assert.match(await page.locator("#prod-tbody").textContent(), /Mini Tin.*0\s*\+10 en tránsito/s);
+    await page.selectOption('[data-filter="productos.rapido"]', "");
+    await page.click('[data-action="tab"][data-id="inventario.stock"]');
+
     // Confirmar la factura: el stock se libera.
     await page.click('[data-nav="compras"]');
     await page.locator(".detalle-compra").waitFor().catch(async () => { await cp.click(); });
