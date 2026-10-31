@@ -161,7 +161,6 @@
       colsProd.map((c) => '<td class="' + (c.right ? 'cell-num right ' : '') + (c.clase || '') + '">' + c.celda(p) + '</td>').join('') +
       '<td><div class="row-actions">' +
       (operador ? GS.iconBtn('editarProducto', p.id, 'edit', 'Editar') : '') +
-      (GS.puede('admin') ? GS.iconBtn('unirProducto', p.id, 'move', 'Unir con otro producto (duplicado)') : '') +
       (operador ? GS.iconBtn('archivarProducto', p.id, 'archive', p.activo ? 'Archivar' : 'Reactivar') : '') +
       '</div></td></tr>';
   }
@@ -276,30 +275,6 @@
         const saved = await GS.mutate('guardarProducto', Object.assign({ id: prod ? prod.id : '' }, v),
           (r) => (prod ? 'Producto actualizado' : 'Producto ' + r.id + ' creado'));
         if (onSaved) onSaved(saved);
-      },
-    });
-  };
-
-  /** Une un producto duplicado con otro: el stock y el historial pasan al que se conserva. */
-  GS.actions.unirProducto = (id) => {
-    const origen = findProd(id);
-    const n = (x) => GS.norm(x.nombre);
-    const otros = data().productos.filter((p) => p.id !== id).sort((a, b) => a.nombreCompleto.localeCompare(b.nombreCompleto));
-    const parecidos = otros.filter((p) => n(p) === n(origen) || (p.edicion === origen.edicion && (n(p).includes(n(origen)) || n(origen).includes(n(p)))));
-    const opcion = (p) => '<option value="' + esc(p.id) + '">' + esc(p.nombreCompleto + ' (' + p.id + ')') + '</option>';
-    GS.formModal({
-      title: 'Unir producto duplicado',
-      submitLabel: 'Unir productos',
-      danger: true,
-      fields: () =>
-        '<p class="confirm-text" style="padding:0 0 12px;"><strong>' + esc(origen.nombreCompleto) + '</strong> (' + esc(origen.id) + ') se elimina y todo lo suyo pasa al producto que elijas: ' +
-        'stock, preventas, ventas, premios y conteos. Si al elegido le falta foto o precio sugerido, toma los de este. Queda en la auditoría.</p>' +
-        '<div class="form-field"><label>Conservar este producto *</label><select name="destinoId"><option value="">Elige el producto…</option>' +
-        (parecidos.length ? '<optgroup label="Parecidos">' + parecidos.map(opcion).join('') + '</optgroup>' : '') +
-        '<optgroup label="Todos">' + otros.map(opcion).join('') + '</optgroup></select></div>',
-      onSubmit: async (v) => {
-        if (!v.destinoId) throw new Error('Elige el producto que se conserva.');
-        await GS.mutate('unirProductos', { origenId: id, destinoId: v.destinoId }, 'Productos unidos');
       },
     });
   };

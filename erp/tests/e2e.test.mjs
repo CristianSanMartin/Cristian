@@ -417,11 +417,9 @@ test("inventario: productos (filtros, editar, unir) y toma de inventario unidad 
     const conStock = await page.locator("#prod-tbody tr").count();
     assert.ok(conStock > 0 && conStock < total);
     await page.selectOption('[data-filter="productos.rapido"]', "");
-    const fila = page.locator('#prod-tbody tr[data-prod="GS-0005"]');
-    await fila.locator('[data-action="unirProducto"]').click();
-    await modal(page).locator('select[name="destinoId"]').selectOption("GS-0004");
-    await modal(page).locator('button[type="submit"]').click();
-    await toast(page, /Productos unidos/);
+    // Sin botón para unir duplicados (ya no se usa); la toma de abajo parte con los Battle Deck unidos.
+    assert.equal(await page.locator('[data-action="unirProducto"]').count(), 0);
+    await page.evaluate(() => GS.mutate("unirProductos", { origenId: "GS-0005", destinoId: "GS-0004" }));
     assert.equal(await page.locator('#prod-tbody tr[data-prod="GS-0005"]').count(), 0);
     assert.match(await page.locator('#prod-tbody tr[data-prod="GS-0004"]').textContent(), /20/, "9 + 11 Battle Deck");
 
