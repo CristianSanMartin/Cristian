@@ -126,7 +126,6 @@
   const margen = (p) => (p.ultimoCosto && p.precio ? p.precio - bruto(p.ultimoCosto) : null);
   const colsProd = [
     { id: 'img', label: '', sinMenu: true, valor: () => '', celda: (p) => GS.thumb(p.imagen) },
-    { id: 'sku', label: 'SKU', clase: 'nowrap', valor: (p) => p.id, celda: (p) => '<span class="cell-dim">' + esc(p.id) + '</span>' },
     { id: 'producto', label: 'Producto', clase: 'col-prod', valor: (p) => p.nombre, celda: (p) => {
       const extra = [p.factor > 1 ? p.factor + ' u. proveedor' : '', p.activo ? '' : 'archivado', p.migrado ? 'migración' : ''].filter(Boolean).join(' · ');
       return '<span class="cell-strong">' + esc(p.nombre) + '</span>' + (extra ? '<div class="cell-dim">' + esc(extra) + '</div>' : '');
@@ -150,7 +149,7 @@
 
   function filaProducto(p) {
     const operador = GS.puede('operador');
-    return '<tr class="' + (p.activo ? '' : 'row-muted') + '">' +
+    return '<tr class="' + (p.activo ? '' : 'row-muted') + '" data-prod="' + esc(p.id) + '">' +
       colsProd.map((c) => '<td class="' + (c.right ? 'cell-num right ' : '') + (c.clase || '') + '">' + c.celda(p) + '</td>').join('') +
       '<td><div class="row-actions">' +
       (operador ? GS.iconBtn('editarProducto', p.id, 'edit', 'Editar') : '') +

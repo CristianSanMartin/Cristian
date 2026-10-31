@@ -412,13 +412,13 @@ test("inventario: productos (filtros, editar, unir) y toma de inventario unidad 
     const conStock = await page.locator("#prod-tbody tr").count();
     assert.ok(conStock > 0 && conStock < total);
     await page.selectOption('[data-filter="productos.rapido"]', "");
-    const fila = page.locator("#prod-tbody tr", { hasText: "GS-0005" });
+    const fila = page.locator('#prod-tbody tr[data-prod="GS-0005"]');
     await fila.locator('[data-action="unirProducto"]').click();
     await modal(page).locator('select[name="destinoId"]').selectOption("GS-0004");
     await modal(page).locator('button[type="submit"]').click();
     await toast(page, /Productos unidos/);
-    assert.equal(await page.locator("#prod-tbody tr", { hasText: "GS-0005" }).count(), 0);
-    assert.match(await page.locator("#prod-tbody tr", { hasText: "GS-0004" }).textContent(), /20/, "9 + 11 Battle Deck");
+    assert.equal(await page.locator('#prod-tbody tr[data-prod="GS-0005"]').count(), 0);
+    assert.match(await page.locator('#prod-tbody tr[data-prod="GS-0004"]').textContent(), /20/, "9 + 11 Battle Deck");
 
     // Toma: iniciar, marcar unidades, una de más, guardar y cerrar con ajustes
     await page.click('[data-action="tab"][data-id="inventario.toma"]');
