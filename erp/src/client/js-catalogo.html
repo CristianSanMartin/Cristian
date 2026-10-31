@@ -16,7 +16,8 @@
 
   /* ---------- productos ---------- */
 
-  const DEF_PROD = { q: '', edicion: '', idioma: '', tipo: '', estado: 'activos', rapido: '' };
+  // Por defecto se ocultan los productos sin unidades (ni disponibles ni en tránsito); se ven con "Todos" o "Sin stock".
+  const DEF_PROD = { q: '', edicion: '', idioma: '', tipo: '', estado: 'activos', rapido: 'conStock' };
 
   /** Stock disponible por producto y productos que llegaron con la migración del Excel. */
   function infoStock() {
@@ -33,7 +34,7 @@
     return { stock: stock, transito: transito, migrados: migrados };
   }
   const RAPIDOS = [
-    { value: '', label: 'Todos' },
+    { value: '', label: 'Todos (incluye sin stock)' },
     { value: 'sinImagen', label: 'Sin imagen' },
     { value: 'sinIdioma', label: 'Sin idioma' },
     { value: 'migracion', label: 'Creados en la migración' },

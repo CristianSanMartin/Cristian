@@ -405,7 +405,12 @@ test("inventario: productos (filtros, editar, unir) y toma de inventario unidad 
 
     // Productos: filtro rápido y unir duplicados
     await page.click('[data-action="tab"][data-id="inventario.productos"]');
+    // Por defecto solo se ven los que tienen unidades; "Todos" muestra también los que están en 0.
+    assert.equal(await page.inputValue('[data-filter="productos.rapido"]'), "conStock");
+    const porDefecto = await page.locator("#prod-tbody tr").count();
+    await page.selectOption('[data-filter="productos.rapido"]', "");
     const total = await page.locator("#prod-tbody tr").count();
+    assert.ok(porDefecto > 0 && porDefecto < total, "los productos en 0 se ocultan por defecto");
     await page.selectOption('[data-filter="productos.rapido"]', "sinImagen");
     assert.equal(await page.locator("#prod-tbody tr").count(), total, "los de ejemplo no tienen foto");
     await page.selectOption('[data-filter="productos.rapido"]', "conStock");
