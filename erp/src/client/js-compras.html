@@ -24,10 +24,7 @@
     { id: 'proveedor', label: 'Proveedor', valor: (c) => c.proveedor, celda: (c) => esc(c.proveedor) },
     { id: 'factura', label: 'Factura', valor: (c) => c.factura, celda: (c) => '<span class="cell-strong">' + esc(c.factura) + '</span>' +
       (c.esOc ? '<div><span class="badge st-pedido" title="Orden de compra sin factura: el stock está en tránsito y no se puede vender">Pendiente de factura</span></div>' : c.oc ? '<div class="cell-dim">OC ' + esc(c.oc) + '</div>' : '') },
-    { id: 'productos', label: 'Productos', right: true, valor: (c) => c.lineas.length, celda: (c) => fmt.num(c.lineas.length) },
     { id: 'unidades', label: 'Unidades', right: true, valor: (c) => c.unidades, celda: (c) => fmt.num(c.unidades) },
-    { id: 'neto', label: 'Neto', right: true, valor: (c) => c.neto, texto: (c) => fmt.money(c.neto), celda: (c) => fmt.money(c.neto) },
-    { id: 'iva', label: 'IVA', right: true, valor: (c) => c.iva, texto: (c) => fmt.money(c.iva), celda: (c) => fmt.money(c.iva) },
     { id: 'total', label: 'Total', right: true, valor: (c) => c.total, texto: (c) => fmt.money(c.total), celda: (c) => '<strong>' + fmt.money(c.total) + '</strong>' },
     // Resultado de la factura: se acumula con cada venta de sus productos (Ventas, etapa 3).
     // Unidades que ya salieron de la factura: vendidas + premios, cajas abiertas y otras salidas.
@@ -35,7 +32,6 @@
       celda: (c) => fmt.num(c.vendidas + c.salidas) + '<span class="cell-dim"> / ' + fmt.num(c.unidades) + '</span>' +
         '<div class="barra-venta"><span style="width:' + Math.round(100 * (c.vendidas + c.salidas) / (c.unidades || 1)) + '%"></span></div>' +
         (c.salidas ? '<div class="cell-dim">' + fmt.num(c.vendidas) + ' vendidas · ' + fmt.num(c.salidas) + ' premio/salida</div>' : '') },
-    { id: 'ventas', label: 'Ventas acumuladas', right: true, valor: (c) => c.ventasAcumuladas, texto: (c) => fmt.money(c.ventasAcumuladas), celda: (c) => fmt.money(c.ventasAcumuladas) },
     { id: 'ganancia', label: 'Ganancia acumulada', right: true, valor: (c) => c.gananciaAcumulada, texto: (c) => fmt.money(c.gananciaAcumulada),
       celda: (c) => '<strong class="' + (c.gananciaAcumulada < 0 ? 'text-danger' : c.gananciaAcumulada > 0 ? 'text-success' : '') + '">' + fmt.money(c.gananciaAcumulada) + '</strong>' +
         '<div class="cell-dim">de ' + fmt.money(c.gananciaProyectada) + ' proyectada</div>' },
@@ -76,6 +72,8 @@
       total('Neto', fmt.money(c.neto)) + total('IVA 19%', fmt.money(c.iva)) + total('<strong>Total ' + (c.esOc ? 'OC' : 'factura') + '</strong>', '<strong>' + fmt.money(c.total) + '</strong>', 'total-row') +
       '</tfoot></table>' +
       (c.despacho ? '' : '<p class="table-note text-success">✓ Sin cobro de despacho' + (c.despachoGratisDesde ? ' (neto ≥ ' + fmt.money(c.despachoGratisDesde) + ')' : '') + '</p>') +
+      (c.esOc ? '' : '<p class="table-note"><strong>Resultado:</strong> ' + fmt.num(c.lineas.length) + (c.lineas.length === 1 ? ' producto' : ' productos') + ' · ventas acumuladas ' + fmt.money(c.ventasAcumuladas) +
+        ' · ganancia ' + fmt.money(c.gananciaAcumulada) + ' de ' + fmt.money(c.gananciaProyectada) + ' proyectada</p>') +
       pagosCompra(c) +
       (c.notas ? '<p class="table-note">Notas: ' + esc(c.notas) + '</p>' : '') + '</div>';
   }

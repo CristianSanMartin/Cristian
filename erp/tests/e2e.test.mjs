@@ -230,12 +230,14 @@ test("factura de compra: las preventas seleccionadas pasan a Compras e Inventari
     // El despacho prorrateado no se muestra como columna: queda incluido en el costo unidad
     assert.doesNotMatch(await detalle.textContent(), /Despacho prorrateado/);
     assert.match(await detalle.textContent(), /incluido en el costo/);
-    assert.match(await page.locator("#cp-tbody tr.fila-compra", { hasText: "30th2" }).textContent(), /Asmodee.*30th2.*3.*40.*\$873\.910.*\$166\.043.*\$1\.039\.953.*0 \/ 40.*\$0.*Sin ventas/s);
+    assert.match(await page.locator("#cp-tbody tr.fila-compra", { hasText: "30th2" }).textContent(), /Asmodee.*30th2.*40.*\$1\.039\.953.*0 \/ 40.*\$0.*Sin ventas/s);
+    // Neto, IVA, N° de productos y ventas acumuladas van en el detalle desplegado (la tabla no se desborda)
+    assert.match(await detalle.textContent(), /Neto\$873\.910.*IVA 19%\$166\.043.*3 productos · ventas acumuladas \$0/s);
     // Sin columnas de neto productos ni despacho; primero fecha, proveedor y factura
     const titulosCp = (await page.locator("#cp-thead th").allTextContents()).map((t) => t.replace(/[▾▲▼⧩]/g, "").trim());
     assert.deepEqual(titulosCp.slice(1, 4), ["Fecha", "Proveedor", "Factura"]);
     assert.ok(!titulosCp.includes("Neto productos") && !titulosCp.includes("Despacho"));
-    assert.ok(titulosCp.includes("Ventas acumuladas") && titulosCp.includes("Ganancia acumulada"));
+    assert.ok(titulosCp.includes("Ganancia acumulada") && !titulosCp.includes("IVA") && !titulosCp.includes("Ventas acumuladas"));
 
     // Las preventas salen de "por comprar" y el producto está en Inventario con su costo real
     await page.click('[data-nav="preventas"]');
@@ -317,7 +319,7 @@ test("venta desde Inventario: cantidad en la fila, descuento, comisión TUU, sto
     assert.equal(await page.locator("#vt-tbody").isVisible(), false);
     await page.click('[data-action="verOc"]');
     const fila = page.locator("#vt-tbody tr.fila-compra", { hasText: "Maria Soto" });
-    assert.match(await fila.textContent(), /Tienda.*Débito.*2.*\$49\.980.*\$536.*Pagada/s);
+    assert.match(await fila.textContent(), /Maria Soto.*Débito.*2.*\$49\.980.*Pagada/s);
     assert.match(await page.locator(".dash-card", { hasText: "Mejores clientes del mes" }).textContent(), /Maria Soto.*\$49\.980/s);
     assert.ok(await page.locator("svg.grafico").count() >= 2, "gráficos de ventas vs compras y por día");
     assert.match(await page.locator(".resumen-mensual").textContent(), /Ventas.*Compras.*Ventas − compras/s);

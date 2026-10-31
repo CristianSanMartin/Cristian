@@ -242,12 +242,9 @@
     { id: 'fecha', label: 'Fecha', valor: (v) => v.fecha, texto: (v) => fmt.date(v.fecha), celda: (v) => '<span class="nowrap">' + fmt.date(v.fecha) + '</span>' },
     { id: 'oc', label: 'OC', valor: (v) => v.id, celda: (v) => '<span class="cell-strong nowrap">' + esc(v.id) + '</span>' + (v.boleta ? '<div class="cell-dim">Boleta ' + esc(v.boleta) + '</div>' : '') },
     { id: 'cliente', label: 'Cliente', valor: (v) => v.cliente, celda: (v) => esc(v.cliente) },
-    { id: 'canal', label: 'Canal', valor: (v) => v.canal, celda: (v) => esc(v.canal) },
-    { id: 'evento', label: 'Evento', valor: (v) => v.evento, celda: (v) => esc(v.evento || '—') },
     { id: 'medio', label: 'Medio de pago', valor: (v) => v.medioPagoLabel, celda: (v) => esc(v.medioPagoLabel) },
     { id: 'unidades', label: 'Unidades', right: true, valor: (v) => v.unidades, celda: (v) => fmt.num(v.unidades) },
     { id: 'total', label: 'Total', right: true, valor: (v) => v.total, texto: (v) => fmt.money(v.total), celda: (v) => '<strong>' + fmt.money(v.total) + '</strong>' },
-    { id: 'comision', label: 'Comisión', right: true, valor: (v) => v.comision, texto: (v) => fmt.money(v.comision), celda: (v) => (v.comision ? fmt.money(v.comision) : '—') },
     { id: 'ganancia', label: 'Ganancia real', right: true, valor: (v) => v.gananciaNeta, texto: (v) => fmt.money(v.gananciaNeta),
       celda: (v) => '<span class="' + (v.anulada ? 'muted' : signo(v.gananciaNeta)) + '">' + fmt.money(v.gananciaNeta) + '</span>' },
     { id: 'pago', label: 'Pago', valor: (v) => ESTADO_PAGO[v.estadoPago].label, celda: (v) => GS.badge(ESTADO_PAGO, v.estadoPago) +
@@ -255,7 +252,7 @@
   ];
   const buscadas = () => {
     const q = GS.norm((GS.filters('ventas', { q: '' }).q || '').trim());
-    return data().ventas.filter((v) => !q || GS.norm(v.id + ' ' + v.cliente + ' ' + v.evento + ' ' + v.boleta + ' ' + v.lineas.map((l) => l.producto).join(' ')).includes(q));
+    return data().ventas.filter((v) => !q || GS.norm(v.id + ' ' + v.cliente + ' ' + v.canal + ' ' + v.evento + ' ' + v.boleta + ' ' + v.lineas.map((l) => l.producto).join(' ')).includes(q));
   };
   // OC = ventas de sellados; singles, torneos, sobres, bazar y accesorios llevan su propio correlativo (SGL-, TOR-…).
   const esOc = (v) => /^(OC|PR)-/.test(v.id);
@@ -266,7 +263,7 @@
     { id: 'concepto', label: 'Concepto', valor: (v) => conceptos(v), celda: (v) => '<span class="cell-strong">' + esc(conceptos(v)) + '</span>' },
     { id: 'detalle', label: 'Detalle', valor: (v) => v.lineas.map((l) => l.descripcion).filter(Boolean).join(' · '),
       celda: (v) => '<span class="cell-dim">' + esc(v.lineas.map((l) => l.descripcion).filter(Boolean).join(' · ') || '—') + '</span>' }]
-    .concat(colsVentas.filter((c) => ['cliente', 'medio', 'total', 'comision', 'ganancia', 'pago'].indexOf(c.id) !== -1));
+    .concat(colsVentas.filter((c) => ['cliente', 'medio', 'total', 'ganancia', 'pago'].indexOf(c.id) !== -1));
   GS.tablaRegistrar('ventasMonto', { filas: () => buscadas().filter((v) => !esOc(v)), columnas: colsMonto, alCambiar: () => GS.views.ventas.update() });
 
   GS.detalleVenta = (v) => detalleVenta(v);   // también se despliega desde Finanzas
@@ -293,7 +290,7 @@
       (v.descuento > 0 ? t('Descuentos', '−' + fmt.money(v.descuento)) : '') +
       t('Comisión ' + esc(v.medioPagoLabel), fmt.money(v.comision)) +
       t('<strong>Ganancia real</strong>', '<strong class="' + signo(v.gananciaNeta) + '">' + fmt.money(v.gananciaNeta) + '</strong>', 'total-row') +
-      '</tfoot></table>' + cobros + (v.saldo > 0 ? '<p class="table-note text-gold">Debe ' + fmt.money(v.saldo) + ': el abono se registra en Clientes.</p>' : '') + (v.notas ? '<p class="table-note">Notas: ' + esc(v.notas) + '</p>' : '') +
+      '</tfoot></table>' + ((v.canal || v.evento) ? '<p class="table-note">' + [v.canal ? 'Canal: <strong>' + esc(v.canal) + '</strong>' : '', v.evento ? 'Evento: <strong>' + esc(v.evento) + '</strong>' : ''].filter(Boolean).join(' · ') + '</p>' : '') + cobros + (v.saldo > 0 ? '<p class="table-note text-gold">Debe ' + fmt.money(v.saldo) + ': el abono se registra en Clientes.</p>' : '') + (v.notas ? '<p class="table-note">Notas: ' + esc(v.notas) + '</p>' : '') +
       '<p class="table-note">Precio lista = precio del producto al momento de la venta (queda guardado en la venta). Descuento = precio lista − precio cobrado.</p></div>';
   }
 

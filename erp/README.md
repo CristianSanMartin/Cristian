@@ -414,3 +414,13 @@ ficha del cliente). En el Dashboard, la casilla "Por cobrar a clientes" se abre 
 - Cada llamada deja una línea `[tiempos]` en Apps Script → **Ejecuciones** → registros: espera del candado,
   la acción, el guardado (flush), la foto de datos que vuelve a la pantalla y qué hojas se leyeron
   (veces, filas, ms). Las que pasan de 3 segundos salen como advertencia.
+- La foto de datos va compacta (`Snapshot.compactar`): sin las líneas de compra repetidas (el navegador
+  las arma desde los lotes en `GS.setData`), sin campos de auditoría donde no se muestran y con los
+  decimales a 2 (salvo tasas y catálogos). Pesa ~⅓ menos, así cada guardado vuelve más rápido.
+
+## Dónde vive cada tema
+
+- **Por abonar (TUU):** se calcula en un solo lugar (`GS.porAbonarTuu` / `GS.tablaProximosAbonos` en
+  Caja → Abonos TUU). El panel del Dashboard muestra esa misma tabla; Finanzas ya no repite la casilla.
+- **Tablas:** más compactas; lo que se consulta poco va en el detalle de la fila. Compras: neto, IVA,
+  N° de productos y ventas acumuladas. Ventas: canal, evento y comisión.
