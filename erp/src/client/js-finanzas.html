@@ -1,0 +1,623 @@
+<script>
+/* =========================================================
+   Finanzas: resumen mensual (ventas, compras, gastos, aportes
+   y flujo) y libro de movimientos (aportes, GAV, GOPM, SII,
+   comisiones, compras por monto como singles o bazar…).
+========================================================= */
+(function () {
+  'use strict';
+  const { fmt, esc } = GS;
+  const data = () => GS.state.data;
+  const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+  const kpi = (l, v, sub) => '<div class="kpi-card"><div class="kpi-label">' + l + '</div><div class="kpi-value small">' + v + '</div><div class="kpi-sub">' + sub + '</div></div>';
+  const DEF = { tab: 'movimientos', anio: '', q: '' };
+
+  const movsVivos = () => (data().movimientos || []).filter((m) => !m.anulado);
+  const anios = () => {
+    const s = new Set([data().hoy.slice(0, 4)]);
+    data().ventas.forEach((v) => s.add(v.fecha.slice(0, 4)));
+    (data().movimientos || []).forEach((m) => s.add(m.fecha.slice(0, 4)));
+    data().compras.forEach((c) => s.add(String(c.fecha).slice(0, 4)));
+    return Array.from(s).filter((a) => /^\d{4}$/.test(a)).sort().reverse();
+  };
+
+  /** Filas del resumen: { label, valores[12], tipo: 'ingreso'|'egreso'|'total'|'sub' }. */
+  function resumen(anio) {
+    const mes = (f) => (String(f).slice(0, 4) === anio ? Number(String(f).slice(5, 7)) - 1 : -1);
+    const fila = (label, clase) => ({ label: label, clase: clase || '', valores: new Array(12).fill(0) });
+    const porCat = {};
+    const prodVentas = fila('Ventas de productos');
+    let iva = new Array(12).fill(0);
+    data().ventas.filter((v) => !v.anulada).forEach((v) => {
+      const i = mes(v.fecha);
+      if (i < 0) return;
+      iva[i] += v.iva;
+      v.lineas.forEach((l) => {
+        if (l.porMonto) (porCat[l.categoria] = porCat[l.categoria] || fila('Ventas · ' + l.categoria)).valores[i] += l.subtotal;
+        else prodVentas.valores[i] += l.subtotal;
+      });
+    });
+    const ventas = [prodVentas].concat(data().catalogos.categoriasVenta.filter((c) => porCat[c]).map((c) => porCat[c]));
+    const totalVentas = fila('Total ventas', 'subtotal');
+    ventas.forEach((f) => f.valores.forEach((x, i) => { totalVentas.valores[i] += x; }));
+
+    const cats = data().catalogos.categoriasMovimiento;
+    const porMov = {};
+    movsVivos().forEach((m) => {
+      const i = mes(m.fecha);
+      if (i < 0) return;
+      const k = m.tipo + '|' + m.categoria;
+      (porMov[k] = porMov[k] || fila(cats[m.tipo][m.categoria] || m.categoria)).valores[i] += m.monto;
+    });
+    const ingresos = Object.keys(cats.ingreso).map((c) => porMov['ingreso|' + c]).filter(Boolean);
+
+    // Compras con factura: en el flujo cuentan en el mes en que se pagaron (pagos conciliados desde la
+    // caja); lo no pagado, en el mes de la factura. El crédito fiscal (IVA) va siempre por la factura.
+    const facturas = fila('Compras con factura (según pago)');
+    const credito = new Array(12).fill(0);
+    const pagos = {};
+    (data().pagosFacturas || []).forEach((p) => { (pagos[p.compraId] = pagos[p.compraId] || []).push(p); });
+    data().compras.forEach((c) => {
+      const iFac = mes(c.fecha);
+      if (iFac >= 0) credito[iFac] += c.iva;
+      const suyos = pagos[c.id] || [];
+      let pagado = 0;
+      suyos.forEach((p) => { pagado += p.monto; const i = mes(p.fecha); if (i >= 0) facturas.valores[i] += p.monto; });
+      const resto = c.total - pagado;
+      if (iFac >= 0 && (!suyos.length || resto > 2000)) facturas.valores[iFac] += suyos.length ? resto : c.total;
+    });
+    // Uso interno: lo pagado por esas unidades pasa de compras de mercadería a GOPM (al costo con IVA, en el mes de la salida).
+    const internoGopm = fila(cats.egreso.gopm || 'GOPM');
+    (data().salidas || []).filter((x) => x.motivo === 'interno').forEach((x) => {
+      const i = mes(x.fecha);
+      if (i < 0) return;
+      const v = Math.round(x.costo * x.cantidad * (1 + data().app.iva));
+      facturas.valores[i] -= v;
+      (porMov['egreso|gopm'] = porMov['egreso|gopm'] || internoGopm).valores[i] += v;
+    });
+    // Egresos con factura (bazar, aseo, insumos…): su IVA también es crédito fiscal.
+    movsVivos().forEach((m) => { const i = mes(m.fecha); if (i >= 0 && m.tipo === 'egreso' && m.iva) credito[i] += m.iva; });
+    const egresos = [facturas].concat(Object.keys(cats.egreso).map((c) => porMov['egreso|' + c]).filter(Boolean));
+    const comisionesTuu = fila('Comisiones TUU (ventas)');
+    data().ventas.filter((v) => !v.anulada).forEach((v) => { const i = mes(v.fecha); if (i >= 0) comisionesTuu.valores[i] += v.comision || 0; });
+    if (comisionesTuu.valores.some(Boolean)) egresos.push(comisionesTuu);
+    const totalEgresos = fila('Total egresos', 'subtotal');
+    egresos.forEach((f) => f.valores.forEach((x, i) => { totalEgresos.valores[i] += x; }));
+
+    const flujo = fila('Flujo del mes', 'total');
+    for (let i = 0; i < 12; i++) flujo.valores[i] = totalVentas.valores[i] + ingresos.reduce((t, f) => t + f.valores[i], 0) - totalEgresos.valores[i];
+    const acumulado = fila('Flujo acumulado del año', 'sub');
+    flujo.valores.reduce((t, x, i) => { acumulado.valores[i] = t + x; return t + x; }, 0);
+
+    // Singles: ventas de singles contra compras de singles (por lote).
+    const singlesV = fila('Ventas de singles');
+    singlesV.valores = (porCat.Singles || fila('')).valores.slice();
+    const singlesC = fila('Compras de singles');
+    movsVivos().filter((m) => m.categoria === 'compra' && /single/i.test(m.subcategoria)).forEach((m) => { const i = mes(m.fecha); if (i >= 0) singlesC.valores[i] += m.monto; });
+    const singlesR = fila('Resultado singles', 'subtotal');
+    singlesR.valores = singlesV.valores.map((x, i) => x - singlesC.valores[i]);
+
+    const ivaF = fila('IVA estimado (débito − crédito)', 'sub');
+    ivaF.valores = iva.map((x, i) => x - credito[i]);
+
+    return { ventas, totalVentas, ingresos, egresos, totalEgresos, flujo, acumulado, singles: [singlesV, singlesC, singlesR], iva: ivaF };
+  }
+
+  function tablaResumen(r) {
+    const total = (f) => f.valores.reduce((t, x) => t + x, 0);
+    const fila = (f, signo) => '<tr class="' + f.clase + '"><td class="cell-strong nowrap">' + esc(f.label) + '</td>' +
+      f.valores.map((x) => '<td class="cell-num right' + (signo && x < 0 ? ' text-danger' : '') + '">' + (x ? fmt.money(x) : '—') + '</td>').join('') +
+      '<td class="cell-num right"><strong' + (signo && total(f) < 0 ? ' class="text-danger"' : '') + '>' + fmt.money(f.clase === 'sub' && f.label.indexOf('acumulado') !== -1 ? f.valores[11] : total(f)) + '</strong></td></tr>';
+    const grupo = (t) => '<tr class="fin-grupo"><td colspan="14">' + t + '</td></tr>';
+    return '<div class="table-wrap"><table class="data-table resumen-mensual fin-resumen"><thead><tr><th></th>' + MESES.map((m) => '<th class="right">' + m + '</th>').join('') + '<th class="right">Total</th></tr></thead><tbody>' +
+      grupo('Ventas') + r.ventas.map((f) => fila(f)).join('') + fila(r.totalVentas) +
+      (r.ingresos.length ? grupo('Otros ingresos') + r.ingresos.map((f) => fila(f)).join('') : '') +
+      grupo('Egresos') + r.egresos.map((f) => fila(f)).join('') + fila(r.totalEgresos) +
+      grupo('Resultado de caja') + fila(r.flujo, true) + fila(r.acumulado, true) +
+      grupo('Singles (por lote)') + r.singles.map((f, i) => fila(f, i === 2)).join('') +
+      grupo('Impuestos') + fila(r.iva, true) +
+      '</tbody></table></div>' +
+      '<p class="table-note">Ventas y compras con factura incluyen IVA. Las compras con factura cuentan en el mes en que se pagaron (pagos conciliados desde la caja); si no hay pago registrado, en el mes de la factura. Flujo del mes = ventas + otros ingresos − egresos. ' +
+      'Los productos sacados del inventario para uso interno se suman a GOPM al costo con IVA y se restan de las compras con factura (el total de egresos no cambia). ' +
+      'IVA estimado = IVA de las ventas − IVA de las facturas de compra y de los gastos marcados "con factura".</p>';
+  }
+
+  /* ---------- movimientos ---------- */
+
+  const tipoLabel = { ingreso: 'Ingreso', egreso: 'Egreso' };
+  const colsMov = [
+    { id: 'fecha', label: 'Fecha', clase: 'nowrap', valor: (m) => m.fecha, texto: (m) => fmt.date(m.fecha), celda: (m) => fmt.date(m.fecha) },
+    { id: 'tipo', label: 'Tipo', valor: (m) => tipoLabel[m.tipo], celda: (m) => '<span class="badge ' + (m.tipo === 'ingreso' ? 'st-ok' : 'st-pedido') + '">' + tipoLabel[m.tipo] + '</span>' },
+    { id: 'categoria', label: 'Categoría', valor: (m) => m.categoriaLabel, celda: (m) => '<span class="cell-strong">' + esc(m.categoriaLabel) + '</span>' +
+      (m.estadoLabel ? '<div><span class="badge ' + (m.porAbonar ? 'st-parcial' : 'st-ok') + '" title="' + (m.porAbonar ? 'Venta con TUU: aún no llega el abono (no suma al saldo). Se confirma al subir el informe de TUU.' : 'Confirmado con el informe de TUU') + '">' + esc(m.estadoLabel) + '</span></div>' : '') },
+    { id: 'detalle', label: 'Detalle', valor: (m) => m.subcategoria || '', celda: (m) => esc(m.subcategoria || '—') + (m.notas ? '<div class="cell-dim">' + esc(m.notas) + '</div>' : '') },
+    { id: 'cuenta', label: 'Cuenta', valor: (m) => m.cuentaLabel || 'Sin cuenta', celda: (m) => esc(m.cuentaLabel || '—') },
+    { id: 'ref', label: 'Referencia', valor: (m) => m.referencia || '', celda: (m) => '<span class="cell-dim">' + esc(m.referencia || '') + '</span>' },
+    { id: 'monto', label: 'Monto', right: true, valor: (m) => (m.tipo === 'ingreso' ? m.monto : -m.monto), texto: (m) => fmt.money(m.monto),
+      celda: (m) => '<strong class="' + (m.anulado || m.porAbonar ? 'muted' : m.tipo === 'ingreso' ? 'text-success' : '') + '">' + (m.tipo === 'ingreso' ? '+' : '−') + fmt.money(m.monto) + '</strong>' + (m.anulado ? '<div class="cell-dim">anulado</div>' : '') },
+  ];
+  /** Ingresos de ventas como filas del libro (solo lectura): lo pagado al vender (neto de la comisión del medio de pago) y los abonos. */
+  const CUENTA_MEDIO = { efectivo: 'Caja (efectivo)', transferencia: 'Banco', debito: 'TUU', credito: 'TUU' };
+  function movsVentas() {
+    const res = [];
+    data().ventas.filter((v) => !v.anulada).forEach((v) => {
+      const base = { tipo: 'ingreso', referencia: v.id, venta: v.id, cuentaLabel: CUENTA_MEDIO[v.medioPago] || '', notas: '' };
+      // La comisión del medio de pago va dentro de la venta: el monto es lo que entra a la cuenta (neto).
+      const conCom = v.abono && v.comision && v.comision < v.abono;
+      // Venta con TUU de la caja del día: "por abonar" hasta que el informe de TUU la confirma (no suma al saldo).
+      const tuu = v.tuuAbono;
+      const estadoTuu = (medio) => (tuu && ['debito', 'credito'].indexOf(medio) !== -1
+        ? (tuu.porAbonar ? { porAbonar: true, fechaAbono: tuu.fechaAbono, medioLabel: data().catalogos.mediosPago[medio] || medio, estadoLabel: 'Por abonar · ' + fmt.date(tuu.fechaAbono) } : { estadoLabel: 'Abonado · ' + fmt.date(tuu.abonadoEl) }) : {});
+      if (v.abono) res.push(Object.assign({}, base, { id: v.id + '·v', fecha: v.fecha, categoriaLabel: 'Venta', subcategoria: v.cliente + ' · ' + v.medioPagoLabel,
+        monto: conCom ? v.abono - v.comision : v.abono, bruto: v.abono, comision: conCom ? v.comision : 0,
+        notas: conCom ? 'venta ' + fmt.money(v.abono) + ' − comisión ' + fmt.money(v.comision) : '' }, estadoTuu(v.medioPago)));
+      v.cobros.forEach((c) => res.push(Object.assign({}, base, { id: c.id, fecha: c.fecha, categoriaLabel: 'Abono de venta', subcategoria: v.cliente + ' · ' + (data().catalogos.mediosPago[c.medioPago] || c.medioPago), monto: c.monto,
+        cuentaLabel: CUENTA_MEDIO[c.medioPago] || '' }, /^Ticket /.test(c.notas || '') ? estadoTuu(c.medioPago) : {})));
+      if (v.comision && !conCom) res.push(Object.assign({}, base, { id: v.id + '·c', tipo: 'egreso', fecha: v.fecha, categoriaLabel: 'Comisión ' + v.medioPagoLabel, subcategoria: v.cliente, monto: v.comision }));
+    });
+    // Pagos de facturas de compra: registrados en Compras o conciliados desde la caja diaria.
+    const compra = {};
+    data().compras.forEach((c) => { compra[c.id] = c; });
+    (data().pagosFacturas || []).forEach((x, i) => {
+      const c = compra[x.compraId];
+      res.push({ id: 'PF-' + (x.id || i), pago: x.id, tipo: 'egreso', fecha: x.fecha, categoriaLabel: 'Pago de factura', subcategoria: c ? c.factura + ' · ' + c.proveedor : x.compraId, notas: x.notas || '',
+        cuentaLabel: data().catalogos.cuentas[x.cuenta] || '', referencia: x.compraId, compra: x.compraId, monto: x.monto });
+    });
+    return res;
+  }
+  const movsBuscados = () => {
+    const f = GS.filters('finanzas', DEF);
+    const q = GS.norm((f.q || '').trim());
+    // Todos los movimientos, de todos los años (el año elegido solo cambia el resumen), los más recientes primero.
+    return movsVivos().concat(movsVentas()).filter((m) => !q || GS.norm(m.categoriaLabel + ' ' + m.subcategoria + ' ' + m.notas + ' ' + m.referencia + ' ' + m.id + ' ' + m.fecha).includes(q))
+      .sort((a, b) => (b.fecha + b.id).localeCompare(a.fecha + a.id));
+  };
+  // Resumen del dinero para el Dashboard: todo lo registrado en Finanzas (con ventas y pagos de facturas)
+  // más los tickets de la caja abierta, que pasan a Finanzas recién al cerrarla.
+  GS.resumenDinero = function () {
+    // abonos: detalle de lo que TUU aún no abona (ventas ya pasadas y pagos de la caja abierta); listaCuotas: cuotas pendientes.
+    const r = { saldo: 0, caja: 0, banco: 0, porAbonar: 0, nPorAbonar: 0, cuotas: 0, porCobrar: 0, nPorCobrar: 0, abierta: null, abonos: [], listaCuotas: [] };
+    const sumar = (cuenta, s) => { r.saldo += s; if (cuenta === 'caja') r.caja += s; else if (cuenta === 'banco') r.banco += s; };
+    const CUENTA = { 'Caja (efectivo)': 'caja', Banco: 'banco', TUU: 'banco' };
+    (data().movimientos || []).concat(movsVentas()).forEach((m) => {
+      if (m.anulado) return;
+      if (m.porAbonar) {
+        r.porAbonar += m.monto; r.nPorAbonar++;
+        r.abonos.push({ fecha: m.fecha, ref: m.venta || m.referencia, detalle: m.subcategoria, medio: m.medioLabel || '', bruto: m.bruto || m.monto, comision: m.comision || 0, neto: m.monto, abono: m.fechaAbono || '' });
+        return;
+      }
+      sumar(CUENTA[m.cuentaLabel], m.tipo === 'ingreso' ? m.monto : -m.monto);
+    });
+    r.listaCuotas = ((data().tuu || {}).cuotas || []).filter((c) => c.estado === 'pendiente').sort((a, b) => String(a.fechaEsperada).localeCompare(String(b.fechaEsperada)));
+    r.cuotas = r.listaCuotas.reduce((s, c) => s + c.monto, 0);
+    data().ventas.forEach((v) => { if (!v.anulada && v.saldo > 0) { r.porCobrar += v.saldo; r.nPorCobrar++; } });
+    // Facturas de compra con saldo por pagar al proveedor (total con IVA − pagos registrados).
+    r.porPagar = 0; r.nPorPagar = 0; r.pagarDesde = '';
+    data().compras.forEach((c) => { if (c.porPagar > 1) { r.porPagar += c.porPagar; r.nPorPagar++; if (!r.pagarDesde || c.fecha < r.pagarDesde) r.pagarDesde = c.fecha; } });
+    (data().cajas || []).filter((c) => c.estado === 'abierta').forEach((c) => {
+      const a = r.abierta || (r.abierta = { fechas: [], efectivo: 0, banco: 0, tuu: 0, tickets: 0 });
+      a.fechas.push(c.fecha);
+      (c.tickets || []).filter((t) => t.estado === 'abierto').forEach((t) => {
+        a.tickets++;
+        if (t.tipo === 'egreso') {
+          sumar(t.cuenta === 'banco' ? 'banco' : 'caja', -t.total);
+          a[t.cuenta === 'banco' ? 'banco' : 'efectivo'] -= t.total;
+          return;
+        }
+        t.pagos.forEach((p) => {
+          if (p.medio === 'efectivo') { sumar('caja', p.monto); a.efectivo += p.monto; }
+          else if (p.medio === 'transferencia') { sumar('banco', p.monto); a.banco += p.monto; }
+          else if (p.medio === 'pendiente') { r.porCobrar += p.monto; r.nPorCobrar++; }
+          else {
+            const com = GS.comisionPago(data().catalogos.comisiones[p.medio], p.monto);
+            const neto = p.monto - com;
+            r.porAbonar += neto; r.nPorAbonar++; a.tuu += neto;
+            r.abonos.push({ fecha: c.fecha, ref: t.id, detalle: (t.cliente || 'Sin cliente') + ' · caja abierta', medio: data().catalogos.mediosPago[p.medio] || p.medio, bruto: p.monto, comision: com, neto: neto, abono: '' });
+          }
+        });
+      });
+    });
+    return r;
+  };
+
+  /* ---------- cuentas por cobrar ---------- */
+
+  const diasDesde = (fecha) => Math.max(0, Math.round((new Date(data().hoy + 'T12:00:00Z') - new Date(fecha + 'T12:00:00Z')) / 86400000));
+  /**
+   * Deudas de clientes agrupadas por cliente: ventas con saldo y tickets de la caja abierta con pago pendiente
+   * (ej. inscripciones de torneo), con la antigüedad de la más antigua. Ordenadas de la más antigua a la más nueva.
+   */
+  GS.cuentasPorCobrar = function () {
+    const d = data();
+    const porCli = {};
+    const fila = (clave, nombre, clienteId) => porCli[clave] || (porCli[clave] = { clave: clave, cliente: nombre, clienteId: clienteId || '', total: 0, desde: '', docs: [] });
+    d.ventas.forEach((v) => {
+      if (v.anulada || !(v.saldo > 0)) return;
+      const r = fila(v.clienteId || v.cliente, v.cliente, v.clienteId);
+      r.total += v.saldo;
+      r.docs.push({ id: v.id, fecha: v.fecha, total: v.total, pagado: v.cobrado, saldo: v.saldo,
+        productos: v.lineas.filter((l) => l.categoria !== 'Ajuste').map((l) => (l.cantidad > 1 ? l.cantidad + ' × ' : '') + l.producto) });
+    });
+    (d.cajas || []).filter((c) => c.estado === 'abierta').forEach((c) => (c.tickets || []).forEach((t) => {
+      if (t.estado !== 'abierto' || t.tipo !== 'venta') return;
+      const pend = t.pagos.filter((g) => g.medio === 'pendiente').reduce((a, g) => a + g.monto, 0);
+      if (!pend) return;
+      const cli = d.clientes.find((x) => GS.norm(x.nombre) === GS.norm(t.cliente));
+      const r = fila(cli ? cli.id : t.cliente, cli ? cli.nombre : t.cliente, cli ? cli.id : '');
+      r.total += pend;
+      r.docs.push({ id: t.id, fecha: c.fecha, total: t.total, pagado: t.total - pend, saldo: pend, caja: true,
+        productos: t.lineas.map((l) => (l.productoId ? (l.cantidad > 1 ? l.cantidad + ' × ' : '') + l.producto : (l.cantidad > 1 ? l.cantidad + ' × ' : '') + [l.categoria, l.descripcion].filter(Boolean).join(' · '))) });
+    }));
+    return Object.values(porCli).map((r) => {
+      r.docs.sort((a, b) => a.fecha.localeCompare(b.fecha));
+      r.desde = r.docs[0].fecha;
+      r.dias = diasDesde(r.desde);
+      const c = d.clientes.find((x) => x.id === r.clienteId);
+      r.telefono = c ? c.telefono : '';
+      return r;
+    }).sort((a, b) => b.dias - a.dias || b.total - a.total);
+  };
+  /** Color por antigüedad: menos de 7 días normal, de 7 a 30 dorado, más de 30 rojo. */
+  const antig = (dias) => '<span class="' + (dias > 30 ? 'text-danger' : dias >= 7 ? 'text-gold' : '') + '">' + (dias === 0 ? 'hoy' : dias === 1 ? '1 día' : dias + ' días') + '</span>';
+  /** Mensaje de WhatsApp con todo lo que debe el cliente. */
+  const wspDeuda = (r) => {
+    const tel = String(r.telefono || '').replace(/\D/g, '');
+    if (!tel) return '<span class="cell-dim" title="Agrega su teléfono en Clientes">sin teléfono</span>';
+    const msg = 'Hola ' + r.cliente.split(' ')[0] + ', te escribimos de GS Prime. Tienes un saldo pendiente de ' + fmt.money(r.total) +
+      (r.docs.length > 1 ? ' (' + r.docs.map((x) => (x.caja ? 'compra' : x.id) + ' del ' + fmt.date(x.fecha) + ': ' + fmt.money(x.saldo) + (x.productos.length ? ', ' + x.productos.join(', ') : '')).join('; ') + ')'
+        : ' por tu compra del ' + fmt.date(r.docs[0].fecha) + (r.docs[0].productos.length ? ' (' + r.docs[0].productos.join(', ') + ')' : '')) + '. ¡Gracias!';
+    return '<a class="btn small ghost" target="_blank" rel="noopener" href="https://wa.me/' + tel + '?text=' + encodeURIComponent(msg) + '">WhatsApp</a>';
+  };
+  const abiertosCxc = new Set();
+  GS.actions.verDeudaCliente = (clave) => { if (abiertosCxc.has(clave)) abiertosCxc.delete(clave); else abiertosCxc.add(clave); GS.render(); };
+  /** Tabla de cuentas por cobrar (Finanzas → Cuentas por cobrar y el panel del Dashboard). opts.max = solo las N más antiguas. */
+  GS.tablaPorCobrar = function (opts) {
+    const o = opts || {};
+    const todas = GS.cuentasPorCobrar();
+    const lista = o.max ? todas.slice(0, o.max) : todas;
+    if (!todas.length) return GS.empty('Nadie debe', 'Las ventas con pago pendiente aparecen aquí hasta que se pagan.', 'clientes');
+    const total = todas.reduce((t, r) => t + r.total, 0);
+    const viejas = todas.filter((r) => r.dias > 30);
+    return (o.max ? '' : '<div class="kpi-grid">' +
+        kpi('Por cobrar', fmt.money(total), todas.length + (todas.length === 1 ? ' cliente' : ' clientes')) +
+        kpi('Más de 30 días', '<span class="' + (viejas.length ? 'text-danger' : '') + '">' + fmt.money(viejas.reduce((t, r) => t + r.total, 0)) + '</span>', viejas.length + (viejas.length === 1 ? ' cliente' : ' clientes')) +
+        kpi('De 7 a 30 días', '<span class="text-gold">' + fmt.money(todas.filter((r) => r.dias >= 7 && r.dias <= 30).reduce((t, r) => t + r.total, 0)) + '</span>', '') +
+        kpi('Menos de 7 días', fmt.money(todas.filter((r) => r.dias < 7).reduce((t, r) => t + r.total, 0)), '') + '</div>') +
+      '<div class="table-wrap"><table class="data-table"><thead><tr><th></th><th>Cliente</th><th class="right">Ventas</th><th>Debe desde</th><th class="right">Total adeudado</th><th></th></tr></thead><tbody>' +
+      lista.map((r) => {
+        const open = abiertosCxc.has(r.clave);
+        return '<tr class="fila-compra' + (open ? ' abierta' : '') + '" data-action="verDeudaCliente" data-id="' + esc(r.clave) + '"><td><span class="chev">' + (open ? '▾' : '▸') + '</span></td>' +
+          '<td class="cell-strong">' + esc(r.cliente) + '</td><td class="cell-num right">' + r.docs.length + '</td>' +
+          '<td class="nowrap">' + fmt.date(r.desde) + '<div class="cell-dim">' + antig(r.dias) + '</div></td>' +
+          '<td class="cell-num right"><strong class="' + (r.dias > 30 ? 'text-danger' : r.dias >= 7 ? 'text-gold' : '') + '">' + fmt.money(r.total) + '</strong></td>' +
+          '<td><div class="row-actions">' + wspDeuda(r) + (r.clienteId ? '<button class="btn small ghost" data-nav-cliente="' + esc(r.clienteId) + '" title="Registrar un abono en la ficha del cliente">Abonar</button>' : '') + '</div></td></tr>' +
+          (open ? '<tr class="detalle-row"><td colspan="6"><div class="detalle-compra"><table class="mini-table"><thead><tr><th>Documento</th><th>Fecha</th><th class="right">Total</th><th class="right">Pagado</th><th class="right">Debe</th></tr></thead><tbody>' +
+            r.docs.map((x) => '<tr><td><span class="cell-strong">' + esc(x.id) + '</span>' + (x.caja ? ' <span class="cell-dim">(caja abierta)</span>' : '') +
+              (x.productos && x.productos.length ? x.productos.map((t) => '<div class="cell-dim">' + esc(t) + '</div>').join('') : '') + '</td><td class="nowrap">' + fmt.date(x.fecha) + ' <span class="cell-dim">' + antig(diasDesde(x.fecha)) + '</span></td>' +
+              '<td class="cell-num right">' + fmt.money(x.total) + '</td><td class="cell-num right">' + fmt.money(x.pagado) + '</td><td class="cell-num right"><strong>' + fmt.money(x.saldo) + '</strong></td></tr>').join('') +
+            '</tbody></table>' + (r.docs.some((x) => x.caja) ? '<p class="table-note">Lo de la caja abierta se cobra editando el ticket en la Caja del día.</p>' : '') + '</div></td></tr>' : '');
+      }).join('') + '</tbody></table></div>' +
+      (o.max && todas.length > o.max ? '<p class="table-note">' + (todas.length - o.max) + ' clientes más en Finanzas → Cuentas por cobrar.</p>' : '');
+  };
+  // "Abonar": abre la ficha del cliente con sus deudas desplegadas (ahí se registra el abono).
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest) return;
+    // El enlace de WhatsApp abre su página sin desplegar la fila.
+    if (e.target.closest('a[href^="https://wa.me"]')) { e.stopPropagation(); return; }
+    const b = e.target.closest('[data-nav-cliente]');
+    if (!b) return;
+    e.stopPropagation();
+    GS.go('clientes', b.dataset.navCliente);
+  }, true);
+
+  GS.tablaRegistrar('movimientos', { filas: movsBuscados, columnas: colsMov, alCambiar: () => GS.views.finanzas.update() });
+
+  // "Ver OC-…" / "Ver CP-…" despliega el detalle debajo de la fila, sin cambiar de página.
+  const abiertosMov = new Set();
+  // Un egreso que fue el pago de una factura (ej. migrado como "Compra por monto"): pasa a ser pago de esa factura.
+  GS.actions.movimientoAPagoFactura = (id) => {
+    const m = data().movimientos.find((x) => x.id === id);
+    const opciones = data().compras.slice().sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)))
+      .map((c) => ({ value: c.id, label: c.id + ' · factura ' + c.factura + ' · ' + c.proveedor + ' · ' + fmt.date(c.fecha) + ' · ' + (c.porPagar <= 1 ? 'pagada' : 'por pagar ' + fmt.money(c.porPagar)) }));
+    GS.formModal({
+      title: 'Pasar ' + id + ' a pago de factura',
+      submitLabel: 'Registrar como pago',
+      fields: () => '<p class="hint">' + fmt.date(m.fecha) + ' · ' + esc(m.categoriaLabel) + ' · ' + esc(m.subcategoria || '') + ' · <strong>' + fmt.money(m.monto) + '</strong></p>' +
+        '<div class="form-field"><label>Factura *</label><select name="compraId">' + GS.options([{ value: '', label: 'Elige la factura…' }].concat(opciones), '') + '</select></div>' +
+        '<p class="hint">Se registra como pago de esa factura con la misma fecha, monto y cuenta (se ve en Compras → Pagos y aquí como "Pago de factura"). ' +
+        'El movimiento ' + esc(id) + ' queda anulado para no contar el egreso dos veces. Si una factura se pagó en partes, repite esto con cada pago.</p>',
+      onSubmit: (v) => GS.mutate('movimientoAPagoFactura', { id: id, compraId: v.compraId }, (r) => 'Pago ' + r.pago + ' registrado en ' + r.compraId),
+    });
+  };
+  // Comprobante en PDF de un movimiento (pago al SII): se sube a Drive y se ve aquí mismo, dibujado con pdf.js.
+  function cargarPdfJs() {
+    if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+    const base = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
+    return new Promise((ok, fail) => {
+      const s = document.createElement('script');
+      s.src = base + 'pdf.min.js';
+      s.onload = () => { window.pdfjsLib.GlobalWorkerOptions.workerSrc = base + 'pdf.worker.min.js'; ok(window.pdfjsLib); };
+      s.onerror = () => fail(new Error('No se pudo cargar el visor de PDF. Revisa la conexión.'));
+      document.head.appendChild(s);
+    });
+  }
+  const base64ABytes = (b64) => { const t = atob(b64); const u = new Uint8Array(t.length); for (let i = 0; i < t.length; i++) u[i] = t.charCodeAt(i); return u; };
+  async function dibujarPdf(visor, bytes) {
+    visor.innerHTML = '<p class="hint">Cargando el PDF…</p>';
+    try {
+      const pdf = await (await cargarPdfJs()).getDocument({ data: bytes, isEvalSupported: false }).promise;
+      visor.innerHTML = '';
+      for (let n = 1; n <= pdf.numPages; n++) {
+        const pagina = await pdf.getPage(n);
+        const escala = Math.min(2, (visor.clientWidth - 4) / pagina.getViewport({ scale: 1 }).width) * (window.devicePixelRatio || 1);
+        const vp = pagina.getViewport({ scale: escala });
+        const canvas = document.createElement('canvas');
+        canvas.width = vp.width;
+        canvas.height = vp.height;
+        visor.appendChild(canvas);
+        await pagina.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+      }
+    } catch (e) {
+      visor.innerHTML = '<p class="text-danger">' + esc(e.message || 'No se pudo leer el PDF.') + '</p>';
+    }
+  }
+  GS.actions.comprobanteMovimiento = (id) => {
+    const m = data().movimientos.find((x) => x.id === id);
+    let nuevo = null;
+    GS.formModal({
+      title: 'Comprobante ' + id,
+      size: 'wide',
+      submitLabel: 'Guardar PDF',
+      fields: () => '<p class="hint">' + fmt.date(m.fecha) + ' · ' + esc(m.categoriaLabel) + (m.subcategoria ? ' · ' + esc(m.subcategoria) : '') + ' · <strong>' + fmt.money(m.monto) + '</strong></p>' +
+        '<div class="pdf-visor" data-pdf-visor>' + (m.comprobante ? '' : '<p class="hint">Este pago aún no tiene comprobante. Elige el PDF para verlo aquí antes de guardarlo.</p>') + '</div>' +
+        '<div class="pdf-barra"><label class="btn secondary small">' + GS.icon('upload') + (m.comprobante ? 'Reemplazar PDF' : 'Elegir PDF') +
+        '<input type="file" name="pdf" accept="application/pdf" hidden></label>' +
+        '<span class="hint" data-pdf-nombre></span>' +
+        (m.comprobante && GS.puede('admin') ? '<button type="button" class="btn small ghost text-danger" data-pdf-quitar>Quitar comprobante</button>' : '') + '</div>',
+      onMount: (form, modal) => {
+        const visor = form.querySelector('[data-pdf-visor]');
+        const nombre = form.querySelector('[data-pdf-nombre]');
+        if (m.comprobante) {
+          visor.innerHTML = '<p class="hint">Cargando el PDF…</p>';
+          GS.api('verComprobante', { id: id }).then((r) => {
+            nombre.innerHTML = esc(r.data.nombre) + (/^https:\/\/drive\.google\.com\/file\/d\/[\w-]{20,}\//.test(r.data.url) ? ' · <a href="' + esc(r.data.url) + '" target="_blank" rel="noopener">Abrir en Drive</a>' : '');
+            return dibujarPdf(visor, base64ABytes(r.data.base64));
+          }).catch((e) => { visor.innerHTML = '<p class="text-danger">' + esc(e.message) + '</p>'; });
+        }
+        form.elements.pdf.addEventListener('change', async () => {
+          const f = form.elements.pdf.files[0];
+          if (!f) return;
+          if (f.type !== 'application/pdf') { GS.toast('El comprobante debe ser un PDF.', true); return; }
+          if (f.size > 5 * 1024 * 1024) { GS.toast('El PDF es muy pesado (máximo 5 MB).', true); return; }
+          const buf = new Uint8Array(await f.arrayBuffer());
+          let bin = '';
+          for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+          nuevo = { mime: 'application/pdf', base64: btoa(bin) };
+          nombre.textContent = f.name + ' · sin guardar';
+          dibujarPdf(visor, buf);
+        });
+        const quitar = form.querySelector('[data-pdf-quitar]');
+        if (quitar) quitar.addEventListener('click', () => GS.confirm({
+          title: 'Quitar comprobante', danger: true, confirmLabel: 'Quitar',
+          message: 'El PDF de ' + esc(id) + ' se manda a la papelera de Drive.',
+          onConfirm: async () => { await GS.mutate('comprobanteMovimiento', { id: id, quitar: true }, 'Comprobante quitado'); modal.close(); },
+        }));
+      },
+      onSubmit: async () => {
+        if (!nuevo) { if (m.comprobante) return; throw new Error('Elige el PDF del comprobante.'); }
+        await GS.mutate('comprobanteMovimiento', { id: id, archivo: nuevo }, 'Comprobante guardado en ' + id);
+      },
+    });
+  };
+  // Un ingreso que fue el abono de una venta con deuda (ej. transferencia del cliente): pasa a ser abono de esa OC.
+  GS.actions.movimientoACobroVenta = (id) => {
+    const m = data().movimientos.find((x) => x.id === id);
+    const opciones = data().ventas.filter((v) => !v.anulada && v.saldo > 0).sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)))
+      .map((v) => ({ value: v.id, label: v.id + ' · ' + v.cliente + ' · ' + fmt.date(v.fecha) + ' · debe ' + fmt.money(v.saldo) }));
+    GS.formModal({
+      title: 'Pasar ' + id + ' a abono de una OC',
+      submitLabel: 'Registrar como abono',
+      fields: () => '<p class="hint">' + fmt.date(m.fecha) + ' · ' + esc(m.categoriaLabel) + ' · ' + esc(m.subcategoria || '') + ' · <strong>' + fmt.money(m.monto) + '</strong></p>' +
+        (opciones.length
+          ? '<div class="form-field"><label>OC con saldo pendiente *</label><select name="ventaId">' + GS.options([{ value: '', label: 'Elige la OC…' }].concat(opciones), '') + '</select></div>'
+          : '<div class="notice warn">No hay ventas con saldo pendiente.</div>') +
+        '<p class="hint">Se registra como abono de esa OC con la misma fecha y monto (se ve en la venta y aquí como "Abono de venta"). ' +
+        'El movimiento ' + esc(id) + ' queda anulado para no contar el ingreso dos veces.</p>',
+      onSubmit: (v) => GS.mutate('movimientoACobroVenta', { id: id, ventaId: v.ventaId }, (r) => 'Abono ' + r.cobro + ' registrado en ' + r.ventaId),
+    });
+  };
+  // Informe detallado de los movimientos visibles (buscador y filtros de columna aplicados), en orden cronológico con saldo.
+  GS.actions.exportarMovimientos = () => {
+    const rows = GS.tablaAplicar('movimientos', movsBuscados(), colsMov).slice().sort((a, b) => (a.fecha + a.id).localeCompare(b.fecha + b.id));
+    let saldo = 0;
+    const filas = rows.map((m) => {
+      const signo = m.anulado || m.porAbonar ? 0 : m.tipo === 'ingreso' ? m.monto : -m.monto;
+      saldo += signo;
+      return [m.fecha, m.id, m.tipo === 'ingreso' ? 'Ingreso' : 'Egreso', m.categoriaLabel, m.subcategoria || '', m.cuentaLabel || '', m.referencia || '',
+        m.venta ? 'Venta' : m.compra ? 'Pago de factura' : 'Movimiento', m.bruto || '', m.comision || '', m.iva || '',
+        m.tipo === 'ingreso' && !m.anulado && !m.porAbonar ? m.monto : '', m.tipo === 'egreso' && !m.anulado ? m.monto : '', saldo, m.anulado ? 'Anulado' : m.porAbonar ? 'Por abonar (TUU)' : m.estadoLabel || 'Vigente', m.notas || ''];
+    });
+    GS.downloadCsv('movimientos-' + data().hoy + '.csv',
+      ['Fecha', 'ID', 'Tipo', 'Categoría', 'Detalle', 'Cuenta', 'Referencia', 'Origen', 'Venta bruta', 'Comisión', 'IVA (factura)', 'Ingreso', 'Egreso', 'Saldo acumulado', 'Estado', 'Notas'], filas);
+    GS.toast(filas.length + ' movimientos descargados');
+  };
+  GS.actions.finVer = (id) => {
+    if (abiertosMov.has(id)) abiertosMov.delete(id); else abiertosMov.add(id);
+    GS.views.finanzas.update();
+  };
+  const detalleMov = (m) => {
+    if (m.venta) { const v = data().ventas.find((x) => x.id === m.venta); return v && GS.detalleVenta ? GS.detalleVenta(v) : ''; }
+    const c = data().compras.find((x) => x.id === m.compra);
+    return c && GS.detalleCompra ? GS.detalleCompra(c) : '';
+  };
+
+  GS.views.finanzas = {
+    title: 'Finanzas',
+    render(el) {
+      const f = GS.filters('finanzas', DEF);
+      if (!f.anio) f.anio = data().hoy.slice(0, 4);
+      const tab = (id, label) => '<button class="tab' + (f.tab === id ? ' active' : '') + '" data-action="tab" data-id="finanzas.' + id + '">' + label + '</button>';
+      el.innerHTML =
+        '<div class="page-head"><div><h1>Finanzas</h1><p>Resumen mensual del negocio y libro de movimientos: aportes, gastos, pagos al SII y compras por monto.</p></div>' +
+        '<div class="btn-row"><div class="select-input"><select data-filter="finanzas.anio" aria-label="Año">' + GS.options(anios(), f.anio) + '</select></div>' +
+        (GS.puede('operador') ? '<button class="btn" data-action="nuevoMovimiento">' + GS.icon('plus', 2.4) + 'Nuevo movimiento</button>' : '') + '</div></div>' +
+        '<div class="tabs">' + tab('movimientos', 'Movimientos') + tab('cobrar', 'Cuentas por cobrar' + (GS.cuentasPorCobrar().length ? ' <span class="pill soon">' + fmt.money(GS.cuentasPorCobrar().reduce((t, x) => t + x.total, 0)) + '</span>' : '')) + tab('resumen', 'Resumen mensual') + '</div>' +
+        '<div id="fin-cuerpo"></div>';
+      this.update();
+    },
+    update() {
+      const f = GS.filters('finanzas', DEF);
+      const anio = f.anio || data().hoy.slice(0, 4);
+      const cuerpo = document.getElementById('fin-cuerpo');
+      if (!cuerpo) return;
+      if (f.tab === 'movimientos') {
+        if (!document.getElementById('mov-tbody')) {
+          cuerpo.innerHTML = '<div class="filters-bar"><div class="search-box">' + GS.icon('search') + '<input type="text" data-filter="finanzas.q" value="' + esc(f.q || '') + '" placeholder="Buscar categoría, detalle o referencia..."></div>' +
+            '<span class="count" id="mov-count"></span>' +
+            '<button class="btn ghost small" data-action="exportarMovimientos" title="Descarga en Excel (CSV) los movimientos que se ven, con filtros y buscador aplicados">' + GS.icon('download') + 'Descargar informe</button></div>' +
+            '<div id="mov-resumen"></div>' +
+            '<div class="table-wrap"><table class="data-table"><thead><tr id="mov-thead"></tr></thead><tbody id="mov-tbody"></tbody></table></div>';
+        }
+        const rows = GS.tablaAplicar('movimientos', movsBuscados(), colsMov);
+        const op = GS.puede('operador');
+        const admin = GS.puede('admin');
+        const nv = rows.filter((m) => m.venta).length;
+        // Resumen de lo visible (respeta el buscador y los filtros de columna); los anulados no cuentan.
+        // Lo que TUU aún no abona (ventas de la caja sin informe) no suma al saldo: va en su propia casilla.
+        const porAbonar = rows.filter((m) => !m.anulado && m.porAbonar);
+        const cuotasTuu = ((data().tuu || {}).cuotas || []).filter((c) => c.estado === 'pendiente').reduce((s, c) => s + c.monto, 0);
+        const vivos = rows.filter((m) => !m.anulado && !m.porAbonar);
+        const suma = (t) => vivos.filter((m) => m.tipo === t).reduce((a, m) => a + m.monto, 0);
+        const ing = suma('ingreso');
+        const egr = suma('egreso');
+        const sinPago = data().compras.filter((c) => !(data().pagosFacturas || []).some((x) => x.compraId === c.id)).length;
+        const pend = data().app.migracionCerrada ? {} : data().cajaPendiente || {};
+        const nPend = Object.keys(pend).reduce((t, k) => t + pend[k], 0);
+        document.getElementById('mov-resumen').innerHTML = (nPend
+          ? '<div class="notice warn">Hay <strong>' + nPend + ' filas de la caja diaria sin migrar</strong> que todavía no aparecen aquí: ' +
+            Object.keys(pend).sort((a, b) => pend[b] - pend[a]).map((k) => esc(k) + ' (' + pend[k] + ')').join(', ') +
+            '. Revísalas y mígralas en <a href="#" data-nav="migracion">Migración → Caja diaria</a>.</div>'
+          : '') + '<div class="kpi-grid">' +
+          kpi('Ingresos', '<span class="text-success">+' + fmt.money(ing) + '</span>', vivos.filter((m) => m.tipo === 'ingreso').length + ' movimientos') +
+          kpi('Egresos', '−' + fmt.money(egr), vivos.filter((m) => m.tipo === 'egreso').length + ' movimientos') +
+          kpi('Saldo', '<span class="' + (ing - egr < 0 ? 'text-danger' : 'text-gold') + '">' + fmt.money(ing - egr) + '</span>', 'Ingresos − egresos de lo que se ve') +
+          kpi('Por abonar (TUU)', fmt.money(porAbonar.reduce((s, m) => s + m.monto, 0)), porAbonar.length + (porAbonar.length === 1 ? ' venta' : ' ventas') + ' sin confirmar' + (cuotasTuu ? ' · + ' + fmt.money(cuotasTuu) + ' en cuotas' : '') + ' · no suma al saldo') + '</div>' +
+          '<p class="table-note" style="margin:0 0 12px;">El saldo es lo que debería haber entre caja, banco y TUU <strong>si todo está registrado</strong>: aportes, ventas, gastos, pagos al SII y pagos de facturas. ' +
+          (sinPago ? 'Ojo: ' + sinPago + (sinPago === 1 ? ' factura de compra no tiene' : ' facturas de compra no tienen') + ' pago registrado y no se restan. ' : '') +
+          'Para el efectivo de la caja, filtra la columna Cuenta por "Caja (efectivo)" (los depósitos al banco no se registran como traspaso, así que el saldo por cuenta es solo referencial).</p>';
+        document.getElementById('mov-count').textContent = rows.length + ' movimientos' + (nv ? ' · ' + nv + ' de ventas' : '');
+        document.getElementById('mov-thead').innerHTML = GS.tablaEncabezado('movimientos', colsMov) + '<th></th>';
+        document.getElementById('mov-tbody').innerHTML = rows.length ? rows.map((m) => '<tr class="' + (m.anulado ? 'row-muted' : '') + '">' +
+          colsMov.map((c) => '<td class="' + (c.right ? 'cell-num right ' : '') + (c.clase || '') + '">' + c.celda(m) + '</td>').join('') +
+          '<td><div class="row-actions">' + (m.venta || m.compra
+            ? '<button class="btn small ghost" data-action="finVer" data-id="' + esc(m.id) + '" title="Ver el detalle aquí mismo">' + (abiertosMov.has(m.id) ? '▾ ' : '▸ ') + esc(m.venta || m.compra) + '</button>'
+              + (admin && m.pago ? GS.iconBtn('reenlazarPagoCompra', m.pago, 'edit', 'Cambiar la factura de este pago') : '')
+            : (op && !m.anulado ? GS.iconBtn('editarMovimiento', m.id, 'edit', 'Editar') : '') +
+              (admin && !m.anulado && m.tipo === 'ingreso' ? '<button class="btn small ghost" data-action="movimientoACobroVenta" data-id="' + esc(m.id) + '" title="Este ingreso fue el abono de una venta con deuda: registrarlo en esa OC">→ OC</button>' : '') +
+              (op && !m.anulado && m.categoria === 'sii' ? '<button class="btn small ghost" data-action="comprobanteMovimiento" data-id="' + esc(m.id) + '" title="' + (m.comprobante ? 'Ver el comprobante del pago' : 'Subir el comprobante del pago (PDF)') + '">' + (m.comprobante ? 'Ver PDF' : 'Subir PDF') + '</button>' : '') +
+              (admin && !m.anulado && m.tipo === 'egreso' && m.categoria !== 'sii' ? '<button class="btn small ghost" data-action="movimientoAPagoFactura" data-id="' + esc(m.id) + '" title="Este egreso fue el pago de una factura de compra: registrarlo en esa factura">→ Factura</button>' : '') +
+              (admin && !m.anulado ? GS.iconBtn('anularMovimiento', m.id, 'trash', 'Anular', 'danger') : '')) + '</div></td></tr>' +
+          (abiertosMov.has(m.id) ? '<tr class="detalle-row"><td colspan="' + (colsMov.length + 1) + '">' + detalleMov(m) + '</td></tr>' : '')).join('')
+          : '<tr><td colspan="' + (colsMov.length + 1) + '">' + GS.empty('Sin movimientos', 'Registra aportes, gastos, pagos al SII o compras por monto con "Nuevo movimiento".', 'finanzas') + '</td></tr>';
+        return;
+      }
+      if (f.tab === 'cobrar') { cuerpo.innerHTML = GS.tablaPorCobrar(); return; }
+      const r = resumen(anio);
+      const total = (fila) => fila.valores.reduce((t, x) => t + x, 0);
+      // Capital: aportes menos retiros de capital (devolución de aportes). La compra de acciones /
+      // compensación a un socio es lo pagado por sobre sus aportes: no rebaja los aportes, se informa aparte.
+      const sumaCat = (cats) => movsVivos().filter((m) => cats.indexOf(m.categoria) !== -1).reduce((t, m) => t + m.monto, 0);
+      const aportes = sumaCat(['aporte']);
+      const salidas = sumaCat(['retiro']);
+      cuerpo.innerHTML = '<div class="kpi-grid">' +
+        kpi('Ventas ' + anio, fmt.money(total(r.totalVentas)), 'productos y ventas por monto') +
+        kpi('Egresos ' + anio, fmt.money(total(r.totalEgresos)), 'compras, gastos, SII y comisiones') +
+        kpi('Flujo ' + anio, '<span class="' + (total(r.flujo) < 0 ? 'text-danger' : 'text-success') + '">' + fmt.money(total(r.flujo)) + '</span>', 'ventas + otros ingresos − egresos') +
+        kpi('Aportes de capital', fmt.money(aportes - salidas), (salidas ? 'aportes ' + fmt.money(aportes) + ' − retiros ' + fmt.money(salidas) : 'acumulado de todos los años')) + '</div>' +
+        tablaResumen(r) + tablaSocios();
+    },
+  };
+
+  /* ---------- capital por socio ---------- */
+
+  /** Aportes − retiros de capital por socio (el detalle del movimiento es el nombre del socio). */
+  const claveSocio = (t) => GS.norm(String(t || '').replace(/^(aporte|retiro)( de capital)?\s*/i, '')).trim();
+  function socios() {
+    const res = {};
+    movsVivos().filter((m) => m.categoria === 'aporte' || m.categoria === 'retiro').forEach((m) => {
+      const k = claveSocio(m.subcategoria) || '(sin nombre)';
+      const s = res[k] = res[k] || { nombre: String(m.subcategoria || '(sin nombre)').replace(/^(aporte|retiro)( de capital)?\s*/i, '') || '(sin nombre)', aportes: 0, retiros: 0 };
+      if (m.categoria === 'aporte') s.aportes += m.monto; else s.retiros += m.monto;
+    });
+    return Object.keys(res).map((k) => Object.assign({ clave: k, saldo: res[k].aportes - res[k].retiros }, res[k])).sort((a, b) => b.saldo - a.saldo);
+  }
+  function tablaSocios() {
+    const lista = socios();
+    if (!lista.length) return '';
+    return '<h3 class="sub-titulo" style="margin-top:22px;">Capital por socio</h3><div class="table-wrap"><table class="data-table" style="min-width:0"><thead><tr><th>Socio</th><th class="right">Aportes</th><th class="right">Retiros de capital</th><th class="right">Saldo</th></tr></thead><tbody>' +
+      lista.map((s) => '<tr><td class="cell-strong">' + esc(s.nombre) + '</td><td class="cell-num right">' + fmt.money(s.aportes) + '</td><td class="cell-num right">' + (s.retiros ? '−' + fmt.money(s.retiros) : '—') + '</td>' +
+        '<td class="cell-num right"><strong class="' + (s.saldo ? '' : 'muted') + '">' + fmt.money(s.saldo) + '</strong></td></tr>').join('') +
+      '</tbody></table></div><p class="table-note">Aportes ("Patrimonio · aporte de capital") menos retiros ("Patrimonio · retiro de capital"), agrupados por el nombre del socio en el detalle. Un socio que salió debería quedar en $0.</p>';
+  }
+
+  /* ---------- formulario ---------- */
+
+  /** pre (opcional, desde Compras → Nueva compra): { titulo, categoria, subcategoria, ayuda }. */
+  function formMovimiento(m, pre) {
+    const c = data().catalogos;
+    const x = m || { fecha: data().hoy, tipo: 'egreso', categoria: (pre && pre.categoria) || 'gav', subcategoria: (pre && pre.subcategoria) || '', monto: '', cuenta: '', referencia: '', notas: '', iva: 0 };
+    const opcionesCat = (tipo, sel) => GS.options(Object.keys(c.categoriasMovimiento[tipo]).map((k) => ({ value: k, label: c.categoriasMovimiento[tipo][k] })), sel);
+    const tasa = data().app.iva;
+    GS.formModal({
+      title: m ? 'Editar movimiento ' + m.id : (pre && pre.titulo) || 'Nuevo movimiento',
+      submitLabel: 'Guardar movimiento',
+      fields: () => '<div class="form-grid">' +
+        '<div class="form-field"><label>Fecha *</label><input type="date" name="fecha" value="' + esc(x.fecha) + '"></div>' +
+        '<div class="form-field"><label>Tipo *</label><select name="tipo">' + GS.options([{ value: 'egreso', label: 'Egreso' }, { value: 'ingreso', label: 'Ingreso' }], x.tipo) + '</select></div>' +
+        '<div class="form-field"><label>Categoría *</label><select name="categoria">' + opcionesCat(x.tipo, x.categoria) + '</select></div>' +
+        '<div class="form-field"><label>Monto *</label><input type="number" name="monto" min="1" step="1" value="' + esc(x.monto) + '" placeholder="Ej: 25000"></div>' +
+        '<div class="form-field"><label>Detalle</label><input name="subcategoria" value="' + esc(x.subcategoria) + '" placeholder="Ej: Sueldo Alex, Singles lote 12, socio Jaime"></div>' +
+        '<div class="form-field"><label>Cuenta</label><select name="cuenta">' + GS.options([{ value: '', label: 'Sin cuenta' }].concat(Object.keys(c.cuentas).map((k) => ({ value: k, label: c.cuentas[k] }))), x.cuenta) + '</select></div>' +
+        '<div class="form-field"><label>Referencia</label><input name="referencia" value="' + esc(x.referencia) + '" placeholder="N° de documento, boleta…"></div>' +
+        '<div class="form-field" data-mv-fac><label class="check" style="margin-top:22px;"><input type="checkbox" name="conFactura"' + (x.iva ? ' checked' : '') + '> Con factura (registrar el IVA como crédito fiscal)</label></div>' +
+        '<div class="form-field" data-mv-iva' + (x.iva ? '' : ' hidden') + '><label>IVA incluido en el monto</label><input type="number" name="iva" min="0" step="1" value="' + esc(x.iva || '') + '"></div>' +
+        '<div class="form-field full"><label>Notas</label><textarea name="notas" rows="2">' + esc(x.notas) + '</textarea></div></div>' +
+        '<p class="hint">' + ((pre && pre.ayuda) || 'Las ventas y las facturas de compra se registran en sus módulos; aquí va todo lo demás. Compra de singles: categoría "Compra por monto" con detalle "Singles …".') +
+        ' Si el gasto viene con factura, marca "Con factura": el IVA se calcula solo (' + Math.round(tasa * 100) + '% incluido en el monto) y se descuenta del IVA estimado.</p>',
+      onMount: (form) => {
+        let ivaTocado = !!x.iva;
+        const upd = () => {
+          const egreso = form.elements.tipo.value === 'egreso';
+          form.querySelector('[data-mv-fac]').hidden = !egreso;
+          const con = egreso && form.elements.conFactura.checked;
+          form.querySelector('[data-mv-iva]').hidden = !con;
+          if (con && !ivaTocado) form.elements.iva.value = Math.round((Number(form.elements.monto.value) || 0) * tasa / (1 + tasa)) || '';
+        };
+        form.elements.tipo.addEventListener('change', () => { form.elements.categoria.innerHTML = opcionesCat(form.elements.tipo.value, ''); upd(); });
+        form.elements.conFactura.addEventListener('change', upd);
+        form.elements.monto.addEventListener('input', upd);
+        form.elements.iva.addEventListener('input', () => { ivaTocado = true; });
+        upd();
+      },
+      onSubmit: (v) => {
+        const datos = Object.assign({ id: m ? m.id : '' }, v, { iva: v.tipo === 'egreso' && v.conFactura ? v.iva : 0 });
+        delete datos.conFactura;
+        return GS.mutate('guardarMovimiento', datos, m ? 'Movimiento actualizado' : (r) => 'Movimiento ' + r.id + ' registrado');
+      },
+    });
+  }
+  GS.formMovimiento = formMovimiento;
+  GS.actions.nuevoMovimiento = () => formMovimiento(null);
+  GS.actions.editarMovimiento = (id) => formMovimiento(data().movimientos.find((m) => m.id === id));
+  GS.actions.anularMovimiento = (id) => {
+    const m = data().movimientos.find((x) => x.id === id);
+    GS.confirm({
+      title: 'Anular ' + m.id,
+      message: '<strong>' + esc(m.categoriaLabel) + '</strong> por ' + fmt.money(m.monto) + ' deja de contar y desaparece de la lista. Queda registrado en la auditoría.',
+      confirmLabel: 'Sí, anular',
+      danger: true,
+      onConfirm: () => GS.mutate('anularMovimiento', { id: id }, 'Movimiento anulado'),
+    });
+  };
+})();
+</script>
