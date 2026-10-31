@@ -117,8 +117,8 @@ const Ventas = {
       Db.all(tabla).forEach((r) => { if (cambia(r[campo])) cambios[r.id] = { [campo]: mapa[r[campo]] }; });
       if (Object.keys(cambios).length) Db.actualizarVarios(tabla, cambios);
     });
-    // Referencias en texto: lo que creó la migración de la caja y las notas de Finanzas.
-    [['Migracion_Caja', ['migrada']], ['Finanzas', ['referencia', 'notas']]].forEach(([tabla, campos]) => {
+    // Referencias en texto: las notas de Finanzas.
+    [['Finanzas', ['referencia', 'notas']]].forEach(([tabla, campos]) => {
       const cambios = {};
       Db.all(tabla).forEach((r) => {
         const c = {};
@@ -285,84 +285,12 @@ const Ventas = {
     return { id: nuevoId };
   },
 
-
-  /**
-   * Ventas migradas con su número de OC original (la nota "OC original OC223" → OC-0223).
-   * Si varias ventas venían de la misma OC, las siguientes llevan "-2", "-3"…
-   * Las ventas sin OC original conservan su número si no choca y queda sobre el último
-   * original; si no, pasan a continuación. El correlativo sigue desde el número más alto.
-   * Además cada venta con OC original toma la fecha de esa OC en la caja diaria (la más antigua),
-   * aunque sus filas aún no se hayan migrado.
-   * Devuelve { cambios: [{ de, a, fecha, fechaNueva, oc, anulada }], siguiente, ultimo }.
-   */
-  _planOriginales() {
-    // Solo las OC (sellados): singles, torneos y demás tienen su propio correlativo.
-    const ventas = Db.all('Ventas').filter((v) => Ventas.esOc(v.id)).sort((a, b) => a.id.localeCompare(b.id));
-    const num = (id) => { const m = /^OC-(\d+)$/.exec(id); return m ? Number(m[1]) : null; };
-    const destino = {};
-    const usados = {};
-    const porOc = {};
-    ventas.forEach((v) => {
-      const o = /OC original (OC|PR)\s*-?\s*0*(\d+)\b/i.exec(v.notas || '');
-      if (!o) return;
-      const base = o[1].toUpperCase() + '-' + String(Number(o[2])).padStart(4, '0');
-      (porOc[base] = porOc[base] || []).push(v);
-    });
-    let max = 0;
-    Object.keys(porOc).forEach((base) => {
-      porOc[base].forEach((v, i) => { destino[v.id] = i ? base + '-' + (i + 1) : base; usados[destino[v.id]] = true; });
-      if (base.indexOf('OC-') === 0) max = Math.max(max, Number(base.slice(3)));
-    });
-    const resto = ventas.filter((v) => !(v.id in destino));
-    resto.forEach((v) => { if (num(v.id) > max && !usados[v.id]) { destino[v.id] = v.id; usados[v.id] = true; } });
-    const sec = Db.get('Secuencias', 'OC');
-    let n = Math.max(max, sec ? sec.valor : 0);
-    resto.forEach((v) => {
-      if (v.id in destino) return;
-      do { n++; } while (usados['OC-' + String(n).padStart(4, '0')]);
-      destino[v.id] = 'OC-' + String(n).padStart(4, '0');
-      usados[destino[v.id]] = true;
-    });
-    const ultimo = Object.keys(usados).reduce((m, id) => Math.max(m, num(id) || 0), n);
-    const fechaCaja = {};
-    Db.all('Migracion_Caja').forEach((f) => {
-      if (f.oc && !f.descartada && f.fecha && (!fechaCaja[f.oc] || f.fecha < fechaCaja[f.oc])) fechaCaja[f.oc] = f.fecha;
-    });
-    const cambios = [];
-    ventas.forEach((v) => {
-      const m = /OC original ((?:OC|PR)\s*-?\s*\d+)/i.exec(v.notas || '');
-      const oc = m ? m[1] : '';
-      const fechaNueva = (oc && fechaCaja[MigracionCaja.normalizarOc(oc)]) || v.fecha;
-      if (destino[v.id] !== v.id || fechaNueva !== v.fecha) {
-        cambios.push({ de: v.id, a: destino[v.id], fecha: v.fecha, fechaNueva: fechaNueva, oc: oc, anulada: v.anulada });
-      }
-    });
-    return { cambios: cambios, siguiente: 'OC-' + String(ultimo + 1).padStart(4, '0'), ultimo: ultimo };
-  },
-
-  /** Vista previa (aplicar = false) o renumeración de las OC migradas a su número original. */
-  numerosOriginales(p, user) {
-    const plan = Ventas._planOriginales();
-    if (!p || !p.aplicar) return plan;
-    if (!plan.cambios.length) return plan;
-    Respaldos.crear('antes de renumerar las OC', user);
-    const mapa = {};
-    const fechas = {};
-    plan.cambios.forEach((c) => { mapa[c.de] = c.a; if (c.fechaNueva !== c.fecha) fechas[c.de] = c.fechaNueva; });
-    Ventas._renombrar(mapa, fechas, user);
-    const sec = Db.get('Secuencias', 'OC');
-    if (sec) Db.update('Secuencias', 'OC', { valor: Math.max(sec.valor, plan.ultimo) });
-    else Db.insert('Secuencias', { clave: 'OC', valor: plan.ultimo });
-    Audit.log(user, 'renumerar', 'Venta', '', { ventas: plan.cambios.length, ejemplos: plan.cambios.slice(0, 20).map((c) => c.de + '→' + c.a + (c.fechaNueva !== c.fecha ? ' (' + c.fechaNueva + ')' : '')).join(', ') });
-    return plan;
-  },
-
   /**
    * Reclasifica una venta sin productos del inventario (administrador):
    * - destino = una categoría de venta (Singles, Torneo… u Otro): sus líneas toman esa categoría y
    *   la venta pasa al correlativo que le corresponde (SGL-, TOR-…, u OC si es Otro).
    * - destino = 'finanzas': no fue una venta (ej. un pago de prueba). Se anula y lo cobrado queda
-   *   como "Otro ingreso" en Finanzas, con referencia a la venta. Lo registrado en la caja apunta al movimiento.
+   *   como "Otro ingreso" en Finanzas, con referencia a la venta.
    */
   reclasificar(p, user) {
     const v = Ventas.requerir(p.id);
@@ -381,12 +309,6 @@ const Ventas = {
           monto: cobrado, cuenta: cuenta, referencia: 'Antes ' + v.id, notas: v.notas }, user);
       }
       Db.update('Ventas', v.id, Object.assign({ anulada: true, notas: [v.notas, 'Reclasificada a Finanzas' + (mov ? ' ' + mov.id : '') + (motivo ? ': ' + motivo : '')].filter(Boolean).join(' · ').slice(-500) }, sello));
-      if (mov) {
-        const re = new RegExp('\\b' + v.id + '\\b', 'g');
-        const cambios = {};
-        Db.all('Migracion_Caja').forEach((f) => { if (re.test(f.migrada || '')) { re.lastIndex = 0; cambios[f.id] = { migrada: f.migrada.replace(re, mov.id) }; } re.lastIndex = 0; });
-        if (Object.keys(cambios).length) Db.actualizarVarios('Migracion_Caja', cambios);
-      }
       Audit.log(user, 'reclasificar', 'Venta', v.id, { destino: 'Finanzas', movimiento: mov ? mov.id : '', monto: cobrado, motivo: motivo });
       return { id: v.id, nuevo: mov ? mov.id : '' };
     }

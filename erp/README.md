@@ -208,7 +208,7 @@ preventas asignadas como siempre y en **Documento** se elige **Orden de compra (
 ## Inventario: productos y toma de inventario
 
 - **Inventario → Productos:** todos los productos con foto, idioma, precio y stock. Filtro rápido
-  (sin imagen, sin idioma, creados en la migración, con/sin stock), lápiz para editar (incluida la
+  (sin imagen, sin idioma, con stock —por defecto, incluye en tránsito—, en tránsito, sin stock), lápiz para editar (incluida la
   foto) y **Unir** (administrador) para juntar duplicados: stock, preventas, ventas, premios y conteos
   pasan al producto que se conserva y el otro se elimina.
 - **Inventario → Toma de inventario:** al iniciar se guarda lo que debería haber, lote por lote. Se
@@ -222,7 +222,7 @@ preventas asignadas como siempre y en **Documento** se elige **Orden de compra (
   precios manteniendo el total. Se re-prorratea el despacho y se corrige el costo de las unidades
   ya vendidas o entregadas.
 
-## Finanzas, ventas por monto y migración de la caja diaria
+## Finanzas y ventas por monto
 
 - **Ventas por monto:** en Inventario, "Venta por monto" (o "Línea por monto" dentro de la venta en
   curso) agrega Singles, Torneo, Sobres sueltos, Bazar, Accesorios u Otro sin descontar inventario. Una
@@ -231,15 +231,6 @@ preventas asignadas como siempre y en **Documento** se elige **Orden de compra (
   compras por monto, GAV, GOPM, SII, comisiones, flujo del mes y acumulado, resultado de singles e IVA
   estimado) y libro de movimientos (hoja `Finanzas`). Singles: las compras se registran como "Compra
   por monto" con detalle "Singles…" y se comparan con las ventas de singles.
-- **Migración → Caja diaria (por partes):** carga el Excel de caja (Fecha, Glosa, Entradas, Salidas,
-  Obs). Cada fila queda *pendiente*, *migrada* (con lo que se creó) o *no se migra*. Se filtra (búsqueda
-  o ▾ de cada columna), se marcan filas y "Migrar selección" migra solo esas. Destinos: venta con OC
-  (la venta ya migrada toma su fecha real y, si el monto difiere, una línea "Ajuste"; las filas de una
-  OC van juntas), venta por monto (los torneos de un día quedan en una sola venta), movimiento de
-  Finanzas, **pago de factura** (concilia con una factura del ERP —se propone la del mismo proveedor y
-  total— sin crear un gasto nuevo) o no migrar. Cada grupo (glosa + observación) tiene un destino por
-  defecto y cada fila puede tener uno propio. Volver a cargar el Excel no duplica lo migrado. Hoja
-  `Migracion_Caja`.
 - **Editar venta** (administrador): fecha, boleta y notas desde la lista de Ventas.
 
 **OC solo para sellados:** una venta que lleva productos del inventario es una OC (OC-0001…). Las
@@ -248,20 +239,12 @@ correlativo (SGL-, TOR-, SOB-, BAZ-, ACC-) y se ven en Ventas → "Singles, torn
 y "Ajuste" siguen como OC. La migración `2026-10-05-ventas-sin-oc` (al ejecutar instalar) pasa las
 ventas existentes de esos conceptos a su correlativo, con sus abonos y referencias.
 
-**N° de OC originales:** en Ventas → Órdenes de compra, el administrador tiene "Usar los N° de OC
-originales". Muestra la vista previa y renumera las ventas migradas a su OC original (la nota
-"OC original OC223" pasa a ser OC-0223; si una OC tenía varias ventas, OC-0223-2…). Las ventas sin OC
-original quedan a continuación del número más alto, y las nuevas siguen desde ahí. Actualiza líneas,
-abonos y referencias de la migración de la caja, con respaldo previo. Cada venta con OC original
-toma también la fecha de esa OC en la caja diaria (la más antigua), aunque sus filas no se hayan migrado. Las OC de la caja que no
-estaban en el stock ya se crean con su número original.
-
-## Pagos de facturas, deudas de clientes y cierre de la migración
+## Pagos de facturas y deudas de clientes
 
 - **Pagos a proveedores:** en Compras, el detalle de cada factura muestra sus pagos y lo que falta.
   "Registrar pago" (fecha, monto, cuenta) admite pagos parciales; quedan en la hoja `Pagos_Facturas`
-  y cuentan como egreso en el flujo de Finanzas. Los pagos conciliados desde la caja diaria también
-  se ven ahí. Un egreso de Finanzas que fue el pago de una factura (ej. migrado como "Compra por monto")
+  y cuentan como egreso en el flujo de Finanzas (incluidos los que se conciliaron desde la caja diaria
+  durante la migración: al retirarla pasaron a esta hoja con la nota "Desde la caja diaria"). Un egreso de Finanzas que fue el pago de una factura (ej. migrado como "Compra por monto")
   se pasa con "→ Factura": queda como pago de esa factura y el movimiento se anula.
   El administrador puede anular un pago o, si quedó enlazado a la factura equivocada,
   "cambiar factura" (en el detalle de la compra o con el lápiz de la fila en Finanzas → Movimientos).
@@ -283,9 +266,6 @@ estaban en el stock ya se crean con su número original.
   (columna `iva` de la hoja Finanzas) se resta del IVA estimado. Requiere "Instalar / actualizar hojas".
 - **Deudas de clientes:** en Editar venta, "Pagado al vender" fija lo que se pagó al comprar; el
   resto queda como deuda (requiere cliente) y se salda con abonos en Clientes.
-- **Cerrar migración:** Administración → Respaldos. Hace un respaldo, vacía la zona de trabajo del
-  stock y las filas de la caja pendientes o descartadas (conserva las migradas, que registran lo
-  creado y los pagos de facturas) y saca Migración del menú. Se puede reabrir.
 
 ## Demo con los datos reales
 
@@ -301,21 +281,6 @@ navegador. Para que refleje la web actual:
 También se puede generar la demo ya cargada: `DEMO_DATOS=archivo.json node erp/dev/build-preview.mjs`.
 El archivo tiene datos de clientes: **nunca lo subas al repositorio** (está en `.gitignore`).
 
-## Migración del histórico (Excel)
-
-**Migración** (menú Sistema, solo administrador) es una zona de preparación: nada entra al ERP
-hasta presionar "Importar".
-
-1. **Cargar:** subir el Excel (hoja "Stock", una fila por unidad) o pegar las filas copiadas.
-2. **Homologar** por secciones, con propuestas automáticas: proveedores, facturas (completar las
-   que vienen sin número y, opcionalmente, su fecha), productos (nombre normalizado
-   "Edición – Nombre · IDIOMA") y clientes/destinos (venta a cliente, Cliente general, evento,
-   premio o caja abierta). Para unir dos nombres del Excel se escriben igual. Cada fila se confirma.
-3. **Filas a completar:** unidades sin producto, costo o precio: se completan o se descartan.
-4. **Importar:** con todo confirmado, respalda la planilla y crea compras (lotes con su costo),
-   ventas (una por OC; la OC original queda en las notas), salidas (premios, cajas abiertas) y el
-   stock disponible. Se hace una sola vez; después se corrige en el ERP con auditoría.
-
 ## Respaldos y cambios con datos reales
 
 - **Respaldo nocturno automático:** `instalar` programa un activador que todas las noches (3 a. m.)
@@ -330,6 +295,10 @@ hasta presionar "Importar".
   separar un campo, recalcular algo), se escribe como una migración en `server/Respaldos.js`
   (`MIGRACIONES`). `instalar` las ejecuta una sola vez, después de un respaldo, y las registra en la
   hoja `Migraciones`. Nunca se edita ni se quita una migración ya publicada.
+- **Migración del sistema anterior (retirada en la v2.25.0):** la migración `2026-11-01-retirar-migracion`
+  traspasa los pagos de facturas que se habían conciliado desde la caja diaria a `Pagos_Facturas` (nota
+  "Desde la caja diaria (fila N)") y borra las hojas `Migracion`, `Migracion_Mapeos` y `Migracion_Caja`,
+  siempre después del respaldo automático.
 - **Reglas que no se rompen:** las columnas se leen por nombre, `instalar` solo agrega (nunca borra
   ni renombra) y los registros se enlazan por ID (`GS-`, `PVI-`, `CP-`, `CPI-`, `OC-`, `CLI-`), no por
   nombre. Renombrar un producto o cliente no rompe nada.
@@ -361,7 +330,7 @@ Menú **Caja del día**. Se abre una caja por fecha (`CJ-20261012`) y cada atenc
 - Si queda una caja sin cerrar, se avisa al abrir la del día siguiente (sus productos siguen reservados).
 - Requiere "Instalar / actualizar hojas" (hojas nuevas `Cajas` y `Caja_Tickets`).
 
-### Abonos TUU, cuotas y GSTin
+### Abonos TUU y cuotas
 
 - **Fecha de abono:** TUU abona 2 días hábiles después de la venta (jueves → lunes; viernes, sábado y
   domingo → martes). Los feriados (hoja `Feriados`, precargados 2026–2027) corren la fecha; se editan en
@@ -373,7 +342,6 @@ Menú **Caja del día**. Se abre una caja por fecha (`CJ-20261012`) y cada atenc
   transacción se cuadra con su pago en la caja de su fecha (mismo medio y monto) y su comisión real
   reemplaza la estimada; las cuotas que llegan quedan como abono de su venta. Lo ya procesado no se repite
   (`Abonos_TUU`) y lo que no calza se lista para revisarlo.
-- **GSTin:** al entrar, la mascota avisa una vez al día los abonos de TUU esperados hoy y los atrasados.
 - Comisión TUU: 0,77% + $65 + IVA sobre la comisión (calza con el informe). Las ventas desde el
   01-10-2026 con la fórmula anterior se corrigen al ejecutar "Instalar / actualizar hojas".
 

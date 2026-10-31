@@ -197,18 +197,6 @@ const Torneos = {
     return { id: t.id, ticket: ticket };
   },
 
-  /** Premio del inventario para el torneo: sale del stock "comprado" por el torneo a su precio (por defecto el PVP). */
-  agregarPremio(p, user) {
-    const t = Torneos.requerir(p.id);
-    const prod = Productos.requerir(p.productoId);
-    const precio = p.precio === '' || p.precio == null ? Productos.precio(prod) : Util.entero(p.precio, 'El precio del premio', { min: 0 });
-    const lugar = Util.entero(p.lugar, 'El lugar', { min: 0 });
-    const ganador = lugar ? Db.all('Torneo_Jugadores').find((j) => j.torneoId === t.id && j.lugar === lugar) : null;
-    const notas = (t.nombre + (lugar ? ' · ' + lugar + 'º lugar' : '') + (ganador ? ' · ' + ganador.nombre : '') + (p.notas ? ' · ' + p.notas : '')).slice(0, 200);
-    const r = Salidas.registrar({ productoId: prod.id, cantidad: p.cantidad, motivo: PREMIO_TORNEO, fecha: t.fecha, notas: notas, torneoId: t.id, precio: precio }, user);
-    return { ids: r.ids, precio: precio };
-  },
-
   /**
    * Varios premios de una vez (como agregar productos a un ticket). p: { id, premios: [{ productoId, cantidad, precio }] }.
    * Se revisa el stock de todos antes de sacar ninguno.

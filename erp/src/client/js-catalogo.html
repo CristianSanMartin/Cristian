@@ -19,25 +19,20 @@
   // Por defecto se ocultan los productos sin unidades (ni disponibles ni en tránsito); se ven con "Todos" o "Sin stock".
   const DEF_PROD = { q: '', edicion: '', idioma: '', tipo: '', estado: 'activos', rapido: 'conStock' };
 
-  /** Stock disponible por producto y productos que llegaron con la migración del Excel. */
+  /** Stock disponible por producto y lo que viene en tránsito (de una OC sin factura: aún no se puede vender). */
   function infoStock() {
-    const notas = {};
-    data().compras.forEach((c) => { notas[c.id] = c.notas || ''; });
     const stock = {};
-    const transito = {};   // de una OC sin factura: viene en camino, aún no se puede vender
-    const migrados = new Set();
+    const transito = {};
     data().lotes.forEach((l) => {
       stock[l.productoId] = (stock[l.productoId] || 0) + l.disponible;
       if (l.transito) transito[l.productoId] = (transito[l.productoId] || 0) + l.transito;
-      if (/^Migración/.test(notas[l.compraId] || '')) migrados.add(l.productoId);
     });
-    return { stock: stock, transito: transito, migrados: migrados };
+    return { stock: stock, transito: transito };
   }
   const RAPIDOS = [
     { value: '', label: 'Todos (incluye sin stock)' },
     { value: 'sinImagen', label: 'Sin imagen' },
     { value: 'sinIdioma', label: 'Sin idioma' },
-    { value: 'migracion', label: 'Creados en la migración' },
     { value: 'conStock', label: 'Con stock (incluye en tránsito)' },
     { value: 'transito', label: 'En tránsito' },
     { value: 'sinStock', label: 'Sin stock' },
@@ -52,7 +47,6 @@
         const st = (info.stock[p.id] || 0) + (info.transito[p.id] || 0);
         if (f.rapido === 'sinImagen' && p.imagen) return false;
         if (f.rapido === 'sinIdioma' && p.idioma) return false;
-        if (f.rapido === 'migracion' && !info.migrados.has(p.id)) return false;
         if (f.rapido === 'conStock' && !st) return false;
         if (f.rapido === 'sinStock' && st) return false;
         if (f.rapido === 'transito' && !info.transito[p.id]) return false;
@@ -62,7 +56,7 @@
         if (f.tipo && p.tipo !== f.tipo) return false;
         return !q || GS.norm(p.id + ' ' + p.nombreCompleto + ' ' + p.tipo + ' ' + p.codigoProveedor).includes(q);
       })
-      .map((p) => Object.assign(p, { stock: info.stock[p.id] || 0, transito: info.transito[p.id] || 0, migrado: info.migrados.has(p.id) }))
+      .map((p) => Object.assign(p, { stock: info.stock[p.id] || 0, transito: info.transito[p.id] || 0 }))
       .sort((a, b) => a.nombreCompleto.localeCompare(b.nombreCompleto));
   }
 
@@ -132,7 +126,7 @@
   const colsProd = [
     { id: 'img', label: '', sinMenu: true, valor: () => '', celda: (p) => GS.thumb(p.imagen) },
     { id: 'producto', label: 'Producto', clase: 'col-prod', valor: (p) => p.nombre, celda: (p) => {
-      const extra = [p.factor > 1 ? p.factor + ' u. proveedor' : '', p.activo ? '' : 'archivado', p.migrado ? 'migración' : ''].filter(Boolean).join(' · ');
+      const extra = [p.factor > 1 ? p.factor + ' u. proveedor' : '', p.activo ? '' : 'archivado'].filter(Boolean).join(' · ');
       return '<span class="cell-strong">' + esc(p.nombre) + '</span>' + (extra ? '<div class="cell-dim">' + esc(extra) + '</div>' : '');
     } },
     { id: 'edicion', label: 'Edición', valor: (p) => p.edicion || '', texto: (p) => p.edicion || 'Sin edición', celda: (p) => esc(p.edicion || '—') },

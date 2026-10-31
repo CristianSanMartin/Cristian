@@ -96,6 +96,44 @@ const MIGRACIONES = [
       if (Object.keys(cambios).length) Db.actualizarVarios('Ventas', cambios);
     },
   },
+  {
+    id: '2026-11-01-retirar-migracion',
+    descripcion: 'Se retira Migración: los pagos de facturas conciliados desde la caja diaria pasan a Pagos de facturas y se borran las hojas de la migración',
+    fn: (user) => {
+      const ss = Db.ss();
+      const hoja = ss.getSheetByName('Migracion_Caja');
+      if (hoja && hoja.getLastRow() > 1) {
+        // La hoja ya no está en el esquema: se lee con su esquema de entonces (lo que importa: fila, fecha, salidas y migrada).
+        SCHEMA.Migracion_Caja = { key: 'id', cols: { id: 's', fila: 'n', fecha: 'd', salidas: 'n', migrada: 's' } };
+        let filas;
+        try {
+          filas = Db.all('Migracion_Caja');
+        } finally {
+          delete SCHEMA.Migracion_Caja;
+          delete Db._cache.Migracion_Caja;
+        }
+        const pagos = [];
+        filas.forEach((f) => {
+          const m = /^Pago (\S+)$/.exec(String(f.migrada || '').trim());
+          if (m && f.salidas > 0 && Db.get('Compras', m[1])) pagos.push({ compraId: m[1], fecha: f.fecha, monto: f.salidas, fila: f.fila });
+        });
+        if (pagos.length) {
+          const ids = Util.reservarIds('PAG', 5, pagos.length);
+          const sello = Util.sello(user, true);
+          Db.insertMany('Pagos_Facturas', pagos.map((x, i) => Object.assign({
+            id: ids[i], compraId: x.compraId, fecha: x.fecha, monto: x.monto, cuenta: '', anulado: false,
+            notas: 'Desde la caja diaria' + (x.fila ? ' (fila ' + x.fila + ')' : ''),
+          }, sello)));
+        }
+      }
+      ['Migracion_Caja', 'Migracion', 'Migracion_Mapeos'].forEach((n) => {
+        const h = ss.getSheetByName(n);
+        if (h && ss.getSheets().length > 1) ss.deleteSheet(h);
+      });
+      const props = PropertiesService.getScriptProperties();
+      ['MIGRACION_CERRADA', 'MIGRACION_IMPORTADA'].forEach((k) => props.deleteProperty(k));
+    },
+  },
 ];
 
 const Respaldos = {

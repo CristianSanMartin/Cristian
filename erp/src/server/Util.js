@@ -29,10 +29,6 @@ const Util = {
     return Utilities.formatDate(d, APP.tz, 'yyyy-MM-dd HH:mm:ss');
   },
 
-  uuid() {
-    return Utilities.getUuid();
-  },
-
   /**
    * Siguiente correlativo estable (PV-0001, PVI-000001...). Usa la hoja
    * Secuencias, así un número nunca se reutiliza aunque se elimine el registro.

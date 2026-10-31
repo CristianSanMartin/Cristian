@@ -451,8 +451,7 @@
       kpi('Próximo abono', proxFecha ? fmt.money(proxMonto) : '—', proxFecha ? diaSemana(proxFecha) + ' ' + fmt.date(proxFecha) + ' (estimado, sin comisión)' : 'nada pendiente') +
       kpi('Atrasados', atrasadas.length ? '<span class="text-gold">' + atrasadas.length + '</span>' : '0', atrasadas.length ? 'su fecha ya pasó: sube el informe o márcalos' : 'todo al día') + '</div>' +
       '<div class="btn-row" style="margin:6px 0 14px;">' +
-      (admin ? '<label class="btn" for="tuu-archivo">' + GS.icon('download') + 'Subir informe de abono TUU (.xlsx)</label><input id="tuu-archivo" type="file" accept=".xlsx,.xls" class="visually-hidden" data-tuu-archivo>' : '') +
-      '<button class="btn ghost" data-action="verGstin">Aviso de GSTin de hoy</button></div>' +
+      (admin ? '<label class="btn" for="tuu-archivo">' + GS.icon('download') + 'Subir informe de abono TUU (.xlsx)</label><input id="tuu-archivo" type="file" accept=".xlsx,.xls" class="visually-hidden" data-tuu-archivo>' : '') + '</div>' +
       '<h3 class="sub-titulo">Próximos abonos</h3>' +
       '<div class="table-wrap"><table class="data-table"><thead><tr><th>Fecha de abono</th><th>Detalle</th><th class="right">Cobrado</th><th class="right">Abono estimado</th><th></th></tr></thead><tbody>' +
       (Object.keys(porFecha).length ? Object.keys(porFecha).sort().map((f) => porFecha[f].map((e, i) => '<tr class="' + (f < hoy ? 'row-warn' : '') + '">' +
@@ -491,9 +490,21 @@
   });
   GS.actions.quitarFeriado = (fecha) => GS.mutate('quitarFeriado', { fecha: fecha }, 'Feriado quitado');
 
+  /** Lector de Excel (SheetJS desde cdnjs), solo cuando se sube un informe. */
+  function cargarSheetJS() {
+    if (window.XLSX) return Promise.resolve();
+    return new Promise((ok, fail) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+      s.onload = ok;
+      s.onerror = () => fail(new Error('No se pudo cargar el lector de Excel. Revisa la conexión e intenta de nuevo.'));
+      document.head.appendChild(s);
+    });
+  }
+
   /** Lee el informe "Detalle de transacciones abonadas" de TUU. */
   async function leerInformeTuu(file) {
-    await GS.cargarSheetJS();
+    await cargarSheetJS();
     const wb = window.XLSX.read(await file.arrayBuffer(), { type: 'array' });
     const filas = window.XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: false, defval: '' });
     const n = (s) => GS.norm(String(s || '')).replace(/[^a-z0-9]/g, '');
@@ -522,53 +533,16 @@
       const sin = r.sinVenta.length ? '<p class="text-gold">' + r.sinVenta.length + ' transacción(es) sin venta en la caja:</p><ul>' +
         r.sinVenta.map((x) => '<li>' + fmt.date(x.fechaVenta) + ' · ' + esc(x.tipo) + ' ' + fmt.money(x.monto) + (x.de > 1 ? ' (cuota ' + x.cuota + ')' : '') + ' · ID ' + esc(x.idTransaccion) + '</li>').join('') +
         '</ul><p class="hint">Revisa si esas ventas están registradas en la caja de su fecha (mismo monto y medio de pago) y vuelve a subir el informe: lo ya procesado no se repite.</p>' : '';
-      gstin({
-        img: r.sinVenta.length ? 'meme' : 'pulgares',
-        titulo: r.sinVenta.length ? 'Casi todo cuadró' : '¡Abono cuadrado!',
-        html: '<p><strong>' + r.nuevas + '</strong> transacciones procesadas' + (r.cuotas ? ' (' + r.cuotas + ' cuotas)' : '') + ' · abonado <strong>' + fmt.money(r.abonado) + '</strong> · comisión real ' + fmt.money(r.comision) + '.' +
-          (r.repetidas ? ' ' + r.repetidas + ' ya estaban registradas.' : '') + '</p>' + sin,
+      GS.modal({
+        title: r.sinVenta.length ? 'Informe TUU: casi todo cuadró' : 'Informe TUU: abono cuadrado',
+        body: () => '<div class="modal-body"><p><strong>' + r.nuevas + '</strong> transacciones procesadas' + (r.cuotas ? ' (' + r.cuotas + ' cuotas)' : '') + ' · abonado <strong>' + fmt.money(r.abonado) + '</strong> · comisión real ' + fmt.money(r.comision) + '.' +
+          (r.repetidas ? ' ' + r.repetidas + ' ya estaban registradas.' : '') + '</p>' + sin + '</div>' +
+          '<div class="modal-foot"><button type="button" class="btn" data-close>Listo</button></div>',
       });
     } catch (err) {
       GS.toast(err.message, true);
     }
   });
 
-  /* ---------- GSTin: avisos de abonos ---------- */
-
-  function gstin(o) {
-    GS.modal({
-      title: o.titulo,
-      body: () => '<div class="modal-body" style="display:flex;gap:18px;align-items:center;flex-wrap:wrap;">' +
-        '<img src="' + (GS.GSTIN ? GS.GSTIN[o.img] : '') + '" alt="GSTin" style="width:150px;max-width:40%;border-radius:14px;background:#fff;">' +
-        '<div style="flex:1;min-width:220px;">' + o.html + '</div></div>' +
-        '<div class="modal-foot"><button type="button" class="btn" data-close>¡Vamos!</button></div>',
-    });
-  }
-  /** Mensaje del día: abonos de TUU que llegan hoy y los atrasados. null si no hay nada. */
-  function mensajeHoy() {
-    const hoy = data().hoy;
-    const esp = tuu().esperados;
-    const deHoy = esp.filter((e) => e.fecha === hoy);
-    const atras = esp.filter((e) => e.fecha < hoy);
-    if (!deHoy.length && !atras.length) return null;
-    const total = deHoy.reduce((s, e) => s + e.neto, 0);
-    const linea = (e) => '<li>' + esc(detalleEsperado(e)) + ': ' + fmt.money(e.neto) + '</li>';
-    return {
-      img: deHoy.length ? 'pulgares' : 'meme',
-      titulo: deHoy.length ? '¡Hoy tienes abono TUU!' : 'Abonos TUU atrasados',
-      html: (deHoy.length ? '<p style="font-size:18px;margin-top:0;">Hoy tienes abono TUU por <strong>' + fmt.money(total) + '</strong> (estimado):</p><ul>' + deHoy.map(linea).join('') + '</ul>' : '') +
-        (atras.length ? '<p class="text-gold">' + atras.length + (atras.length === 1 ? ' abono atrasado' : ' abonos atrasados') + ' (su fecha ya pasó):</p><ul>' + atras.slice(0, 6).map((e) => '<li>' + fmt.date(e.fecha) + ' · ' + esc(detalleEsperado(e)) + ': ' + fmt.money(e.neto) + '</li>').join('') + '</ul>' : '') +
-        '<p class="hint">Cuando llegue, sube el informe de abono de TUU en Caja del día → Abonos TUU para cuadrarlo con la comisión real.</p>',
-    };
-  }
-  GS.actions.verGstin = () => gstin(mensajeHoy() || { img: 'corazon', titulo: 'Todo al día', html: '<p style="font-size:18px;">Hoy no hay abonos de TUU pendientes. ¡Buenas ventas!</p>' });
-  /** Al entrar al sistema: GSTin avisa una vez al día si hay abonos de TUU hoy o atrasados. */
-  GS.avisoInicio = () => {
-    const m = mensajeHoy();
-    if (!m || !GS.puede('operador')) return;
-    const clave = 'gstin-' + data().hoy;
-    try { if (localStorage.getItem(clave)) return; localStorage.setItem(clave, '1'); } catch (e) { /* sin almacenamiento: avisa igual */ }
-    gstin(m);
-  };
 })();
 </script>

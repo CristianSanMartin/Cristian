@@ -623,20 +623,6 @@ test("toma de inventario: foto de lo esperado, marcas por unidad, sobrantes y ci
   assert.match(errorDe(s.call("guardarToma", { id: toma.id, lineas: [] })), /ya está cerrada/);
 });
 
-test("unir productos duplicados: el stock y el historial pasan al que se conserva", () => {
-  const s = createServer();
-  const { prods } = conInventario(s);
-  s.ok("crearVenta", { fecha: "2026-10-05", lineas: [{ productoId: prods.binderEsp.id, cantidad: 1 }] });
-  assert.match(errorDe(s.call("eliminarProducto", { id: prods.binderEsp.id })), /preventa|inventario/);
-  s.ok("unirProductos", { origenId: prods.binderEsp.id, destinoId: prods.binderEng.id });
-  const d = s.ok("bootstrap").data;
-  assert.equal(d.productos.some(p => p.id === prods.binderEsp.id), false);
-  const eng = d.lotes.filter(l => l.productoId === prods.binderEng.id);
-  assert.deepEqual([eng.length, eng.reduce((t, l) => t + l.disponible, 0)], [2, 29]);
-  assert.ok(d.ventas[0].lineas.every(l => l.productoId === prods.binderEng.id));
-  assert.match(errorDe(s.call("unirProductos", { origenId: prods.binderEng.id, destinoId: prods.binderEng.id })), /distintos/);
-});
-
 test("editar factura: separar el despacho que venía incluido en los precios (como la 46056) y corregir costos vendidos", () => {
   const s = createServer();
   const { pv: p } = preventa30th(s);
@@ -700,39 +686,6 @@ test("editar venta: el total que pagó el cliente queda con una línea de ajuste
   assert.equal(s.ok("bootstrap").data.ventas.find(x => x.id === v.id).lineas.length, 2);
 });
 
-test("OC migradas: toman su N° original (OC223 → OC-0223), con sus líneas, abonos y referencias", () => {
-  const s = createServer();
-  const venta = (notas, monto, extra) => {
-    const v = s.ok("crearVenta", Object.assign({ fecha: "2026-07-01", lineas: [{ categoria: "Otro", descripcion: "x", monto: monto }] }, extra || {})).result;
-    s.ok("editarVenta", { id: v.id, fecha: "2026-07-01", boleta: "", notas: notas });
-    return v.id;
-  };
-  const a = venta("Migración desde Excel · OC original OC3", 1000);                     // OC-0001 → OC-0003
-  const b = venta("Migración desde Excel · OC original OC1", 2000, { pagada: false, abono: 500, cliente: "Ana" });   // OC-0002 → OC-0001
-  const c = venta("Migración desde Excel · OC original oc 1", 3000);                    // misma OC → OC-0001-2
-  const d = venta("Caja diaria · torneos del día consolidados", 4000);                  // sin OC original y sobre el máximo (3): conserva OC-0004
-  s.ok("registrarCobro", { ventaId: b, fecha: "2026-07-02", monto: 500, medioPago: "efectivo" });
-  s.run(`Db.insert("Migracion_Caja", { id: "MC-1", fila: 2, fecha: "2026-07-01", glosa: "Ventas", entradas: 1000, salidas: 0, migrada: "Fecha ${a}, ${b}" })`);
-  // Fila de la caja con la OC003 aún sin migrar: la venta toma su fecha (la más antigua)
-  s.run(`Db.insertMany("Migracion_Caja", [{ id: "MC-2", fila: 3, fecha: "2025-11-05", glosa: "Ventas", entradas: 600, salidas: 0, oc: "OC003" },
-    { id: "MC-3", fila: 4, fecha: "2025-11-09", glosa: "Ventas", entradas: 400, salidas: 0, oc: "OC003" }])`);
-  const plan = s.ok("ocOriginales").data;
-  assert.deepEqual(plan.cambios.map(x => x.de + ">" + x.a).sort(), [a + ">OC-0003", b + ">OC-0001", c + ">OC-0001-2"].sort());
-  assert.equal(plan.cambios.find(x => x.a === "OC-0003").fechaNueva, "2025-11-05");
-  assert.equal(d, "OC-0004", "la venta sin OC original ya queda sobre el número más alto y conserva su número");
-  s.ok("renumerarOc");
-  const data = s.ok("bootstrap").data;
-  const v = (id) => data.ventas.find(x => x.id === id);
-  assert.deepEqual([v("OC-0003").total, v("OC-0001").total, v("OC-0001-2").total, v("OC-0004").total], [1000, 2000, 3000, 4000]);
-  assert.deepEqual([v("OC-0003").fecha, v("OC-0001").fecha], ["2025-11-05", "2026-07-01"], "fecha de la caja; sin fila en la caja no cambia");
-  assert.deepEqual([v("OC-0001").cobros.length, v("OC-0001").saldo], [1, 1000], "el abono sigue en su venta");
-  assert.equal(s.run(`Db.get("Migracion_Caja", "MC-1").migrada`), "Fecha OC-0003, OC-0001");
-  assert.equal(s.ok("crearVenta", { fecha: "2026-07-03", lineas: [{ categoria: "Otro", descripcion: "y", monto: 10 }] }).result.id, "OC-0005", "las ventas nuevas siguen desde el más alto");
-  assert.equal(s.ok("ocOriginales").data.cambios.length, 0);
-  s.ok("guardarUsuario", { email: "vista@gsprime.cl", nombre: "Vista", rol: "lectura" });
-  assert.equal(s.as("vista@gsprime.cl").call("renumerarOc", {}).code, "SIN_PERMISO");
-});
-
 test("ventas sin OC: singles, torneos, bazar… con su propio correlativo; las existentes se separan", () => {
   const s = createServer();
   const { prods } = conInventario(s);
@@ -745,14 +698,12 @@ test("ventas sin OC: singles, torneos, bazar… con su propio correlativo; las e
   // Ventas antiguas de singles/torneos con N° de OC (y sus abonos y referencias) pasan a su correlativo
   const v = s.ok("crearVenta", { fecha: "2026-09-01", cliente: "Ana", pagada: false, abono: 0, lineas: [{ categoria: "Bazar", descripcion: "y", monto: 4000 }] }).result;
   s.run(`Db.update("Ventas", "${v.id}", { id: "OC-0090" });
-    Db.all("Ventas_Lineas").filter(l => l.ventaId === "${v.id}").forEach(l => Db.update("Ventas_Lineas", l.id, { ventaId: "OC-0090" }));
-    Db.insert("Migracion_Caja", { id: "MC-1", fila: 2, fecha: "2026-09-01", glosa: "Ventas", entradas: 4000, salidas: 0, migrada: "OC-0090" });`);
+    Db.all("Ventas_Lineas").filter(l => l.ventaId === "${v.id}").forEach(l => Db.update("Ventas_Lineas", l.id, { ventaId: "OC-0090" }));`);
   s.ok("registrarCobro", { ventaId: "OC-0090", fecha: "2026-09-02", monto: 1000, medioPago: "efectivo" });
   const mig = JSON.parse(s.run(`JSON.stringify(Ventas.separarSinOc({ email: "admin@gsprime.cl" }))`));
   assert.deepEqual(mig, { "OC-0090": "BAZ-0002" });   // BAZ-0001 lo usó al crearse
   const venta = s.ok("bootstrap").data.ventas.find(x => x.id === "BAZ-0002");
   assert.deepEqual([venta.total, venta.cobros.length, venta.saldo], [4000, 1, 3000]);
-  assert.equal(s.run(`Db.get("Migracion_Caja", "MC-1").migrada`), "BAZ-0002");
   // La OC "Otro" queda como OC
   assert.ok(s.ok("bootstrap").data.ventas.some(x => x.id === "OC-0001"));
 });
@@ -780,14 +731,12 @@ test("reclasificar una venta sin productos: a otro concepto o a Finanzas", () =>
   conInventario(s);
   const v1 = s.ok("crearVenta", { fecha: "2025-06-13", medioPago: "debito", lineas: [{ categoria: "Otro", descripcion: "OC original OC389", monto: 1000 }] }).result;
   const v2 = s.ok("crearVenta", { fecha: "2025-06-14", lineas: [{ categoria: "Otro", descripcion: "Cartas", monto: 8000 }] }).result;
-  s.run(`Db.insert("Migracion_Caja", { id: "MC-1", fila: 2, fecha: "2025-06-13", glosa: "Ventas", entradas: 1000, salidas: 0, migrada: "${v1.id}" })`);
   // Compra de prueba: no fue una venta → Finanzas
   const r1 = s.ok("reclasificarVenta", { id: v1.id, destino: "finanzas", motivo: "Compra de prueba en la app" }).result;
   let d = s.ok("bootstrap").data;
   assert.equal(d.ventas.find(x => x.id === v1.id).anulada, true);
   const mov = d.movimientos.find(m => m.id === r1.nuevo);
   assert.deepEqual([mov.tipo, mov.categoria, mov.monto, mov.cuenta, mov.referencia, mov.fecha], ["ingreso", "otro_ingreso", 1000, "tuu", "Antes " + v1.id, "2025-06-13"]);
-  assert.equal(s.run(`Db.get("Migracion_Caja", "MC-1").migrada`), r1.nuevo);
   // Devolución del SII que entró como venta: va a Finanzas con su categoría
   const sii = s.ok("crearVenta", { fecha: "2026-05-14", lineas: [{ categoria: "Otro", descripcion: "SII", monto: 986 }] }).result;
   const r3 = s.ok("reclasificarVenta", { id: sii.id, destino: "finanzas", categoriaMov: "devolucion_sii", motivo: "Devolución de impuestos" }).result;
@@ -842,25 +791,6 @@ test("editar venta: lo pagado al vender deja deuda (con cliente) y se salda con 
   e = s.ok("bootstrap").data.ventas.find(x => x.id === v.id);
   assert.equal(e.estadoPago, "pagada");
   assert.match(errorDe(s.call("editarVenta", { id: v.id, fecha: "2026-07-01", abono: 20000 })), /no puede ser mayor a 10000/);
-});
-
-test("cerrar la migración: limpia la zona de trabajo, conserva lo migrado de la caja y se puede reabrir", () => {
-  const s = createServer();
-  s.run(`Db.insertMany("Migracion_Caja", [
-    { id: "MC-1", fila: 2, fecha: "2026-01-01", glosa: "Ventas", entradas: 1000, salidas: 0, migrada: "OC-0001" },
-    { id: "MC-2", fila: 3, fecha: "2026-01-02", glosa: "GAV", entradas: 0, salidas: 500 },
-    { id: "MC-3", fila: 4, fecha: "2026-01-03", glosa: "x", entradas: 0, salidas: 0, descartada: true }]);
-    Db.insert("Migracion", { id: "MIG-1", fila: 2, producto: "x" });`);
-  assert.equal(s.ok("bootstrap").data.app.migracionCerrada, "");
-  const r = s.ok("cerrarMigracion").result;
-  assert.deepEqual([r.conservadas, r.quitadas], [1, 2]);
-  assert.deepEqual(JSON.parse(s.run(`JSON.stringify(Db.all("Migracion_Caja").map(f => f.id))`)), ["MC-1"]);
-  assert.equal(s.run(`Db.all("Migracion").length`), 0);
-  const d = s.ok("bootstrap").data;
-  assert.match(d.app.migracionCerrada, /admin@gsprime.cl/);
-  assert.deepEqual(d.cajaPendiente, {});
-  s.ok("reabrirMigracion");
-  assert.equal(s.ok("bootstrap").data.app.migracionCerrada, "");
 });
 
 test("agregar un producto que faltó en una factura: preventa recibida, lote y despacho repartido", () => {
@@ -1019,6 +949,30 @@ test("migración: 'Accesorio' pasa a 'Accesorios' y 'Tin'/'Mini Tin' se unen en 
   assert.equal(s.run("interpretarNombre_('POKEMON TCG PRISMATIC EVOLUTIONS TECH STICKER COLLECTION ESP').tipo"), "Tech Sticker");
 });
 
+test("retirar Migración: los pagos de facturas de la caja diaria pasan a Pagos de facturas y se borran sus hojas", () => {
+  const s = createServer();
+  conInventario(s);
+  const compra = s.ok("bootstrap").data.compras[0];
+  const antes = compra.porPagar;
+  // Planilla de antes: la hoja Migracion_Caja con dos pagos conciliados y una venta migrada; Migracion vacía.
+  s.run(`const ss = Db.ss();
+    const h = ss.insertSheet("Migracion_Caja");
+    h.getRange(1, 1, 1, 6).setValues([["id", "fila", "fecha", "glosa", "salidas", "migrada"]]);
+    h.getRange(2, 1, 3, 6).setValues([
+      ["MC-5", 5, "2026-10-03", "Compras", 300000, "Pago ${compra.id}"],
+      ["MC-6", 6, "2026-10-04", "Compras", 100000, "Pago ${compra.id}"],
+      ["MC-7", 7, "2026-10-05", "Ventas", 0, "OC-0001"]]);
+    ss.insertSheet("Migracion").getRange(1, 1, 1, 2).setValues([["id", "fila"]]);
+    Db.remove("Migraciones", "2026-11-01-retirar-migracion");`);
+  s.run("instalar()");
+  const d = s.ok("bootstrap").data;
+  const pagos = d.pagosFacturas.filter(x => x.compraId === compra.id);
+  assert.deepEqual(pagos.map(x => [x.fecha, x.monto, x.notas]), [["2026-10-03", 300000, "Desde la caja diaria (fila 5)"], ["2026-10-04", 100000, "Desde la caja diaria (fila 6)"]]);
+  assert.equal(d.compras.find(c => c.id === compra.id).porPagar, Math.max(0, antes - 400000));
+  assert.equal(s.run(`[Db.ss().getSheetByName("Migracion_Caja"), Db.ss().getSheetByName("Migracion")].filter(Boolean).length`), 0, "se borran las hojas de la migración");
+  assert.equal(d.app.migracionCerrada, undefined);
+});
+
 test("migraciones: corren una sola vez, después de un respaldo, y quedan registradas", () => {
   const s = createServer();
   const { prods } = preventa30th(s);
@@ -1041,214 +995,6 @@ test("migraciones: corren una sola vez, después de un respaldo, y quedan regist
 });
 
 /** Muestra con las mismas particularidades del Excel "Stock" real. */
-function excelEjemplo() {
-  const u = (proveedor, factura, producto, costo, venta, oc = "", cliente = "", boleta = "") => ({ proveedor, factura, producto, costo, venta, oc, cliente, boleta });
-  const filas = [
-    u("Proveedor", "Factura", "Producto", "Costo", "$ Venta"),                         // título repetido
-    u("Asmodee", "30th", "30TH CELEBRATION - ETB (ENG)", 39995, 89000, "OC285", "DANI", "1001"),
-    u("Asmodee", "30th", "30TH CELEBRATION - ETB (ENG)", 39995, 89000),
-    u("Asmodee", "30th", "30th Celebration - Poster Collection (Eng)", 12054, 15000, "OC", "PREMIOS"),
-    u("Asmodee", "30th", "30th Celebration - Poster Collection (Eng)", 12054, 15000, "OC000", "PREMIOS | MUGRI"),
-    u("Asmodee", "-", "Luminose City  - Mini Tin (ENG)", 7010, 13990, "OC171", "CLIENTE NN"),
-    u("Asmodee", "-", "Luminose City  - Mini Tin (ENG)", 7010, 13990),
-    u("Panteon", 45642, "Phantasmal Flames | Blister (ESP)", "$ 5.500", "$ 9.990", "OC026", "Feria del Libro"),
-    u("Panteon", 45642, "Phantasmal Flames | Blister (ESP)", 5500, 9990, "OC300", "razor"),
-    u("Panteon", 45642, "Phantasmal Flames | Blister (ESP)", 5500, 9990, "OC301", "RAIZOR"),
-    u("Asmodee", "30th", "POKEMON TCG 30TH CELEBRATION - BINDER COLLECTION Epañol", 26252, 53000, "OC0", "ABIERTOS"),
-    u("", "", "", "", ""),                                                                 // fila vacía
-    u("Asmodee", "30th", "", "", 12000),                                                   // sin producto ni costo
-  ];
-  return filas.map((f, i) => ({ fila: i + 3, ...f }));
-}
-
-test("migración: carga el Excel, propone homologaciones y bloquea la importación hasta revisar", () => {
-  const s = createServer();
-  const e = s.ok("migracionCargar", { filas: excelEjemplo() }).result;
-  assert.deepEqual([e.resumen.filas, e.resumen.descartadas, e.resumen.unidades, e.resumen.vendidas, e.resumen.disponibles], [13, 2, 11, 8, 3]);
-  const m = (tipo, original) => e.mapeos.find(x => x.tipo === tipo && x.original === original);
-  assert.equal(m("producto", "30TH CELEBRATION - ETB (ENG)").destino, "30th Celebration – ETB · ENG");
-  assert.equal(m("producto", "Phantasmal Flames | Blister (ESP)").destino, "Phantasmal Flames – Blister · ESP");
-  assert.equal(m("producto", "POKEMON TCG 30TH CELEBRATION - BINDER COLLECTION Epañol").destino, "30th Celebration – Binder Collection · ESP");
-  assert.deepEqual(["PREMIOS", "PREMIOS | MUGRI", "ABIERTOS", "CLIENTE NN", "Feria del Libro", "DANI"].map(c => m("cliente", c).accion), ["premio", "premio", "apertura", "general", "evento", "cliente"]);
-  assert.equal(m("cliente", "Feria del Libro").extra, "Feria Del Libro");
-  assert.equal(m("factura", "Asmodee · -").destino, "", "factura '-' queda por completar");
-  assert.equal(m("proveedor", "Asmodee").destino, "Asmodee");
-  // La fila sin producto ni costo aparece como problema; nada está confirmado
-  assert.equal(e.problemas.length, 1);
-  assert.match(e.errores.join(" | "), /sin confirmar.*facturas sin número.*filas con datos faltantes/);
-  assert.match(errorDe(s.call("migracionImportar", { fecha: "2026-09-30" })), /Antes de importar resuelve/);
-  // Solo administrador
-  s.ok("guardarUsuario", { email: "socio@gsprime.cl", nombre: "Socio", rol: "operador" });
-  assert.equal(s.as("socio@gsprime.cl").call("migracion").code, "SIN_PERMISO");
-});
-
-test("migración: homologar, importar y queda todo en el ERP (lotes, ventas con OC original, salidas)", () => {
-  const s = createServer();
-  let e = s.ok("migracionCargar", { filas: excelEjemplo() }).result;
-  const clave = (tipo, original) => e.mapeos.find(x => x.tipo === tipo && x.original === original).clave;
-  // Completar la fila sin producto: se descarta. Número a la factura "-". Unir razor/RAIZOR.
-  e = s.ok("migracionFilas", { filas: [{ id: e.problemas[0].id, descartada: true }] }).result;
-  e = s.ok("migracionMapeos", { mapeos: [
-    { clave: clave("factura", "Asmodee · -"), destino: "LUM-001", extra: "2026-08-10" },
-    { clave: clave("cliente", "RAIZOR"), destino: "Razor" },
-  ] }).result;
-  e = s.ok("migracionMapeos", { mapeos: e.mapeos.map(x => ({ clave: x.clave, confirmado: true })) }).result;
-  assert.deepEqual(e.errores, []);
-  const r = s.ok("migracionImportar", { fecha: "2026-09-30" }).result;
-  assert.deepEqual([r.compras, r.ventas, r.salidas, r.unidades], [3, 5, 3, 10]);
-
-  const d = s.ok("bootstrap").data;
-  assert.ok(d.proveedores.some(p => p.nombre === "Panteon"), "proveedor nuevo");
-  const lum = d.compras.find(c => c.factura === "LUM-001");
-  assert.equal(lum.fecha, "2026-08-10");
-  const etb = d.lotes.find(l => l.producto === "30th Celebration – ETB · ENG");
-  assert.deepEqual([etb.cantidad, etb.vendidas, etb.disponible, etb.costo], [2, 1, 1, 39995]);
-  assert.equal(d.productos.find(p => p.id === etb.productoId).pvp, 89000, "precio de venta desde el Excel");
-  // Premios y cajas abiertas salen del stock sin ser venta
-  const poster = d.lotes.find(l => l.producto === "30th Celebration – Poster Collection · ENG");
-  assert.deepEqual([poster.vendidas, poster.salidas, poster.disponible], [0, 2, 0]);
-  assert.equal(poster.unidadesVendidas[0].salida, "premio");
-  // Ventas con la OC original en las notas; Razor y RAIZOR son el mismo cliente
-  const dani = d.ventas.find(v => v.cliente === "Dani");
-  assert.match(dani.notas, /OC original OC285/);
-  assert.deepEqual([dani.total, dani.boleta, dani.canal], [89000, "1001", "Tienda"]);
-  assert.equal(d.clientes.find(c => c.nombre === "Razor").compras, 2);
-  const feria = d.ventas.find(v => v.evento === "Feria Del Libro");
-  assert.deepEqual([feria.canal, feria.cliente, feria.total], ["Evento", "Cliente general", 9990]);
-  // Respaldo previo y no se puede importar dos veces
-  assert.ok(Object.values(s.fake.state.files).some(f => /antes de importar la migración/.test(f.name)));
-  assert.match(errorDe(s.call("migracionImportar", { fecha: "2026-09-30" })), /ya se importó/);
-  assert.match(errorDe(s.call("migracionMapeos", { mapeos: [] })), /ya se importó/);
-});
-
-/** Migra el Excel de stock de ejemplo (ventas con OC original OC285, OC171, OC026, OC300, OC301). */
-function migrarStock(s) {
-  // + una venta post-release PR171: es otra serie, no la OC171
-  const pr = { fila: 99, proveedor: "Asmodee", factura: "-", producto: "Luminose City  - Mini Tin (ENG)", costo: 7010, venta: 13990, oc: "PR171", cliente: "POST-RELEASE", boleta: "" };
-  let e = s.ok("migracionCargar", { filas: excelEjemplo().concat([pr]) }).result;
-  const clave = (tipo, original) => e.mapeos.find(x => x.tipo === tipo && x.original === original).clave;
-  e = s.ok("migracionFilas", { filas: [{ id: e.problemas[0].id, descartada: true }] }).result;
-  e = s.ok("migracionMapeos", { mapeos: [{ clave: clave("factura", "Asmodee · -"), destino: "LUM-001" }] }).result;
-  s.ok("migracionMapeos", { mapeos: e.mapeos.map(x => ({ clave: x.clave, confirmado: true })) });
-  s.ok("migracionImportar", { fecha: "2026-09-30" });
-}
-
-function cajaEjemplo(totalFactura) {
-  const c = (fecha, glosa, entradas, salidas, obs) => ({ fecha, glosa, entradas, salidas, obs });
-  return [
-    c("Fecha", "Glosa", "Entradas", "Salidas", "Obs"),
-    c("2025-06-10", "Patrimonio", 335000, "", "Ignacio"),
-    c("13-06-2025", "Compras", "", 100000, "Stock | Singles"),
-    c(45823, "Compras", "", totalFactura, "Stock | Asmodee $" + totalFactura),
-    c("2025-06-20", "Compras", "", 12345, "Stock | Asmodee"),
-    c("2025-06-22", "Ventas", 24500, "", "Stock | Singles"),
-    c("2025-07-05", "Ventas", 8000, "", "TORNEO"),
-    c("2025-07-05", "Ventas", 8000, "", "Torneo"),
-    c("2025-07-06", "Ventas", 9000, "", "TORNEO"),
-    c("2025-07-05", "Ventas", 5000, "", "Torneo martes"),
-    c("2025-07-10", "Ventas", 89000, "", "OC285"),
-    c("2025-07-11", "Ventas", 10000, "TUU", "OC171"),
-    c("2025-07-12", "Ventas", 5000, "", "OC 171"),
-    c("2025-07-14", "Ventas", 20000, "", "OC048"),
-    c("2025-07-15", "GAV", "", 25000, "Sueldo | Alex"),
-    c("2026-01-01", "Saldo", "", 435532, "a.Saldo 2025"),
-    c("2025-07-20", "Compras", "", 6000, "Bazar | Bebidas"),
-    c("2025-07-21", "Ventas", 2500, "", "Bazar | Bebidas"),
-    c("2025-07-15", "Patrimonio", 32940, "Sleeved - jorney together", "Jaime"),
-    c("", "", "", "", ""),
-  ].map((f, i) => ({ fila: i + 1, ...f }));
-}
-
-test("migración de la caja por partes: seleccionar, migrar, pago de factura, torneos del día y recargar sin duplicar", () => {
-  const s = createServer();
-  migrarStock(s);
-  const fac = s.ok("bootstrap").data.compras.find(c => c.factura === "30th");
-  let e = s.ok("cajaCargar", { filas: cajaEjemplo(Math.round(fac.total)) }).result;
-  const fila = (n) => e.filas.find(f => f.fila === n);
-  const ids = (fn) => e.filas.filter(fn).map(f => f.id);
-  assert.deepEqual([e.resumen.filas, e.resumen.pendientes, e.resumen.descartadas], [20, 18, 2]);
-  // Destinos propuestos
-  assert.deepEqual([fila(4).accionEf, fila(4).destinoEf], ["factura", fac.id], "Asmodee con el total de una factura: se propone esa factura");
-  assert.deepEqual([fila(5).accionEf, fila(5).problema], ["factura", "Elige la factura"]);
-  assert.deepEqual([fila(3).accionEf, fila(3).destinoEf, fila(3).extraEf], ["movimiento", "compra", "Singles"]);
-  assert.equal(fila(16).accionEf, "omitir");
-  assert.deepEqual(e.ocSoloErp, ["OC026", "OC300", "OC301", "PR171"], "PR171 no se confunde con OC171");
-
-  // 1) Solo lo de bazar (compras y ventas)
-  let r = s.ok("cajaMigrar", { ids: ids(f => /bazar/i.test(f.obs)) }).result;
-  assert.deepEqual([r.filas, r.ventasNuevas, r.movimientos], [2, 1, 1]);
-  e = s.ok("cajaEstado").data;
-  assert.equal(e.resumen.migradas, 2);
-  assert.match(fila(17).migrada, /^MOV-/);
-  assert.match(fila(18).migrada, /^BAZ-0001/, "el bazar no usa N° de OC");
-
-  // 2) Torneos: los del mismo día quedan en una venta; una tanda posterior se suma a esa venta
-  r = s.ok("cajaMigrar", { ids: [fila(7).id, fila(8).id, fila(9).id] }).result;
-  assert.equal(r.ventasNuevas, 2);
-  e = s.ok("cajaEstado").data;
-  r = s.ok("cajaMigrar", { ids: [fila(10).id] }).result;
-  assert.deepEqual([r.ventasNuevas, r.lineas], [0, 1]);
-  let d = s.ok("bootstrap").data;
-  const t5 = d.ventas.find(v => v.fecha === "2025-07-05" && v.lineas.some(l => l.categoria === "Torneo"));
-  assert.deepEqual([t5.total, t5.lineas.length, t5.estadoPago], [21000, 3, "pagada"]);
-  assert.match(t5.id, /^TOR-/, "los torneos llevan su propio correlativo");
-
-  // 3) Una fila de la OC171 arrastra a la otra; fecha real y ajuste
-  e = s.ok("cajaEstado").data;
-  r = s.ok("cajaMigrar", { ids: [fila(12).id] }).result;
-  assert.deepEqual([r.filas, r.ventasFechadas], [2, 1]);
-  d = s.ok("bootstrap").data;
-  const v171 = d.ventas.find(v => /OC original OC171\b/.test(v.notas));
-  assert.deepEqual([v171.fecha, v171.total, v171.estadoPago], ["2025-07-11", 15000, "pagada"]);
-
-  // 4) Pago de factura: sin factura elegida no se puede; al elegirla se concilia
-  e = s.ok("cajaEstado").data;
-  assert.match(errorDe(s.call("cajaMigrar", { ids: [fila(4).id, fila(5).id] })), /fila 5 \(Elige la factura\)/);
-  e = s.ok("cajaFilas", { filas: [{ id: fila(5).id, accion: "factura", destino: fac.id }] }).result;
-  r = s.ok("cajaMigrar", { ids: [fila(4).id, fila(5).id] }).result;
-  assert.deepEqual([r.facturas, r.movimientos], [1, 0], "no crea gasto: la factura ya está en el ERP");
-  d = s.ok("bootstrap").data;
-  assert.match(d.compras.find(c => c.id === fac.id).notas, /Pago caja .*fila 4.*Pago caja .*fila 5/);
-  assert.deepEqual(d.pagosFacturas.filter(p => p.compraId === fac.id).map(p => p.monto).sort((a, b) => a - b), [12345, Math.round(fac.total)].sort((a, b) => a - b), "pagos para el flujo de caja");
-  e = s.ok("cajaEstado").data;
-  assert.equal(e.compras.find(c => c.id === fac.id).pagado, Math.round(fac.total) + 12345);
-  // Enlace equivocado: el pago de la fila 5 se pasa a otra factura (y vuelve)
-  const otra = d.compras.find(c => c.id !== fac.id && c.porPagar >= 12345);
-  const p5 = d.pagosFacturas.find(p => p.origen === "caja" && p.fila === 5);
-  assert.match(errorDe(s.call("reenlazarPagoCompra", { origen: "caja", id: p5.id, compraId: fac.id })), /ya está enlazado/);
-  s.ok("reenlazarPagoCompra", { origen: "caja", id: p5.id, compraId: otra.id });
-  d = s.ok("bootstrap").data;
-  assert.equal(d.pagosFacturas.find(p => p.id === p5.id).compraId, otra.id);
-  assert.match(d.compras.find(c => c.id === otra.id).notas, /Pago caja .*fila 5/);
-  assert.doesNotMatch(d.compras.find(c => c.id === fac.id).notas, /fila 5\)/);
-  assert.equal(d.compras.find(c => c.id === otra.id).pagado, p5.monto);
-  s.ok("reenlazarPagoCompra", { origen: "caja", id: p5.id, compraId: fac.id });
-
-  // 5) "No migrar": queda descartada
-  s.ok("cajaMigrar", { ids: [fila(16).id] });
-  e = s.ok("cajaEstado").data;
-  assert.equal(fila(16).estado, "descartada");
-
-  // 6) Recargar el mismo Excel no duplica: lo migrado sigue migrado
-  e = s.ok("cajaCargar", { filas: cajaEjemplo(Math.round(fac.total)) }).result;
-  assert.equal(e.resumen.migradas, 10);
-  assert.match(errorDe(s.call("cajaMigrar", { ids: [fila(17).id] })), /al menos una fila pendiente/);
-  assert.match(errorDe(s.call("cajaFilas", { filas: [{ id: fila(17).id, descartada: true }] })), /ya se migró/);
-  // Limpiar conserva lo migrado
-  e = s.ok("cajaLimpiar", {}).result;
-  assert.deepEqual([e.resumen.filas, e.resumen.migradas], [10, 10]);
-
-  // El resto pendiente se migra después sin problemas
-  e = s.ok("cajaCargar", { filas: cajaEjemplo(Math.round(fac.total)) }).result;
-  r = s.ok("cajaMigrar", { ids: e.filas.filter(f => f.estado === "pendiente").map(f => f.id) }).result;
-  e = s.ok("cajaEstado").data;
-  assert.equal(e.resumen.pendientes, 0);
-  d = s.ok("bootstrap").data;
-  assert.equal(d.ventas.find(v => /OC original OC048 /.test(v.notas)).total, 20000);
-  assert.deepEqual(d.movimientos.filter(m => m.categoria === "aporte").map(m => [m.monto, m.subcategoria, m.notas]).sort(), [[32940, "Jaime", "Sleeved - jorney together"], [335000, "Ignacio", ""]]);
-  assert.ok(!d.movimientos.some(m => m.monto === 435532), "el saldo 2025 no se migra");
-});
-
 test("ventas por monto y movimientos de Finanzas", () => {
   const s = createServer();
   const { prods } = conInventario(s);
@@ -1650,11 +1396,10 @@ test("torneos: jugadores del .tdf → tickets pendientes en la caja, cobrar junt
   // Juez en efectivo: egreso en la caja del torneo.
   s.ok("juezTorneo", { id: t.id, monto: 15000 });
   // Premio a PVP (el torneo lo "compra"), con la opción de cambiar el precio.
-  const pr = s.ok("premioTorneo", { id: t.id, productoId: prods.miniTin.id, cantidad: 1, lugar: 1 }).result;
-  assert.equal(pr.precio, 18000);
+  s.ok("premiosTorneo", { id: t.id, premios: [{ productoId: prods.miniTin.id, cantidad: 1 }] });
   d = s.ok("bootstrap").data;
   t = d.torneos[0];
-  assert.match(t.premios[0].notas, /1º lugar · Ana R\./);
+  assert.equal(t.premios[0].precio, 18000);
   s.ok("precioPremio", { id: t.premios[0].id, precio: 15000 });
   d = s.ok("bootstrap").data;
   t = d.torneos[0];

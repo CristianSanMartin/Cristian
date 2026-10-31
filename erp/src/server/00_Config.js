@@ -15,7 +15,7 @@
 
 const APP = {
   nombre: 'GS Prime ERP',
-  version: '2.24.8',
+  version: '2.25.0',
   tz: 'America/Santiago',
   iva: 0.19,
 };
@@ -128,15 +128,6 @@ const SCHEMA = {
       comprobante: 's',
     }, AUDIT_COLS),
   },
-  /** Zona de migración de la caja diaria: una fila por movimiento del Excel. */
-  Migracion_Caja: {
-    key: 'id',
-    cols: {
-      id: 's', fila: 'n', fecha: 'd', glosa: 's', entradas: 'n', salidas: 'n', detalle: 's', obs: 's', oc: 's', clave: 's', descartada: 'b', nota: 's',
-      // Destino propio de la fila (vacío = el de su grupo) y lo que se creó al migrarla (vacío = pendiente).
-      accion: 's', destino: 's', extra: 's', migrada: 's', firma: 's',
-    },
-  },
   /** Toma de inventario: foto de lo que debería haber, conteo unidad por unidad y cierre con ajustes. */
   Tomas: {
     key: 'id',
@@ -151,19 +142,6 @@ const SCHEMA = {
   Tomas_Lineas: {
     key: 'id',
     cols: { id: 's', tomaId: 's', productoId: 's', loteId: 's', esperado: 'n', marcas: 's', sobrante: 'n' },
-  },
-  /** Zona de migración: el Excel histórico unidad por unidad, para revisar antes de importar. */
-  Migracion: {
-    key: 'id',
-    cols: {
-      id: 's', fila: 'n', proveedor: 's', factura: 's', serie: 's', producto: 's', costo: 'n', venta: 'n',
-      oc: 's', cliente: 's', boleta: 's', descartada: 'b', nota: 's',
-    },
-  },
-  /** Homologación de la migración: cómo queda cada proveedor, factura, producto y cliente del Excel. */
-  Migracion_Mapeos: {
-    key: 'clave',
-    cols: { clave: 's', tipo: 's', original: 's', destino: 's', accion: 's', extra: 's', confirmado: 'b' },
   },
   /** Migraciones de datos ya aplicadas (ver Respaldos.js). */
   Migraciones: {
@@ -250,7 +228,7 @@ const SCHEMA = {
 };
 
 /** Hojas de versiones anteriores que instalar() elimina si están vacías (Validaciones: siempre, ya no se usa). */
-const HOJAS_OBSOLETAS = ['Pagos', 'Movimientos', 'Preventas_Lineas', 'Validaciones'];
+const HOJAS_OBSOLETAS = ['Pagos', 'Movimientos', 'Preventas_Lineas', 'Validaciones', 'Migracion', 'Migracion_Mapeos', 'Migracion_Caja'];
 
 const IDIOMAS = ['ENG', 'ESP', 'JPN', 'Otro'];
 

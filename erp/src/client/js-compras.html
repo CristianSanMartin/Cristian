@@ -86,9 +86,9 @@
     const admin = GS.puede('admin');
     return '<div class="pagos-compra"><p class="table-note"><strong>Pagos al proveedor:</strong> ' +
       (c.pagos.length
-        ? c.pagos.map((x) => fmt.date(x.fecha) + ' ' + fmt.money(x.monto) + (x.cuenta ? ' (' + esc(cuentas[x.cuenta] || x.cuenta) + ')' : '') + (x.origen === 'caja' ? ' · caja diaria' : '') +
+        ? c.pagos.map((x) => fmt.date(x.fecha) + ' ' + fmt.money(x.monto) + (x.cuenta ? ' (' + esc(cuentas[x.cuenta] || x.cuenta) + ')' : '') +
           (admin ? ' <a href="#" data-action="reenlazarPagoCompra" data-id="' + esc(x.id) + '" title="Este pago era de otra factura: cambiar el enlace">cambiar factura</a>' : '') +
-          (admin && x.origen === 'manual' ? ' <a href="#" data-action="anularPagoCompra" data-id="' + esc(x.id) + '" title="Anular este pago">anular</a>' : '')).join(' · ')
+          (admin ? ' <a href="#" data-action="anularPagoCompra" data-id="' + esc(x.id) + '" title="Anular este pago">anular</a>' : '')).join(' · ')
         : 'ninguno') +
       ' — ' + (c.porPagar <= 1 ? '<span class="text-success">✓ pagada</span>' : '<span class="text-gold">por pagar ' + fmt.money(c.porPagar) + '</span>') +
       (GS.puede('operador') && c.porPagar > 1 ? ' <button class="btn small secondary" data-action="registrarPagoCompra" data-id="' + esc(c.id) + '">Registrar pago</button>' : '') +
@@ -155,11 +155,11 @@
     GS.formModal({
       title: 'Cambiar la factura del pago',
       submitLabel: 'Enlazar',
-      fields: () => '<p class="hint">Pago del ' + fmt.date(p.fecha) + ' por <strong>' + fmt.money(p.monto) + '</strong>' + (p.origen === 'caja' ? ' (caja diaria, fila ' + esc(p.fila) + ')' : '') +
+      fields: () => '<p class="hint">Pago del ' + fmt.date(p.fecha) + ' por <strong>' + fmt.money(p.monto) + '</strong>' +
         ', hoy enlazado a <strong>' + esc(p.compraId) + (actual ? ' · factura ' + esc(actual.factura) + ' · ' + esc(actual.proveedor) : '') + '</strong>.</p>' +
         '<div class="form-field"><label>Factura correcta *</label><select name="compraId">' + GS.options([{ value: '', label: 'Elige la factura…' }].concat(opciones), '') + '</select></div>' +
         '<p class="hint">El pago deja de contar en ' + esc(p.compraId) + ' (vuelve a quedar por pagar) y pasa a la factura elegida. Queda en la auditoría.</p>',
-      onSubmit: (v) => GS.mutate('reenlazarPagoCompra', { origen: p.origen, id: p.id, compraId: v.compraId }, 'Pago enlazado a ' + v.compraId),
+      onSubmit: (v) => GS.mutate('reenlazarPagoCompra', { id: p.id, compraId: v.compraId }, 'Pago enlazado a ' + v.compraId),
     });
   };
   GS.actions.anularPagoCompra = (id) => {

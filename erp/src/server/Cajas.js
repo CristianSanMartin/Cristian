@@ -219,11 +219,6 @@ const Cajas = {
     });
   },
 
-  /** Comisión estimada de TUU (0,77% + $65 + IVA por pago con la máquina). */
-  _comisionEstimada(medio, monto) {
-    return Economia.comisionPago(medio, monto);
-  },
-
   /**
    * Cierra la caja y pasa cada ticket a su lugar. p: { id, depositoTuu (opcional) }.
    * Devuelve { ventas, movimientos, tickets, comisionTuu, cuotas }.

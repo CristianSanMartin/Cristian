@@ -72,7 +72,6 @@ function rutas_() {
     vincularJugador: { rol: 'operador', write: true, fn: Torneos.vincularJugador },
     cobroJugador: { rol: 'operador', write: true, fn: Torneos.cambiarCobro },
     juezTorneo: { rol: 'operador', write: true, fn: Torneos.guardarJuez },
-    premioTorneo: { rol: 'operador', write: true, fn: Torneos.agregarPremio },
     premiosTorneo: { rol: 'operador', write: true, fn: Torneos.agregarPremios },
     sobresTorneo: { rol: 'operador', write: true, fn: Torneos.guardarSobres },
     participacionTorneo: { rol: 'operador', write: true, fn: Torneos.guardarParticipacion },
@@ -80,19 +79,8 @@ function rutas_() {
     quitarPremio: { rol: 'operador', write: true, fn: Torneos.quitarPremio },
     unirTickets: { rol: 'operador', write: true, fn: Cajas.unirTickets },
     anularSalida: { rol: 'admin', write: true, fn: Salidas.anular },
-    cerrarMigracion: { rol: 'admin', write: true, fn: (p, u) => Migracion.cerrar(p, u) },
-    reabrirMigracion: { rol: 'admin', write: true, fn: (p, u) => Migracion.reabrir(p, u) },
-    unirProductos: { rol: 'admin', write: true, fn: Productos.unir },
-    cajaEstado: { rol: 'admin', fn: () => MigracionCaja.estado() },
-    cajaCargar: { rol: 'admin', write: true, fn: MigracionCaja.cargar },
-    cajaMapeos: { rol: 'admin', write: true, fn: MigracionCaja.guardarMapeos },
-    cajaFilas: { rol: 'admin', write: true, fn: MigracionCaja.guardarFilas },
-    cajaMigrar: { rol: 'admin', write: true, fn: MigracionCaja.migrar },
-    cajaLimpiar: { rol: 'admin', write: true, fn: MigracionCaja.limpiar },
     editarVenta: { rol: 'admin', write: true, fn: Ventas.editar },
     reclasificarVenta: { rol: 'admin', write: true, fn: Ventas.reclasificar },
-    ocOriginales: { rol: 'admin', fn: (p, u) => Ventas.numerosOriginales({ aplicar: false }, u) },
-    renumerarOc: { rol: 'admin', write: true, fn: (p, u) => Ventas.numerosOriginales({ aplicar: true }, u) },
     guardarMovimiento: { rol: 'operador', write: true, fn: Finanzas.guardar },
     anularMovimiento: { rol: 'admin', write: true, fn: Finanzas.anular },
     movimientoACobroVenta: { rol: 'admin', write: true, fn: Finanzas.aCobroVenta },
@@ -115,12 +103,6 @@ function rutas_() {
     crearRespaldo: { rol: 'admin', write: true, fn: (p, u) => Respaldos.crear('manual', u) },
     exportarDemo: { rol: 'admin', fn: Respaldos.exportarDemo },
 
-    migracion: { rol: 'admin', fn: () => Migracion.estado() },
-    migracionCargar: { rol: 'admin', write: true, fn: Migracion.cargar },
-    migracionMapeos: { rol: 'admin', write: true, fn: Migracion.guardarMapeos },
-    migracionFilas: { rol: 'admin', write: true, fn: Migracion.guardarFilas },
-    migracionImportar: { rol: 'admin', write: true, fn: Migracion.importar },
-    migracionLimpiar: { rol: 'admin', write: true, fn: Migracion.limpiar },
 
     guardarUsuario: { rol: 'admin', write: true, fn: Usuarios.guardar },
   };
@@ -308,7 +290,7 @@ const Snapshot = {
     });
 
     return {
-      app: { nombre: APP.nombre, version: APP.version, iva: APP.iva, migracionCerrada: Migracion.cerrada() },
+      app: { nombre: APP.nombre, version: APP.version, iva: APP.iva },
       hoy: Util.hoy(),
       user: { email: user.email, nombre: user.nombre, rol: user.rol },
       catalogos: {
@@ -334,8 +316,6 @@ const Snapshot = {
         feriados: Db.all('Feriados').sort((a, b) => String(a.fecha).localeCompare(String(b.fecha))),
       },
       // Filas de la caja diaria aún sin migrar, por glosa (para avisarlo en Finanzas).
-      cajaPendiente: Auth.puede(user, 'admin') ? Db.all('Migracion_Caja').filter((f) => !f.migrada && !f.descartada)
-        .reduce((o, f) => { const k = f.glosa || 'Sin glosa'; o[k] = (o[k] || 0) + 1; return o; }, {}) : {},
       ventas: ventas.ventas,
       clientes: clis,
       usuarios: Auth.puede(user, 'admin') ? Db.all('Usuarios') : [],

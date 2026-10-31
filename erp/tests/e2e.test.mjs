@@ -15,11 +15,6 @@ async function abrir(browser, opts = {}) {
   const page = await browser.newPage({ viewport: opts.viewport || { width: 1400, height: 950 } });
   const errores = [];
   page.on("pageerror", (e) => errores.push(e.message));
-  // El saludo diario de GSTin (abonos TUU del día) no se muestra en las pruebas: taparía los botones.
-  await page.addInitScript(() => {
-    const get = Storage.prototype.getItem;
-    Storage.prototype.getItem = function (k) { return /^gstin-/.test(k) ? "1" : get.call(this, k); };
-  });
   await page.goto(url(opts.user));
   await page.waitForSelector("#app:not(.hidden)");
   await historialToasts(page);
@@ -397,7 +392,7 @@ test("inventario: se marcan unidades de un producto y se venden desde su lote", 
   }
 });
 
-test("inventario: productos (filtros, editar, unir) y toma de inventario unidad por unidad", { skip }, async () => {
+test("inventario: productos (filtros, editar) y toma de inventario unidad por unidad", { skip }, async () => {
   const browser = await chromium.launch();
   try {
     const { page, errores } = await abrir(browser);
@@ -417,11 +412,7 @@ test("inventario: productos (filtros, editar, unir) y toma de inventario unidad 
     const conStock = await page.locator("#prod-tbody tr").count();
     assert.ok(conStock > 0 && conStock < total);
     await page.selectOption('[data-filter="productos.rapido"]', "");
-    // Sin botón para unir duplicados (ya no se usa); la toma de abajo parte con los Battle Deck unidos.
-    assert.equal(await page.locator('[data-action="unirProducto"]').count(), 0);
-    await page.evaluate(() => GS.mutate("unirProductos", { origenId: "GS-0005", destinoId: "GS-0004" }));
-    assert.equal(await page.locator('#prod-tbody tr[data-prod="GS-0005"]').count(), 0);
-    assert.match(await page.locator('#prod-tbody tr[data-prod="GS-0004"]').textContent(), /20/, "9 + 11 Battle Deck");
+    assert.equal(await page.locator('[data-action="unirProducto"]').count(), 0, "sin botón para unir duplicados");
 
     // Toma: iniciar, marcar unidades, una de más, guardar y cerrar con ajustes
     await page.click('[data-action="tab"][data-id="inventario.toma"]');
@@ -433,7 +424,7 @@ test("inventario: productos (filtros, editar, unir) y toma de inventario unidad 
     await deck.locator('[data-action="tomaTodas"][data-id$="|x"]').click();
     await deck.locator('[data-action="tomaMarca"]').first().click();   // una no se encontró
     await deck.locator('[data-action="tomaSobra"][data-id$="|1"]').click();
-    assert.match(await deck.locator(".toma-cifras").textContent(), /Esperado 20.*Encontrado 20/);
+    assert.match(await deck.locator(".toma-cifras").textContent(), /Esperado (\d+).*Encontrado \1\b/, "una no encontrada y una de más: cuadra");
     await page.click('[data-action="tomaGuardar"]');
     await toast(page, /Avance guardado/);
     await page.click('[data-action="tomaCerrar"]');
@@ -449,7 +440,7 @@ test("inventario: productos (filtros, editar, unir) y toma de inventario unidad 
   }
 });
 
-test("venta por monto, Finanzas y migración de la caja diaria", { skip }, async () => {
+test("venta por monto y Finanzas", { skip }, async () => {
   const browser = await chromium.launch();
   try {
     const { page, errores } = await abrir(browser);
@@ -494,31 +485,6 @@ test("venta por monto, Finanzas y migración de la caja diaria", { skip }, async
     await page.click('[data-action="tab"][data-id="finanzas.movimientos"]');
     await page.waitForSelector("td:has-text('Sueldo Alex')");
 
-    // Migración de caja: pegar, homologar e importar
-    await page.click('[data-nav="migracion"]');
-    await page.click('[data-action="tab"][data-id="migracion.fuente.caja"]');
-    const tsv = ["Periodo\tFecha\tGlosa\tEntradas\tSalidas\tObs", "01-06-2025\t10-06-2025\tPatrimonio\t335000\t\tIgnacio",
-      "01-06-2025\t13-06-2025\tCompras\t\t100000\tStock | Singles", "01-06-2025\t22-06-2025\tVentas\t24500\t\tSingles",
-      "01-06-2025\t23-06-2025\tSaldo\t\t435532\ta.Saldo 2025"].join("\n");
-    await page.fill("[data-caja-pegar]", tsv);
-    await page.click('[data-action="cajaPegar"]');
-    await toast(page, /4 filas cargadas · 4 pendientes/);
-    // Por partes: primero solo lo de singles (compra y venta)
-    await page.fill("[data-caja-buscar]", "singles");
-    await page.click('[data-action="cajaMarcarVisibles"]');
-    assert.match(await page.locator("#caja-seleccion").textContent(), /2 filas · entradas \$24\.500 · salidas \$100\.000/);
-    await page.click('[data-action="cajaMigrar"]');
-    await modal(page).locator('button[type="submit"]').click();
-    await toast(page, /2 filas migradas · 1 ventas nuevas, 0 fechadas, 1 movimientos, 0 facturas/);
-    // Luego el resto, cambiando el destino del aporte a "Otro ingreso"
-    await page.fill("[data-caja-buscar]", "");
-    await page.click('[data-action="cajaMarcarVisibles"]');
-    await page.click('[data-action="cajaMigrar"]');
-    await modal(page).locator('button[type="submit"]').click();
-    await toast(page, /2 filas migradas · 0 ventas nuevas, 0 fechadas, 1 movimientos, 0 facturas/);
-    await page.selectOption("[data-caja-estado]", "");
-    assert.equal(await page.locator(".badge:has-text('Migrada')").count(), 3);
-    assert.equal(await page.locator(".badge:has-text('No se migra')").count(), 1, "el saldo 2025 no se migra");
     assert.deepEqual(errores, []);
   } finally {
     await browser.close();
@@ -602,55 +568,6 @@ test("demo con datos reales: exportar desde Respaldos y cargar el archivo en la 
     await page.click('[data-action="tab"][data-id="admin.usuarios"]');
     assert.equal(await page.locator("text=dueno@gmail.com").count(), 0);
     fs.unlinkSync(archivo);
-    assert.deepEqual(errores, []);
-  } finally {
-    await browser.close();
-  }
-});
-
-test("migración: pegar el Excel, homologar por secciones e importar", { skip }, async () => {
-  const browser = await chromium.launch();
-  try {
-    const { page, errores } = await abrir(browser);
-    await page.click('[data-nav="migracion"]');
-    const tsv = [
-      "PROVEEDOR\t\t\t\tSII",
-      "Proveedor\tFactura\tSerie\tProducto\tValor Unitario\tCosto\tCredito Fiscal\tNeto\tDebito Fiscal\tPago SII\tGanancia\t$ Venta\tOC\tCliente\tBoleta",
-      "Ludi\tL-77\t1\tPitch Black - ETB (ESP)\t$ 47.594\t$ 39.995\t\t\t\t\t\t$ 59.990\tOC401\tCAMILO PUG\t2001",
-      "Ludi\tL-77\t2\tPitch Black - ETB (ESP)\t$ 47.594\t$ 39.995\t\t\t\t\t\t$ 59.990\t\t\t",
-      "Ludi\t-\t1\tPitch Black - ETB (ESP)\t$ 47.594\t$ 39.995\t\t\t\t\t\t$ 59.990\tOC000\tPREMIOS | MUGRI\t",
-    ].join("\n");
-    await page.locator("[data-mig-pegar]").fill(tsv);
-    await page.click('[data-action="migPegar"]');
-    await toast(page, /3 filas cargadas/);
-    assert.match(await page.locator(".kpi-grid").textContent(), /Unidades a migrar3.*Disponibles1/s);
-
-    // Productos: la propuesta ya viene homologada
-    await page.click('[data-action="migSeccion"][data-id="producto"]');
-    assert.equal(await page.locator(".mig-tabla input[data-campo=destino]").first().inputValue(), "Pitch Black – ETB · ESP");
-    // Confirmar cada sección; en facturas completar la que viene con "-"
-    for (const sec of ["proveedor", "producto", "cliente"]) {
-      await page.click(`[data-action="migSeccion"][data-id="${sec}"]`);
-      await page.click('[data-action="migConfirmarTodo"]');
-      await toast(page, /Cambios guardados/);
-    }
-    await page.click('[data-action="migSeccion"][data-id="factura"]');
-    await page.locator(".mig-tabla input.falta").fill("L-78");
-    await page.click('[data-action="migConfirmarTodo"]');
-    await toast(page, /Cambios guardados/);
-
-    await page.click('[data-action="migSeccion"][data-id="importar"]');
-    await page.click('[data-action="migImportar"]');
-    await modal(page).locator("button.btn:not(.ghost)").last().click();
-    await toast(page, /Importado: 2 facturas, 1 ventas, 1 salidas/);
-    await page.waitForSelector("text=Migración importada");
-
-    // El stock quedó en Inventario y la venta con su OC original
-    await page.click('[data-nav="inventario"]');
-    const etb = page.locator('#inv-tbody tr[data-producto]', { hasText: "Pitch Black" });
-    assert.match(await etb.textContent(), /3.*1.*\+1 salidas.*1/s);
-    await etb.click();
-    assert.match(await page.locator("#inv-tbody .detalle-compra").textContent(), /Premio.*Premios \| Mugri|Premio.*PREMIOS \| MUGRI/s);
     assert.deepEqual(errores, []);
   } finally {
     await browser.close();
