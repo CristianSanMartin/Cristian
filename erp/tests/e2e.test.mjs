@@ -856,7 +856,7 @@ test("Story IG (Top 5): Pokémon con imagen, vista previa, guardar y descargar e
   }
 });
 
-test("Dashboard: Por abonar (TUU) se despliega con el detalle de pagos y cuotas", { skip }, async () => {
+test("Dashboard: Por abonar (TUU) se despliega con la misma tabla de Caja → Abonos TUU", { skip }, async () => {
   const browser = await chromium.launch();
   try {
     const { page, errores } = await abrir(browser);
@@ -865,9 +865,11 @@ test("Dashboard: Por abonar (TUU) se despliega con el detalle de pagos y cuotas"
     await kpiTuu.click();
     const panel = page.locator(".panel", { hasText: "Por abonar (TUU)" });
     await panel.waitFor();
-    // El total de la tabla calza con el del resumen.
-    assert.equal((await panel.locator("tfoot .text-gold").textContent()).trim(), total);
-    assert.ok(await panel.locator("tbody tr").count() >= 1);
+    // El total del resumen es la suma de los abonos estimados de ventas (sin cuotas) de la tabla.
+    const filas = await panel.locator("tbody tr").evaluateAll((trs) => trs.map((tr) => [tr.cells[1].textContent, tr.cells[3].textContent]));
+    assert.ok(filas.length >= 1);
+    const num = (x) => Number(x.replace(/[^0-9-]/g, ""));
+    assert.equal(filas.filter(([d]) => d.startsWith("Ventas")).reduce((s, [, n]) => s + num(n), 0), num(total));
     await panel.locator('[data-action="irAbonosTuu"]').click();
     await page.waitForSelector('.tab.active[data-id="caja.tuu"]');
     assert.deepEqual(errores, []);

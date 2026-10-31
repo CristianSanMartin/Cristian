@@ -184,6 +184,21 @@
     return c + par(c * (r.iva || 0));
   };
 
+  /** Tarjeta de resumen (KPI). opts.grande: cifra grande (Dashboard); opts.cls: clase extra de la tarjeta. */
+  GS.kpi = (label, valor, sub, opts) => {
+    const o = opts || {};
+    return '<div class="kpi-card ' + (o.cls || '') + '"><div class="kpi-label">' + label + '</div><div class="kpi-value' + (o.grande ? '' : ' small') + '">' + valor + '</div>' +
+      '<div class="kpi-sub">' + (sub == null ? '' : sub) + '</div></div>';
+  };
+  /** Color de un monto: rojo si es negativo, verde si no (con neutroEnCero, el 0 queda sin color). */
+  GS.signo = (n, neutroEnCero) => (n < 0 ? 'text-danger' : neutroEnCero && !n ? '' : 'text-success');
+  /** Unidades disponibles para vender por producto (sin lo reservado en la caja ni lo en tránsito). */
+  GS.stockPorProducto = () => {
+    const stock = {};
+    GS.state.data.lotes.forEach((l) => { if (l.disponible > 0) stock[l.productoId] = (stock[l.productoId] || 0) + l.disponible; });
+    return stock;
+  };
+
   GS.iconBtn = (action, id, icon, title, cls) =>
     '<button class="icon-btn ' + (cls || '') + '" title="' + GS.esc(title) + '" aria-label="' + GS.esc(title) + '" data-action="' + action + '" data-id="' + GS.esc(id) + '">' + GS.icon(icon) + '</button>';
 

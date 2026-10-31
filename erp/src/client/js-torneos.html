@@ -8,7 +8,7 @@
   'use strict';
   const { fmt, esc } = GS;
   const data = () => GS.state.data;
-  const kpi = (l, v, sub) => '<div class="kpi-card"><div class="kpi-label">' + l + '</div><div class="kpi-value small">' + v + '</div><div class="kpi-sub">' + (sub || '') + '</div></div>';
+  const kpi = GS.kpi;
   const abiertos = new Set();
   const torneos = () => data().torneos || [];
 
@@ -17,7 +17,7 @@
     sin_costo: ['Sin costo', ''], sin_ticket: ['Sin inscripción', 'st-cancelada'], anulada: ['Anulada', ''],
   };
   const badge = (e) => '<span class="badge ' + (ESTADO[e] || ['', ''])[1] + '">' + esc((ESTADO[e] || [e])[0]) + '</span>';
-  const signo = (n) => (n < 0 ? 'text-danger' : n > 0 ? 'text-success' : '');
+  const signo = (n) => GS.signo(n, true);
 
   /* ---------- archivo .tdf de TOM ---------- */
 
@@ -338,8 +338,7 @@
   GS.actions.agregarPremio = (id) => {
     const t = torneoDe(id);
     const d = data();
-    const stock = {};
-    d.lotes.forEach((l) => { if (l.disponible > 0) stock[l.productoId] = (stock[l.productoId] || 0) + l.disponible; });
+    const stock = GS.stockPorProducto();
     const prods = d.productos.filter((p) => stock[p.id]).sort((a, b) => a.nombreCompleto.localeCompare(b.nombreCompleto));
     const porId = {};
     prods.forEach((p) => { porId[p.id] = p; });

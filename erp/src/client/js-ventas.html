@@ -10,8 +10,8 @@
   const { fmt, esc } = GS;
   const data = () => GS.state.data;
   const iva = () => data().app.iva;
-  const kpi = (l, v, sub) => '<div class="kpi-card"><div class="kpi-label">' + l + '</div><div class="kpi-value small">' + v + '</div><div class="kpi-sub">' + sub + '</div></div>';
-  const signo = (n) => (n < 0 ? 'text-danger' : 'text-success');
+  const kpi = GS.kpi;
+  const signo = GS.signo;
   const ESTADO_PAGO = {
     pagada: { label: 'Pagada', cls: 'st-ok' },
     abonada: { label: 'Abonada', cls: 'st-parcial' },
@@ -488,8 +488,7 @@
         '<button type="button" class="btn small secondary" data-ev-agregar style="margin-top:8px;">' + GS.icon('plus', 2.4) + 'Agregar producto del inventario</button></div>'
       : '';
     // Productos con stock (para agregar a la venta).
-    const stock = {};
-    d.lotes.forEach((l) => { if (l.disponible > 0) stock[l.productoId] = (stock[l.productoId] || 0) + l.disponible; });
+    const stock = GS.stockPorProducto();
     const conStock = d.productos.filter((pr) => stock[pr.id]).sort((a, b) => a.nombreCompleto.localeCompare(b.nombreCompleto));
     const filaNueva = () => '<tr data-ev-nueva><td><select data-ev-prod style="max-width:320px"><option value="">Elige el producto…</option>' +
       conStock.map((pr) => '<option value="' + esc(pr.id) + '" data-precio="' + esc(pr.precio) + '">' + esc(pr.nombreCompleto) + ' (' + stock[pr.id] + ' disp.)</option>').join('') + '</select></td>' +

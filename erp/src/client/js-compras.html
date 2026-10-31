@@ -12,8 +12,8 @@
   const abiertas = new Set();   // facturas con el detalle desplegado
   const DEF_C = { q: '' };
   const DEF_I = { q: '', tab: 'stock' };
-  const signo = (n) => (n < 0 ? 'text-danger' : 'text-success');
-  const kpi = (l, v, sub) => '<div class="kpi-card"><div class="kpi-label">' + l + '</div><div class="kpi-value small">' + v + '</div><div class="kpi-sub">' + sub + '</div></div>';
+  const signo = GS.signo;
+  const kpi = GS.kpi;
   const buscar = (lista, q, texto) => { const n = GS.norm(q.trim()); return lista.filter((x) => !n || GS.norm(texto(x)).includes(n)); };
 
   /* ---------- Compras ---------- */

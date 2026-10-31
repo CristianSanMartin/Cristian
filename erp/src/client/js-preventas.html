@@ -214,7 +214,7 @@
   const asignada = (p) => p.estado !== 'solicitada';
   const vig = (p, v) => (asignada(p) ? v : '<span class="muted">—</span>');
   const conPrecio = (p, v) => (p.precioVenta ? v : null);
-  const signo = (n) => (n < 0 ? 'text-danger' : 'text-success');
+  const signo = GS.signo;
 
   /* Columnas en orden. valor = para ordenar; texto = lo que aparece en el filtro; celda = HTML. */
   const columnas = [
@@ -319,7 +319,7 @@
 
       const sum = (k) => rows.reduce((s, p) => s + (p[k] || 0), 0);
       const asig = rows.filter((p) => p.estado !== 'solicitada').reduce((s, p) => s + p.asignado, 0);
-      const kpi = (l, v, sub) => '<div class="kpi-card"><div class="kpi-label">' + l + '</div><div class="kpi-value small">' + v + '</div><div class="kpi-sub">' + sub + '</div></div>';
+      const kpi = GS.kpi;
       document.getElementById('pv-resumen').innerHTML = '<div class="kpi-grid">' +
         kpi('Productos', rows.length, rows.filter((p) => p.estado === 'solicitada').length + ' esperando asignación') +
         kpi('Unidades', fmt.num(asig) + ' <span class="muted" style="font-size:14px;">/ ' + fmt.num(sum('solicitado')) + '</span>', 'Asignadas / solicitadas') +

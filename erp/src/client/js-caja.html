@@ -9,7 +9,7 @@
   'use strict';
   const { fmt, esc } = GS;
   const data = () => GS.state.data;
-  const kpi = (l, v, sub) => '<div class="kpi-card"><div class="kpi-label">' + l + '</div><div class="kpi-value small">' + v + '</div><div class="kpi-sub">' + sub + '</div></div>';
+  const kpi = GS.kpi;
   const DEF = { caja: '', tab: 'caja' };
   const TUU = ['debito', 'credito'];
 
@@ -169,8 +169,7 @@
     const d = data();
     const medios = d.catalogos.mediosCaja;
     // Stock sin reservar (+ lo que ya reservó este ticket, si se está editando).
-    const stock = {};
-    d.lotes.forEach((l) => { if (l.disponible > 0) stock[l.productoId] = (stock[l.productoId] || 0) + l.disponible; });
+    const stock = GS.stockPorProducto();
     if (t) t.lineas.forEach((l) => { if (l.productoId) stock[l.productoId] = (stock[l.productoId] || 0) + l.cantidad; });
     const prods = d.productos.filter((p) => stock[p.id]).sort((a, b) => a.nombreCompleto.localeCompare(b.nombreCompleto));
     const porId = {};
@@ -433,6 +432,30 @@
   const detalleEsperado = (e) => (e.tipo === 'ventas' ? 'Ventas del ' + diaSemana(e.fechaVenta) + ' ' + fmt.date(e.fechaVenta)
     : 'Cuota ' + e.numero + '/' + e.de + ' de ' + (e.ventas.length ? e.ventas.join(' + ') : e.ticketId));
 
+  /** Lo que TUU aún no abona: ventas por día de caja (neto estimado) y cuotas pendientes. Lo usa también el Dashboard. */
+  GS.porAbonarTuu = () => {
+    const esp = tuu().esperados;
+    const ventas = esp.filter((e) => e.tipo === 'ventas');
+    const cuotas = esp.filter((e) => e.tipo === 'cuota');
+    return { neto: ventas.reduce((s, e) => s + e.neto, 0), dias: ventas.length, cuotas: cuotas.reduce((s, e) => s + e.neto, 0), nCuotas: cuotas.length,
+      atrasados: esp.filter((e) => e.fecha < data().hoy).length };
+  };
+
+  /** Tabla "Próximos abonos" (Caja → Abonos TUU y panel del Dashboard): por fecha de abono, con atrasados y de hoy marcados. */
+  GS.tablaProximosAbonos = () => {
+    const hoy = data().hoy;
+    const admin = GS.puede('admin');
+    const porFecha = {};
+    tuu().esperados.forEach((e) => { (porFecha[e.fecha] = porFecha[e.fecha] || []).push(e); });
+    return '<div class="table-wrap"><table class="data-table"><thead><tr><th>Fecha de abono</th><th>Detalle</th><th class="right">Cobrado</th><th class="right">Abono estimado</th><th></th></tr></thead><tbody>' +
+      (Object.keys(porFecha).length ? Object.keys(porFecha).sort().map((f) => porFecha[f].map((e, i) => '<tr class="' + (f < hoy ? 'row-warn' : '') + '">' +
+        '<td class="nowrap">' + (i ? '' : '<strong>' + fmt.date(f) + '</strong> <span class="cell-dim">' + diaSemana(f) + '</span>' + (f < hoy ? ' <span class="badge st-cancelada">Atrasado</span>' : f === hoy ? ' <span class="badge st-ok">Hoy</span>' : '')) + '</td>' +
+        '<td>' + esc(detalleEsperado(e)) + '</td><td class="cell-num right">' + fmt.money(e.monto) + '</td><td class="cell-num right"><strong>' + fmt.money(e.neto) + '</strong></td>' +
+        '<td>' + (admin && e.tipo === 'cuota' ? '<button class="btn small ghost" data-action="recibirCuotaTuu" data-id="' + esc(e.cuotaId) + '" title="Marcar como recibida (sin el informe)">Recibida</button>' : '') + '</td></tr>').join('')).join('')
+        : '<tr><td colspan="5">' + GS.empty('Nada por recibir', 'Las ventas con TUU de cada caja y las cuotas pendientes aparecen aquí con su fecha de abono.', 'caja') + '</td></tr>') +
+      '</tbody></table></div>';
+  };
+
   function vistaTuu(el) {
     const hoy = data().hoy;
     const admin = GS.puede('admin');
@@ -442,8 +465,6 @@
     const prox = esp.filter((e) => e.fecha >= hoy);
     const proxFecha = prox.length ? prox[0].fecha : '';
     const proxMonto = prox.filter((e) => e.fecha === proxFecha).reduce((s, e) => s + e.neto, 0);
-    const porFecha = {};
-    esp.forEach((e) => { (porFecha[e.fecha] = porFecha[e.fecha] || []).push(e); });
     const abonos = {};
     tuu().abonos.forEach((a) => { const r = abonos[a.fechaAbono] = abonos[a.fechaAbono] || { n: 0, monto: 0, comision: 0, abonado: 0 }; r.n++; r.monto += a.montoCuota; r.comision += a.comision; r.abonado += a.abonado; });
     el.innerHTML = '<div class="kpi-grid">' +
@@ -452,14 +473,7 @@
       kpi('Atrasados', atrasadas.length ? '<span class="text-gold">' + atrasadas.length + '</span>' : '0', atrasadas.length ? 'su fecha ya pasó: sube el informe o márcalos' : 'todo al día') + '</div>' +
       '<div class="btn-row" style="margin:6px 0 14px;">' +
       (admin ? '<label class="btn" for="tuu-archivo">' + GS.icon('download') + 'Subir informe de abono TUU (.xlsx)</label><input id="tuu-archivo" type="file" accept=".xlsx,.xls" class="visually-hidden" data-tuu-archivo>' : '') + '</div>' +
-      '<h3 class="sub-titulo">Próximos abonos</h3>' +
-      '<div class="table-wrap"><table class="data-table"><thead><tr><th>Fecha de abono</th><th>Detalle</th><th class="right">Cobrado</th><th class="right">Abono estimado</th><th></th></tr></thead><tbody>' +
-      (Object.keys(porFecha).length ? Object.keys(porFecha).sort().map((f) => porFecha[f].map((e, i) => '<tr class="' + (f < hoy ? 'row-warn' : '') + '">' +
-        '<td class="nowrap">' + (i ? '' : '<strong>' + fmt.date(f) + '</strong> <span class="cell-dim">' + diaSemana(f) + '</span>' + (f < hoy ? ' <span class="badge st-cancelada">Atrasado</span>' : f === hoy ? ' <span class="badge st-ok">Hoy</span>' : '')) + '</td>' +
-        '<td>' + esc(detalleEsperado(e)) + '</td><td class="cell-num right">' + fmt.money(e.monto) + '</td><td class="cell-num right"><strong>' + fmt.money(e.neto) + '</strong></td>' +
-        '<td>' + (admin && e.tipo === 'cuota' ? '<button class="btn small ghost" data-action="recibirCuotaTuu" data-id="' + esc(e.cuotaId) + '" title="Marcar como recibida (sin el informe)">Recibida</button>' : '') + '</td></tr>').join('')).join('')
-        : '<tr><td colspan="5">' + GS.empty('Nada por recibir', 'Las ventas con TUU de cada caja y las cuotas pendientes aparecen aquí con su fecha de abono.', 'caja') + '</td></tr>') +
-      '</tbody></table></div>' +
+      '<h3 class="sub-titulo">Próximos abonos</h3>' + GS.tablaProximosAbonos() +
       '<p class="table-note">TUU abona 2 días hábiles después de la venta (jueves → lunes; viernes, sábado y domingo → martes; un feriado lo corre). Cada cuota sigue la misma regla, un mes después de la anterior. ' +
       'Al subir el informe de abono, cada transacción se cuadra con su venta (misma fecha, medio y monto) y la comisión real reemplaza la estimada; las cuotas que llegan se registran como abono de su venta.</p>' +
       (Object.keys(abonos).length ? '<h3 class="sub-titulo" style="margin-top:22px;">Abonos recibidos (informes)</h3><div class="table-wrap"><table class="data-table"><thead><tr><th>Fecha</th><th class="right">Transacciones</th><th class="right">Monto</th><th class="right">Comisión</th><th class="right">Abonado</th></tr></thead><tbody>' +

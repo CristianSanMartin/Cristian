@@ -8,7 +8,7 @@
   'use strict';
   const { fmt, esc } = GS;
   const data = () => GS.state.data;
-  const kpi = (l, v, sub) => '<div class="kpi-card"><div class="kpi-label">' + l + '</div><div class="kpi-value small">' + v + '</div><div class="kpi-sub">' + sub + '</div></div>';
+  const kpi = GS.kpi;
 
   // Cambios aún no guardados en el servidor.
   const local = { marcas: {}, sobr: {} };
