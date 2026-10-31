@@ -289,7 +289,7 @@ const Snapshot = {
       });
     });
 
-    return {
+    return Snapshot.compactar({
       app: { nombre: APP.nombre, version: APP.version, iva: APP.iva },
       hoy: Util.hoy(),
       user: { email: user.email, nombre: user.nombre, rol: user.rol },
@@ -315,11 +315,33 @@ const Snapshot = {
         abonos: Db.all('Abonos_TUU').slice(-200),
         feriados: Db.all('Feriados').sort((a, b) => String(a.fecha).localeCompare(String(b.fecha))),
       },
-      // Filas de la caja diaria aún sin migrar, por glosa (para avisarlo en Finanzas).
       ventas: ventas.ventas,
       clientes: clis,
       usuarios: Auth.puede(user, 'admin') ? Db.all('Usuarios') : [],
-    };
+    });
+  },
+
+  /**
+   * Achica la foto de datos que viaja al navegador en cada carga y en cada guardado:
+   * - los productos de cada factura no se repiten (ya vienen en "lotes"; la pantalla los vuelve a unir);
+   * - quién y cuándo creó o modificó cada registro solo va donde se muestra (tickets de la caja,
+   *   usuarios, tomas y torneos);
+   * - los montos con decimales (1 o más: costos con despacho prorrateado, ganancias…) se redondean a
+   *   2 decimales; las tasas y porcentajes (menores que 1, como la comisión 0,0077) y los catálogos no se tocan.
+   */
+  compactar(foto) {
+    const CON_AUDITORIA = { cajas: true, usuarios: true, tomas: true, torneos: true };
+    const AUDITORIA = { creadoEn: true, creadoPor: true, actualizadoEn: true, actualizadoPor: true };
+    foto.compras.forEach((c) => { delete c.lineas; });
+    Object.keys(foto).forEach((k) => {
+      if (k === 'catalogos' || k === 'app') return;
+      const conAud = CON_AUDITORIA[k];
+      foto[k] = JSON.parse(JSON.stringify(foto[k], (clave, v) => {
+        if (!conAud && AUDITORIA[clave]) return undefined;
+        return typeof v === 'number' && !Number.isInteger(v) && Math.abs(v) >= 1 ? Math.round(v * 100) / 100 : v;
+      }));
+    });
+    return foto;
   },
 
   auditoria() {

@@ -452,7 +452,7 @@
       const ids = lineas.map((p) => p.id);
       const esOc = factura.esOc;
       const r = await GS.api('crearCompra', Object.assign({ preventas: ids, fecha: v.fecha, despacho: v.despacho, notas: v.notas }, esOc ? { esOc: true, oc: v.factura } : { factura: v.factura }));
-      GS.state.data = r.data;
+      GS.setData(r.data);
       ids.forEach((id) => seleccion.delete(id));
       Object.assign(factura, { abierta: false, esOc: false, numero: '', fecha: '', despacho: null, notas: '' });
       GS.toast(esOc

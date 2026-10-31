@@ -34,10 +34,21 @@
     });
   };
 
+  /**
+   * Guarda la foto de datos que manda el servidor. Los productos de cada factura vienen una sola vez
+   * (en "lotes"): aquí se vuelven a unir a su compra (c.lineas), en el mismo orden de siempre.
+   */
+  GS.setData = function (d) {
+    const porCompra = {};
+    (d.lotes || []).forEach((l) => { (porCompra[l.compraId] = porCompra[l.compraId] || []).push(l); });
+    (d.compras || []).forEach((c) => { if (!c.lineas) c.lineas = porCompra[c.id] || []; });
+    GS.state.data = d;
+  };
+
   /** Escritura: aplica la foto de datos que devuelve el servidor y vuelve a dibujar. */
   GS.mutate = async function (accion, datos, mensaje) {
     const res = await GS.api(accion, datos);
-    GS.state.data = res.data;
+    GS.setData(res.data);
     GS.render();
     if (mensaje) GS.toast(typeof mensaje === 'function' ? mensaje(res.result) : mensaje);
     return res.result;
@@ -48,7 +59,7 @@
     btn.classList.add('loading');
     try {
       const res = await GS.api('bootstrap');
-      GS.state.data = res.data;
+      GS.setData(res.data);
       GS.render();
     } catch (e) {
       GS.toast(e.message, true);
@@ -630,7 +641,7 @@
     document.getElementById('btn-refresh').addEventListener('click', GS.refresh);
     try {
       const res = await GS.api('bootstrap');
-      GS.state.data = res.data;
+      GS.setData(res.data);
       document.getElementById('boot').classList.add('hidden');
       document.getElementById('app').classList.remove('hidden');
       GS.render();

@@ -189,7 +189,7 @@
           ? { categoria: x.categoria, descripcion: x.descripcion, monto: (Number(x.monto) || 0) * (Number(x.cantidad == null ? 1 : x.cantidad) || 0), cantidad: x.cantidad == null ? 1 : x.cantidad }
           : { productoId: x.productoId, cantidad: x.cantidad, precio: x.precio, loteId: x.loteId || '' })),
       });
-      GS.state.data = r.data;
+      GS.setData(r.data);
       carrito.length = 0;
       Object.assign(borrador, { cliente: '', evento: '', boleta: '', pagada: true, abono: '', notas: '' });
       abiertas.add(r.result.id);

@@ -77,7 +77,7 @@
     pintarEstado();
     guardando = GS.api('guardarToma', { id: t.id, lineas: lineas, sobrantes: sobrantes })
       .then((res) => {
-        GS.state.data = res.data;
+        GS.setData(res.data);
         // Lo que no cambió mientras se guardaba ya quedó en el servidor.
         Object.keys(marcas).forEach((id) => { if (local.marcas[id] === marcas[id]) delete local.marcas[id]; });
         Object.keys(sobr).forEach((id) => { if (local.sobr[id] === sobr[id]) delete local.sobr[id]; });

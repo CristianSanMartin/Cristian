@@ -19,7 +19,11 @@ export function createServer({ admin = "admin@gsprime.cl", state } = {}) {
     as(email) { fake.setUser(email); return server; },
     /** Llama a la API como lo haría google.script.run (el resultado pasa por JSON). */
     call(action, payload) {
-      return JSON.parse(JSON.stringify(vm.runInContext("api", ctx)(action, payload)));
+      const res = JSON.parse(JSON.stringify(vm.runInContext("api", ctx)(action, payload)));
+      // Igual que GS.setData en la pantalla: los productos de cada factura vienen en "lotes".
+      const d = res && res.data;
+      if (d && Array.isArray(d.compras) && Array.isArray(d.lotes)) d.compras.forEach((c) => { if (!c.lineas) c.lineas = d.lotes.filter((l) => l.compraId === c.id); });
+      return res;
     },
     /** Igual que call, pero falla si la respuesta no es ok. */
     ok(action, payload) {
