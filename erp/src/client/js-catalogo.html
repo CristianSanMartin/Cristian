@@ -133,7 +133,6 @@
     { id: 'edicion', label: 'Edición', valor: (p) => p.edicion || '', texto: (p) => p.edicion || 'Sin edición', celda: (p) => esc(p.edicion || '—') },
     { id: 'idioma', label: 'Idioma', valor: (p) => p.idioma || '', texto: (p) => p.idioma || 'Sin idioma', celda: (p) => GS.langPill(p.idioma) },
     { id: 'tipo', label: 'Tipo', valor: (p) => p.tipo, celda: (p) => esc(p.tipo) },
-    { id: 'foto', label: 'Foto', valor: (p) => (p.imagen ? 'Con foto' : 'Sin foto'), celda: (p) => (p.imagen ? '<span class="text-success">✓</span>' : '<span class="muted">—</span>') },
     { id: 'pvp', label: 'PVP', right: true, valor: (p) => p.pvp, texto: (p) => fmt.money(p.pvp), celda: (p) => (p.pvp ? fmt.money(p.pvp) : '—') },
     { id: 'precio', label: 'Precio venta', right: true, valor: (p) => p.precio, texto: (p) => fmt.money(p.precio),
       celda: (p) => '<strong>' + (p.precio ? fmt.money(p.precio) : '—') + '</strong>' + (p.precioManual ? '<div><span class="pill soon">manual</span></div>' : '') },
