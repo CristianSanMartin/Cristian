@@ -838,12 +838,17 @@ test("Story IG (Top 5): Pokémon con imagen, vista previa, guardar y descargar e
     assert.equal(await page.inputValue('[data-story="2|principal"]'), "Gardevoir ex");
     // Cambiar el principal del 5º y el nombre que se muestra: queda marcado como cambio sin guardar.
     await page.selectOption('[data-story="4|principal"]', "Lucario");
+    // El @ de Instagram del 1º (va arriba del nombre en la imagen) se guarda en su ficha de cliente.
+    await page.fill('[data-story="0|instagram"]', "martin.tcg");
     await page.selectOption('[data-story-modo="nombre"]', "initial");
     await page.waitForSelector("[data-story-estado] .text-gold");
     await page.click('[data-action="storyGuardar"]');
     await toast(page, /Story guardada en el torneo/);
     const t = await page.evaluate(() => GS.state.data.torneos.find((x) => x.nombre === "Torneo Chill"));
     assert.deepEqual(t.jugadores.slice(0, 5).map((j) => j.principal), ["Charizard", "Dragapult", "Gardevoir ex", "Raging Bolt", "Lucario"]);
+    const primero = t.jugadores.slice().sort((a, b) => a.lugar - b.lugar)[0];
+    assert.equal(await page.evaluate((id) => GS.state.data.clientes.find((c) => c.id === id).instagram, primero.clienteId), "@martin.tcg");
+    assert.equal(await page.inputValue('[data-story="0|instagram"]'), "@martin.tcg");
     // Descargar el PNG.
     const [descarga] = await Promise.all([page.waitForEvent("download"), page.click('[data-action="storyDescargar"]')]);
     assert.match(descarga.suggestedFilename(), /^top5-torneo-chill-\d{4}-\d{2}-\d{2}\.png$/);

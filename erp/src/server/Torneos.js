@@ -375,7 +375,8 @@ const Torneos = {
 
   /**
    * Guarda lo elegido en la Story: datos del evento y, del Top 5, nombre, récord y Pokémon de cada jugador.
-   * p: { id, tipoEvento, temporada, categoria, jugadores: [{ id, nombrePila, apellido, w, l, t, principal, secundario }] }
+   * p: { id, tipoEvento, temporada, categoria, jugadores: [{ id, nombrePila, apellido, instagram, w, l, t, principal, secundario }] }
+   * El @ de Instagram se guarda en la ficha del cliente ligado al jugador (sirve para los torneos siguientes).
    */
   guardarStory(p, user) {
     const t = Torneos.requerir(p.id);
@@ -388,14 +389,21 @@ const Torneos = {
       return pokes[Util.normalizar(n)];
     };
     const cambios = {};
+    const igs = {};
     (Array.isArray(p.jugadores) ? p.jugadores : []).forEach((x) => {
       const j = Db.get('Torneo_Jugadores', String(x.id || ''));
       if (!j || j.torneoId !== t.id) throw new AppError('El jugador ' + (x.id || '') + ' no es de este torneo.');
       cambios[j.id] = Object.assign(Torneos._record(x, j.nombre), { principal: poke(x.principal, j), secundario: poke(x.secundario, j) }, Util.sello(user));
+      if (x.instagram !== undefined && j.clienteId) {
+        const ig = Util.texto(x.instagram, 'El Instagram de ' + j.nombre, { max: 60 }).replace(/^@+/, '').replace(/\s+/g, '');
+        const c = Db.get('Clientes', j.clienteId);
+        if (c && (c.instagram || '') !== (ig ? '@' + ig : '')) igs[c.id] = Object.assign({ instagram: ig ? '@' + ig : '' }, Util.sello(user));
+      }
     });
     if (Object.keys(cambios).length) Db.actualizarVarios('Torneo_Jugadores', cambios);
+    if (Object.keys(igs).length) Db.actualizarVarios('Clientes', igs);
     Db.update('Torneos', t.id, Object.assign(Torneos._datosStory(p), Util.sello(user)));
-    Audit.log(user, 'guardar story', 'Torneo', t.id, { jugadores: Object.keys(cambios).length });
+    Audit.log(user, 'guardar story', 'Torneo', t.id, { jugadores: Object.keys(cambios).length, instagram: Object.keys(igs).length });
     return { id: t.id };
   },
 

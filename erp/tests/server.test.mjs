@@ -1509,8 +1509,10 @@ test("story del top 5: récord y .tdf guardado al crear, subir .tdf después, Po
   const [ana, beto] = t.jugadores;
   assert.match(errorDe(s.call("storyTorneo", { id: r.id, jugadores: [{ id: ana.id, principal: "Mew", w: 4 }] })), /Mew .*no está en la biblioteca/);
   s.ok("storyTorneo", { id: r.id, tipoEvento: "Liga Pokémon", temporada: "Temporada 2027", categoria: "Cup",
-    jugadores: [{ id: ana.id, nombrePila: "Ana", apellido: "Rojas", w: 4, l: 0, t: 0, principal: "kyogre", secundario: "Charizard" }, { id: beto.id, nombrePila: "Beto", apellido: "Díaz", w: 2, l: 1, t: 1, principal: "Lugia" }] });
+    jugadores: [{ id: ana.id, nombrePila: "Ana", apellido: "Rojas", instagram: " @@ana.tcg ", w: 4, l: 0, t: 0, principal: "kyogre", secundario: "Charizard" }, { id: beto.id, nombrePila: "Beto", apellido: "Díaz", w: 2, l: 1, t: 1, principal: "Lugia" }] });
   t = s.ok("bootstrap").data.torneos.find(x => x.id === r.id);
+  // El @ de Instagram queda en la ficha del cliente ligado al jugador (para los torneos siguientes).
+  assert.equal(s.ok("bootstrap").data.clientes.find(c => c.id === ana.clienteId).instagram, "@ana.tcg");
   assert.deepEqual([t.temporada, t.categoria], ["Temporada 2027", "Cup"]);
   assert.deepEqual(t.jugadores.map(j => [j.principal, j.secundario]), [["Kyogre", "Charizard"], ["Lugia", ""]]);
   // Renombrar: los torneos que lo tienen elegido pasan al nombre nuevo.

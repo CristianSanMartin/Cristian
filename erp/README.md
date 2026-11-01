@@ -387,6 +387,9 @@ diseño de GS Prime.
   ID y solo actualiza récord, nombre y lugar) o se escribe en la tabla.
 - Datos del evento: tipo de evento (arriba a la izquierda), nombre del torneo en la imagen, temporada (abajo),
   categoría y cómo se muestra el nombre (solo nombre, nombre + inicial o completo).
+- **Instagram:** el @ de cada jugador va arriba de su nombre en la imagen (para buscarlo y etiquetarlo justo
+  ahí al subir la historia). Sale de la ficha del cliente ligado al jugador; si se escribe o corrige en la
+  tabla, al **Guardar** queda en esa ficha y aparece solo en los torneos siguientes.
 - A cada jugador del Top 5 se le elige su **Pokémon principal** y, si se quiere, uno **secundario** (65/35 con
   corte inclinado). Se ven como silueta del color de la fila o con la imagen original; sin imagen, el nombre.
 - **Biblioteca de Pokémon** (hoja `Pokemon`): cualquier operador agrega Pokémon; el botón **Editar** de cada uno

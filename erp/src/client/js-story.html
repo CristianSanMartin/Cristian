@@ -31,7 +31,10 @@
     get(k, d) { try { return localStorage.getItem('story-' + k) || d; } catch (e) { return d; } },
     set(k, v) { try { localStorage.setItem('story-' + k, v); } catch (e) { /* sin almacenamiento: solo esta vez */ } },
   };
-  const vacio = () => ({ id: '', nombrePila: '', apellido: '', w: 0, l: 0, t: 0, principal: '', secundario: '' });
+  const vacio = () => ({ id: '', nombrePila: '', apellido: '', instagram: '', w: 0, l: 0, t: 0, principal: '', secundario: '' });
+  // El @ de Instagram es del cliente ligado al jugador (Clientes); al guardar la Story se actualiza allí.
+  const igDe = (clienteId) => { const c = (data().clientes || []).find((x) => x.id === clienteId); return c ? c.instagram || '' : ''; };
+  const arroba = (v) => { const s = String(v || '').trim().replace(/^@+/, '').replace(/\s+/g, ''); return s ? '@' + s : ''; };
   const st = { torneoId: null, ev: {}, top: [0, 1, 2, 3, 4].map(vacio), nombreModo: pref.get('nombreModo', 'full'), imgModo: pref.get('img', 'tint'), cambios: false };
 
   /** Carga el torneo elegido: datos del evento y los 5 primeros lugares con su récord y Pokémon. */
@@ -43,7 +46,7 @@
       const j = js[i];
       if (!j) return vacio();
       const partes = j.nombre.split(/\s+/);
-      return { id: j.id, nombrePila: j.nombrePila || partes[0] || '', apellido: j.nombrePila ? j.apellido : partes.slice(1).join(' '), w: j.w, l: j.l, t: j.t, principal: j.principal, secundario: j.secundario };
+      return { id: j.id, nombrePila: j.nombrePila || partes[0] || '', apellido: j.nombrePila ? j.apellido : partes.slice(1).join(' '), instagram: igDe(j.clienteId), w: j.w, l: j.l, t: j.t, principal: j.principal, secundario: j.secundario };
     });
     st.cambios = false;
     st.version = t ? t.actualizadoEn : '';
@@ -259,11 +262,19 @@
       ctx.lineTo(cx + 11, cy - 5); ctx.lineTo(cx + 23, cy - 15); ctx.lineTo(cx + 22, cy); ctx.closePath(); ctx.fill();
     }
     const name = displayName(p).toUpperCase() || '—';
-    fitFont(name, "800 {s}px 'Saira Condensed', 'Arial Narrow', sans-serif", 66, 215);
-    ctx.fillStyle = '#f1f1f1'; ctx.fillText(name, x + 206, y + 74);
-    ctx.font = '700 34px Montserrat, Arial, sans-serif';
+    // Con @ de Instagram: va arriba del nombre (ahí se pone la etiqueta al subir la historia) y todo baja un poco.
+    const ig = arroba(p.instagram);
+    if (ig) {
+      let s = 28, txt = ig;
+      do { ctx.font = '600 ' + s + 'px Montserrat, Arial, sans-serif'; s -= 2; } while (ctx.measureText(txt).width > 215 && s >= 18);
+      while (ctx.measureText(txt).width > 215 && txt.length > 4) txt = txt.slice(0, -2) + '…';
+      ctx.fillStyle = '#b9bcc1'; ctx.fillText(txt, x + 208, y + 40);
+    }
+    fitFont(name, "800 {s}px 'Saira Condensed', 'Arial Narrow', sans-serif", ig ? 58 : 66, 215);
+    ctx.fillStyle = '#f1f1f1'; ctx.fillText(name, x + 206, ig ? y + 96 : y + 74);
+    ctx.font = (ig ? '700 30px' : '700 34px') + ' Montserrat, Arial, sans-serif';
     ctx.fillStyle = i === 0 ? '#e3b43c' : i === 2 ? '#c9935a' : '#c4c6ca';
-    spaced(p.w + ' - ' + p.l + ' - ' + p.t, x + 208, y + 124, 6);
+    spaced(p.w + ' - ' + p.l + ' - ' + p.t, x + 208, ig ? y + 136 : y + 124, 6);
   }
   function drawFooter() {
     ctx.font = '600 22px Montserrat, Arial, sans-serif'; ctx.fillStyle = '#cfd0d2';
@@ -313,6 +324,7 @@
     return st.top.map((p, i) => '<tr' + (p.id ? '' : ' class="row-muted"') + '><td class="story-pos">' + (i + 1) + '</td>' +
       '<td class="story-txt"><input data-story="' + i + '|nombrePila" value="' + esc(p.nombrePila) + '" aria-label="Nombre ' + (i + 1) + '"' + (p.id ? '' : ' disabled') + '></td>' +
       '<td class="story-txt"><input data-story="' + i + '|apellido" value="' + esc(p.apellido) + '" aria-label="Apellido ' + (i + 1) + '"' + (p.id ? '' : ' disabled') + '></td>' +
+      '<td class="story-txt"><input data-story="' + i + '|instagram" value="' + esc(p.instagram) + '" placeholder="@usuario" maxlength="60" aria-label="Instagram ' + (i + 1) + '"' + (p.id ? '' : ' disabled') + '></td>' +
       ['w', 'l', 't'].map((k) => '<td class="story-num"><input type="number" min="0" step="1" data-story="' + i + '|' + k + '" value="' + p[k] + '" aria-label="' + { w: 'Victorias', l: 'Derrotas', t: 'Empates' }[k] + ' ' + (i + 1) + '"' + (p.id ? '' : ' disabled') + '></td>').join('') +
       '<td><select data-story="' + i + '|principal" aria-label="Pokémon principal ' + (i + 1) + '"' + (p.id ? '' : ' disabled') + '>' + opcionesPoke(p.principal, 'Elegir…') + '</select></td>' +
       '<td><select data-story="' + i + '|secundario" aria-label="Pokémon secundario ' + (i + 1) + '"' + (p.id ? '' : ' disabled') + '>' + opcionesPoke(p.secundario, 'Ninguno') + '</select></td></tr>').join('');
@@ -349,7 +361,7 @@
           '<div class="form-field"><label>Nombre que se muestra</label><select data-story-modo="nombre">' + GS.options([{ value: 'first', label: 'Solo nombre' }, { value: 'initial', label: 'Nombre + inicial' }, { value: 'full', label: 'Nombre completo' }], st.nombreModo) + '</select></div>' +
           '<div class="form-field"><label>Cómo se muestra el Pokémon</label><select data-story-modo="img">' + GS.options([{ value: 'tint', label: 'Silueta del color de la fila' }, { value: 'original', label: 'Imagen original' }], st.imgModo) + '</select></div>' +
         '</div></div>' +
-        '<h3 class="section-title">3 · Top 5 y Pokémon</h3><div class="panel story-card"><div class="table-wrap"><table class="data-table story-tabla"><thead><tr><th class="c-pos">#</th><th>Nombre</th><th>Apellido</th><th class="c-num center" title="Victorias">W</th><th class="c-num center" title="Derrotas">L</th><th class="c-num center" title="Empates">T</th><th>Pokémon principal</th><th>Secundario</th></tr></thead><tbody>' + filas() + '</tbody></table></div>' +
+        '<h3 class="section-title">3 · Top 5 y Pokémon</h3><div class="panel story-card"><div class="table-wrap"><table class="data-table story-tabla"><thead><tr><th class="c-pos">#</th><th>Nombre</th><th>Apellido</th><th title="Se guarda en la ficha del cliente">Instagram</th><th class="c-num center" title="Victorias">W</th><th class="c-num center" title="Derrotas">L</th><th class="c-num center" title="Empates">T</th><th>Pokémon principal</th><th>Secundario</th></tr></thead><tbody>' + filas() + '</tbody></table></div>' +
           '<p class="hint">Nombre, apellido y récord vienen del .tdf (TOM no guarda el mazo, por eso el Pokémon se elige aquí). Solo principal: ocupa todo el espacio; con secundario: 65/35 con corte inclinado. Un Pokémon sin imagen se muestra con su nombre.</p></div>' +
         '<h3 class="section-title">4 · Biblioteca de Pokémon</h3><div class="panel story-card">' +
           '<p class="hint">PNG con fondo transparente funciona mejor (sale como silueta del color de la fila). Una imagen con fondo, como la ilustración de una carta, se muestra completa como foto. Las imágenes se guardan en Drive y las ve todo el equipo.</p>' +
@@ -404,7 +416,7 @@
 
   GS.actions.storyGuardar = () => GS.mutate('storyTorneo', {
     id: st.torneoId, tipoEvento: st.ev.tipoEvento, temporada: st.ev.temporada, categoria: st.ev.categoria,
-    jugadores: st.top.filter((p) => p.id).map((p) => ({ id: p.id, nombrePila: p.nombrePila, apellido: p.apellido, w: p.w, l: p.l, t: p.t, principal: p.principal, secundario: p.secundario })),
+    jugadores: st.top.filter((p) => p.id).map((p) => ({ id: p.id, nombrePila: p.nombrePila, apellido: p.apellido, instagram: arroba(p.instagram), w: p.w, l: p.l, t: p.t, principal: p.principal, secundario: p.secundario })),
   }, 'Story guardada en el torneo').then(() => { st.cambios = false; GS.render(); }).catch((e) => GS.toast(e.message, true));
 
   GS.actions.storyDescargar = () => {
