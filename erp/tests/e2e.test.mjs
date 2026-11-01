@@ -318,6 +318,11 @@ test("venta desde Inventario: cantidad en la fila, descuento, comisión TUU, sto
     assert.equal(await page.locator("#nueva-venta").count(), 0, "Ventas es informativo: sin formulario");
     // La lista de OC parte cerrada y se despliega.
     assert.equal(await page.locator("#vt-tbody").isVisible(), false);
+    // Singles, torneos y otros también parte cerrada y se despliega.
+    assert.equal(await page.locator("#vm-tbody").isVisible(), false);
+    assert.match(await page.locator("#vm-resumen").textContent(), /ventas? · \$/);
+    await page.click('[data-action="verMonto"]');
+    assert.equal(await page.locator("#vm-tbody").isVisible(), true);
     await page.click('[data-action="verOc"]');
     const fila = page.locator("#vt-tbody tr.fila-compra", { hasText: "Maria Soto" });
     assert.match(await fila.textContent(), /Maria Soto.*Débito.*2.*\$49\.980.*Pagada/s);
