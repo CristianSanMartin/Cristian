@@ -265,10 +265,10 @@
     // Con @ de Instagram: va arriba del nombre (ahí se pone la etiqueta al subir la historia) y todo baja un poco.
     const ig = arroba(p.instagram);
     if (ig) {
-      let s = 28, txt = ig;
-      do { ctx.font = '600 ' + s + 'px Montserrat, Arial, sans-serif'; s -= 2; } while (ctx.measureText(txt).width > 215 && s >= 18);
+      let s = 22, txt = ig;
+      do { ctx.font = '600 ' + s + 'px Montserrat, Arial, sans-serif'; s -= 2; } while (ctx.measureText(txt).width > 215 && s >= 15);
       while (ctx.measureText(txt).width > 215 && txt.length > 4) txt = txt.slice(0, -2) + '…';
-      ctx.fillStyle = '#b9bcc1'; ctx.fillText(txt, x + 208, y + 40);
+      ctx.fillStyle = '#b9bcc1'; ctx.fillText(txt, x + 208, y + 44);
     }
     fitFont(name, "800 {s}px 'Saira Condensed', 'Arial Narrow', sans-serif", ig ? 58 : 66, 215);
     ctx.fillStyle = '#f1f1f1'; ctx.fillText(name, x + 206, ig ? y + 96 : y + 74);
