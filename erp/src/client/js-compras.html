@@ -565,9 +565,9 @@
       el.innerHTML =
         '<div class="page-head"><div><h1>Inventario</h1><p>El stock de cada producto, venga de la compra que venga. Despliega un producto para ver sus unidades una por una y marca las que vas a vender.</p></div>' +
         '<div class="btn-row">' + (GS.puede('operador') ? '<button class="btn secondary" data-action="agregarMontoVenta" title="Singles, torneo, bazar…: ventas que no descuentan unidades del inventario">' + GS.icon('plus', 2.4) + 'Venta por monto</button>' : '') +
-        '<button class="btn ghost" data-action="exportarInventario">' + GS.icon('download') + 'Exportar</button></div></div>' + tabs +
-        '<div class="filters-bar"><div class="search-box">' + GS.icon('search') + '<input type="text" data-filter="inventario.q" value="' + esc(f.q) + '" placeholder="Buscar producto..."></div>' +
-        '</div>' +
+        '<button class="btn ghost" data-action="exportarInventario">' + GS.icon('download') + 'Exportar</button></div></div>' +
+        // El buscador va en la misma fila de las pestañas (a la derecha), sin ocupar una fila propia.
+        tabs.replace(/<\/div>$/, '<div class="search-box tabs-buscar">' + GS.icon('search') + '<input type="text" data-filter="inventario.q" value="' + esc(f.q) + '" placeholder="Buscar producto..." aria-label="Buscar producto"></div></div>') +
         '<div id="inv-resumen"></div>' +
         '<div id="inv-venta"></div>' +
         '<div id="inv-acciones"></div>' +
