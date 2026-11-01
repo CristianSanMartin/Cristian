@@ -488,9 +488,12 @@
     { id: 'costo', label: 'Costo u. c/IVA', right: true, valor: (r) => r.costo, texto: (r) => fmt.money(r.costo * (1 + data().app.iva)),
       celda: (r) => {
         const ivaU = r.costo * data().app.iva;
-        return '<strong>' + fmt.money(r.costo + ivaU) + '</strong><div class="cell-dim">' + (r.unCosto
-          ? fmt.cost(r.lotes[0].costoNeto) + ' + ' + fmt.money(r.lotes[0].despachoUnidad) + ' desp.'
-          : fmt.money(r.costo) + ' neto (prom. ' + r.lotes.length + ' compras)') + ' + ' + fmt.money(ivaU) + ' IVA</div>';
+        // En la fila, una línea: neto + IVA. El desglose completo (despacho, promedio de compras) va en el título y en el detalle.
+        const desglose = (r.unCosto
+          ? fmt.cost(r.lotes[0].costoNeto) + ' neto + ' + fmt.money(r.lotes[0].despachoUnidad) + ' despacho'
+          : fmt.money(r.costo) + ' neto (promedio de ' + r.lotes.length + ' compras)') + ' + ' + fmt.money(ivaU) + ' IVA';
+        return '<span title="' + esc(desglose) + '"><strong>' + fmt.money(r.costo + ivaU) + '</strong><div class="cell-dim nowrap">' + fmt.money(r.costo) + ' + ' + fmt.money(ivaU) + ' IVA' +
+          (r.unCosto ? '' : ' · prom.') + '</div></span>';
       } },
     { id: 'precio', label: 'Precio venta', right: true, valor: (r) => r.precioVenta, texto: (r) => fmt.money(r.precioVenta), celda: (r) => (r.precioVenta ? fmt.money(r.precioVenta) : '—') },
     // Sin unidades disponibles no hay ganancia por proyectar: se muestra la ya obtenida.
@@ -596,13 +599,15 @@
         return '<tr class="fila-compra' + (open ? ' abierta' : '') + (r.disponible ? '' : ' row-muted') + '" data-action="verInventario" data-id="' + esc(r.productoId) + '" data-producto="' + esc(r.productoId) + '">' +
           '<td><span class="chev">' + (open ? '▾' : '▸') + '</span></td>' +
           colsInv.map((c) => '<td class="' + (c.right ? 'cell-num right ' : '') + (c.clase || '') + '">' + c.celda(r) + '</td>').join('') +
-          '<td><div class="row-actions">' + (vendible
-            ? '<input class="qty-input cant-venta" type="number" min="1" max="' + r.disponible + '" step="1" placeholder="Cant." data-cant-prod="' + esc(r.productoId) + '" aria-label="Cantidad a vender">' +
-              '<button class="btn small secondary" data-action="agregarProductoVenta" data-id="' + esc(r.productoId) + '">' + GS.icon('plus', 2.4) + 'Venta</button>' +
-              (GS.puede('admin') ? '<button class="btn small ghost" data-action="agregarAVentaExistente" data-id="' + esc(r.productoId) + '" title="Agregar unidades a una venta ya creada (OC)">→ OC</button>' : '') +
+          // Acciones en dos líneas fijas: vender arriba (cantidad + Venta) y lo demás abajo (→ OC, Salida, editar).
+          '<td><div class="inv-acciones">' + (vendible
+            ? '<div class="row-actions"><input class="qty-input cant-venta" type="number" min="1" max="' + r.disponible + '" step="1" placeholder="Cant." data-cant-prod="' + esc(r.productoId) + '" aria-label="Cantidad a vender">' +
+              '<button class="btn small secondary" data-action="agregarProductoVenta" data-id="' + esc(r.productoId) + '">' + GS.icon('plus', 2.4) + 'Venta</button></div>' : '') +
+          '<div class="row-actions">' + (vendible
+            ? (GS.puede('admin') ? '<button class="btn small ghost" data-action="agregarAVentaExistente" data-id="' + esc(r.productoId) + '" title="Agregar unidades a una venta ya creada (OC)">→ OC</button>' : '') +
               '<button class="btn small ghost" data-action="registrarSalida" data-id="' + esc(r.productoId) + '" title="Sacar del stock sin venta: uso interno de la tienda, premio, caja abierta o pérdida">Salida</button>'
             : '') +
-          (op ? GS.iconBtn('editarProducto', r.productoId, 'edit', 'Editar nombre, foto o precio') : '') + '</div></td></tr>' +
+          (op ? GS.iconBtn('editarProducto', r.productoId, 'edit', 'Editar nombre, foto o precio') : '') + '</div></div></td></tr>' +
           (open ? '<tr class="detalle-row"><td colspan="' + n + '">' + detalleProducto(r) + '</td></tr>' : '');
       };
       document.getElementById('inv-tbody').innerHTML = conDisp.length ? conDisp.map(fila).join('') : '<tr><td colspan="' + n + '">' + (rows.length
