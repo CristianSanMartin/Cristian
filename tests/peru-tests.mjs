@@ -43,6 +43,7 @@ const errors = [];
 page.on("pageerror", e => errors.push(e.message));
 await page.route("**/xlsx.full.min.js", r => r.fulfill({ path: XLSX_JS, contentType: "application/javascript" }));
 await page.goto("file://" + HTML);
+await page.click(".nav-desplegable"); // Perú parte plegado en el menú
 await page.click("button.tab[data-vista=peru]");
 const vistaVisible = await page.isVisible("#vistaPeru");
 await page.setInputFiles("#inSimpli", [f1, f2]);
@@ -58,6 +59,27 @@ const resumen = await page.evaluate(`["pRutas","pPeriferia","pDomingo","pTotal"]
 await page.selectOption("#pFiltro", "obs");
 const conObs = await page.$$eval("#peruBody tr", trs => trs.map(t => [t.children[0].textContent, t.children[1].textContent]));
 await page.selectOption("#pFiltro", "");
+// Filtro de columna tipo Excel en la liquidación por ruta: Zona = Periferia, ordenado por placa Z-A
+const cabPe = await page.$$eval("#peruHead th", ths => ths.map(t => t.textContent.replace(/[▾⧩▲▼]/g, "").trim()));
+await page.click('#peruHead button[aria-label="Filtrar y ordenar Zona"]');
+await page.click('.menu-filtro [data-todos]'); await page.click('.menu-filtro label:has-text("Periferia") input'); await page.click(".menu-filtro .ok");
+await page.click('#peruHead button[aria-label="Filtrar y ordenar Placa"]'); await page.click('.menu-filtro [data-o="-1"]');
+const filtroZona = await page.$$eval("#peruBody tr", trs => trs.map(t => t.children[4].textContent));
+const ordenPlacas = await page.$$eval("#peruBody tr", trs => trs.map(t => t.children[1].textContent));
+await page.click('#peruHead button[aria-label="Filtrar y ordenar Zona"]'); await page.click('.menu-filtro [data-limpiar]');
+await page.evaluate(`ordenPe.k=""; renderPeru()`);
+const filasSinFiltro = await page.$$eval("#peruBody tr", trs => trs.length);
+// Al pinchar una ruta se despliega su detalle de despachos (hoja PERU VISITAS)
+await page.click('#peruBody tr.ruta-pe[data-k="2026-09-12|AAA111"] td:nth-child(2)');
+const detRuta = await page.evaluate(`(()=>{ const box=document.querySelector("#peruBody .det-ruta-box"); return box?[box.querySelector(".det-ruta-res").textContent.replace(/\\s+/g," ").trim(),
+  [...box.querySelectorAll("table.det-ruta tbody tr")].map(t=>[t.children[1].textContent,t.children[2].textContent,t.children[3].textContent]),
+  almacenLocal.hojas["PERU VISITAS"][0], almacenLocal.hojas["PERU VISITAS"].length-1]:null; })()`);
+await page.click('#peruBody tr.ruta-pe[data-k="2026-09-12|AAA111"] td:nth-child(2)');
+const detCerrado = await page.$$eval("#peruBody .det-ruta-box", x => x.length);
+// Botón de ajuste en Factura Sodimac abre el mismo editor
+await page.click('#peruBody button[data-k="2026-09-12|AAA111"]');
+const ajFactura = await page.evaluate(`[!document.getElementById("pAjuste").classList.contains("hidden"),!!document.querySelector("#pAjuste #ajDia"),document.querySelector("#pAjuste b").textContent]`);
+await page.click("#pAjuste >> text=Cancelar");
 const pagos = await page.evaluate(`Object.fromEntries(rutasMesPeru().rutas.map(r=>[r.fecha+" "+r.placa,[r.pago,r.margen,r.llave]]))`);
 const resumenPago = await page.evaluate(`["pPago","pMargen"].map(id=>document.getElementById(id).textContent)`);
 const [dl] = await Promise.all([page.waitForEvent("download"), page.click("text=Descargar liquidación")]);
@@ -74,6 +96,7 @@ const resumenQ1 = await resumenQ();
 await page.selectOption("#qFiltro", "fal");
 const conFallidos = await page.$$eval("#qBody tr", trs => trs.map(t => [t.children[0].textContent, t.children[1].textContent, t.children[5].textContent]));
 await page.selectOption("#qFiltro", "");
+await page.click("#vistaPeruPago .conductores-card summary");
 await page.fill('#qConductores input[data-p=AAA111][data-k=nombre]', "JUAN PEREZ");
 await page.fill('#qConductores input[data-p=AAA111][data-k=doc]', "DNI 123");
 await page.click("text=Guardar conductores"); await page.waitForTimeout(200);
@@ -89,8 +112,14 @@ await page.selectOption("#ajCobro", "PERIFERIA/LEJANO"); await page.selectOption
 await page.click("text=Guardar ajuste"); await page.waitForTimeout(200);
 const ajustada = await page.evaluate(`(r=>[r.zonaCobro,r.total,r.pago,r.totalCalc,r.pagoCalc,r.obsTarifa,r.llave])(peruDatos.rutas.find(r=>r.fecha==="2026-09-12"&&r.placa==="AAA111"))`);
 const hojaAj = await page.evaluate(`almacenLocal.hojas["PERU AJUSTES"]`);
+// Ajuste de feriado: un día normal marcado como feriado usa tarifa domingo, y uno domingo marcado "no" usa regular
+const ferAj = await page.evaluate(`(()=>{ const t=(r,dia)=>{ const k=r.fecha+"|"+r.placa, prev=ajustesPe.get(k); ajustesPe.set(k,{zonaCobro:"",zonaPago:"",motivo:"t",dia});
+  const x=tarificarPeru(r); prev?ajustesPe.set(k,prev):ajustesPe.delete(k); return [x.detalle,x.tipoRuta,x.total,x.pago]; };
+  const n=peruDatos.rutas.find(r=>!recargoPeru(r.fecha)&&r.zona==="Metropolitana"&&r.unidad==="F13"), d=peruDatos.rutas.find(r=>recargoPeru(r.fecha)==="Tarifa Domingo"&&r.zona==="Metropolitana"&&r.unidad==="F13");
+  abrirAjustePe(n.fecha+"|"+n.placa); const ops=[...document.querySelectorAll("#ajDia option")].map(o=>o.value); document.getElementById("qAjuste").classList.add("hidden");
+  return [t(n,"FERIADO"),t(d,"REGULAR"),ops]; })()`);
 const resumenQ1b = await resumenQ();
-await page.selectOption("#qEstado", "Enviado al transporte"); await page.waitForTimeout(200);
+await page.evaluate(`cambiarEstadoQuincenaPe("Enviado al transporte")`); await page.waitForTimeout(200);
 const hojaQuin = await page.evaluate(`almacenLocal.hojas["PERU QUINCENAS"].slice(1).map(r=>r.slice(0,2))`);
 const correo = await page.inputValue("#qCorreo");
 const [dlQ] = await Promise.all([page.waitForEvent("download"), page.click("text=Descargar detalle quincena")]);
@@ -98,7 +127,7 @@ const outQ = path.join(tmp, "q_out.xlsx"); await dlQ.saveAs(outQ);
 const nombreQ = dlQ.suggestedFilename();
 // Recargar desde las hojas conserva ajustes, descuentos, conductores y estado
 await page.evaluate("recargarPeru()"); await page.waitForTimeout(200);
-const trasRecargarPago = [await resumenQ(), await page.inputValue("#qEstado"), await page.evaluate(`peruDatos.rutas.find(r=>r.fecha==="2026-09-12"&&r.placa==="AAA111").pago`)];
+const trasRecargarPago = [await resumenQ(), await page.evaluate(`quincenasPe["2026-09-Q1"].estado`), await page.evaluate(`peruDatos.rutas.find(r=>r.fecha==="2026-09-12"&&r.placa==="AAA111").pago`)];
 
 // ---------- Cuadre y KPI ----------
 await page.click("button.tab[data-vista=peruCuadre]");
@@ -170,6 +199,24 @@ const antesRecarga = await page.evaluate(`peruDatos.rutas.find(r=>r.fecha==="202
 await page.setInputFiles("#inSimpli", [f1, f2]);
 await page.waitForFunction(`peruDatos.rutas.find(r=>r.fecha==="2026-09-10"&&r.placa==="AAA111").zona==="Periferia"`);
 const trasRecargaSimpli = await ruta("2026-09-10", "AAA111");
+// Estibas y salvatruncos: ventana bajo la liquidación por ruta, hoja PERU ESTIBAS, entran y salen del registro por el mismo valor
+await page.click("button.tab[data-vista=peru]"); await page.selectOption("#pMes", "2026-09");
+const margenAntes = await page.evaluate(`mesCuadrePe("2026-09").margen`);
+for (const [fecha, placa, tipo, reserva, codigo, apr, valor] of [["2026-09-25", "CMK 898", "ESTIBA", "MC EST F 2507", "25195982", "HECTOR", "50"], ["2026-09-03", "aaa111", "SALVATRUNCO", "", "25173776", "JESSENIA", "60"]]) {
+  await page.fill("#esFecha", fecha); await page.fill("#esPlaca", placa); await page.selectOption("#esTipo", tipo); await page.fill("#esReserva", reserva);
+  await page.fill("#esCodigo", codigo); await page.fill("#esAprobador", apr); await page.fill("#esValor", valor);
+  await page.evaluate(`agregarEstibaPe()`); await page.waitForTimeout(200);
+}
+const estTabla = await page.$$eval("#esBody tr", trs => trs.map(t => [...t.children].slice(0, 7).map(c => c.textContent)));
+const estHoja = await page.evaluate(`almacenLocal.hojas["PERU ESTIBAS"].map(r=>r.slice(1))`);
+const estCuadre = await page.evaluate(`(d=>[d.estibas,d.extEnt,d.extSal,d.margen])(mesCuadrePe("2026-09"))`);
+const estRegistro = await page.evaluate(`lineasRegistroPe(["2026-09"]).filter(l=>l.id.includes("|EST")).map(l=>[l.detalle,l.ent,l.sal])`);
+const [descEst] = await Promise.all([page.waitForEvent("download"), page.evaluate(`descargarEstibasPe()`)]);
+const fEst = path.join(tmp, "est.xlsx"); await descEst.saveAs(fEst);
+const libroEst = XLSX.utils.sheet_to_json(XLSX.readFile(fEst).Sheets["Hoja 3"], { header: 1, raw: false, dateNF: "dd-mm-yyyy" });
+await page.selectOption("#pMes", "2026-03").catch(() => {});
+await page.evaluate(`quitarEstibaPe(estibasPe.find(x=>x.tipo==="SALVATRUNCO").id)`); await page.waitForTimeout(200);
+const estQuitar = await page.evaluate(`[estibasPe.length, almacenLocal.hojas["PERU ESTIBAS"].length-1]`);
 // Liquidación de cobro para días sin SIMPLI (meses antiguos): el 10-09 ya tiene SIMPLI y se omite
 const fLiq = escribir([["LIQUIDACIÓN SERVICIOS MARZO 2026"], LH,
   [new Date("2026-03-30T00:00:00"), "JOINT PERU S.A.C.", "BTZ753", "F13", 5, "COMAS", "Metropolitana", 420, "", "", 420],
@@ -217,6 +264,13 @@ check("SIMPLI corta 'SAN JUAN DE'", rutas["2026-09-30 AAA111"].slice(3, 6), ["SA
 check("Guardado en PERU RUTAS y recarga sin duplicar", [hoja, hoja2], [6, [6, 6]]);
 check("Resumen", resumen, ["6", "1", "1", "S/ 2,866"]);
 check("Filtro con observación", conObs, [["12-09-2026", "AAA111"]]);
+check("Columnas de la liquidación sin puntos ni entregados", cabPe, ["Fecha","Placa","Unidad","Distrito","Zona","Tarifa","Adicional","Valor total","Pago transporte","Margen","Observación","Ajuste"]);
+check("Filtro de columna Zona = Periferia", [filtroZona.length, filtroZona.every(z => z === "Periferia"), filtroZona.length === Number(resumen[1])], [Number(resumen[1]), true, true]);
+check("Orden Z-A por placa", ordenPlacas, [...ordenPlacas].sort().reverse());
+check("Borrar filtro de columna", filasSinFiltro, Number(resumen[0]));
+check("Detalle de la ruta al pincharla", [...detRuta, detCerrado], ["2 despachos1 entregados1 fallidos Zona cobrada: Metropolitana (COMAS)",
+  [["Fallido","PUENTE PIEDRA","Periferia"],["Entregado","COMAS","Metropolitana"]],["FECHA","PLACA","ID VISITA","DIRECCION","DISTRITO","ESTADO","MOTIVO"],10,0]);
+check("Ajuste desde Factura Sodimac", ajFactura, [true, true, "Ajuste 12-09-2026 AAA111"]);
 check("Nombre de la liquidación", nombre, "Liquidacion JOINT PERU S.A.C. UM SODIMAC - 09SEPTIEMBRE - 2026.xlsx");
 check("Formato de la liquidación", [wb.SheetNames[0], salida[0], salida[2].slice(1, 9), salida.length, ws["K2"].f, ws["K8"].f],
   ["LIQUIDACIÓN SERVICIOS", LH, ["JOINT PERU S.A.C.", "AAA111", "F13", 2, "COMAS", "Metropolitana", 420, ""], 8, "SUM(H2:I2)", "SUM(K2:K7)"]);
@@ -232,7 +286,8 @@ check("Descuento y otro pago guardados", hojaMov, 2);
 check("Ajuste cambia cobro y pago y guarda lo calculado", ajustada, ["Periferia", 610, 500, 420, 380,
   "Punto en PUENTE PIEDRA no entregado (Distrito errado): se cobra Metropolitana; Ajuste: cobrada como Periferia y pagada como Periferia (Validado por Sodimac)".split("; ").slice(1).join("; "),
   "CT ATLANTIS SODIMAC;RUTA REGULAR;13M3;PERIFERIA/LEJANO"]);
-check("Hoja PERU AJUSTES", hojaAj, [["FECHA", "PLACA", "ZONA COBRO", "ZONA PAGO", "MOTIVO"], ["2026-09-12", "AAA111", "Periferia", "Periferia", "Validado por Sodimac"]]);
+check("Ajuste de feriado por ruta", ferAj, [["Tarifa Feriado","RUTA DOMINGO",546,494],["","RUTA REGULAR",420,380],["","FERIADO","REGULAR"]]);
+check("Hoja PERU AJUSTES", hojaAj, [["FECHA", "PLACA", "ZONA COBRO", "ZONA PAGO", "MOTIVO", "TARIFA DIA"], ["2026-09-12", "AAA111", "Periferia", "Periferia", "Validado por Sodimac", ""]]);
 check("Resumen con ajuste, descuento y otros pagos", resumenQ1b, ["5", "S/ 2,294.00", "S/ 2,706.92", "S/ 100.00", "S/ 2,606.92", "S/ 1,000.00"]);
 check("Estado de la quincena", hojaQuin, [["2026-09-Q1", "Enviado al transporte"]]);
 check("Correo", [correo.includes("entre los días 01 al 15 de Septiembre del año 2026"), correo.includes("PAGOS EN EXCESO PERIODOS ANTERIORES    S/. 100,00"),
@@ -271,6 +326,15 @@ check("Fecha sin tarifa vigente", sinTarifa, [null, null, "Sin tarifa de cobro n
 check("Feriado nuevo", [conFeriado, feriadoEnHoja, feriados2025], [[420, 126, "Tarifa Feriado", 546, 494], true, ["2026", "2025"]]);
 check("Quitar feriado", sinFeriado, [420, null, "", 420, 380]);
 check("Distrito cambia de zona al recargar SIMPLI", [comasHoja, antesRecarga, trasRecargaSimpli], ["Periferia", "Metropolitana", [610, null, "", 610, 500]]);
+check("Estibas: tabla del mes", estTabla, [["03-09-2026", "AAA111", "SALVATRUNCO", "", "25173776", "JESSENIA", "S/ 60"],
+  ["25-09-2026", "CMK898", "ESTIBA", "MC EST F 2507", "25195982", "HECTOR", "S/ 50"], ["Total Septiembre 2026 (2)", "S/ 110", ""]]);
+check("Estibas: hoja PERU ESTIBAS", estHoja, [["FECHA", "PLACA", "TIPO DE SERVICIO", "RESERVA", "CODIGO", "APROBADOR SODIMAC", "VALOR", "OBS"],
+  ["2026-09-03", "AAA111", "SALVATRUNCO", "", 25173776, "JESSENIA", 60, ""], ["2026-09-25", "CMK898", "ESTIBA", "MC EST F 2507", 25195982, "HECTOR", 50, ""]]);
+check("Estibas: entran y salen por el mismo valor (margen igual)", estCuadre, [110, 110, 110, margenAntes]);
+check("Estibas: líneas del registro", estRegistro, [["ESTIBAS Y SALVATRUNCOS SEPTIEMBRE 2026", 110, 0], ["Estibas y salvatruncos | Transporte", 0, 110]]);
+check("Estibas: Excel para Sodimac", [descEst.suggestedFilename(), libroEst[0], libroEst[1]], ["Estibas-Salvatruncos JOINT PERU S.A.C. UM SODIMAC - 09SEPTIEMBRE - 2026.xlsx",
+  ["Fecha", "Nombre de su EMPRESA", "Placa", "Tipo de Servicio", "Reserva", "Código", "AprobadorSodimac", "Valor", "Obs"], ["03-09-2026", "JOINT PERU S.A.C.", "AAA111", "SALVATRUNCO", "", "25173776", "JESSENIA", "60", ""]]);
+check("Estibas: quitar", estQuitar, [1, 1]);
 check("Liquidación: rutas de días sin SIMPLI", liqRutas, [["2026-03-30", "BTZ753", "F13", 5, "COMAS", "Metropolitana", 420, 380],
   ["2026-03-31", "BTZ753", "F20", 7, "CARABAYLLO", "Periferia", 640, 540], ["2026-03-31", "XYZ999", "F13", 4, "LIMA", "Metropolitana", 420, 380]]);
 check("Liquidación: aviso y día con SIMPLI respetado", [liqAviso, liqSep], ["3 rutas de 2 días agregadas desde la liquidación; 1 rutas omitidas porque su día ya tiene SIMPLI. Vista previa: los datos se guardan solo mientras la página esté abierta.", ["JOINT-AAA111-13M3"]]);

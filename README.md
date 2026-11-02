@@ -74,6 +74,11 @@ Sección "Cuadre y KPI" del grupo Perú, por mes (hoja PERU FACTURAS para las fa
 - **Margen real** (neto): cobrado (factura o liquidado) menos pago al transporte, más descuentos recuperados sin IGV, menos otros pagos.
 - **KPI:** rutas y rutas por placa, % periferia, % domingo o feriado, puntos por ruta, % entrega efectiva, ingreso, costo y margen por ruta, margen % y días del cierre de quincena al pago; tendencia de los últimos 6 meses.
 
+### Estibas y salvatruncos
+Ventana bajo "Liquidación por ruta" en Factura Sodimac para registrar estibas y salvatruncos del mes (fecha, placa, tipo de servicio, reserva, código, aprobador Sodimac, valor sin IGV y observación). Se guardan en la hoja PERU ESTIBAS.
+- Son pagos adicionales al transporte que se cobran a Sodimac: en el registro de entradas y salidas suman una entrada (cobro) y una salida (pago al transporte) por el mismo valor, así que no cambian el margen.
+- "Descargar estibas y salvatruncos" genera el Excel del mes con el formato que se envía a Sodimac.
+
 ### Pesos chilenos
 Los resúmenes y KPI de Perú (Cobro Sodimac, Pago transporte y Cuadre y KPI) muestran también el monto en pesos chilenos. La data gestionada, las tablas por ruta y los Excel siguen en soles.
 - El tipo de cambio diario sol a peso se guarda en la hoja PERU TIPO CAMBIO. Al abrir la web, `tipoCambioPeru` (Code.gs) completa los días que faltan con `GOOGLEFINANCE("CURRENCY:PENCLP")`, sin permisos nuevos.
