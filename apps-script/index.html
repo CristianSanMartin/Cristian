@@ -157,7 +157,8 @@
     #peruBody tr.ruta-pe { cursor:pointer; }
     #peruBody tr.ruta-pe.abierta td { background:var(--accent-soft); }
     #peruBody tr.det-ruta-fila > td { background:#fff; white-space:normal; padding:0 0 4px; position:static; box-shadow:none; width:auto; }
-    .det-ruta-box { position:sticky; left:0; max-width:1080px; margin:6px 10px 10px; padding:12px 14px; border:1px solid var(--accent-line); border-radius:12px; background:#fff; }
+    #peruHead th { z-index:3; } #peruHead th:last-child { z-index:4; }
+    .det-ruta-box { position:sticky; left:0; z-index:0; max-height:380px; overflow:auto; max-width:1080px; margin:6px 10px 10px; padding:12px 14px; border:1px solid var(--accent-line); border-radius:12px; background:#fff; }
     .det-ruta-res { display:flex; flex-wrap:wrap; gap:18px; margin-bottom:10px; font-size:13px; }
     table.det-ruta th { position:static; background:var(--light); color:var(--dark); }
     #peruBody table.det-ruta td { white-space:normal; position:static; box-shadow:none; width:auto; min-width:0; max-width:none; background:transparent; }
@@ -2071,7 +2072,7 @@ function detalleRutaPe(r){
   const vs=visitasPe.get(r.fecha+"|"+r.placa)||[];
   if(!vs.length) return `<p class="nota">${r.vehiculo===VEH_LIQ_PE?"Ruta cargada desde la liquidación de cobro: no trae el detalle de despachos.":"Sin detalle de despachos guardado: vuelve a cargar el reporte de Simply de este día para verlo."}</p>`;
   const ent=vs.filter(v=>v.entregada).length, zonaV=v=>{ const c=DISTRITOS_PE[v.dist]; return c==="PERIFERIA/LEJANO"?`<span class="badge badge-warning">Periferia</span>`:c?"Metropolitana":`<span class="badge badge-error">Sin zona</span>`; };
-  const orden=[...vs].sort((a,b)=>(b.entregada-a.entregada)||a.dist.localeCompare(b.dist));
+  const orden=[...vs].sort((a,b)=>(a.entregada-b.entregada)||a.dist.localeCompare(b.dist)); // fallidos primero
   return `<div class="det-ruta-res"><span><b>${vs.length}</b> despachos</span><span class="okc"><b>${ent}</b> entregados</span><span class="${vs.length-ent?"errc":""}"><b>${vs.length-ent}</b> fallidos</span>
       <span>Zona cobrada: <b>${esc(r.zonaCobro)}</b>${r.distrito?` (${esc(r.distrito)})`:""}</span></div>
     <table class="det-ruta"><thead><tr><th>#</th><th>Estado</th><th>Distrito</th><th>Periferia</th><th>Dirección</th><th>Motivo</th><th>ID visita</th></tr></thead><tbody>${orden.map((v,i)=>`<tr>

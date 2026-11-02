@@ -251,7 +251,7 @@ check("Filtro de columna Zona = Periferia", [filtroZona.length, filtroZona.every
 check("Orden Z-A por placa", ordenPlacas, [...ordenPlacas].sort().reverse());
 check("Borrar filtro de columna", filasSinFiltro, Number(resumen[0]));
 check("Detalle de la ruta al pincharla", [...detRuta, detCerrado], ["2 despachos1 entregados1 fallidos Zona cobrada: Metropolitana (COMAS)",
-  [["Entregado","COMAS","Metropolitana"],["Fallido","PUENTE PIEDRA","Periferia"]],["FECHA","PLACA","ID VISITA","DIRECCION","DISTRITO","ESTADO","MOTIVO"],10,0]);
+  [["Fallido","PUENTE PIEDRA","Periferia"],["Entregado","COMAS","Metropolitana"]],["FECHA","PLACA","ID VISITA","DIRECCION","DISTRITO","ESTADO","MOTIVO"],10,0]);
 check("Ajuste desde Factura Sodimac", ajFactura, [true, true, "Ajuste 12-09-2026 AAA111"]);
 check("Nombre de la liquidación", nombre, "Liquidacion JOINT PERU S.A.C. UM SODIMAC - 09SEPTIEMBRE - 2026.xlsx");
 check("Formato de la liquidación", [wb.SheetNames[0], salida[0], salida[2].slice(1, 9), salida.length, ws["K2"].f, ws["K8"].f],
