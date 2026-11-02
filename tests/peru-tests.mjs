@@ -69,6 +69,13 @@ const ordenPlacas = await page.$$eval("#peruBody tr", trs => trs.map(t => t.chil
 await page.click('#peruHead button[aria-label="Filtrar y ordenar Zona"]'); await page.click('.menu-filtro [data-limpiar]');
 await page.evaluate(`ordenPe.k=""; renderPeru()`);
 const filasSinFiltro = await page.$$eval("#peruBody tr", trs => trs.length);
+// Al pinchar una ruta se despliega su detalle de despachos (hoja PERU VISITAS)
+await page.click('#peruBody tr.ruta-pe[data-k="2026-09-12|AAA111"] td:nth-child(2)');
+const detRuta = await page.evaluate(`(()=>{ const box=document.querySelector("#peruBody .det-ruta-box"); return box?[box.querySelector(".det-ruta-res").textContent.replace(/\\s+/g," ").trim(),
+  [...box.querySelectorAll("table.det-ruta tbody tr")].map(t=>[t.children[1].textContent,t.children[2].textContent,t.children[3].textContent]),
+  almacenLocal.hojas["PERU VISITAS"][0], almacenLocal.hojas["PERU VISITAS"].length-1]:null; })()`);
+await page.click('#peruBody tr.ruta-pe[data-k="2026-09-12|AAA111"] td:nth-child(2)');
+const detCerrado = await page.$$eval("#peruBody .det-ruta-box", x => x.length);
 // Botón de ajuste en Factura Sodimac abre el mismo editor
 await page.click('#peruBody button[data-k="2026-09-12|AAA111"]');
 const ajFactura = await page.evaluate(`[!document.getElementById("pAjuste").classList.contains("hidden"),!!document.querySelector("#pAjuste #ajDia"),document.querySelector("#pAjuste b").textContent]`);
@@ -243,6 +250,8 @@ check("Columnas de la liquidación sin puntos ni entregados", cabPe, ["Fecha","P
 check("Filtro de columna Zona = Periferia", [filtroZona.length, filtroZona.every(z => z === "Periferia"), filtroZona.length === Number(resumen[1])], [Number(resumen[1]), true, true]);
 check("Orden Z-A por placa", ordenPlacas, [...ordenPlacas].sort().reverse());
 check("Borrar filtro de columna", filasSinFiltro, Number(resumen[0]));
+check("Detalle de la ruta al pincharla", [...detRuta, detCerrado], ["2 despachos1 entregados1 fallidos Zona cobrada: Metropolitana (COMAS)",
+  [["Entregado","COMAS","Metropolitana"],["Fallido","PUENTE PIEDRA","Periferia"]],["FECHA","PLACA","ID VISITA","DIRECCION","DISTRITO","ESTADO","MOTIVO"],10,0]);
 check("Ajuste desde Factura Sodimac", ajFactura, [true, true, "Ajuste 12-09-2026 AAA111"]);
 check("Nombre de la liquidación", nombre, "Liquidacion JOINT PERU S.A.C. UM SODIMAC - 09SEPTIEMBRE - 2026.xlsx");
 check("Formato de la liquidación", [wb.SheetNames[0], salida[0], salida[2].slice(1, 9), salida.length, ws["K2"].f, ws["K8"].f],
