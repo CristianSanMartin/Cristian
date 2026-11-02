@@ -534,13 +534,12 @@
           <div class="filters" style="margin-top:12px">
             <select id="rgPeriodo"></select>
             <select id="rgTipo" onchange="presetRegistroPe()">
-              <option value="ENTRADA|Estibas y salvatruncos">Estibas y salvatruncos (entrada)</option>
               <option value="SALIDA|Villamuzio (contadora)">Villamuzio, contadora (salida)</option>
               <option value="SALIDA|Prontopago 1,5%">Prontopago 1,5% (salida)</option>
               <option value="ENTRADA|">Otra entrada</option>
               <option value="SALIDA|">Otra salida</option>
             </select>
-            <input id="rgDetalle" placeholder="Detalle" value="Estibas y salvatruncos" style="flex:1 1 200px">
+            <input id="rgDetalle" placeholder="Detalle" value="Villamuzio (contadora)" style="flex:1 1 200px">
             <input id="rgMonto" type="number" step="any" placeholder="Monto S/" style="width:110px">
             <input id="rgFactura" placeholder="N° factura" style="width:110px">
             <label>Llegada <input id="rgFecha" type="date"></label>
@@ -607,7 +606,7 @@
   <div id="vistaPeru" class="hidden">
     <div>
       <div class="card barra-vista">
-        <label class="barra-campo">Mes<select id="pMes" onchange="renderPeru()"><option value="">Sin datos</option></select></label>
+        <label class="barra-campo">Mes<select id="pMes" onchange="renderPeru();renderEstibasPe()"><option value="">Sin datos</option></select></label>
         <button id="cargaSimpli" class="button" style="margin:0" onclick="document.getElementById('inSimpli').click()">Cargar Rutas de Simply</button>
         <input id="inSimpli" type="file" accept=".xlsx,.xls" multiple>
         <button id="cargaLiqPe" class="button secondary" style="margin:0" title="Para meses antiguos: el Excel de liquidación enviado a Sodimac. Solo agrega los días que no tienen rutas de SIMPLI; si después cargas SIMPLI de esos días, lo reemplaza." onclick="document.getElementById('inLiqPe').click()">Cargar liquidación (días sin Simply)</button>
@@ -648,6 +647,31 @@
           <div class="actions">
             <button class="button green" onclick="descargarLiquidacionPeru()">Descargar liquidación</button>
           </div>
+        </div>
+        <div class="card">
+          <h2>Estibas y salvatruncos</h2>
+          <p class="nota" style="margin-top:-6px">Pagos adicionales del mes: se cobran a Sodimac y se pagan directo al transporte. Valor sin IGV. Hoja PERU ESTIBAS.</p>
+          <div class="filters">
+            <input id="esFecha" type="date" title="Fecha">
+            <input id="esPlaca" list="esPlacas" placeholder="Placa" style="width:100px"><datalist id="esPlacas"></datalist>
+            <select id="esTipo"><option>ESTIBA</option><option>SALVATRUNCO</option></select>
+            <input id="esReserva" placeholder="Reserva" style="width:130px">
+            <input id="esCodigo" placeholder="Código" style="width:110px">
+            <input id="esAprobador" placeholder="Aprobador Sodimac" style="width:140px">
+            <input id="esValor" type="number" min="0" step="any" placeholder="Valor S/" style="width:100px">
+            <input id="esObs" placeholder="Obs" style="flex:1 1 140px">
+            <button class="button" style="margin:0" onclick="agregarEstibaPe()">Agregar</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Fecha</th><th>Placa</th><th>Tipo de servicio</th><th>Reserva</th><th>Código</th><th>Aprobador Sodimac</th><th>Valor</th><th>Obs</th><th></th></tr></thead>
+              <tbody id="esBody"></tbody>
+            </table>
+          </div>
+          <div class="actions">
+            <button class="button green" onclick="descargarEstibasPe()">Descargar estibas y salvatruncos</button>
+          </div>
+          <p id="estadoEstibasPe" class="nota" role="status"></p>
         </div>
       </main>
     </div>
@@ -1805,7 +1829,7 @@ const almacenLocal={
   hojas:{},
   guardarLote(ops){ const res={}; for(const op of ops){ this.hojas[op.hoja]=combinarHoja(this.hojas[op.hoja]||[],op); res[op.hoja]=Math.max(this.hojas[op.hoja].length-1,0); } return res; },
   tipoCambioPeru(){ return (this.hojas["PERU TIPO CAMBIO"]||[]).slice(1); },
-  leerDatos(){ const h={}; for(const n of ["REGISTRO","GEOSORT","VIAJES PAGADOS","PERU RUTAS","PERU TARIFAS","PERU DISTRITOS","PERU FERIADOS","PERU AJUSTES","PERU MOVIMIENTOS","PERU CONDUCTORES","PERU QUINCENAS","PERU COSTOS FIJOS","PERU FACTURAS","PERU REGISTRO","PERU VISITAS"]) h[n]=JSON.parse(JSON.stringify(this.hojas[n]||[])); return {hojas:h,url:""}; }
+  leerDatos(){ const h={}; for(const n of ["REGISTRO","GEOSORT","VIAJES PAGADOS","PERU RUTAS","PERU TARIFAS","PERU DISTRITOS","PERU FERIADOS","PERU AJUSTES","PERU MOVIMIENTOS","PERU CONDUCTORES","PERU QUINCENAS","PERU COSTOS FIJOS","PERU FACTURAS","PERU REGISTRO","PERU VISITAS","PERU ESTIBAS"]) h[n]=JSON.parse(JSON.stringify(this.hojas[n]||[])); return {hojas:h,url:""}; }
 };
 function llamar(fn,...args){
   return new Promise((ok,mal)=>{
@@ -2580,12 +2604,14 @@ function mesCuadrePe(mes){
   }).filter(d=>d.rutas.length);
   const pago=qs.reduce((s,d)=>s+d.neto,0), desc=r2(qs.reduce((s,d)=>s+d.totDesc,0)/(1+IGV_PE)), otros=qs.reduce((s,d)=>s+d.totOtros,0);
   const man=registroPe.filter(x=>x.id.startsWith("M")&&x.periodo===mes);
-  const extEnt=man.filter(x=>x.tipo==="ENTRADA").reduce((s,x)=>s+(x.monto||0),0), extSal=man.filter(x=>x.tipo==="SALIDA").reduce((s,x)=>s+(x.monto||0),0);
+  // Estibas y salvatruncos: se cobran a Sodimac y se pagan igual al transporte (entran y salen por el mismo valor)
+  const estibas=r2(estibasPe.filter(x=>x.fecha.slice(0,7)===mes).reduce((s,x)=>s+x.valor,0));
+  const extEnt=estibas+man.filter(x=>x.tipo==="ENTRADA").reduce((s,x)=>s+(x.monto||0),0), extSal=estibas+man.filter(x=>x.tipo==="SALIDA").reduce((s,x)=>s+(x.monto||0),0);
   const costo=pago-desc+otros+extSal, margen=cobrado+extEnt-costo;
   const placas={}; rutas.forEach(r=>placas[r.placa]=(placas[r.placa]||0)+1);
   const puntos=rutas.reduce((s,r)=>s+(r.puntos||0),0), ent=rutas.reduce((s,r)=>s+(r.entregados||0),0), n=rutas.length;
   const dias=qs.map(d=>d.dias).filter(x=>x!==null);
-  return {mes,extEnt,extSal,rutas,calc,liq,ajustes:rutas.filter(r=>r.ajuste&&r.total!==r.totalCalc),fc,cobrado,difCobro:fc&&fc.monto!==null?r2(fc.monto-liq):null,qs,pago,desc,otros,costo,margen,
+  return {mes,estibas,extEnt,extSal,rutas,calc,liq,ajustes:rutas.filter(r=>r.ajuste&&r.total!==r.totalCalc),fc,cobrado,difCobro:fc&&fc.monto!==null?r2(fc.monto-liq):null,qs,pago,desc,otros,costo,margen,
     kpi:{rutas:n,placas,perif:n?rutas.filter(r=>r.zonaCobro==="Periferia").length/n:0,dom:n?rutas.filter(r=>r.detalle).length/n:0,ptsRuta:n?puntos/n:0,entrega:puntos?ent/puntos:0,
       ingresoRuta:n?cobrado/n:0,costoRuta:n?costo/n:0,margenRuta:n?margen/n:0,margenPct:cobrado?margen/cobrado:0,diasPago:dias.length?dias.reduce((a,b)=>a+b,0)/dias.length:null}};
 }
@@ -2676,6 +2702,61 @@ async function guardarFacturaPe(tipo,periodo,id){
     av.textContent=`Factura ${tipo==="COBRO"?"a Sodimac de "+nombreMes(periodo):"del transporte, "+nombreQuincena(periodo)} guardada.`+(EN_APPS_SCRIPT?" Guardado en Google Sheets.":" Vista previa: se guarda solo mientras la página esté abierta.");
   }catch(err){ av.textContent=""; mostrarError("No se pudo guardar en Google Sheets.\n\n"+(err.message||err)); }
 }
+// ---------- Perú: estibas y salvatruncos (hoja PERU ESTIBAS) ----------
+// Pagos adicionales al transporte que se cobran a Sodimac (formato "Estibas-Salvatruncos JOINT PERU S.A.C. UM SODIMAC - MM MES - AAAA").
+const H_EST_PE=["ID","FECHA","PLACA","TIPO DE SERVICIO","RESERVA","CODIGO","APROBADOR SODIMAC","VALOR","OBS"];
+let estibasPe=[];
+function estibasDesdeHoja(h){
+  estibasPe=tablaPe(h["PERU ESTIBAS"],H_EST_PE).map(x=>({id:String(x.ID).trim(),fecha:fechaISO(x.FECHA),placa:nt(x.PLACA).replace(/\s/g,""),tipo:nt(x["TIPO DE SERVICIO"]),
+    reserva:String(x.RESERVA).trim(),codigo:String(x.CODIGO).trim(),aprobador:String(x["APROBADOR SODIMAC"]).trim(),valor:num(x.VALOR),obs:String(x.OBS).trim()}))
+    .filter(x=>x.id&&x.fecha).sort((a,b)=>a.fecha.localeCompare(b.fecha)||a.placa.localeCompare(b.placa));
+}
+const filasEstPe=()=>[H_EST_PE,...estibasPe.map(x=>[x.id,x.fecha,x.placa,x.tipo,x.reserva,idCelda(x.codigo),x.aprobador,x.valor,x.obs])];
+function renderEstibasPe(){
+  const mes=document.getElementById("pMes").value, ls=estibasPe.filter(x=>x.fecha.slice(0,7)===mes), tot=ls.reduce((s,x)=>s+x.valor,0);
+  document.getElementById("esBody").innerHTML=ls.length?ls.map(x=>`<tr><td>${fechaCL(x.fecha)}</td><td>${esc(x.placa)}</td><td>${esc(x.tipo)}</td><td>${esc(x.reserva)}</td>
+    <td>${esc(x.codigo)}</td><td>${esc(x.aprobador)}</td><td class="n">${soles(x.valor)}</td><td>${esc(x.obs)}</td>
+    <td><button class="btn-mini" title="Quitar" onclick="quitarEstibaPe('${esc(x.id)}')">✕</button></td></tr>`).join("")
+    +`<tr class="total"><td colspan="6">Total ${mes?nombreMes(mes):""} (${ls.length})</td><td class="n">${soles(tot)}</td><td colspan="2"></td></tr>`
+    :`<tr><td colspan="9">Sin estibas ni salvatruncos ${mes?"en "+nombreMes(mes):""}.</td></tr>`;
+  document.getElementById("esPlacas").innerHTML=[...new Set(peruDatos.rutas.filter(r=>r.fecha.slice(0,7)===mes).map(r=>r.placa))].sort().map(p=>`<option value="${esc(p)}">`).join("");
+  const f=document.getElementById("esFecha"); if(mes&&!f.value.startsWith(mes)) f.value="";
+}
+async function guardarEstibasPe(msg){
+  ocultarError(); const av=document.getElementById("estadoEstibasPe"); av.textContent="Guardando en PERU ESTIBAS…";
+  try{
+    await llamar("guardarLote",[{hoja:"PERU ESTIBAS",filas:filasEstPe(),llave:{todo:true}}]);
+    renderTodoPeru();
+    av.textContent=msg+(EN_APPS_SCRIPT?" Guardado en Google Sheets.":" Vista previa: se guarda solo mientras la página esté abierta.");
+  }catch(err){ av.textContent=""; mostrarError("No se pudo guardar en Google Sheets.\n\n"+(err.message||err)); }
+}
+function agregarEstibaPe(){
+  const v=id=>document.getElementById(id).value.trim(), valor=Number(v("esValor"));
+  if(!v("esFecha")||!v("esPlaca")) return mostrarError("Escribe la fecha y la placa.");
+  if(!(valor>0)) return mostrarError("Escribe un valor mayor a cero.");
+  const x={id:"E"+Date.now(),fecha:v("esFecha"),placa:nt(v("esPlaca")).replace(/\s/g,""),tipo:v("esTipo"),reserva:v("esReserva"),codigo:v("esCodigo"),
+    aprobador:v("esAprobador"),valor,obs:v("esObs")};
+  estibasPe.push(x); estibasPe.sort((a,b)=>a.fecha.localeCompare(b.fecha)||a.placa.localeCompare(b.placa));
+  ["esReserva","esCodigo","esValor","esObs"].forEach(i=>document.getElementById(i).value="");
+  guardarEstibasPe(`Agregado: ${x.tipo.toLowerCase()} ${x.placa} del ${fechaCL(x.fecha)}.`);
+}
+function quitarEstibaPe(id){
+  const i=estibasPe.findIndex(x=>x.id===id); if(i<0) return;
+  const x=estibasPe.splice(i,1)[0]; guardarEstibasPe(`Quitado: ${x.tipo.toLowerCase()} ${x.placa} del ${fechaCL(x.fecha)}.`);
+}
+// Mismo formato que el archivo que se envía a Sodimac
+function descargarEstibasPe(){
+  const mes=document.getElementById("pMes").value, ls=estibasPe.filter(x=>x.fecha.slice(0,7)===mes);
+  if(!ls.length) return mostrarError("No hay estibas ni salvatruncos en el mes para descargar.");
+  const ws=XLSX.utils.aoa_to_sheet([["Fecha","Nombre de su EMPRESA","Placa","Tipo de Servicio","Reserva","Código","AprobadorSodimac","Valor","Obs"]]);
+  ls.forEach((x,i)=>{ const [y,m,d]=x.fecha.split("-").map(Number);
+    XLSX.utils.sheet_add_aoa(ws,[[new Date(y,m-1,d),"JOINT PERU S.A.C.",x.placa,x.tipo,x.reserva,idCelda(x.codigo),x.aprobador,x.valor,x.obs]],{origin:`A${i+2}`,cellDates:true});
+    ws[`A${i+2}`].z="dd-mm-yyyy"; });
+  ws["!cols"]=[12,20,10,16,16,12,16,10,24].map(wch=>({wch}));
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"Hoja 3");
+  const [y,m]=mes.split("-"), nombre=["ENERO","FEBRERO","MARZO","ABRIL","MAYO","JUNIO","JULIO","AGOSTO","SEPTIEMBRE","OCTUBRE","NOVIEMBRE","DICIEMBRE"][+m-1];
+  XLSX.writeFile(wb,`Estibas-Salvatruncos JOINT PERU S.A.C. UM SODIMAC - ${m}${nombre} - ${y}.xlsx`,{cellDates:true});
+}
 // ---------- Perú: registro de entradas y salidas (hoja PERU REGISTRO) ----------
 // Líneas automáticas por mes: liquidación a Sodimac (factura COBRO), y por quincena la OC de transporte (factura PAGO, neto
 // sin IGV) y los otros pagos (seguimiento). Líneas manuales (ID M…): estibas y salvatruncos, contadora, prontopago, etc.
@@ -2699,6 +2780,11 @@ function lineasRegistroPe(meses){
       const fp=q.fact||{};
       out.push({id:"A|PAGO|"+q.q,mes,b,detalle:`${ocQuincenaPe(q.q)} | Transporte`,ent:0,sal:r2(q.total/(1+IGV_PE)),factura:fp.numero||"",fecha:fp.fecha||"",fuente:"PAGO",periodo:q.q});
     });
+    if(d.estibas){
+      for(const [id,ent,sal,det] of [["A|ESTE|"+mes,d.estibas,0,"ESTIBAS Y SALVATRUNCOS "+nombreMes(mes).toUpperCase()],["A|ESTS|"+mes,0,d.estibas,"Estibas y salvatruncos | Transporte"]]){
+        const e=dato(id); out.push({id,mes,b,detalle:det,ent,sal,factura:e.factura||"",fecha:e.fecha||"",fuente:"REG",periodo:mes});
+      }
+    }
     registroPe.filter(x=>x.id.startsWith("M")&&x.periodo===mes).forEach(x=>out.push({id:x.id,mes,b,manual:true,detalle:x.detalle,
       ent:x.tipo==="ENTRADA"?x.monto||0:0,sal:x.tipo==="SALIDA"?x.monto||0:0,factura:x.factura,fecha:x.fecha,fuente:"REG",periodo:mes}));
   });
@@ -2853,11 +2939,11 @@ async function recargarPeru(){
   const d=await llamar("leerDatos"); urlLibro=d.url||urlLibro;
   const h=d.hojas||{};
   await configPeruDesdeHojas(h);
-  pagoPeruDesdeHojas(h); facturasDesdeHoja(h); registroDesdeHoja(h); visitasDesdeHoja(h);
+  pagoPeruDesdeHojas(h); facturasDesdeHoja(h); registroDesdeHoja(h); visitasDesdeHoja(h); estibasDesdeHoja(h);
   peruDatos.rutas=peruDesdeHoja(h["PERU RUTAS"]).map(tarificarPeru);
   renderTodoPeru();
 }
-function renderTodoPeru(){ renderPeru(); renderTarifasPeru(); renderPagoPeru(); renderCuadrePeru(); }
+function renderTodoPeru(){ renderPeru(); renderEstibasPe(); renderTarifasPeru(); renderPagoPeru(); renderCuadrePeru(); }
 recargarPeru().catch(()=>renderTodoPeru()).then(cargarTipoCambioPe);
 
 function mostrarError(m){ document.getElementById("errorText").textContent=m; document.getElementById("errorArea").classList.remove("hidden"); }

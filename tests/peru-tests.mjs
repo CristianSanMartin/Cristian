@@ -199,6 +199,24 @@ const antesRecarga = await page.evaluate(`peruDatos.rutas.find(r=>r.fecha==="202
 await page.setInputFiles("#inSimpli", [f1, f2]);
 await page.waitForFunction(`peruDatos.rutas.find(r=>r.fecha==="2026-09-10"&&r.placa==="AAA111").zona==="Periferia"`);
 const trasRecargaSimpli = await ruta("2026-09-10", "AAA111");
+// Estibas y salvatruncos: ventana bajo la liquidación por ruta, hoja PERU ESTIBAS, entran y salen del registro por el mismo valor
+await page.click("button.tab[data-vista=peru]"); await page.selectOption("#pMes", "2026-09");
+const margenAntes = await page.evaluate(`mesCuadrePe("2026-09").margen`);
+for (const [fecha, placa, tipo, reserva, codigo, apr, valor] of [["2026-09-25", "CMK 898", "ESTIBA", "MC EST F 2507", "25195982", "HECTOR", "50"], ["2026-09-03", "aaa111", "SALVATRUNCO", "", "25173776", "JESSENIA", "60"]]) {
+  await page.fill("#esFecha", fecha); await page.fill("#esPlaca", placa); await page.selectOption("#esTipo", tipo); await page.fill("#esReserva", reserva);
+  await page.fill("#esCodigo", codigo); await page.fill("#esAprobador", apr); await page.fill("#esValor", valor);
+  await page.evaluate(`agregarEstibaPe()`); await page.waitForTimeout(200);
+}
+const estTabla = await page.$$eval("#esBody tr", trs => trs.map(t => [...t.children].slice(0, 7).map(c => c.textContent)));
+const estHoja = await page.evaluate(`almacenLocal.hojas["PERU ESTIBAS"].map(r=>r.slice(1))`);
+const estCuadre = await page.evaluate(`(d=>[d.estibas,d.extEnt,d.extSal,d.margen])(mesCuadrePe("2026-09"))`);
+const estRegistro = await page.evaluate(`lineasRegistroPe(["2026-09"]).filter(l=>l.id.includes("|EST")).map(l=>[l.detalle,l.ent,l.sal])`);
+const [descEst] = await Promise.all([page.waitForEvent("download"), page.evaluate(`descargarEstibasPe()`)]);
+const fEst = path.join(tmp, "est.xlsx"); await descEst.saveAs(fEst);
+const libroEst = XLSX.utils.sheet_to_json(XLSX.readFile(fEst).Sheets["Hoja 3"], { header: 1, raw: false, dateNF: "dd-mm-yyyy" });
+await page.selectOption("#pMes", "2026-03").catch(() => {});
+await page.evaluate(`quitarEstibaPe(estibasPe.find(x=>x.tipo==="SALVATRUNCO").id)`); await page.waitForTimeout(200);
+const estQuitar = await page.evaluate(`[estibasPe.length, almacenLocal.hojas["PERU ESTIBAS"].length-1]`);
 // Liquidación de cobro para días sin SIMPLI (meses antiguos): el 10-09 ya tiene SIMPLI y se omite
 const fLiq = escribir([["LIQUIDACIÓN SERVICIOS MARZO 2026"], LH,
   [new Date("2026-03-30T00:00:00"), "JOINT PERU S.A.C.", "BTZ753", "F13", 5, "COMAS", "Metropolitana", 420, "", "", 420],
@@ -308,6 +326,15 @@ check("Fecha sin tarifa vigente", sinTarifa, [null, null, "Sin tarifa de cobro n
 check("Feriado nuevo", [conFeriado, feriadoEnHoja, feriados2025], [[420, 126, "Tarifa Feriado", 546, 494], true, ["2026", "2025"]]);
 check("Quitar feriado", sinFeriado, [420, null, "", 420, 380]);
 check("Distrito cambia de zona al recargar SIMPLI", [comasHoja, antesRecarga, trasRecargaSimpli], ["Periferia", "Metropolitana", [610, null, "", 610, 500]]);
+check("Estibas: tabla del mes", estTabla, [["03-09-2026", "AAA111", "SALVATRUNCO", "", "25173776", "JESSENIA", "S/ 60"],
+  ["25-09-2026", "CMK898", "ESTIBA", "MC EST F 2507", "25195982", "HECTOR", "S/ 50"], ["Total Septiembre 2026 (2)", "S/ 110", ""]]);
+check("Estibas: hoja PERU ESTIBAS", estHoja, [["FECHA", "PLACA", "TIPO DE SERVICIO", "RESERVA", "CODIGO", "APROBADOR SODIMAC", "VALOR", "OBS"],
+  ["2026-09-03", "AAA111", "SALVATRUNCO", "", 25173776, "JESSENIA", 60, ""], ["2026-09-25", "CMK898", "ESTIBA", "MC EST F 2507", 25195982, "HECTOR", 50, ""]]);
+check("Estibas: entran y salen por el mismo valor (margen igual)", estCuadre, [110, 110, 110, margenAntes]);
+check("Estibas: líneas del registro", estRegistro, [["ESTIBAS Y SALVATRUNCOS SEPTIEMBRE 2026", 110, 0], ["Estibas y salvatruncos | Transporte", 0, 110]]);
+check("Estibas: Excel para Sodimac", [descEst.suggestedFilename(), libroEst[0], libroEst[1]], ["Estibas-Salvatruncos JOINT PERU S.A.C. UM SODIMAC - 09SEPTIEMBRE - 2026.xlsx",
+  ["Fecha", "Nombre de su EMPRESA", "Placa", "Tipo de Servicio", "Reserva", "Código", "AprobadorSodimac", "Valor", "Obs"], ["03-09-2026", "JOINT PERU S.A.C.", "AAA111", "SALVATRUNCO", "", "25173776", "JESSENIA", "60", ""]]);
+check("Estibas: quitar", estQuitar, [1, 1]);
 check("Liquidación: rutas de días sin SIMPLI", liqRutas, [["2026-03-30", "BTZ753", "F13", 5, "COMAS", "Metropolitana", 420, 380],
   ["2026-03-31", "BTZ753", "F20", 7, "CARABAYLLO", "Periferia", 640, 540], ["2026-03-31", "XYZ999", "F13", 4, "LIMA", "Metropolitana", 420, 380]]);
 check("Liquidación: aviso y día con SIMPLI respetado", [liqAviso, liqSep], ["3 rutas de 2 días agregadas desde la liquidación; 1 rutas omitidas porque su día ya tiene SIMPLI. Vista previa: los datos se guardan solo mientras la página esté abierta.", ["JOINT-AAA111-13M3"]]);
