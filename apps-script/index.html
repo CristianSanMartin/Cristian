@@ -859,7 +859,7 @@
         <button class="b" id="reset">Volver a lo sugerido</button>
         <button class="b pri" id="toImg">Generar imagen</button>
       </div>
-      <p class="hint" id="reglaJoint">Regla sugerida: envío = día 10 (si es feriado o fin de semana, el día hábil anterior) · pago 1 = primer jueves con al menos 3 días hábiles después del envío · cada periodo siguiente = jueves siguiente · límite = día hábil anterior a cada pago · tope diferencias = día hábil siguiente al último pago. Haz clic en el número de un día para marcarlo o desmarcarlo como feriado.</p>
+      <p class="hint" id="reglaJoint">Regla sugerida: envío = día 10 (si es feriado o fin de semana, el día hábil anterior) · pago 1 = primer jueves con al menos 3 días hábiles después del envío · cada periodo siguiente = jueves siguiente · límite = día hábil anterior a cada pago · tope diferencias = día hábil siguiente al primer pago. Haz clic en el número de un día para marcarlo o desmarcarlo como feriado.</p>
       <p class="hint" id="reglaSlg" hidden>Regla sugerida SLG: ciclo del 16 del mes anterior al 15 · envío de calendario = día 16 (o el hábil siguiente) · envío cierre = día 24 (si es feriado o fin de semana, el hábil anterior) · 1° periodo de recepción desde el día siguiente al envío hasta el viernes de esa semana (o el siguiente si queda muy corto) · cada periodo siguiente dura una semana · pago de cada periodo = martes de la segunda semana después de su cierre · tope diferencias = día hábil siguiente al primer pago. Haz clic en el número de un día para marcarlo o desmarcarlo como feriado.</p>
       <div><h2>Fechas internas</h2><p class="hint" style="margin-top:6px">Se ven con borde punteado solo aquí y no salen en la imagen: día 13 pago de imposiciones, día 20 pago de IVA y último día hábil del mes pago de sueldos.</p></div>
       <div id="imgOut"></div>
@@ -3658,25 +3658,24 @@ function calcular(envio,n){
   }
   let jue=addBiz(envio,3); while(dow(jue)!==3) jue=addDays(jue,1); let last;
   for(let i=1;i<=n;i++){const p=nextBizOrSame(addDays(jue,7*(i-1)));r["p"+i]=iso(p);r["l"+i]=iso(prevBiz(p));last=p}
-  r.tope=iso(nextBiz(last)); return r;
+  r.tope=iso(nextBiz(parse(r.p1))); return r;
 }
 function agregarPeriodo(){
   if(state.np>=MAXP){toast("Máximo "+MAXP+" periodos");return}
   const n=state.np;
   if(MODE==="slg"){const f=parse(state.ev["f"+n]);const nf=addDays(f,7);state.ev["r"+(n+1)]=iso(addDays(f,1));state.ev["f"+(n+1)]=iso(nf);state.ev["p"+(n+1)]=iso(martesPago(nf));}
   else{const lp=parse(state.ev["p"+n]); let jue=addDays(lp,7); while(dow(jue)!==3) jue=addDays(jue,dow(jue)>3?-1:1);
-    const p=nextBizOrSame(jue); state.ev["p"+(n+1)]=iso(p); state.ev["l"+(n+1)]=iso(prevBiz(p)); state.ev.tope=iso(nextBiz(p));}
+    const p=nextBizOrSame(jue); state.ev["p"+(n+1)]=iso(p); state.ev["l"+(n+1)]=iso(prevBiz(p));}
   state.np=n+1; save(); render(); toast(ORD[n]+" periodo agregado");
 }
 function quitarPeriodo(){
   if(state.np<=1){toast("Debe quedar al menos un periodo");return}
   const n=state.np; ["p","l","r","f"].forEach(x=>delete state.ev[x+n]); state.np=n-1;
-  if(MODE!=="slg")state.ev.tope=iso(nextBiz(parse(state.ev["p"+(n-1)])));
   save(); render(); toast(ORD[n-1]+" periodo quitado");
 }
 function sugerido(ym){const[y,m]=ym.split("-").map(Number);return calcular(envioSugerido(y,m-1))}
 
-function key(ym){return MODE==="slg"?"calSlg2:"+ym:"calJoint2:"+ym}
+function key(ym){return MODE==="slg"?"calSlg2:"+ym:"calJoint3:"+ym}
 function load(ym){
   try{const s=JSON.parse(localStorage.getItem(key(ym))||"null");if(s&&s.ev){if(!s.np)s.np=DEF_NP[MODE];return s;}}catch(e){}
   const st={ym,ev:null,hol:{add:[],rem:[]},nota:NOTA_DEF,hrs:MODE!=="slg",np:DEF_NP[MODE]};
@@ -3703,7 +3702,7 @@ function renderList(){
     if(i>1&&E("p"+i)<=E("p"+(i-1)))av.push(`El pago del ${ORD[i-1]} periodo queda antes o igual al del ${ORD[i-2]}.`)}
   if(E("p1")<=E("envio")) av.push("El pago 1 es antes del envío del cierre.");
   if(MODE==="slg"&&E("tope")<=E("p1")) av.push("La fecha tope de diferencias queda antes o el mismo día del primer pago.");
-  if(MODE==="joint"&&E("tope")<=E("p"+state.np)) av.push("La fecha tope de diferencias queda antes o el mismo día del último pago.");
+  if(MODE==="joint"&&E("tope")<=E("p1")) av.push("La fecha tope de diferencias queda antes o el mismo día del primer pago.");
   Array.from({length:state.np},(_,i)=>"p"+(i+1)).forEach(k=>{const d=E(k),i=internos(d);if(i.length)av.push(`${EV().find(e=>e.k===k).label} coincide con ${i.join(" y ").toLowerCase()} (${d.getDate()}).`)});
   $("avisos").innerHTML=av.map(a=>`<div class="warn">${a}</div>`).join("");
 }
