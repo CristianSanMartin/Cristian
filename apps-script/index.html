@@ -229,6 +229,10 @@
       <button class="tab" data-vista="peruCuadre" onclick="mostrarVista('peruCuadre')">Cuadre y KPI</button>
       <button class="tab" data-vista="peruTarifas" onclick="mostrarVista('peruTarifas')">Tarifas</button>
     </div>
+    <button class="nav-grupo nav-desplegable" type="button" aria-expanded="false" aria-controls="navTransportes" onclick="alternarGrupoNav(this)">Transportes<span class="flecha" aria-hidden="true"></span></button>
+    <div id="navTransportes" class="nav-sub cerrado">
+      <button class="tab" data-vista="calendario" onclick="mostrarVista('calendario')">Calendario de pago</button>
+    </div>
   </nav>
   <div class="app-main">
   <div id="errorArea" class="card hidden"><div id="errorText" class="error-box"></div></div>
@@ -735,6 +739,138 @@
         <button class="button" style="margin:0" onclick="agregarFijoPe()">Agregar</button>
       </div>
     </div>
+  </div>
+  <div id="vistaCalendario" class="hidden">
+<style>
+#vistaCalendario{--font-body:"Inter",system-ui,sans-serif;--font-title:"Poppins","Inter",system-ui,sans-serif;--holiday:#E00000}
+#vistaCalendario [hidden]{display:none!important}
+#vistaCalendario a.b{text-decoration:none;display:inline-block}
+
+/* Layout: barra de controles Joint arriba, panel de fechas a la izquierda, hoja del calendario (formato que se envía a transportes) a la derecha */
+#vistaCalendario .wrap{max-width:1240px;margin:0 auto;display:grid;gap:18px}
+#vistaCalendario header.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px}
+#vistaCalendario h1{font-family:var(--font-title);font-size:1.5rem;margin:0;text-wrap:balance}
+#vistaCalendario h1 span{color:var(--primary)}
+#vistaCalendario .sub{color:var(--muted);margin:4px 0 0}
+#vistaCalendario .cp-tabs{display:flex;gap:6px}
+#vistaCalendario .cp-tab{border:1px solid var(--line);background:var(--surface);color:var(--fg);padding:7px 14px;border-radius:999px;font:600 13px var(--font-body);cursor:pointer}
+#vistaCalendario .cp-tab[aria-selected="true"]{background:var(--primary);border-color:var(--primary);color:#fff}
+#vistaCalendario .cp-tab:disabled{opacity:.55;cursor:not-allowed}
+#vistaCalendario .main{display:grid;grid-template-columns:260px minmax(0,1fr);gap:18px;align-items:start}
+@media (max-width:900px){#vistaCalendario .main{grid-template-columns:minmax(0,1fr)}}
+#vistaCalendario .panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;display:grid;gap:14px}
+#vistaCalendario .panel h2{font:600 12px var(--font-body);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0}
+#vistaCalendario label.f{display:grid;gap:4px;font-weight:500}
+#vistaCalendario select.cp-sel,#vistaCalendario input[type=date]{font:inherit;padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);width:100%}
+#vistaCalendario .ev-row{display:grid;grid-template-columns:14px 1fr 140px;gap:8px;align-items:center}
+#vistaCalendario .sw{width:14px;height:14px;border-radius:3px;border:1px solid rgba(0,0,0,.25)}
+#vistaCalendario .ev-row .lbl{font-weight:500;line-height:1.2}
+#vistaCalendario .ev-row .lbl small{display:block;color:var(--muted);font-weight:400}
+#vistaCalendario .btns{display:flex;flex-wrap:wrap;gap:8px}
+#vistaCalendario .b{font:600 13px var(--font-body);padding:8px 12px;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--fg);cursor:pointer}
+#vistaCalendario .b.pri{background:var(--primary);border-color:var(--primary);color:#fff}
+#vistaCalendario .b:focus-visible,#vistaCalendario .cp-tab:focus-visible,#vistaCalendario .chip:focus-visible{outline:2px solid var(--secondary);outline-offset:2px}
+#vistaCalendario .chk{display:flex;gap:8px;align-items:center}
+#vistaCalendario .hint{color:var(--muted);font-size:12.5px;line-height:1.45;margin:0}
+#vistaCalendario .warn{background:color-mix(in srgb,var(--primary) 12%,transparent);border:1px solid color-mix(in srgb,var(--primary) 40%,transparent);border-radius:6px;padding:8px 10px;font-size:12.5px}
+#vistaCalendario .sheet-scroll{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px}
+/* hoja: estilo Joint, siempre en claro porque se envía como imagen */
+#vistaCalendario #sheet{width:820px;background:#fff;color:#060315;font-family:var(--font-body);padding:28px 28px 24px;border-radius:14px;display:grid;gap:18px}
+#vistaCalendario .sh-top{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;padding-bottom:16px;border-bottom:2px solid #FF5C00}
+#vistaCalendario .sh-brand{font:700 13px var(--font-title);letter-spacing:.14em;text-transform:uppercase;color:#FF5C00}
+#vistaCalendario .sh-month{font:700 30px/1.1 var(--font-title);margin:6px 0 0;text-transform:capitalize;color:#060315}
+#vistaCalendario .sh-kind{font-size:14px;color:#6B6472;text-align:right;line-height:1.4}
+#vistaCalendario .sh-kind b{display:block;color:#060315;font:600 15px var(--font-title)}
+#vistaCalendario .grid{display:grid;grid-template-columns:30px repeat(7,1fr);gap:6px}
+#vistaCalendario .rail{grid-column:1;position:relative;border-right:3px solid currentColor;border-radius:2px;margin-right:2px}
+#vistaCalendario .rail span{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-90deg);font:700 14px var(--font-title);letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
+#vistaCalendario .grid .hd{font:600 11px var(--font-body);text-transform:uppercase;letter-spacing:.08em;color:#8C8494;padding:0 8px 2px}
+#vistaCalendario .grid .hd.we{color:#B9B2BF}
+#vistaCalendario .cell{min-height:96px;border-radius:10px;background:#F8F2F0;padding:8px;position:relative;display:flex;flex-direction:column;gap:6px}
+#vistaCalendario .cell.we{background:#FCFAF9}
+#vistaCalendario .cell.out{background:transparent;border:1px dashed #E7E0DC}
+#vistaCalendario .cell.has{background:#fff;border:1px solid #E7E0DC;padding:7px}
+#vistaCalendario .cell.drop{outline:2px dashed #FF5C00;outline-offset:1px}
+#vistaCalendario .num{font:600 15px var(--font-title);cursor:pointer;width:max-content;color:#060315;display:flex;align-items:center;gap:6px}
+#vistaCalendario .num.we{color:#A79FAE}
+#vistaCalendario .num.out{color:#C9C2CC;font-weight:500}
+#vistaCalendario .num.hol{color:#D62828}
+#vistaCalendario .num .mes-tag{font:700 10px var(--font-body);text-transform:uppercase;letter-spacing:.06em;background:#FF5C00;color:#fff;padding:2px 7px;border-radius:999px}
+#vistaCalendario .num .fer{font:600 9.5px var(--font-body);text-transform:uppercase;letter-spacing:.06em;background:#FDE3E3;color:#D62828;padding:2px 5px;border-radius:999px}
+#vistaCalendario .chip{border-radius:7px;padding:6px 7px;cursor:grab;user-select:none;touch-action:none;display:grid;gap:2px;line-height:1.25}
+#vistaCalendario .chip .ct{font:700 11.5px var(--font-body)}
+#vistaCalendario .chip .cs{font:500 10.5px var(--font-body);opacity:.85}
+#vistaCalendario .chip .hr{justify-self:start;white-space:nowrap;font:700 10px var(--font-body);background:rgba(255,255,255,.7);padding:1px 6px;border-radius:999px;margin-top:2px}
+#vistaCalendario .chip.envio{background:#FF5C00;color:#fff}
+#vistaCalendario .chip.envio .hr{color:#FF5C00}
+#vistaCalendario .chip.limite{background:#E1F6FC;color:#0A6680}
+#vistaCalendario .chip.pago{background:#E2F4E8;color:#1D7044}
+#vistaCalendario .chip.tope{background:#FFF1D1;color:#8A5600}
+#vistaCalendario .chip.dragging{opacity:.4}
+#vistaCalendario .chip.pagoslg{background:#060315;color:#fff}
+#vistaCalendario .chip.envcal{background:#FFE3D1;color:#A33A12}
+#vistaCalendario .chip.rng{background:rgba(255,255,255,.75)}
+#vistaCalendario .interno{font:600 10.5px var(--font-body);color:#060315;border:1px dashed #060315;border-radius:6px;padding:3px 6px;display:flex;align-items:center;gap:5px;background:#fff}
+#vistaCalendario .interno::before{content:"";width:6px;height:6px;border-radius:50%;background:#060315;flex:none}
+#vistaCalendario .int-leg{display:flex;flex-wrap:wrap;gap:6px}
+#vistaCalendario .sh-foot{display:grid;grid-template-columns:1.1fr 1fr;gap:16px;align-items:start}
+#vistaCalendario .resumen{display:grid;gap:6px;margin:0;padding:0;list-style:none}
+#vistaCalendario .resumen li{display:grid;grid-template-columns:10px 92px 1fr;gap:10px;align-items:center;font-size:12.5px}
+#vistaCalendario .resumen .dot{width:10px;height:10px;border-radius:50%}
+#vistaCalendario .resumen .fd{font:600 12.5px var(--font-title);font-variant-numeric:tabular-nums}
+#vistaCalendario .cp-nota{background:#FFF4EC;border-radius:10px;padding:12px 14px;display:grid;gap:4px}
+#vistaCalendario .cp-nota .k{font:700 11px var(--font-body);text-transform:uppercase;letter-spacing:.08em;color:#FF5C00}
+#vistaCalendario .cp-nota .v{font-weight:600;font-size:13.5px;line-height:1.45;outline:none;min-height:1.4em;color:#060315}
+#vistaCalendario .cp-nota .v:focus{box-shadow:0 0 0 2px #FF5C00;border-radius:4px}
+#vistaCalendario .sh-cap{font:600 11px var(--font-body);text-transform:uppercase;letter-spacing:.08em;color:#8C8494;margin:0 0 8px}
+#vistaCalendario .ghost{position:fixed;pointer-events:none;z-index:50;padding:6px 10px;font:700 11px var(--font-body);border-radius:4px;box-shadow:0 6px 18px rgba(0,0,0,.25);color:#000;text-transform:uppercase}
+#vistaCalendario #imgOut{display:grid;gap:8px}
+#vistaCalendario #imgOut img{border:1px solid var(--line);border-radius:6px;max-width:100%}
+#vistaCalendario .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--dark);color:#fff;padding:9px 16px;border-radius:999px;font-weight:600;font-size:13px;z-index:60}
+@media (prefers-reduced-motion:no-preference){#vistaCalendario .chip{transition:opacity .15s}}
+
+</style>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Calendario de pago <span>transportes</span></h1>
+      <p class="sub">Se calcula desde la fecha de envío del cierre. Arrastra cualquier hito a otro día para moverlo.</p>
+    </div>
+    <div class="cp-tabs" role="tablist">
+      <button class="cp-tab" role="tab" aria-selected="true" id="tabJoint">Joint · mensual</button>
+      <button class="cp-tab" role="tab" aria-selected="false" id="tabSlg">SLG · ciclo 16 al 15</button>
+    </div>
+  </header>
+
+  <div class="main">
+    <aside class="panel" aria-label="Fechas">
+      <label class="f" for="mes"><span id="mesLbl">Periodo de cierre (rutas del mes)</span>
+        <span style="display:grid;grid-template-columns:1fr 96px;gap:8px"><select id="mes" class="cp-sel"></select><select id="anio" class="cp-sel" aria-label="Año"></select></span>
+      </label>
+      <div>
+        <h2>Hitos</h2>
+        <div id="evList" style="display:grid;gap:10px;margin-top:10px"></div>
+        <div class="btns" style="margin-top:10px"><button class="b" id="addP">+ Agregar periodo de pago</button><button class="b" id="remP">− Quitar último periodo</button></div>
+      </div>
+      <label class="chk" for="hrs" id="hrsWrap"><input type="checkbox" id="hrs" checked> Mostrar "hasta 12:00 hrs" en límites</label>
+      <div id="avisos"></div>
+      <div class="btns">
+        <button class="b" id="recalc">Recalcular desde el envío</button>
+        <button class="b" id="reset">Volver a lo sugerido</button>
+        <button class="b pri" id="toImg">Generar imagen</button>
+      </div>
+      <p class="hint" id="reglaJoint">Regla sugerida: envío = día 10 (si es feriado o fin de semana, el día hábil anterior) · pago 1 = primer jueves con al menos 3 días hábiles después del envío · cada periodo siguiente = jueves siguiente · límite = día hábil anterior a cada pago · tope diferencias = día hábil siguiente al último pago. Haz clic en el número de un día para marcarlo o desmarcarlo como feriado.</p>
+      <p class="hint" id="reglaSlg" hidden>Regla sugerida SLG: ciclo del 16 del mes anterior al 15 · envío de calendario = día 16 (o el hábil siguiente) · envío cierre = día 24 (si es feriado o fin de semana, el hábil anterior) · 1° periodo de recepción desde el día siguiente al envío hasta el viernes de esa semana (o el siguiente si queda muy corto) · cada periodo siguiente dura una semana · pago de cada periodo = martes de la segunda semana después de su cierre · tope diferencias = día hábil siguiente al primer pago. Haz clic en el número de un día para marcarlo o desmarcarlo como feriado.</p>
+      <div><h2>Fechas internas</h2><p class="hint" style="margin-top:6px">Se ven con borde punteado solo aquí y no salen en la imagen: día 13 pago de imposiciones, día 20 pago de IVA y último día hábil del mes pago de sueldos.</p></div>
+      <div id="imgOut"></div>
+    </aside>
+
+    <section class="sheet-scroll" aria-label="Calendario">
+      <div id="sheet"></div>
+    </section>
+  </div>
+</div>
+
   </div>
   <div id="vistaPeru" class="hidden">
     <div>
@@ -1423,6 +1559,7 @@ function mostrarVista(v){
   document.getElementById("vistaPeruCuadre").classList.toggle("hidden",v!=="peruCuadre");
   document.getElementById("vistaSodimacCl").classList.toggle("hidden",v!=="sodimacCl");
   document.getElementById("vistaSodimacClTarifas").classList.toggle("hidden",v!=="sodimacClTarifas");
+  document.getElementById("vistaCalendario").classList.toggle("hidden",v!=="calendario");
   document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("active",t.dataset.vista===v));
   const g=document.querySelector(`.nav-sub .tab[data-vista="${v}"]`)?.closest(".nav-sub");
   if(g) alternarGrupoNav(document.querySelector(`[aria-controls="${g.id}"]`),true);
@@ -3456,6 +3593,238 @@ recargarPeru().catch(()=>renderTodoPeru()).then(cargarTipoCambioPe);
 
 function mostrarError(m){ document.getElementById("errorText").textContent=m; document.getElementById("errorArea").classList.remove("hidden"); }
 function ocultarError(){ document.getElementById("errorArea").classList.add("hidden"); }
+</script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<script>
+// ---------- Calendario de pago a transportes (Joint mensual y SLG 16 al 15) ----------
+
+(function(){
+const MESES=["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+const DIAS=["lunes","martes","miércoles","jueves","viernes","sábado","domingo"];
+// Feriados Chile (editables con clic)
+const FERIADOS_BASE=new Set([
+ "2026-01-01","2026-04-03","2026-04-04","2026-05-01","2026-05-21","2026-06-21","2026-06-29","2026-07-16","2026-08-15","2026-09-18","2026-09-19","2026-10-12","2026-10-31","2026-11-01","2026-12-08","2026-12-25",
+ "2027-01-01","2027-03-26","2027-03-27","2027-05-01","2027-05-21","2027-06-21","2027-06-28","2027-07-16","2027-08-15","2027-09-18","2027-09-19","2027-10-11","2027-10-31","2027-11-01","2027-12-08","2027-12-25"
+]);
+const ORD=["1°","2°","3°","4°","5°","6°"];
+const PCOL=[["#DCEBFA","#1F5F9E"],["#E2F4E8","#1D7044"],["#FFF1D1","#8A5600"],["#F3E5F8","#6B2C86"],["#FDE7DD","#A33A12"],["#E3F1F0","#2D6460"]];
+let MODE="joint";
+const DEF_NP={joint:2,slg:3};
+function EV(){const n=(state&&state.np)||DEF_NP[MODE];
+  if(MODE==="slg"){
+    const L=[{k:"envcal",cls:"envcal",label:"Envío de calendario",t:"Envío de calendario",sub:"",hex:"#F4B183",color:"#F4B183",biz:true},
+             {k:"envio",cls:"envio",label:"Envío cierre transportes",t:"Envío cierre transportes",sub:"",hex:"#FF5C00",color:"#FF5C00",biz:true}];
+    for(let i=1;i<=n;i++){const o=ORD[i-1],c=PCOL[(i-1)%PCOL.length];
+      L.push({k:"r"+i,i,cls:"rng",fg:c[1],label:`Inicio ${o} periodo de recepción`,t:`Inicio ${o} periodo`,sub:"Recepción de facturas",hex:c[1],color:c[0]});
+      L.push({k:"f"+i,i,cls:"rng",fg:c[1],label:`Fin ${o} periodo de recepción`,t:`Fin ${o} periodo`,sub:"Recepción de facturas",hex:c[1],color:c[0]});
+      L.push({k:"p"+i,i,cls:"pagoslg",label:`Pago ${o} periodo`,t:`Pago ${o} periodo`,sub:"",hex:"#060315",color:"#060315",biz:true});}
+    L.push({k:"tope",cls:"tope",label:"Fecha tope recepción de diferencias",t:"Fecha tope diferencias",sub:"Recepción de diferencias",hex:"#F2A900",color:"#F2A900"});return L}
+  const L=[{k:"envio",cls:"envio",label:"Envío cierre transportes",t:"Envío cierre transportes",sub:"",hex:"#FF5C00",color:"#FF5C00",biz:true}];
+  for(let i=1;i<=n;i++){const o=ORD[i-1];
+    L.push({k:"l"+i,i,cls:"limite",label:`Límite recepción ${o} periodo`,t:"Límite de recepción",sub:`Documentos ${o} periodo`,hr:true,hex:"#51CFED",color:"#51CFED",biz:true});
+    L.push({k:"p"+i,i,cls:"pago",label:`${o} periodo de pago`,t:`Pago ${o} periodo`,sub:"Facturas recibidas en conformidad",hex:"#3FAE6A",color:"#3FAE6A",biz:true});}
+  L.push({k:"tope",cls:"tope",label:"Fecha tope recepción de diferencias",t:"Fecha tope diferencias",sub:"Recepción de diferencias",hex:"#F2A900",color:"#F2A900",biz:true});return L}
+const MAXP=6;
+const NOTA_DEF="Las facturas se recibirán conforme únicamente cuando sean cargadas en link dispuesto dentro del mismo correo de cierre.";
+
+const $=id=>document.getElementById(id);
+const pad=n=>String(n).padStart(2,"0");
+const iso=d=>d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
+const parse=s=>{const[a,b,c]=s.split("-").map(Number);return new Date(a,b-1,c)};
+const addDays=(d,n)=>{const x=new Date(d);x.setDate(x.getDate()+n);return x};
+const dow=d=>(d.getDay()+6)%7; // 0=lunes
+
+let state; // {ym, ev:{k:iso}, hol:{add:[],rem:[]}, nota, hrs}
+const hrs=()=>state.hrs;
+function isHol(s){ if(state.hol.add.includes(s))return true; if(state.hol.rem.includes(s))return false; return FERIADOS_BASE.has(s); }
+function isBiz(d){return dow(d)<5 && !isHol(iso(d))}
+function addBiz(d,n){let x=new Date(d);let c=0;while(c<n){x=addDays(x,1);if(isBiz(x))c++;}return x}
+function nextBizOrSame(d){let x=new Date(d);while(!isBiz(x))x=addDays(x,1);return x}
+function prevBiz(d){let x=addDays(d,-1);while(!isBiz(x))x=addDays(x,-1);return x}
+function nextBiz(d){let x=addDays(d,1);while(!isBiz(x))x=addDays(x,1);return x}
+function envioSugerido(y,m){let x=new Date(y,m,MODE==="slg"?24:10);while(!isBiz(x))x=addDays(x,-1);return x}
+function ultimoHabil(y,m){let x=new Date(y,m+1,0);while(!isBiz(x))x=addDays(x,-1);return x}
+function martesPago(fin){let x=addDays(fin,8);while(dow(x)!==1)x=addDays(x,1);return nextBizOrSame(x)}
+function calcular(envio,n){
+  n=n||(state&&state.np)||DEF_NP[MODE];
+  const r={envio:iso(envio)};
+  if(MODE==="slg"){
+    let fin=addDays(envio,3); while(dow(fin)!==4) fin=addDays(fin,1);
+    let ini=addDays(envio,1);
+    for(let i=1;i<=n;i++){r["r"+i]=iso(ini);r["f"+i]=iso(fin);r["p"+i]=iso(martesPago(fin));ini=addDays(fin,1);fin=addDays(fin,7)}
+    r.tope=iso(nextBiz(parse(r.p1)));
+    if(state&&state.ev&&state.ev.envcal) r.envcal=state.ev.envcal; else {const y=envio.getFullYear(),m=envio.getMonth();r.envcal=iso(nextBizOrSame(new Date(y,m,16)))}
+    return r;
+  }
+  let jue=addBiz(envio,3); while(dow(jue)!==3) jue=addDays(jue,1); let last;
+  for(let i=1;i<=n;i++){const p=nextBizOrSame(addDays(jue,7*(i-1)));r["p"+i]=iso(p);r["l"+i]=iso(prevBiz(p));last=p}
+  r.tope=iso(nextBiz(last)); return r;
+}
+function agregarPeriodo(){
+  if(state.np>=MAXP){toast("Máximo "+MAXP+" periodos");return}
+  const n=state.np;
+  if(MODE==="slg"){const f=parse(state.ev["f"+n]);const nf=addDays(f,7);state.ev["r"+(n+1)]=iso(addDays(f,1));state.ev["f"+(n+1)]=iso(nf);state.ev["p"+(n+1)]=iso(martesPago(nf));}
+  else{const lp=parse(state.ev["p"+n]); let jue=addDays(lp,7); while(dow(jue)!==3) jue=addDays(jue,dow(jue)>3?-1:1);
+    const p=nextBizOrSame(jue); state.ev["p"+(n+1)]=iso(p); state.ev["l"+(n+1)]=iso(prevBiz(p)); state.ev.tope=iso(nextBiz(p));}
+  state.np=n+1; save(); render(); toast(ORD[n]+" periodo agregado");
+}
+function quitarPeriodo(){
+  if(state.np<=1){toast("Debe quedar al menos un periodo");return}
+  const n=state.np; ["p","l","r","f"].forEach(x=>delete state.ev[x+n]); state.np=n-1;
+  if(MODE!=="slg")state.ev.tope=iso(nextBiz(parse(state.ev["p"+(n-1)])));
+  save(); render(); toast(ORD[n-1]+" periodo quitado");
+}
+function sugerido(ym){const[y,m]=ym.split("-").map(Number);return calcular(envioSugerido(y,m-1))}
+
+function key(ym){return MODE==="slg"?"calSlg2:"+ym:"calJoint2:"+ym}
+function load(ym){
+  try{const s=JSON.parse(localStorage.getItem(key(ym))||"null");if(s&&s.ev){if(!s.np)s.np=DEF_NP[MODE];return s;}}catch(e){}
+  const st={ym,ev:null,hol:{add:[],rem:[]},nota:NOTA_DEF,hrs:MODE!=="slg",np:DEF_NP[MODE]};
+  state=st; st.ev=sugerido(ym); return st;
+}
+function save(){try{localStorage.setItem(key(state.ym),JSON.stringify(state))}catch(e){}}
+
+function renderList(){
+  const el=$("evList"); el.innerHTML="";
+  EV().forEach(e=>{
+    const d=parse(state.ev[e.k]);
+    const row=document.createElement("div"); row.className="ev-row";
+    row.innerHTML=`<span class="sw" style="background:${e.color}"></span><span class="lbl">${e.label}<small>${DIAS[dow(d)]}</small></span>`;
+    const inp=document.createElement("input"); inp.type="date"; inp.id="d_"+e.k; inp.value=state.ev[e.k];
+    inp.addEventListener("change",()=>{ if(!inp.value)return; mover(e.k,inp.value); });
+    row.appendChild(inp); el.appendChild(row);
+  });
+  // avisos
+  const av=[]; const E=k=>parse(state.ev[k]);
+  EV().filter(e=>e.biz).forEach(e=>{const d=E(e.k); if(!isBiz(d)) av.push(`${e.label} cae en ${isHol(iso(d))?"feriado":"fin de semana"} (${DIAS[dow(d)]} ${d.getDate()}).`)});
+  for(let i=1;i<=state.np;i++){
+    if(MODE==="slg"){if(E("r"+i)>E("f"+i))av.push(`El ${ORD[i-1]} periodo de recepción termina antes de empezar.`);if(E("p"+i)<=E("f"+i))av.push(`El pago del ${ORD[i-1]} periodo queda antes del fin de su recepción.`);if(i>1&&E("r"+i)<=E("f"+(i-1)))av.push(`El ${ORD[i-1]} periodo de recepción se cruza con el ${ORD[i-2]}.`)}
+    else if(E("l"+i)>=E("p"+i))av.push(`El límite del ${ORD[i-1]} periodo no es anterior a su pago.`);
+    if(i>1&&E("p"+i)<=E("p"+(i-1)))av.push(`El pago del ${ORD[i-1]} periodo queda antes o igual al del ${ORD[i-2]}.`)}
+  if(E("p1")<=E("envio")) av.push("El pago 1 es antes del envío del cierre.");
+  if(MODE==="slg"&&E("tope")<=E("p1")) av.push("La fecha tope de diferencias queda antes o el mismo día del primer pago.");
+  if(MODE==="joint"&&E("tope")<=E("p"+state.np)) av.push("La fecha tope de diferencias queda antes o el mismo día del último pago.");
+  Array.from({length:state.np},(_,i)=>"p"+(i+1)).forEach(k=>{const d=E(k),i=internos(d);if(i.length)av.push(`${EV().find(e=>e.k===k).label} coincide con ${i.join(" y ").toLowerCase()} (${d.getDate()}).`)});
+  $("avisos").innerHTML=av.map(a=>`<div class="warn">${a}</div>`).join("");
+}
+
+function internos(d){const r=[];if(d.getDate()===13)r.push("Pago imposiciones");if(d.getDate()===20)r.push("Pago IVA");if(iso(d)===iso(ultimoHabil(d.getFullYear(),d.getMonth())))r.push("Pago sueldos");return r}
+function chipHTML(e){return `<div class="chip ${e.cls}" tabindex="0" data-k="${e.k}"${e.fg?` style="color:${e.fg}"`:""}><span class="ct">${e.t}</span>${e.sub?`<span class="cs">${e.sub}</span>`:""}${e.hr&&hrs()?`<span class="hr">hasta 12:00</span>`:""}</div>`}
+function renderSheet(){
+  const[y,m]=state.ym.split("-").map(Number); const first=new Date(y,m-1,1), last=new Date(y,m,0);
+  let maxD=MODE==="slg"?parse(state.ev.envio):last, minD=MODE==="slg"?parse(state.ev.envio):first; Object.values(state.ev).forEach(s=>{const d=parse(s);if(d>maxD)maxD=d;if(d<minD)minD=d});
+  const start=addDays(minD,-dow(minD)), end=addDays(maxD,6-dow(maxD));
+  const n=Math.round((end-start)/864e5)+1;
+  const byDay={}; EV().forEach(e=>{(byDay[state.ev[e.k]]=byDay[state.ev[e.k]]||[]).push(e)});
+  const rango=s=>{if(MODE!=="slg")return null;for(let i=1;i<=state.np;i++){if(s>=state.ev["r"+i]&&s<=state.ev["f"+i])return PCOL[(i-1)%PCOL.length][0]}return null};
+  const pl=`${state.np} periodo${state.np>1?"s":""} de pago`;
+  const mp=MESES[(m+10)%12], cap=x=>x[0].toUpperCase()+x.slice(1);
+  const titulo=MODE==="slg"?`Cierre ${cap(mp)} - ${cap(MESES[m-1])} ${y}`:`Cierre ${cap(mp)} ${m===1?y-1:y}`;
+  const kind=MODE==="slg"?`Rutas del 16 ${mp.slice(0,3)} al 15 ${MESES[m-1].slice(0,3)} · ${pl}`:`Rutas del 1 al ${new Date(y,m-1,0).getDate()} de ${mp} · ${pl} en ${MESES[m-1]}`;
+  let h=`<div class="sh-top"><div><div class="sh-brand">${MODE==="slg"?"SLG":"Transportes Joint"}</div><h2 class="sh-month">${titulo}</h2></div><div class="sh-kind"><b>Calendario de pago a transportes</b>${kind}</div></div><div class="grid">`;
+  h+=`<div></div>`; DIAS.forEach((d,i)=>h+=`<div class="hd${i>=5?" we":""}">${d}</div>`);
+  { const semanas=n/7; let gi=0, ini=0;
+    const mesDe=w=>addDays(start,w*7+3);
+    for(let w=1;w<=semanas;w++){ if(w===semanas||mesDe(w).getMonth()!==mesDe(ini).getMonth()){ const md=mesDe(ini);
+        h+=`<div class="rail" style="grid-row:${ini+2} / span ${w-ini};color:${gi%2?"#060315":"#FF5C00"}"><span>${(w-ini)>1?MESES[md.getMonth()]:MESES[md.getMonth()].slice(0,3)} ${md.getFullYear()}</span></div>`; gi++; ini=w; } } }
+  for(let i=0;i<n;i++){
+    const d=addDays(start,i), s=iso(d), out=MODE==="slg"?false:d.getMonth()!==m-1, we=dow(d)>=5, hol=isHol(s), evs=byDay[s]||[];
+    const rg=rango(s); const cc="cell"+(out&&!rg?" out":we?" we":"")+(evs.length||rg?" has":"");
+    const nc="num"+(hol?" hol":out?" out":we?" we":"");
+    const nuevoMes=i>0&&d.getDate()<=7, dia1=d.getDate()===1&&i>0;
+    let st=rg?`background:${rg};border-color:${rg};`:"";
+    if(nuevoMes) st+="border-top:3px solid #FF5C00;";
+    if(dia1&&dow(d)>0) st+="border-left:3px solid #FF5C00;";
+    h+=`<div class="${cc}" data-d="${s}"${st?` style="${st}"`:""}><span class="${nc}" data-hol="${s}" title="Clic para marcar/desmarcar feriado">${d.getDate()}${hol?`<span class="fer">Feriado</span>`:""}</span>${evs.map(chipHTML).join("")}${internos(d).map(t=>`<div class="interno" title="Fecha interna: no aparece en la imagen">${t}</div>`).join("")}</div>`;
+  }
+  const orden=EV().slice().sort((a,b)=>state.ev[a.k]<state.ev[b.k]?-1:1);
+  h+=`</div><div class="sh-foot"><div><p class="sh-cap">Fechas clave</p><ul class="resumen">${orden.map(e=>{const d=parse(state.ev[e.k]);return `<li><span class="dot" style="background:${e.fg||e.color}"></span><span class="fd">${DIAS[dow(d)].slice(0,3)} ${pad(d.getDate())} ${MESES[d.getMonth()].slice(0,3)}</span><span>${e.label}${e.hr&&hrs()?" (12:00 hrs)":""}</span></li>`}).join("")}</ul></div><div class="cp-nota"${state.nota.trim()?"":" data-vacia=\"1\""}><div class="k">Importante</div><div class="v" id="notaTxt" contenteditable="true" spellcheck="false"></div></div></div>`;
+  const sh=$("sheet"); sh.innerHTML=h;
+  $("notaTxt").textContent=state.nota;
+  $("notaTxt").addEventListener("input",e=>{state.nota=e.target.textContent;save()});
+  sh.querySelectorAll("[data-hol]").forEach(x=>x.addEventListener("click",()=>toggleHol(x.dataset.hol)));
+  sh.querySelectorAll(".chip").forEach(c=>{
+    c.addEventListener("pointerdown",startDrag);
+    c.addEventListener("keydown",ev=>{const k=c.dataset.k;const map={ArrowLeft:-1,ArrowRight:1,ArrowUp:-7,ArrowDown:7};
+      if(map[ev.key]){ev.preventDefault();mover(k,iso(addDays(parse(state.ev[k]),map[ev.key])));const q=document.querySelector(`.chip[data-k="${k}"]`);q&&q.focus();}});
+  });
+}
+
+function render(){ $("hrs").checked=state.hrs; renderList(); renderSheet(); }
+
+function mover(k,s){
+  if(k==="envio"){ state.ev=calcular(parse(s)); toast("Fechas recalculadas desde el nuevo envío"); }
+  else state.ev[k]=s;
+  save(); render();
+}
+function toggleHol(s){
+  const base=FERIADOS_BASE.has(s), cur=isHol(s);
+  state.hol.add=state.hol.add.filter(x=>x!==s); state.hol.rem=state.hol.rem.filter(x=>x!==s);
+  if(cur&&base) state.hol.rem.push(s); else if(!cur&&!base) state.hol.add.push(s);
+  save(); render(); toast(cur?"Feriado quitado":"Marcado como feriado");
+}
+
+// arrastre con puntero (mouse y touch)
+let drag=null;
+function startDrag(ev){
+  const chip=ev.currentTarget; const k=chip.dataset.k; const e=EV().find(x=>x.k===k);
+  ev.preventDefault();
+  const g=document.createElement("div"); g.className="ghost"; g.style.background=e.hex;g.style.color="#fff"; g.textContent=e.label; $("vistaCalendario").appendChild(g);
+  drag={k,chip,g,over:null,moved:false,x0:ev.clientX,y0:ev.clientY};
+  chip.classList.add("dragging");
+  moveGhost(ev);
+  window.addEventListener("pointermove",onMove); window.addEventListener("pointerup",onUp,{once:true});
+}
+function moveGhost(ev){drag.g.style.left=(ev.clientX+12)+"px";drag.g.style.top=(ev.clientY+12)+"px"}
+function onMove(ev){
+  if(!drag)return; moveGhost(ev); if(Math.abs(ev.clientX-drag.x0)+Math.abs(ev.clientY-drag.y0)>4)drag.moved=true;
+  const t=document.elementFromPoint(ev.clientX,ev.clientY); const cell=t&&t.closest&&t.closest(".cell");
+  if(drag.over&&drag.over!==cell)drag.over.classList.remove("drop");
+  if(cell){cell.classList.add("drop");drag.over=cell}else drag.over=null;
+}
+function onUp(){
+  window.removeEventListener("pointermove",onMove);
+  const d=drag; drag=null; d.g.remove(); d.chip.classList.remove("dragging");
+  if(d.over){d.over.classList.remove("drop"); if(d.moved&&d.over.dataset.d!==state.ev[d.k]) mover(d.k,d.over.dataset.d);}
+}
+
+let tt; function toast(m){let t=document.querySelector(".toast");if(!t){t=document.createElement("div");t.className="toast";t.setAttribute("role","status");$("vistaCalendario").appendChild(t)}t.textContent=m;t.hidden=false;clearTimeout(tt);tt=setTimeout(()=>t.hidden=true,1800)}
+
+async function generarImagen(){
+  if(!window.html2canvas){toast("No se pudo cargar el generador de imagen");return}
+  const c=await html2canvas($("sheet"),{scale:2,backgroundColor:"#ffffff",ignoreElements:el=>el.classList&&(el.classList.contains("interno")||(el.classList.contains("cp-nota")&&!state.nota.trim()))});
+  const url=c.toDataURL("image/png");
+  $("imgOut").innerHTML=`<p class="hint">Haz clic derecho sobre la imagen y elige "Copiar imagen" o "Guardar imagen como" (en el celular, mantén presionado).</p><img alt="Calendario de pago ${state.ym}" src="${url}"><div class="btns"><a class="b pri" id="cpDesc" download="calendario_${MODE}_${state.ym}.png" href="${url}">Descargar PNG</a><button class="b" id="cp">Copiar imagen</button></div>`;
+  $("cp").addEventListener("click",()=>{
+    try{c.toBlob(b=>{navigator.clipboard.write([new ClipboardItem({"image/png":b})]).then(()=>toast("Imagen copiada. Pégala en el correo."),()=>toast("No se pudo copiar. Usa clic derecho sobre la imagen."))})}
+    catch(e){toast("No se pudo copiar. Usa clic derecho sobre la imagen.")}
+  });
+}
+
+// init
+function hoyYM(){const d=new Date();return d.getFullYear()+"-"+pad(d.getMonth()+1)}
+const shiftYM=(ym,k)=>{const[y,m]=ym.split("-").map(Number);const d=new Date(y,m-1+k,1);return d.getFullYear()+"-"+pad(d.getMonth()+1)};
+const capM=x=>x[0].toUpperCase()+x.slice(1);
+function opcionesMes(){const v=$("mes").value;
+  $("mes").innerHTML=MESES.map((m,i)=>`<option value="${pad(i+1)}">${MODE==="slg"?capM(MESES[(i+11)%12])+" - "+capM(m)+" (16 al 15)":capM(m)}</option>`).join("");
+  if(v)$("mes").value=v;}
+(function(){const y0=new Date().getFullYear();opcionesMes();
+  let o="";for(let y=y0-1;y<=y0+2;y++)o+=`<option value="${y}">${y}</option>`;$("anio").innerHTML=o;})();
+// Joint: se elige el mes de las rutas y las fechas caen el mes siguiente. SLG: se elige el periodo 16-15 por su mes de término.
+function abrir(ym){state=load(ym); state.ym=ym; const sel=MODE==="slg"?ym:shiftYM(ym,-1); const[y,m]=sel.split("-"); $("mes").value=m; $("anio").value=y; render();}
+const cambioMes=()=>{const sel=$("anio").value+"-"+$("mes").value;abrir(MODE==="slg"?sel:shiftYM(sel,1))};
+$("mes").addEventListener("change",cambioMes);$("anio").addEventListener("change",cambioMes);
+$("hrs").addEventListener("change",e=>{state.hrs=e.target.checked;save();renderSheet()});
+$("recalc").addEventListener("click",()=>{state.ev=calcular(parse(state.ev.envio));save();render();toast("Recalculado desde el envío")});
+$("reset").addEventListener("click",()=>{state.np=DEF_NP[MODE];if(state.ev)delete state.ev.envcal;state.ev=null;state.ev=sugerido(state.ym);state.hol={add:[],rem:[]};state.nota=NOTA_DEF;save();render();toast("Fechas sugeridas restauradas")});
+$("toImg").addEventListener("click",generarImagen);
+$("addP").addEventListener("click",agregarPeriodo);$("remP").addEventListener("click",quitarPeriodo);
+function modo(m){MODE=m;$("tabJoint").setAttribute("aria-selected",m==="joint");$("tabSlg").setAttribute("aria-selected",m==="slg");
+  const ymAct=state?state.ym:hoyYM();$("mesLbl").textContent=m==="slg"?"Periodo de cierre (rutas del 16 al 15)":"Periodo de cierre (rutas del mes)";opcionesMes();$("hrsWrap").hidden=m==="slg";$("reglaJoint").hidden=m==="slg";$("reglaSlg").hidden=m!=="slg";
+  $("imgOut").innerHTML="";abrir(ymAct);}
+$("tabJoint").addEventListener("click",()=>modo("joint"));$("tabSlg").addEventListener("click",()=>modo("slg"));
+abrir(hoyYM());
+})();
 </script>
 </body>
 </html>
