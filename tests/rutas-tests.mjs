@@ -96,12 +96,12 @@ const [dl] = await Promise.all([page.waitForEvent("download"), page.click("text=
 const out = path.join(tmp, "cruce.xlsx"); await dl.saveAs(out);
 // Almacén: cada carga queda en su hoja y volver a cargar el mismo archivo no duplica filas
 // Las hojas de configuración de Perú (tarifas, distritos, feriados) se crean al abrir la app y se prueban en peru-tests
-const hojas1 = await page.evaluate(`Object.fromEntries(Object.entries(almacenLocal.hojas).filter(([k])=>!k.startsWith("PERU ")).map(([k,v])=>[k,v.length-1]))`);
+const hojas1 = await page.evaluate(`Object.fromEntries(Object.entries(almacenLocal.hojas).filter(([k])=>!/^(PERU|SODIMAC CL) /.test(k)).map(([k,v])=>[k,v.length-1]))`);
 await page.setInputFiles("#inProformas", path.join(tmp, "p1.xlsx"));
 await page.setInputFiles("#inRegistro", path.join(tmp, "registro.xlsx"));
 await page.waitForTimeout(500);
 await page.waitForFunction("rutasDatos.proformas.length===2 && cruceRutas");
-const hojas2 = await page.evaluate(`Object.fromEntries(Object.entries(almacenLocal.hojas).filter(([k])=>!k.startsWith("PERU ")).map(([k,v])=>[k,v.length-1]))`);
+const hojas2 = await page.evaluate(`Object.fromEntries(Object.entries(almacenLocal.hojas).filter(([k])=>!/^(PERU|SODIMAC CL) /.test(k)).map(([k,v])=>[k,v.length-1]))`);
 const control = await page.evaluate(`(()=>{ const f=cruceRutas.filas.find(f=>f.id==="14600001");
   const h=almacenLocal.hojas["CONTROL RUTAS"], r=h.find(r=>r[3]===14600001);
   return {fila:[f.terminado,f.puntos,f.ns,f.total,f.cobro,f.validador,f.ingreso,f.dif,f.pago.proforma,f.pago.factura],
