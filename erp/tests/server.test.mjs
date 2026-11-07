@@ -1016,6 +1016,17 @@ test("ventas por monto y movimientos de Finanzas", () => {
   s.ok("anularMovimiento", { id: mv.id });
   const m2 = s.ok("bootstrap").data.movimientos[0];
   assert.deepEqual([m2.monto, m2.subcategoria, m2.anulado, m2.cuentaLabel, m2.categoriaLabel], [310000, "Arriendo octubre", true, "Banco", "GAV"]);
+
+  // Préstamo sin interés de un familiar: necesita quién prestó; la devolución no pasa de lo que se debe.
+  assert.match(errorDe(s.call("guardarMovimiento", { fecha: "2026-11-07", tipo: "ingreso", categoria: "prestamo", monto: 500000 })), /quién prestó/);
+  s.ok("guardarMovimiento", { fecha: "2026-11-07", tipo: "ingreso", categoria: "prestamo", subcategoria: "Tío Juan", monto: 500000, cuenta: "banco" });
+  assert.match(errorDe(s.call("guardarMovimiento", { fecha: "2026-11-08", tipo: "egreso", categoria: "pago_prestamo", subcategoria: "Tía Rosa", monto: 1000 })), /No hay préstamos de "Tía Rosa"/);
+  assert.match(errorDe(s.call("guardarMovimiento", { fecha: "2026-11-08", tipo: "egreso", categoria: "pago_prestamo", subcategoria: "tio juan", monto: 600000 })), /se le deben \$500\.000/);
+  const dev = s.ok("guardarMovimiento", { fecha: "2026-11-08", tipo: "egreso", categoria: "pago_prestamo", subcategoria: "tio juan", monto: 200000, cuenta: "banco" }).result;
+  assert.equal(dev.subcategoria, "Tío Juan", "queda con el mismo nombre del préstamo");
+  // Editar la devolución no cuenta la que se está editando.
+  s.ok("guardarMovimiento", { id: dev.id, fecha: "2026-11-08", tipo: "egreso", categoria: "pago_prestamo", subcategoria: "Tío Juan", monto: 500000, cuenta: "banco" });
+  assert.deepEqual(s.ok("bootstrap").data.movimientos.filter(m => /prestamo/.test(m.categoria)).map(m => m.categoriaLabel).sort(), ["Pago de préstamo", "Préstamo recibido"]);
 });
 
 test("comprobante en PDF de un pago al SII: subir, ver, reemplazar y quitar", () => {

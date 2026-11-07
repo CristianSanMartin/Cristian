@@ -239,6 +239,16 @@ correlativo (SGL-, TOR-, SOB-, BAZ-, ACC-) y se ven en Ventas → "Singles, torn
 y "Ajuste" siguen como OC. La migración `2026-10-05-ventas-sin-oc` (al ejecutar instalar) pasa las
 ventas existentes de esos conceptos a su correlativo, con sus abonos y referencias.
 
+## Préstamos sin interés (familiares, socios)
+
+- Finanzas → **Nuevo movimiento** → Ingreso · **Préstamo recibido**, con quién prestó en el detalle. Al devolver:
+  Egreso · **Pago de préstamo** (o el botón **Devolver** en Finanzas → Préstamos por pagar), que no puede pasar de
+  lo que se le debe a esa persona.
+- No son venta ni gasto: entran y salen de la caja sin cambiar la ganancia. Los gastos que se pagan con esa plata
+  se registran como siempre (GAV, GOPM…). Los aportes de capital siguen en "Patrimonio · aporte de capital".
+- Finanzas → **Préstamos por pagar**: prestado, devuelto y saldo por persona. En el Dashboard aparece la casilla
+  "Préstamos por pagar" (desplegable) cuando hay alguno registrado.
+
 ## Pagos de facturas y deudas de clientes
 
 - **Pagos a proveedores:** en Compras, el detalle de cada factura muestra sus pagos y lo que falta.

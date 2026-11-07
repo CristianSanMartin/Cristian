@@ -493,6 +493,30 @@ test("venta por monto y Finanzas", { skip }, async () => {
     await page.click('[data-action="tab"][data-id="finanzas.movimientos"]');
     await page.waitForSelector("td:has-text('Sueldo Alex')");
 
+    // Préstamo sin interés de un familiar: pestaña "Préstamos por pagar", devolución parcial y casilla del Dashboard.
+    await page.click('[data-action="nuevoMovimiento"]');
+    await page.waitForFunction(() => document.activeElement && document.activeElement.name === "fecha");
+    await modal(page).locator('[name="tipo"]').selectOption("ingreso");
+    await modal(page).locator('[name="categoria"]').selectOption("prestamo");
+    assert.equal((await modal(page).locator("[data-mv-detalle]").textContent()).trim(), "Quién prestó *");
+    await modal(page).locator('[name="monto"]').fill("300000");
+    await modal(page).locator('[name="subcategoria"]').fill("Tío Juan");
+    await modal(page).locator('button[type="submit"]').click();
+    await toast(page, /Movimiento MOV-\d{5} registrado/);
+    await page.click('[data-action="tab"][data-id="finanzas.prestamos"]');
+    await page.click('[data-action="devolverPrestamo"][data-id="Tío Juan"]');
+    assert.equal(await modal(page).locator('[name="monto"]').inputValue(), "300000");
+    await modal(page).locator('[name="monto"]').fill("100000");
+    await modal(page).locator('button[type="submit"]').click();
+    await toast(page, /Movimiento MOV-\d{5} registrado/);
+    assert.match(await page.locator("#fin-cuerpo tbody").textContent(), /Tío Juan.*\$300\.000.*−\$100\.000.*\$200\.000/s);
+    await page.click('[data-nav="dashboard"]');
+    const kpiPrest = page.locator('[data-action="verPrestamos"]');
+    assert.equal((await kpiPrest.locator(".kpi-value").textContent()).trim(), "$200.000");
+    await kpiPrest.click();
+    await page.locator(".panel", { hasText: "Préstamos por pagar" }).locator('[data-action="irPrestamos"]').click();
+    await page.waitForSelector('.tab.active[data-id="finanzas.prestamos"]');
+
     assert.deepEqual(errores, []);
   } finally {
     await browser.close();

@@ -23,8 +23,33 @@ const Finanzas = {
     };
   },
 
+  /** Préstamos sin interés por persona: { clave: { nombre, prestado, devuelto } } (sin contar el movimiento `sinId`). */
+  prestamos(sinId) {
+    const res = {};
+    Db.all('Finanzas').forEach((m) => {
+      if (m.anulado || m.id === sinId || (m.categoria !== 'prestamo' && m.categoria !== 'pago_prestamo')) return;
+      const k = Util.normalizar(m.subcategoria);
+      const x = res[k] = res[k] || { nombre: m.subcategoria, prestado: 0, devuelto: 0 };
+      if (m.categoria === 'prestamo') x.prestado += m.monto; else x.devuelto += m.monto;
+    });
+    return res;
+  },
+
+  /** Un préstamo necesita el nombre de quien prestó; una devolución no puede pasar de lo que se le debe. */
+  _validarPrestamo(datos, id) {
+    if (datos.categoria !== 'prestamo' && datos.categoria !== 'pago_prestamo') return;
+    if (!datos.subcategoria) throw new AppError('Escribe en el detalle quién ' + (datos.categoria === 'prestamo' ? 'prestó la plata' : 'recibe la devolución') + '.');
+    if (datos.categoria !== 'pago_prestamo') return;
+    const x = Finanzas.prestamos(id)[Util.normalizar(datos.subcategoria)];
+    const debe = x ? x.prestado - x.devuelto : 0;
+    if (!x) throw new AppError('No hay préstamos de "' + datos.subcategoria + '". Escribe el nombre igual que en el préstamo recibido.');
+    if (datos.monto > debe) throw new AppError('A ' + x.nombre + ' se le deben ' + ('$' + String(Math.round(debe)).replace(/\B(?=(\d{3})+(?!\d))/g, '.')) + '; la devolución no puede ser mayor.');
+    datos.subcategoria = x.nombre;   // mismo nombre que el préstamo, para agruparlos
+  },
+
   guardar(p, user) {
     const datos = Finanzas.validar(p);
+    Finanzas._validarPrestamo(datos, p.id ? String(p.id) : '');
     if (p.id) {
       const actual = Finanzas.requerir(p.id);
       if (actual.anulado) throw new AppError('El movimiento ' + actual.id + ' está anulado.');

@@ -443,6 +443,8 @@
     return c && GS.detalleCompra ? GS.detalleCompra(c) : '';
   };
 
+  const prestamosPorPagar = () => GS.prestamos().reduce((t, x) => t + x.saldo, 0);
+
   GS.views.finanzas = {
     title: 'Finanzas',
     render(el) {
@@ -453,7 +455,7 @@
         '<div class="page-head"><div><h1>Finanzas</h1><p>Resumen mensual del negocio y libro de movimientos: aportes, gastos, pagos al SII y compras por monto.</p></div>' +
         '<div class="btn-row"><div class="select-input"><select data-filter="finanzas.anio" aria-label="Año">' + GS.options(anios(), f.anio) + '</select></div>' +
         (GS.puede('operador') ? '<button class="btn" data-action="nuevoMovimiento">' + GS.icon('plus', 2.4) + 'Nuevo movimiento</button>' : '') + '</div></div>' +
-        '<div class="tabs">' + tab('movimientos', 'Movimientos') + tab('cobrar', 'Cuentas por cobrar' + (GS.cuentasPorCobrar().length ? ' <span class="pill soon">' + fmt.money(GS.cuentasPorCobrar().reduce((t, x) => t + x.total, 0)) + '</span>' : '')) + tab('resumen', 'Resumen mensual') + '</div>' +
+        '<div class="tabs">' + tab('movimientos', 'Movimientos') + tab('cobrar', 'Cuentas por cobrar' + (GS.cuentasPorCobrar().length ? ' <span class="pill soon">' + fmt.money(GS.cuentasPorCobrar().reduce((t, x) => t + x.total, 0)) + '</span>' : '')) + tab('prestamos', 'Préstamos por pagar' + (prestamosPorPagar() ? ' <span class="pill soon">' + fmt.money(prestamosPorPagar()) + '</span>' : '')) + tab('resumen', 'Resumen mensual') + '</div>' +
         '<div id="fin-cuerpo"></div>';
       this.update();
     },
@@ -505,6 +507,7 @@
         return;
       }
       if (f.tab === 'cobrar') { cuerpo.innerHTML = GS.tablaPorCobrar(); return; }
+      if (f.tab === 'prestamos') { cuerpo.innerHTML = GS.tablaPrestamos(); return; }
       const r = resumen(anio);
       const total = (fila) => fila.valores.reduce((t, x) => t + x, 0);
       // Capital: aportes menos retiros de capital (devolución de aportes). La compra de acciones /
@@ -543,12 +546,49 @@
       '</tbody></table></div><p class="table-note">Aportes ("Patrimonio · aporte de capital") menos retiros ("Patrimonio · retiro de capital"), agrupados por el nombre del socio en el detalle. Un socio que salió debería quedar en $0.</p>';
   }
 
+  /* ---------- préstamos sin interés (familiares, socios) ---------- */
+
+  /** Por persona (el detalle del movimiento): prestado, devuelto, saldo y fecha del primer préstamo. Lo que se debe primero. */
+  GS.prestamos = () => {
+    const res = {};
+    movsVivos().filter((m) => m.categoria === 'prestamo' || m.categoria === 'pago_prestamo').forEach((m) => {
+      const k = GS.norm(m.subcategoria || '');
+      const x = res[k] = res[k] || { nombre: m.subcategoria || '(sin nombre)', prestado: 0, devuelto: 0, desde: m.fecha, movs: 0 };
+      if (m.categoria === 'prestamo') { x.prestado += m.monto; if (m.fecha < x.desde) x.desde = m.fecha; } else x.devuelto += m.monto;
+      x.movs++;
+    });
+    return Object.keys(res).map((k) => Object.assign({ saldo: res[k].prestado - res[k].devuelto }, res[k]))
+      .sort((a, b) => (b.saldo > 0) - (a.saldo > 0) || String(a.desde).localeCompare(String(b.desde)));
+  };
+
+  /** Tabla de préstamos por pagar (Finanzas → Préstamos por pagar y panel del Dashboard). */
+  GS.tablaPrestamos = () => {
+    const lista = GS.prestamos();
+    if (!lista.length) return GS.empty('Sin préstamos', 'Registra la plata prestada con "Nuevo movimiento" → Ingreso · Préstamo recibido, y en el detalle quién prestó.', 'finanzas');
+    const op = GS.puede('operador');
+    const total = lista.reduce((t, x) => t + x.saldo, 0);
+    return '<div class="table-wrap"><table class="data-table" style="min-width:0"><thead><tr><th>Quién prestó</th><th>Desde</th><th class="right">Prestado</th><th class="right">Devuelto</th><th class="right">Por pagar</th><th></th></tr></thead><tbody>' +
+      lista.map((x) => '<tr class="' + (x.saldo ? '' : 'row-muted') + '"><td class="cell-strong">' + esc(x.nombre) + '</td><td class="nowrap">' + fmt.date(x.desde) + '</td>' +
+        '<td class="cell-num right">' + fmt.money(x.prestado) + '</td><td class="cell-num right">' + (x.devuelto ? '−' + fmt.money(x.devuelto) : '—') + '</td>' +
+        '<td class="cell-num right"><strong class="' + (x.saldo ? 'text-danger' : 'muted') + '">' + (x.saldo ? fmt.money(x.saldo) : 'Pagado') + '</strong></td>' +
+        '<td>' + (op && x.saldo ? '<button class="btn small secondary" data-action="devolverPrestamo" data-id="' + esc(x.nombre) + '">Devolver</button>' : '') + '</td></tr>').join('') +
+      '</tbody><tfoot><tr><td colspan="4" class="right">Total por pagar</td><td class="cell-num right"><strong>' + fmt.money(total) + '</strong></td><td></td></tr></tfoot></table></div>' +
+      '<p class="table-note">Préstamos sin interés (familiares, socios). No son venta ni gasto: entran y salen de la caja sin cambiar la ganancia. Los gastos que se pagan con esa plata se registran como siempre (GAV, GOPM…). ' +
+      'Los aportes de capital van aparte, en "Patrimonio · aporte de capital".</p>';
+  };
+  GS.actions.devolverPrestamo = (nombre) => {
+    const x = GS.prestamos().find((p) => p.nombre === nombre);
+    if (!x) return;
+    formMovimiento(null, { titulo: 'Devolver préstamo a ' + x.nombre, tipo: 'egreso', categoria: 'pago_prestamo', subcategoria: x.nombre, monto: x.saldo,
+      ayuda: 'Se le deben ' + fmt.money(x.saldo) + ' a ' + esc(x.nombre) + '. Puedes devolver una parte: cambia el monto.' });
+  };
+
   /* ---------- formulario ---------- */
 
   /** pre (opcional, desde Compras → Nueva compra): { titulo, categoria, subcategoria, ayuda }. */
   function formMovimiento(m, pre) {
     const c = data().catalogos;
-    const x = m || { fecha: data().hoy, tipo: 'egreso', categoria: (pre && pre.categoria) || 'gav', subcategoria: (pre && pre.subcategoria) || '', monto: '', cuenta: '', referencia: '', notas: '', iva: 0 };
+    const x = m || { fecha: data().hoy, tipo: (pre && pre.tipo) || 'egreso', categoria: (pre && pre.categoria) || 'gav', subcategoria: (pre && pre.subcategoria) || '', monto: (pre && pre.monto) || '', cuenta: '', referencia: '', notas: '', iva: 0 };
     const opcionesCat = (tipo, sel) => GS.options(Object.keys(c.categoriasMovimiento[tipo]).map((k) => ({ value: k, label: c.categoriasMovimiento[tipo][k] })), sel);
     const tasa = data().app.iva;
     GS.formModal({
@@ -559,7 +599,8 @@
         '<div class="form-field"><label>Tipo *</label><select name="tipo">' + GS.options([{ value: 'egreso', label: 'Egreso' }, { value: 'ingreso', label: 'Ingreso' }], x.tipo) + '</select></div>' +
         '<div class="form-field"><label>Categoría *</label><select name="categoria">' + opcionesCat(x.tipo, x.categoria) + '</select></div>' +
         '<div class="form-field"><label>Monto *</label><input type="number" name="monto" min="1" step="1" value="' + esc(x.monto) + '" placeholder="Ej: 25000"></div>' +
-        '<div class="form-field"><label>Detalle</label><input name="subcategoria" value="' + esc(x.subcategoria) + '" placeholder="Ej: Sueldo Alex, Singles lote 12, socio Jaime"></div>' +
+        '<div class="form-field"><label data-mv-detalle>Detalle</label><input name="subcategoria" value="' + esc(x.subcategoria) + '" placeholder="Ej: Sueldo Alex, Singles lote 12, socio Jaime" list="mv-prestamistas"></div>' +
+        '<datalist id="mv-prestamistas">' + GS.prestamos().map((p) => '<option value="' + esc(p.nombre) + '">').join('') + '</datalist>' +
         '<div class="form-field"><label>Cuenta</label><select name="cuenta">' + GS.options([{ value: '', label: 'Sin cuenta' }].concat(Object.keys(c.cuentas).map((k) => ({ value: k, label: c.cuentas[k] }))), x.cuenta) + '</select></div>' +
         '<div class="form-field"><label>Referencia</label><input name="referencia" value="' + esc(x.referencia) + '" placeholder="N° de documento, boleta…"></div>' +
         '<div class="form-field" data-mv-fac><label class="check" style="margin-top:22px;"><input type="checkbox" name="conFactura"' + (x.iva ? ' checked' : '') + '> Con factura (registrar el IVA como crédito fiscal)</label></div>' +
@@ -571,12 +612,18 @@
         let ivaTocado = !!x.iva;
         const upd = () => {
           const egreso = form.elements.tipo.value === 'egreso';
-          form.querySelector('[data-mv-fac]').hidden = !egreso;
+          // Préstamos: el detalle es quién prestó (con la lista de los que ya prestaron) y no llevan factura.
+          const prest = form.elements.categoria.value === 'prestamo' || form.elements.categoria.value === 'pago_prestamo';
+          form.querySelector('[data-mv-detalle]').textContent = prest ? (egreso ? 'A quién se devuelve *' : 'Quién prestó *') : 'Detalle';
+          form.elements.subcategoria.placeholder = prest ? 'Ej: Tío Juan' : 'Ej: Sueldo Alex, Singles lote 12, socio Jaime';
+          if (prest) form.elements.conFactura.checked = false;
+          form.querySelector('[data-mv-fac]').hidden = !egreso || prest;
           const con = egreso && form.elements.conFactura.checked;
           form.querySelector('[data-mv-iva]').hidden = !con;
           if (con && !ivaTocado) form.elements.iva.value = Math.round((Number(form.elements.monto.value) || 0) * tasa / (1 + tasa)) || '';
         };
         form.elements.tipo.addEventListener('change', () => { form.elements.categoria.innerHTML = opcionesCat(form.elements.tipo.value, ''); upd(); });
+        form.elements.categoria.addEventListener('change', upd);
         form.elements.conFactura.addEventListener('change', upd);
         form.elements.monto.addEventListener('input', upd);
         form.elements.iva.addEventListener('input', () => { ivaTocado = true; });

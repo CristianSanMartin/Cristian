@@ -15,7 +15,7 @@
 
 const APP = {
   nombre: 'GS Prime ERP',
-  version: '2.26.5',
+  version: '2.27.0',
   tz: 'America/Santiago',
   iva: 0.19,
 };
@@ -269,11 +269,15 @@ const TIPOS_BAZAR = ['Bebida', 'Snack'];
  */
 const PREFIJOS_VENTA = { 'Singles': 'SGL', 'Torneo': 'TOR', 'Sobres sueltos': 'SOB', 'Bazar': 'BAZ', 'Accesorios': 'ACC' };
 
-/** Finanzas: categorías de movimientos (la subcategoría es texto libre: socio, proveedor, concepto). */
+/**
+ * Finanzas: categorías de movimientos (la subcategoría es texto libre: socio, proveedor, concepto).
+ * Préstamos sin interés (familiares, socios): el detalle es el nombre de quien prestó; prestado − devuelto
+ * es lo que la tienda le debe. No son venta ni gasto: no cambian la ganancia, solo la caja.
+ */
 const CATEGORIAS_MOVIMIENTO = {
-  ingreso: { aporte: 'Patrimonio · aporte de capital', devolucion_sii: 'Devolución SII', otro_ingreso: 'Otro ingreso' },
+  ingreso: { aporte: 'Patrimonio · aporte de capital', prestamo: 'Préstamo recibido', devolucion_sii: 'Devolución SII', otro_ingreso: 'Otro ingreso' },
   egreso: {
-    compra: 'Compra por monto', gav: 'GAV', gopm: 'GOPM (puesta en marcha)', sii: 'Pago SII', comision: 'Comisión', torneo: 'Torneos (juez y gastos)', retiro: 'Patrimonio · retiro de capital', otro_egreso: 'Otro egreso',
+    compra: 'Compra por monto', gav: 'GAV', gopm: 'GOPM (puesta en marcha)', sii: 'Pago SII', comision: 'Comisión', torneo: 'Torneos (juez y gastos)', retiro: 'Patrimonio · retiro de capital', pago_prestamo: 'Pago de préstamo', otro_egreso: 'Otro egreso',
   },
 };
 const CUENTAS = { caja: 'Caja (efectivo)', banco: 'Banco', tuu: 'TUU' };
