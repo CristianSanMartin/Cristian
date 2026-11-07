@@ -405,6 +405,31 @@ const Ventas = {
     return cobro;
   },
 
+  /**
+   * Abono de un cliente desde Cuentas por cobrar: va a la venta elegida (p.ventaId) o se reparte entre sus
+   * ventas con saldo, de la más antigua a la más nueva. p: { clienteId, ventaId?, monto, fecha, medioPago }.
+   */
+  abonarCliente(p, user) {
+    const c = Clientes.requerir(p.clienteId);
+    const deudas = Db.all('Ventas').filter((v) => v.clienteId === c.id && !v.anulada && (!p.ventaId || v.id === p.ventaId))
+      .map((v) => ({ v: v, saldo: Ventas.saldo(v) })).filter((x) => x.saldo > 0)
+      .sort((a, b) => String(a.v.fecha).localeCompare(String(b.v.fecha)) || String(a.v.id).localeCompare(String(b.v.id)));
+    const debe = deudas.reduce((t, x) => t + x.saldo, 0);
+    if (!debe) throw new AppError(p.ventaId ? 'La venta ' + p.ventaId + ' no tiene saldo de ' + c.nombre + '.' : c.nombre + ' no tiene ventas con saldo pendiente.');
+    let resto = Util.entero(p.monto, 'El monto del abono', { requerido: true, min: 1, max: debe });
+    const fecha = Util.fecha(p.fecha, 'La fecha del abono', { requerido: true });
+    const medioPago = Util.opcion(p.medioPago || 'transferencia', 'El medio de pago', Object.keys(MEDIOS_PAGO));
+    const abonos = [];
+    deudas.forEach((x) => {
+      if (!resto) return;
+      const monto = Math.min(resto, x.saldo);
+      Ventas.registrarCobro({ ventaId: x.v.id, monto: monto, fecha: fecha, medioPago: medioPago, notas: Util.texto(p.notas, 'Las notas', { max: 300 }) }, user);
+      abonos.push({ ventaId: x.v.id, monto: monto, pagada: monto === x.saldo });
+      resto -= monto;
+    });
+    return { clienteId: c.id, abonos: abonos, debe: debe - abonos.reduce((t, a) => t + a.monto, 0) };
+  },
+
   saldo(v) {
     const total = Db.all('Ventas_Lineas').filter((l) => l.ventaId === v.id).reduce((t, l) => t + l.precio * l.cantidad, 0);
     const cobrado = Db.all('Cobros').filter((c) => c.ventaId === v.id).reduce((t, c) => t + c.monto, 0);

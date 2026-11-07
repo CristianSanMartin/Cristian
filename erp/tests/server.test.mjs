@@ -793,6 +793,26 @@ test("editar venta: lo pagado al vender deja deuda (con cliente) y se salda con 
   assert.match(errorDe(s.call("editarVenta", { id: v.id, fecha: "2026-07-01", abono: 20000 })), /no puede ser mayor a 10000/);
 });
 
+test("abono de un cliente desde Cuentas por cobrar: a una venta o repartido desde la más antigua", () => {
+  const s = createServer();
+  const { prods } = conInventario(s);
+  const v1 = s.ok("crearVenta", { fecha: "2026-07-01", lineas: [{ productoId: prods.miniTin.id, cantidad: 1 }] }).result;   // 18.000
+  const v2 = s.ok("crearVenta", { fecha: "2026-07-03", lineas: [{ productoId: prods.miniTin.id, cantidad: 1 }] }).result;
+  s.ok("editarVenta", { id: v1.id, fecha: "2026-07-01", abono: 6000, cliente: "Vicente" });   // debe 12.000
+  s.ok("editarVenta", { id: v2.id, fecha: "2026-07-03", abono: 0, cliente: "Vicente" });      // debe 18.000
+  const cli = s.ok("bootstrap").data.clientes.find(c => c.nombre === "Vicente");
+  assert.match(errorDe(s.call("abonarCliente", { clienteId: cli.id, fecha: "2026-07-10", monto: 40000 })), /no puede ser mayor a 30000/);
+  // Repartido: paga primero la más antigua y lo que sobra va a la siguiente.
+  const r = s.ok("abonarCliente", { clienteId: cli.id, fecha: "2026-07-10", monto: 15000, medioPago: "efectivo" }).result;
+  assert.deepEqual(r.abonos, [{ ventaId: v1.id, monto: 12000, pagada: true }, { ventaId: v2.id, monto: 3000, pagada: false }]);
+  assert.equal(r.debe, 15000);
+  // A una venta elegida, con tope en su saldo.
+  assert.match(errorDe(s.call("abonarCliente", { clienteId: cli.id, ventaId: v1.id, fecha: "2026-07-11", monto: 1 })), /no tiene saldo/);
+  s.ok("abonarCliente", { clienteId: cli.id, ventaId: v2.id, fecha: "2026-07-11", monto: 15000 });
+  const d = s.ok("bootstrap").data;
+  assert.deepEqual([v1.id, v2.id].map(id => d.ventas.find(v => v.id === id).estadoPago), ["pagada", "pagada"]);
+});
+
 test("agregar un producto que faltó en una factura: preventa recibida, lote y despacho repartido", () => {
   const s = createServer();
   const { prods } = conInventario(s);   // factura con despacho $15.000

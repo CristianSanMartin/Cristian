@@ -282,7 +282,7 @@
           '<td class="cell-strong">' + esc(r.cliente) + '</td><td class="cell-num right">' + r.docs.length + '</td>' +
           '<td class="nowrap">' + fmt.date(r.desde) + '<div class="cell-dim">' + antig(r.dias) + '</div></td>' +
           '<td class="cell-num right"><strong class="' + (r.dias > 30 ? 'text-danger' : r.dias >= 7 ? 'text-gold' : '') + '">' + fmt.money(r.total) + '</strong></td>' +
-          '<td><div class="row-actions">' + wspDeuda(r) + (r.clienteId ? '<button class="btn small ghost" data-nav-cliente="' + esc(r.clienteId) + '" title="Registrar un abono en la ficha del cliente">Abonar</button>' : '') + '</div></td></tr>' +
+          '<td><div class="row-actions">' + wspDeuda(r) + (r.clienteId && GS.puede('operador') && r.docs.some((x) => !x.caja) ? '<button class="btn small secondary" data-action="abonarCliente" data-id="' + esc(r.clienteId) + '" title="Registrar un abono del cliente">Abonar</button>' : '') + '</div></td></tr>' +
           (open ? '<tr class="detalle-row"><td colspan="6"><div class="detalle-compra"><table class="mini-table"><thead><tr><th>Documento</th><th>Fecha</th><th class="right">Total</th><th class="right">Pagado</th><th class="right">Debe</th></tr></thead><tbody>' +
             r.docs.map((x) => '<tr><td><span class="cell-strong">' + esc(x.id) + '</span>' + (x.caja ? ' <span class="cell-dim">(caja abierta)</span>' : '') +
               (x.productos && x.productos.length ? x.productos.map((t) => '<div class="cell-dim">' + esc(t) + '</div>').join('') : '') + '</td><td class="nowrap">' + fmt.date(x.fecha) + ' <span class="cell-dim">' + antig(diasDesde(x.fecha)) + '</span></td>' +
@@ -291,16 +291,43 @@
       }).join('') + '</tbody></table></div>' +
       (o.max && todas.length > o.max ? '<p class="table-note">' + (todas.length - o.max) + ' clientes más en Finanzas → Cuentas por cobrar.</p>' : '');
   };
-  // "Abonar": abre la ficha del cliente con sus deudas desplegadas (ahí se registra el abono).
+  // El enlace de WhatsApp abre su página sin desplegar la fila.
   document.addEventListener('click', (e) => {
-    if (!e.target.closest) return;
-    // El enlace de WhatsApp abre su página sin desplegar la fila.
-    if (e.target.closest('a[href^="https://wa.me"]')) { e.stopPropagation(); return; }
-    const b = e.target.closest('[data-nav-cliente]');
-    if (!b) return;
-    e.stopPropagation();
-    GS.go('clientes', b.dataset.navCliente);
+    if (e.target.closest && e.target.closest('a[href^="https://wa.me"]')) e.stopPropagation();
   }, true);
+
+  /** "Abonar" (Cuentas por cobrar y Dashboard): registra el abono ahí mismo, a una venta o repartido desde la más antigua. */
+  GS.actions.abonarCliente = (clienteId) => {
+    const r = GS.cuentasPorCobrar().find((x) => x.clienteId === clienteId);
+    if (!r) return;
+    const docs = r.docs.filter((x) => !x.caja);
+    const debe = docs.reduce((t, x) => t + x.saldo, 0);
+    const medios = data().catalogos.mediosPago;
+    GS.formModal({
+      title: 'Abono de ' + r.cliente,
+      submitLabel: 'Registrar abono',
+      fields: () => '<div class="form-grid">' +
+        '<div class="form-field full"><label>Venta</label><select name="ventaId">' +
+          (docs.length > 1 ? '<option value="">Repartir desde la más antigua (debe ' + fmt.money(debe) + ')</option>' : '') +
+          docs.map((x) => '<option value="' + esc(x.id) + '" data-saldo="' + x.saldo + '">' + esc(x.id) + ' · ' + fmt.date(x.fecha) + ' · debe ' + fmt.money(x.saldo) + '</option>').join('') + '</select></div>' +
+        '<div class="form-field"><label>Monto *</label><input type="number" name="monto" min="1" max="' + debe + '" step="1" value="' + debe + '"></div>' +
+        '<div class="form-field"><label>Fecha *</label><input type="date" name="fecha" value="' + esc(data().hoy) + '"></div>' +
+        '<div class="form-field"><label>Medio de pago</label><select name="medioPago">' + GS.options(Object.keys(medios).map((k) => ({ value: k, label: medios[k] })), 'transferencia') + '</select></div></div>' +
+        '<p class="hint">' + (docs.length > 1 ? 'Si no eliges una venta, el abono paga primero la más antigua y lo que sobra pasa a la siguiente. ' : '') +
+        (r.docs.some((x) => x.caja) ? 'Lo de la caja abierta se cobra editando el ticket en la Caja del día.' : '') + '</p>',
+      onMount: (form) => {
+        // Al elegir una venta, el monto pasa a lo que debe esa venta.
+        form.elements.ventaId.addEventListener('change', () => {
+          const op = form.elements.ventaId.selectedOptions[0];
+          const max = op && op.dataset.saldo ? Number(op.dataset.saldo) : debe;
+          form.elements.monto.max = max;
+          form.elements.monto.value = max;
+        });
+      },
+      onSubmit: (v) => GS.mutate('abonarCliente', Object.assign({ clienteId: clienteId }, v), (res) => 'Abono registrado' +
+        (res.abonos.length > 1 ? ' en ' + res.abonos.map((a) => a.ventaId).join(', ') : '') + (res.debe ? ' · aún debe ' + fmt.money(res.debe) : ' · deuda saldada')),
+    });
+  };
 
   GS.tablaRegistrar('movimientos', { filas: movsBuscados, columnas: colsMov, alCambiar: () => GS.views.finanzas.update() });
 

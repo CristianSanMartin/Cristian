@@ -94,6 +94,7 @@ function rutas_() {
 
     crearVenta: { rol: 'operador', write: true, fn: Ventas.crear },
     registrarCobro: { rol: 'operador', write: true, fn: Ventas.registrarCobro },
+    abonarCliente: { rol: 'operador', write: true, fn: Ventas.abonarCliente },
     anularVenta: { rol: 'admin', write: true, fn: Ventas.anular },
     liberarNumeroVenta: { rol: 'admin', write: true, fn: Ventas.liberarNumero },
     eliminarVenta: { rol: 'admin', write: true, fn: Ventas.eliminar },

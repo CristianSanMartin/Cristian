@@ -330,14 +330,22 @@ test("venta desde Inventario: cantidad en la fila, descuento, comisión TUU, sto
     assert.ok(await page.locator("svg.grafico").count() >= 2, "gráficos de ventas vs compras y por día");
     assert.match(await page.locator(".resumen-mensual").textContent(), /Ventas.*Compras.*Ventas − compras/s);
 
-    // Cobranza en Clientes: Ana Rojas debe $16.990 del ejemplo
+    // Cobranza: Ana Rojas debe $16.990 del ejemplo. Abono parcial desde Finanzas → Cuentas por cobrar (ahí mismo)…
+    await page.click('[data-nav="finanzas"]');
+    await page.click('[data-action="tab"][data-id="finanzas.cobrar"]');
+    await page.locator("#fin-cuerpo tr.fila-compra", { hasText: "Ana Rojas" }).locator('[data-action="abonarCliente"]').click();
+    assert.equal(await modal(page).locator('[name="monto"]').inputValue(), "16990");
+    await modal(page).locator('[name="monto"]').fill("6990");
+    await modal(page).locator('button[type="submit"]').click();
+    await toast(page, /Abono registrado · aún debe \$10\.000/);
+    // …y el resto en la ficha del cliente.
     await page.click('[data-nav="clientes"]');
     const ana = page.locator("#cl-tbody tr.fila-compra", { hasText: "Ana Rojas" });
-    assert.match(await ana.textContent(), /\$16\.990/);
+    assert.match(await ana.textContent(), /\$10\.000/);
     await ana.click();
     await page.locator('#cl-tbody .abono-form button[type="submit"]').click();
-    await toast(page, /Abono registrado/);
-    assert.doesNotMatch(await page.locator("#cl-tbody tr.fila-compra", { hasText: "Ana Rojas" }).textContent(), /\$16\.990/);
+    await page.locator("#cl-tbody .abono-form").waitFor({ state: "detached" });   // saldada: ya no hay deuda que abonar
+    assert.doesNotMatch(await page.locator("#cl-tbody tr.fila-compra", { hasText: "Ana Rojas" }).textContent(), /\$10\.000/);
     assert.match(await page.locator("#cl-tbody tr.fila-compra", { hasText: "Maria Soto" }).textContent(), /1.*\$49\.980/s);
     assert.deepEqual(errores, []);
   } finally {
@@ -508,7 +516,7 @@ test("venta por monto y Finanzas", { skip }, async () => {
     assert.equal(await modal(page).locator('[name="monto"]').inputValue(), "300000");
     await modal(page).locator('[name="monto"]').fill("100000");
     await modal(page).locator('button[type="submit"]').click();
-    await toast(page, /Movimiento MOV-\d{5} registrado/);
+    await page.waitForSelector("#fin-cuerpo td:has-text('−$100.000')");
     assert.match(await page.locator("#fin-cuerpo tbody").textContent(), /Tío Juan.*\$300\.000.*−\$100\.000.*\$200\.000/s);
     await page.click('[data-nav="dashboard"]');
     const kpiPrest = page.locator('[data-action="verPrestamos"]');
