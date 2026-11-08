@@ -525,6 +525,15 @@ table.data-table{width:100%;border-collapse:collapse;min-width:720px;}
 
 /* KPIs */
 .kpi-grid + .kpi-grid{margin-top:-8px;}
+.tuu-rapido{display:flex;flex-direction:column;gap:8px;padding:4px 2px;}
+.tuu-barra{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+.tuu-barra select,.tuu-barra input,.tuu-pegar textarea{background:var(--panel-2);border:1px solid var(--panel-border);border-radius:6px;padding:7px 8px;color:var(--white);font-size:13px;font-family:var(--font-body);}
+.tuu-barra [data-tuu-monto]{width:150px;font-size:15px;}
+.tuu-pegar textarea{width:100%;max-width:560px;display:block;margin-bottom:6px;}
+.tuu-chips{display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:12.5px;}
+.tuu-chips .chip{display:inline-flex;align-items:center;gap:4px;background:var(--panel-2);border:1px solid var(--panel-border);border-radius:12px;padding:2px 8px;}
+.tuu-chips .chip button{background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:14px;padding:0 0 0 2px;line-height:1;}
+.tuu-chips .chip button:hover{color:var(--danger,#e5484d);}
 .kpi-grid.dinero{grid-template-columns:repeat(auto-fit,minmax(190px,1fr));}
 .kpi-value.small{font-size:22px;}
 

@@ -355,6 +355,18 @@ Menú **Caja del día**. Se abre una caja por fecha (`CJ-20261012`) y cada atenc
 - Comisión TUU: 0,77% + $65 + IVA sobre la comisión (calza con el informe). Las ventas desde el
   01-10-2026 con la fórmula anterior se corrigen al ejecutar "Instalar / actualizar hojas".
 
+## Eventos con la máquina TUU (+ TUU)
+
+- En la Caja del día, cada ticket de venta abierto tiene el botón **+ TUU**: se abre una barra para marcar cada
+  pasada de la máquina (monto y Enter; el campo queda listo para la siguiente). Cada pasada es un pago propio, así
+  cuadra 1 a 1 con el informe de abonos de TUU, y suma su monto a una línea por monto del ticket (o a una nueva,
+  ej. Singles). Débito o crédito (con cuotas).
+- **Pegar varios**: montos separados por espacio, coma o salto de línea (acepta $ y puntos de miles), con vista
+  previa de cuántos son y la suma.
+- Las pasadas se ven como fichas con × para quitar una mal marcada (resta su monto de la línea). Los productos del
+  inventario se agregan editando el ticket, como siempre.
+- Al cerrar la caja: casilla opcional **Total TUU según la app** que muestra si cuadra o cuánto falta marcar.
+
 ## Torneos
 
 Menú **Torneos**. Al terminar un torneo, TOM (Tournament Operations Manager) exporta un archivo `.tdf`:

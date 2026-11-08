@@ -1316,6 +1316,36 @@ test("caja del día sin depósito de TUU: comisión estimada", () => {
   assert.equal(v.comision, 169, "142 + 27 de IVA, como en el informe de TUU");
 });
 
+test("+ TUU en un ticket de evento: un pago por pasada, suma a la línea, se quita y cuadra con el informe", () => {
+  const s = createServer();
+  const { prods } = conInventario(s);
+  const caja = s.ok("abrirCaja", { fecha: "2026-10-15" }).result;
+  const precio = s.ok("bootstrap").data.productos.find(p => p.id === prods.miniTin.id).precio;
+  const t = s.ok("guardarTicket", { cajaId: caja.id, canal: "Evento", evento: "Feria", lineas: [{ productoId: prods.miniTin.id, cantidad: 1 }], pagos: [{ medio: "efectivo", monto: precio }] }).result;
+  assert.match(errorDe(s.call("pagosTuuTicket", { ticketId: t.id, montos: [5000], linea: 0 })), /no es por monto/);
+  // Sin línea por monto: crea "Singles" y las siguientes suman a esa línea.
+  let r = s.ok("pagosTuuTicket", { ticketId: t.id, medio: "debito", montos: [8000], categoria: "Singles" }).result;
+  assert.equal(r.linea, 1);
+  r = s.ok("pagosTuuTicket", { ticketId: t.id, medio: "debito", montos: [25000, 12500], linea: 1 }).result;
+  s.ok("pagosTuuTicket", { ticketId: t.id, medio: "credito", cuotas: 3, montos: [30000], linea: 1 });
+  let tk = s.ok("bootstrap").data.cajas[0].tickets.find(x => x.id === t.id);
+  assert.equal(tk.lineas[1].monto, 75500);
+  assert.equal(tk.total, precio + 75500);
+  assert.deepEqual(tk.pagos.slice(1).map(p => [p.medio, p.monto, p.cuotas || 1]), [["debito", 8000, 1], ["debito", 25000, 1], ["debito", 12500, 1], ["credito", 30000, 3]]);
+  // Quitar una pasada resta su monto de la línea; el pago en efectivo no se quita por aquí.
+  assert.match(errorDe(s.call("quitarPagoTuuTicket", { ticketId: t.id, pago: 0 })), /no se marcó con "\+ TUU"/);
+  s.ok("quitarPagoTuuTicket", { ticketId: t.id, pago: 3 });
+  tk = s.ok("bootstrap").data.cajas[0].tickets.find(x => x.id === t.id);
+  assert.deepEqual([tk.lineas[1].monto, tk.pagos.length, tk.total], [63000, 4, precio + 63000]);
+  // Editar el ticket con el formulario sigue cuadrando (los pagos rápidos pasan como pagos normales).
+  s.ok("guardarTicket", { id: t.id, cajaId: caja.id, canal: "Evento", evento: "Feria", lineas: tk.lineas, pagos: tk.pagos });
+  s.ok("cerrarCaja", { id: caja.id });
+  // El informe de TUU cuadra cada pasada con su pago.
+  const filas = [8000, 25000].map((m, i) => ({ idTransaccion: "E" + i, fechaVenta: "2026-10-15", tipo: "Debito", monto: m, cuota: 1, de: 1, montoCuota: m, comision: 100, fechaAbono: "2026-10-19", abonado: m - 100 }));
+  const imp = s.ok("importarAbonosTuu", { filas }).result;
+  assert.deepEqual([imp.nuevas, imp.sinVenta.length], [2, 0]);
+});
+
 test("comisión TUU con IVA: calza con el informe de abonos de TUU", () => {
   const s = createServer();
   const casos = [[55000, 581], [73000, 746], [18000, 243], [10000, 169], [8000, 151]];

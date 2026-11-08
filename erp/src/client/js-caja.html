@@ -33,6 +33,7 @@
     return r;
   };
   /** Comisión TUU estimada de la caja: por cada pago con la máquina (0,77% + $65 + IVA). */
+  const nTuu = (c) => vivos(c).reduce((s, t) => s + (t.tipo === 'egreso' ? 0 : t.pagos.filter((p) => TUU.indexOf(p.medio) !== -1).length), 0);
   const comisionEstimada = (c) => vivos(c).reduce((s, t) => s + t.pagos.reduce((a, p) => a + (TUU.indexOf(p.medio) !== -1 ? GS.comisionPago(data().catalogos.comisiones[p.medio], p.monto) : 0), 0), 0);
   /* Tabla de tickets con los filtros y el orden de siempre en cada columna. */
   const clienteTk = (t) => t.cliente || (t.tipo === 'egreso' ? '—' : 'Cliente general');
@@ -51,7 +52,120 @@
   /** Ticket con inscripciones de torneo que aún no se cobran (pago pendiente): se resalta en la lista. */
   const porCobrarTorneo = (t) => t.estado === 'abierto' && t.lineas.some((l) => l.tj) && t.pagos.some((p) => p.medio === 'pendiente');
   const lineaTexto = (l) => (l.productoId ? l.cantidad + ' × ' + l.producto : l.categoria ? (l.cantidad > 1 ? l.cantidad + ' × ' : '') + (data().catalogos.egresosCaja[l.categoria] ? data().catalogos.egresosCaja[l.categoria].label : l.categoria) + (l.descripcion ? ' · ' + l.descripcion : '') : '');
-  const pagosTexto = (t) => (t.tipo === 'egreso' ? (data().catalogos.cuentas[t.cuenta] || 'Caja') : t.pagos.map((p) => data().catalogos.mediosCaja[p.medio] + ' ' + fmt.money(p.monto) + (p.cuotas > 1 ? ' en ' + p.cuotas + ' cuotas' : '')).join(' + '));
+  // Varios pagos del mismo medio (ej. las pasadas de TUU de un evento) se resumen: "TUU débito $185.000 (9 pagos)".
+  const pagosTexto = (t) => {
+    if (t.tipo === 'egreso') return data().catalogos.cuentas[t.cuenta] || 'Caja';
+    const grupos = [];
+    t.pagos.forEach((p) => {
+      const k = p.medio + '|' + (p.cuotas || 1);
+      const g = grupos.find((x) => x.k === k);
+      if (g) { g.monto += p.monto; g.n++; } else grupos.push({ k: k, medio: p.medio, cuotas: p.cuotas, monto: p.monto, n: 1 });
+    });
+    return grupos.map((g) => data().catalogos.mediosCaja[g.medio] + ' ' + fmt.money(g.monto) + (g.cuotas > 1 ? ' en ' + g.cuotas + ' cuotas' : '') + (g.n > 1 ? ' (' + g.n + ' pagos)' : '')).join(' + ');
+  };
+
+  /* ---------- "+ TUU": marcar pasadas de la máquina en un ticket abierto (eventos) ---------- */
+
+  const tuuR = { abierto: '', medio: 'debito', cuotas: 2, destino: null, pegar: false, cola: [], enviando: false };
+  /** Líneas por monto del ticket (cantidad 1) a las que puede sumar "+ TUU". */
+  const lineasMonto = (t) => t.lineas.map((l, i) => ({ l: l, i: i })).filter((x) => !x.l.productoId && (x.l.cantidad || 1) === 1);
+  /** Montos escritos o pegados: "8000 25.000, 12500" → [8000, 25000, 12500]. */
+  GS.leerMontos = (txt) => String(txt || '').replace(/\$/g, '').split(/[\s;]+/).filter(Boolean)
+    .reduce((a, tok) => a.concat(/,/.test(tok) && !/^\d{1,3}(,\d{3})+$/.test(tok) ? tok.split(',') : [tok]), [])
+    .map((tok) => Number(String(tok).replace(/[^\d]/g, ''))).filter((n) => n > 0);
+  function panelTuu(t) {
+    const medios = data().catalogos.mediosCaja;
+    const lm = lineasMonto(t);
+    if (tuuR.destino == null || (tuuR.destino >= 0 && !lm.some((x) => x.i === tuuR.destino))) tuuR.destino = lm.length ? lm[lm.length - 1].i : -1;
+    const pagosT = t.pagos.map((p, i) => ({ p: p, i: i })).filter((x) => TUU.indexOf(x.p.medio) !== -1);
+    const suma = pagosT.reduce((s, x) => s + x.p.monto, 0);
+    const cats = data().catalogos.categoriasVenta.filter((c) => c !== 'Ajuste');
+    return '<tr class="detalle-row"><td colspan="8"><div class="tuu-rapido" data-tuu-ticket="' + esc(t.id) + '">' +
+      '<form class="tuu-barra" data-tuu-form novalidate>' +
+        '<select data-tuu-medio aria-label="Medio">' + ['debito', 'credito'].map((m) => '<option value="' + m + '"' + (tuuR.medio === m ? ' selected' : '') + '>' + esc(medios[m]) + '</option>').join('') + '</select>' +
+        '<input class="qty-input" type="number" min="2" max="48" step="1" data-tuu-cuotas value="' + tuuR.cuotas + '" title="Cuotas (crédito)" aria-label="Cuotas"' + (tuuR.medio === 'credito' ? '' : ' hidden') + '>' +
+        '<select data-tuu-destino aria-label="Suma a" title="Línea del ticket a la que se suma la venta">' +
+          lm.map((x) => '<option value="' + x.i + '"' + (tuuR.destino === x.i ? ' selected' : '') + '>Suma a: ' + esc(lineaTexto(x.l)) + '</option>').join('') +
+          cats.map((c) => '<option value="new:' + esc(c) + '"' + (tuuR.destino === -1 && c === 'Singles' && !lm.length ? ' selected' : '') + '>Nueva línea: ' + esc(c) + '</option>').join('') + '</select>' +
+        '<input class="price-input" type="text" inputmode="numeric" data-tuu-monto placeholder="Monto y Enter" aria-label="Monto de la pasada TUU" autocomplete="off">' +
+        '<button type="submit" class="btn small">' + GS.icon('plus', 2.4) + 'TUU</button>' +
+        '<a href="#" class="tag" data-action="tuuPegar">' + (tuuR.pegar ? 'cerrar pegar' : 'Pegar varios') + '</a>' +
+        (tuuR.cola.length ? '<span class="cell-dim">guardando ' + tuuR.cola.length + '…</span>' : '') + '</form>' +
+      (tuuR.pegar ? '<div class="tuu-pegar"><textarea data-tuu-lista rows="3" placeholder="Pega o escribe los montos separados por espacio, coma o salto de línea: 8000 25000 12500"></textarea>' +
+        '<div class="btn-row"><span class="cell-dim" data-tuu-prev>0 montos</span><button type="button" class="btn small secondary" data-action="tuuAgregarLista">Agregar todos</button></div></div>' : '') +
+      '<div class="tuu-chips"><strong>TUU: ' + pagosT.length + (pagosT.length === 1 ? ' pago' : ' pagos') + ' · ' + fmt.money(suma) + '</strong> ' +
+        pagosT.map((x) => '<span class="chip">' + (x.p.medio === 'credito' ? 'C ' : '') + fmt.money(x.p.monto) + (x.p.cuotas > 1 ? ' ×' + x.p.cuotas : '') +
+          (x.p.rapido ? '<button type="button" data-action="tuuQuitar" data-id="' + esc(t.id) + '|' + x.i + '" title="Quitar este pago" aria-label="Quitar">×</button>' : '') + '</span>').join('') + '</div>' +
+      '<p class="table-note">Cada pasada de la máquina queda como un pago propio (así cuadra con el informe de TUU) y suma su monto a la línea elegida. Las ventas de productos del inventario se agregan editando el ticket, como siempre.</p>' +
+      '</div></td></tr>';
+  }
+  const enfocarTuu = (valor) => {
+    const inp = document.querySelector('[data-tuu-monto]');
+    if (!inp) return;
+    if (valor) inp.value = valor;
+    inp.focus();
+  };
+  /** Manda los montos en cola (uno o varios) en una sola llamada; lo que se escriba mientras tanto espera su turno. */
+  async function enviarTuu() {
+    if (tuuR.enviando || !tuuR.cola.length) return;
+    tuuR.enviando = true;
+    const montos = tuuR.cola.slice();
+    const destino = tuuR.destino;
+    const datos = { ticketId: tuuR.abierto, medio: tuuR.medio, cuotas: tuuR.cuotas, montos: montos };
+    if (typeof destino === 'string') datos.categoria = destino.slice(4); else if (destino >= 0) datos.linea = destino; else datos.categoria = 'Singles';
+    try {
+      const res = await GS.api('pagosTuuTicket', datos);
+      tuuR.cola.splice(0, montos.length);
+      tuuR.destino = res.result.linea;
+      const escrito = (document.querySelector('[data-tuu-monto]') || {}).value || '';
+      GS.setData(res.data);
+      GS.render();
+      enfocarTuu(escrito);
+      GS.toast(montos.length > 1 ? montos.length + ' pagos TUU agregados · ' + fmt.money(res.result.suma) : 'TUU ' + fmt.money(montos[0]) + ' agregado · ticket ' + fmt.money(res.result.total));
+    } catch (e) {
+      tuuR.cola = [];
+      GS.toast(e.message, true);
+      GS.render();
+      enfocarTuu();
+    } finally {
+      tuuR.enviando = false;
+    }
+    if (tuuR.cola.length) enviarTuu();
+  }
+  const encolarTuu = (montos) => { tuuR.cola = tuuR.cola.concat(montos); GS.render(); enfocarTuu(); enviarTuu(); };
+  GS.actions.tuuRapido = (id) => { tuuR.abierto = tuuR.abierto === id ? '' : id; tuuR.destino = null; tuuR.pegar = false; GS.render(); enfocarTuu(); };
+  GS.actions.tuuPegar = () => { tuuR.pegar = !tuuR.pegar; GS.render(); const ta = document.querySelector('[data-tuu-lista]'); if (ta) ta.focus(); };
+  GS.actions.tuuAgregarLista = () => {
+    const montos = GS.leerMontos((document.querySelector('[data-tuu-lista]') || {}).value);
+    if (!montos.length) { GS.toast('Escribe o pega al menos un monto.', true); return; }
+    tuuR.pegar = false;
+    encolarTuu(montos);
+  };
+  GS.actions.tuuQuitar = (ref) => {
+    const [tid, i] = ref.split('|');
+    GS.mutate('quitarPagoTuuTicket', { ticketId: tid, pago: Number(i) }, 'Pago TUU quitado').then(() => enfocarTuu()).catch((e) => GS.toast(e.message, true));
+  };
+  document.addEventListener('submit', (e) => {
+    if (!e.target.matches || !e.target.matches('[data-tuu-form]')) return;
+    e.preventDefault();
+    const inp = e.target.querySelector('[data-tuu-monto]');
+    const montos = GS.leerMontos(inp.value);
+    if (!montos.length) return;
+    inp.value = '';
+    encolarTuu(montos);
+  });
+  document.addEventListener('change', (e) => {
+    if (!e.target.closest || !e.target.closest('.tuu-rapido')) return;
+    if (e.target.matches('[data-tuu-medio]')) { tuuR.medio = e.target.value; GS.render(); enfocarTuu(); }
+    else if (e.target.matches('[data-tuu-cuotas]')) tuuR.cuotas = Math.max(2, Number(e.target.value) || 2);
+    else if (e.target.matches('[data-tuu-destino]')) { const v = e.target.value; tuuR.destino = /^new:/.test(v) ? v : Number(v); enfocarTuu(); }
+  });
+  document.addEventListener('input', (e) => {
+    if (!e.target.matches || !e.target.matches('[data-tuu-lista]')) return;
+    const m = GS.leerMontos(e.target.value);
+    const prev = document.querySelector('[data-tuu-prev]');
+    if (prev) prev.textContent = m.length + (m.length === 1 ? ' monto · ' : ' montos · ') + fmt.money(m.reduce((s, x) => s + x, 0));
+  });
 
   GS.views.caja = {
     title: 'Caja del día',
@@ -113,7 +227,9 @@
           '<td class="cell-dim">' + esc(pagosTexto(t)) + '</td>' +
           '<td class="cell-num right"><strong>' + (t.tipo === 'egreso' ? '−' : '') + fmt.money(t.total) + '</strong></td>' +
           '<td class="cell-dim">' + esc(String(t.creadoPor || '').split('@')[0]) + '</td>' +
-          '<td><div class="row-actions">' + (abierta && op && t.estado === 'abierto' ? GS.iconBtn('editarTicket', t.id, 'edit', 'Editar') + GS.iconBtn('anularTicket', t.id, 'trash', 'Anular', 'danger') : '') + '</div></td></tr>').join('')
+          '<td><div class="row-actions">' + (abierta && op && t.estado === 'abierto' ? (t.tipo === 'venta' ? '<button class="btn small ' + (tuuR.abierto === t.id ? '' : 'ghost') + '" data-action="tuuRapido" data-id="' + esc(t.id) + '" title="Marcar pasadas de la máquina TUU en este ticket (eventos)">+ TUU</button>' : '') +
+            GS.iconBtn('editarTicket', t.id, 'edit', 'Editar') + GS.iconBtn('anularTicket', t.id, 'trash', 'Anular', 'danger') : '') + '</div></td></tr>' +
+          (abierta && op && t.estado === 'abierto' && t.tipo === 'venta' && tuuR.abierto === t.id ? panelTuu(t) : '')).join('')
             : '<tr><td colspan="8" class="muted center" style="padding:14px;">Ningún ticket coincide con los filtros.</td></tr>')
           : '<tr><td colspan="8">' + GS.empty('Sin tickets', abierta ? 'Registra la primera venta con "Venta".' : 'Esta caja no tuvo movimientos.', 'caja') + '</td></tr>') +
         '</tbody></table></div>' +
@@ -385,13 +501,23 @@
         '<div class="table-wrap"><table class="data-table" style="min-width:0"><tbody>' +
         Object.keys(medios).filter((m) => r.medios[m]).map((m) => '<tr><td>' + esc(medios[m]) + '</td><td class="cell-num right">' + fmt.money(r.medios[m]) + '</td></tr>').join('') +
         '</tbody></table></div>' +
-        (r.tuu ? '<div class="form-grid" style="margin-top:12px;"><div class="form-field"><label>Depósito de TUU (si ya llegó)</label><input type="number" name="depositoTuu" min="0" max="' + r.tuu + '" step="1" placeholder="Opcional"></div>' +
+        (r.tuu ? '<div class="form-grid" style="margin-top:12px;">' +
+          // Revisión contra la app de TUU (no se guarda): detecta una pasada que no se marcó antes de cerrar.
+          '<div class="form-field"><label>Total TUU según la app (revisar)</label><input type="text" inputmode="numeric" name="tuuApp" placeholder="Opcional"></div>' +
+          '<div class="form-field" data-cc-app><p class="table-note" style="margin-top:26px;">En la caja: <strong>' + nTuu(c) + (nTuu(c) === 1 ? ' pago' : ' pagos') + ' TUU · ' + fmt.money(r.tuu) + '</strong></p></div>' +
+          '<div class="form-field"><label>Depósito de TUU (si ya llegó)</label><input type="number" name="depositoTuu" min="0" max="' + r.tuu + '" step="1" placeholder="Opcional"></div>' +
           '<div class="form-field full" data-cc-com></div></div>' : '') +
         '<p class="hint">Se crean las OC (el stock reservado se rebaja), las ventas SGL/TOR/… y los movimientos de Finanzas. ' +
         (r.tuu ? 'TUU deposita en 2 días hábiles: si aún no llega, déjalo vacío (la comisión se estima) y regístralo después con "Registrar depósito TUU". ' : '') + 'La caja cerrada ya no se edita: las correcciones se hacen en cada venta.</p>',
       onMount: (form) => {
         const inp = form.elements.depositoTuu;
         if (!inp) return;
+        form.elements.tuuApp.addEventListener('input', () => {
+          const app = GS.leerMontos(form.elements.tuuApp.value)[0] || 0;
+          const dif = app - r.tuu;
+          form.querySelector('[data-cc-app]').innerHTML = '<p class="table-note" style="margin-top:26px;">En la caja: <strong>' + nTuu(c) + ' pagos TUU · ' + fmt.money(r.tuu) + '</strong>' +
+            (app ? '<br>' + (dif === 0 ? '<span class="text-success">✓ Cuadra con la app</span>' : '<span class="text-danger">' + (dif > 0 ? 'Falta marcar ' + fmt.money(dif) : 'Sobran ' + fmt.money(-dif)) + ' respecto de la app</span>') : '') + '</p>';
+        });
         const upd = () => {
           const dep = Number(inp.value);
           form.querySelector('[data-cc-com]').innerHTML = inp.value ? '<p class="table-note">Comisión real: <strong>' + fmt.money(r.tuu - dep) + '</strong> (' + (r.tuu ? ((r.tuu - dep) / r.tuu * 100).toFixed(2) : 0) + '% de ' + fmt.money(r.tuu) + ')</p>' : '';
