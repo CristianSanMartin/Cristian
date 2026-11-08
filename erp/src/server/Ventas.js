@@ -530,11 +530,11 @@ const Ventas = {
       const r = porLote[x.loteId] = porLote[x.loteId] || { vendidas: 0, ventas: 0, ganancia: 0, unidades: [] };
       r.salidas = (r.salidas || 0) + x.cantidad;
       r.costoSalidas = (r.costoSalidas || 0) + x.costo * x.cantidad;
-      // Premio de torneo: el torneo la "compró" a su precio; cuenta como venta de la factura (no le resta ganancia).
-      // Sin IVA: el IVA se paga en la inscripción del torneo, así que el traspaso es a precio completo (ganancia = precio − costo).
+      // Premio de torneo: el torneo la "compró" a su precio de venta neto (PVP sin IVA), así la factura gana lo
+      // mismo que si se hubiera vendido en la tienda (ganancia = PVP / 1,19 − costo). No hay débito: no es una venta.
       if (x.torneoId && x.precio) {
         r.ventas += x.precio * x.cantidad;
-        r.ganancia += (x.precio - x.costo) * x.cantidad;
+        r.ganancia += (Economia.sinIva(x.precio) - x.costo) * x.cantidad;
       }
       const etiqueta = x.torneoId ? 'Premio ' + x.torneoId : MOTIVOS_SALIDA[x.motivo] || x.motivo;
       for (let i = 0; i < x.cantidad; i++) r.unidades.push({ oc: etiqueta, cliente: x.notas, fecha: x.fecha, precio: x.torneoId ? x.precio || 0 : 0, salida: x.motivo, salidaId: x.id, sinIva: !!x.torneoId });

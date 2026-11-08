@@ -466,9 +466,14 @@ const Torneos = {
       const premiosBruto = pr.reduce((s, x) => s + x.precio * x.cantidad, 0) + (t.sobresMonto || 0) + (t.participacionMonto || 0);
       const premiosCosto = pr.reduce((s, x) => s + x.costo * x.cantidad, 0);
       const insNeto = Economia.sinIva(inscripciones);
-      // Premios a precio torneo completo, sin IVA: el IVA ya va en la inscripción.
-      const premiosNeto = premiosBruto;
+      // Todo sin IVA: el torneo paga los premios del inventario y los sobres sueltos a su precio de venta neto
+      // (PVP / 1,19), lo mismo que la tienda recibiría vendiéndolos. Los sobres de participación se compran sin
+      // boleta (no hay IVA que recuperar): van a su precio tal cual.
+      const premiosInv = Math.round(Economia.sinIva(pr.reduce((s, x) => s + x.precio * x.cantidad, 0)));
+      const premiosNeto = premiosInv + Math.round(Economia.sinIva(t.sobresMonto || 0)) + (t.participacionMonto || 0);
       const margen = insNeto - comisiones - premiosNeto - (t.juez || 0);
+      // Lo que los premios del inventario le dejan a sus facturas (precio neto − costo): con el margen, el resultado del evento para la tienda.
+      const gananciaPremios = premiosInv - premiosCosto;
       const pagan = vivos.filter((j) => j.monto > 0).length;
       // Punto de equilibrio: jugadores que pagan la inscripción para cubrir premios y juez.
       const porJugador = Economia.sinIva(t.inscripcion) - (pagan ? comisiones / pagan : 0);
@@ -480,6 +485,7 @@ const Torneos = {
         resultado: {
           jugadores: jugadores.length, pagan: pagan, inscripciones: inscripciones, iva: inscripciones - insNeto, comisiones: comisiones,
           premiosBruto: premiosBruto, premiosNeto: premiosNeto, premiosCosto: premiosCosto, juez: t.juez || 0, margen: margen,
+          gananciaPremios: gananciaPremios, resultadoTienda: margen + gananciaPremios,
           margenPct: insNeto ? margen / insNeto : 0, porJugador: jugadores.length ? margen / jugadores.length : 0,
           equilibrio: porJugador > 0 ? Math.ceil((premiosNeto + (t.juez || 0)) / porJugador) : 0,
           porCobrar: vivos.filter((j) => j.estado === 'por_cobrar' || j.estado === 'parcial' || j.estado === 'debe').reduce((s, j) => s + j.debe, 0),

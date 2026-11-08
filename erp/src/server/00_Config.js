@@ -15,7 +15,7 @@
 
 const APP = {
   nombre: 'GS Prime ERP',
-  version: '2.28.1',
+  version: '2.29.0',
   tz: 'America/Santiago',
   iva: 0.19,
 };
@@ -257,7 +257,7 @@ const POKEMON_INICIALES = ['Archeops', 'Charizard', 'Dragapult', 'Dusknoir', 'Ga
 /** PVP de un sobre suelto (premio de torneo sin control de stock). */
 const PRECIO_SOBRE_SUELTO = 6000;
 /** Precio torneo de un sobre de participación (se entrega uno a cada jugador). */
-const PRECIO_SOBRE_PARTICIPACION = 2000;
+const PRECIO_SOBRE_PARTICIPACION = 1500;
 
 /** Ventas por monto (sin unidades del inventario). Torneo = ingreso por servicio. */
 const CATEGORIAS_VENTA = ['Singles', 'Torneo', 'Sobres sueltos', 'Bazar', 'Accesorios', 'Ajuste', 'Otro'];

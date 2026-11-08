@@ -382,13 +382,18 @@ Menú **Torneos**. Al terminar un torneo, TOM (Tournament Operations Manager) ex
   mismo ticket. **Cobrar juntos:** se marcan varios tickets en la caja (el primero marcado es quien paga)
   y quedan en uno solo, con todas sus líneas. Lo que no se pague queda como deuda del cliente al cerrar
   la caja. "Sin costo" quita la inscripción de un jugador (invitado, juez que juega).
-- **Premios:** se traspasan al torneo **sin IVA** (el IVA ya se paga en la inscripción): a precio completo (PVP por defecto), así la factura gana lo mismo que si se vendiera en tienda y en la unidad no aparece débito fiscal. Salen del inventario como salida ligada al torneo (los **sobres sueltos** de booster boxes abiertas se agregan sin control de stock, a $6.000 c/u por defecto). El torneo los "compra" a PVP (se puede
-  cambiar el precio): la factura del producto los cuenta como vendidos a ese precio y el torneo los carga.
-- **Sobres de participación:** uno por jugador, al precio torneo ($2.000 por defecto); la compra (informal) va como gasto en la caja o Finanzas.
+- **Premios:** todo sin IVA. El torneo paga los premios del inventario a su **precio de venta neto** (PVP / 1,19,
+  el PVP se puede cambiar): lo mismo que la tienda recibiría vendiéndolos, así la factura del producto gana igual
+  que en una venta (PVP neto − costo) y no hay débito fiscal (no es una venta). Salen del inventario como salida
+  ligada al torneo. Los **sobres sueltos** de booster boxes abiertas (sin control de stock, $6.000 c/u por defecto)
+  también van a precio neto.
+- **Sobres de participación:** uno por jugador, a su precio tal cual ($1.500 por defecto): se compran sin boleta,
+  no hay IVA que recuperar. La compra va como gasto en la caja o Finanzas.
 - **Juez:** pago variable en efectivo; queda como egreso de la caja del torneo (Finanzas → "Torneos
   (juez y gastos)").
-- **Resultado:** inscripciones − IVA − comisiones TUU − premios (sin IVA) − juez = margen, por jugador y
-  punto de equilibrio (jugadores necesarios para cubrir premios y juez).
+- **Resultado:** inscripciones − IVA − comisiones TUU − premios (precio neto) − juez = margen, por jugador y
+  punto de equilibrio (jugadores necesarios para cubrir premios y juez). Más la ganancia de los premios en sus
+  facturas = **resultado para la tienda** (lo que el evento deja en total).
 - Requiere "Instalar / actualizar hojas" (hojas nuevas `Torneos` y `Torneo_Jugadores`, columnas nuevas en
   `Salidas`).
 - Al subir el `.tdf` también se calcula el **récord** de cada jugador (victorias, derrotas, empates; el bye

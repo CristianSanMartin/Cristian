@@ -1452,7 +1452,12 @@ test("torneos: jugadores del .tdf → tickets pendientes en la caja, cobrar junt
   assert.equal(res.premiosBruto, 15000);
   assert.equal(res.juez, 15000);
   assert.ok(res.comisiones > 0 && res.comisiones < 300, "comisión TUU de las dos inscripciones pagadas con débito");
-  assert.equal(Math.round(res.margen), Math.round(24000 / 1.19 - res.comisiones - 15000 - 15000));
+  // Todo sin IVA: el premio va a su precio de venta neto ($15.000 / 1,19).
+  assert.equal(res.premiosNeto, Math.round(15000 / 1.19));
+  assert.equal(Math.round(res.margen), Math.round(24000 / 1.19 - res.comisiones - Math.round(15000 / 1.19) - 15000));
+  // Resultado para la tienda = margen + lo que el premio deja en su factura (precio neto − costo).
+  assert.equal(Math.round(res.resultadoTienda - res.margen), Math.round(res.gananciaPremios));
+  assert.equal(Math.round(res.gananciaPremios), Math.round(Math.round(15000 / 1.19) - res.premiosCosto));
   assert.equal(res.porCobrar, 8000);
   // El premio no le resta ganancia a la factura: cuenta como vendido a su precio.
   const lotesTin = d.lotes.filter(l => l.productoId === prods.miniTin.id);
@@ -1598,13 +1603,13 @@ test("torneos: sobres sueltos de premio (sin stock, $6.000 c/u) suman al costo d
   assert.equal(s.ok("bootstrap").data.torneos[0].resultado.premiosBruto, 0);
 });
 
-test("torneos: sobres de participación (uno por jugador, $2.000) se descuentan del margen", () => {
+test("torneos: sobres de participación (uno por jugador, $1.500, sin boleta) se descuentan del margen tal cual", () => {
   const s = createServer();
   const t = s.ok("crearTorneo", { nombre: "Chill", fecha: "2026-10-28", formato: "Torneo The Chill", inscripcion: 5000, jugadores: [{ popId: "1", nombre: "A B", lugar: 1 }, { popId: "2", nombre: "C D", lugar: 2 }] }).result;
   s.ok("participacionTorneo", { id: t.id, cantidad: 2 });
   let tr = s.ok("bootstrap").data.torneos[0];
-  assert.deepEqual([tr.participacion, tr.participacionMonto, tr.resultado.premiosBruto], [2, 4000, 4000]);
-  assert.equal(Math.round(tr.resultado.margen), Math.round(10000 / 1.19 - 4000));
+  assert.deepEqual([tr.participacion, tr.participacionMonto, tr.resultado.premiosBruto, tr.resultado.premiosNeto], [2, 3000, 3000, 3000]);
+  assert.equal(Math.round(tr.resultado.margen), Math.round(10000 / 1.19 - 3000));
   s.ok("participacionTorneo", { id: t.id, cantidad: 0 });
   assert.equal(s.ok("bootstrap").data.torneos[0].resultado.premiosBruto, 0);
 });
