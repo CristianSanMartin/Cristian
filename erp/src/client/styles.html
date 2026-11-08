@@ -307,6 +307,11 @@ button{font-family:inherit;}
 
 /* mini table for dashboard */
 .mini-table{width:100%;border-collapse:collapse;}
+/* Un panel dentro de la grilla no se estira más que su columna: lo que no cabe se desplaza dentro del panel. */
+.dash-grid > *{min-width:0;}
+.mini-scroll{overflow-x:auto;}
+.premios-torneo td:first-child{min-width:140px;}
+.premios-torneo .row-actions{flex-wrap:nowrap;}
 .mini-table th{
   text-align:left;font-size:10.5px;color:var(--text-faint);text-transform:uppercase;
   letter-spacing:.5px;font-weight:600;padding:10px 6px;border-bottom:1px solid var(--panel-border);
