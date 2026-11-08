@@ -357,14 +357,14 @@ Menú **Caja del día**. Se abre una caja por fecha (`CJ-20261012`) y cada atenc
 
 ## Eventos con la máquina TUU (+ TUU)
 
-- En la Caja del día, cada ticket de venta abierto tiene el botón **+ TUU**: se abre una barra para marcar cada
-  pasada de la máquina (monto y Enter; el campo queda listo para la siguiente). Cada pasada es un pago propio, así
-  cuadra 1 a 1 con el informe de abonos de TUU, y suma su monto a una línea por monto del ticket (o a una nueva,
-  ej. Singles). Débito o crédito (con cuotas).
+- En **Nueva venta** / **Editar ticket** de la Caja del día, la sección Pago tiene **Pasadas TUU**: monto y Enter
+  por cada pasada de la máquina (el campo queda listo para la siguiente; Enter no envía el formulario). Cada pasada
+  es un pago propio, así cuadra 1 a 1 con el informe de abonos de TUU y la comisión se estima por pasada.
+- "Suma a": la línea por monto del ticket a la que va la venta, una **Nueva línea: Singles**, o **Solo pago** si lo
+  vendido (ej. productos del inventario) ya está en el ticket. Débito o crédito (con cuotas).
 - **Pegar varios**: montos separados por espacio, coma o salto de línea (acepta $ y puntos de miles), con vista
-  previa de cuántos son y la suma.
-- Las pasadas se ven como fichas con × para quitar una mal marcada (resta su monto de la línea). Los productos del
-  inventario se agregan editando el ticket, como siempre.
+  previa. Las pasadas se ven como fichas con × para quitar una (resta su monto de la línea).
+- Sin tocar los pagos, el pago en efectivo se lleva lo que no cubren las pasadas TUU.
 - Al cerrar la caja: casilla opcional **Total TUU según la app** que muestra si cuadra o cuánto falta marcar.
 
 ## Torneos

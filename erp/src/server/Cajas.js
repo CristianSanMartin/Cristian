@@ -117,8 +117,6 @@ const Cajas = {
       const pago = { medio: Util.opcion(x.medio, 'El medio de pago', Object.keys(MEDIOS_CAJA)), monto: Util.entero(x.monto, 'El monto del pago', { min: 0 }) };
       // TUU crédito en cuotas: TUU abona una cuota por mes.
       if (pago.medio === 'credito' && Number(x.cuotas) > 1) pago.cuotas = Util.entero(x.cuotas, 'Las cuotas', { min: 2, max: 48 });
-      // Pago marcado con "+ TUU": recuerda a qué línea por monto sumó, para poder quitarlo después.
-      if (x.rapido && TUU_MEDIOS.indexOf(pago.medio) !== -1 && Number.isInteger(x.linea)) { pago.rapido = true; pago.linea = x.linea; }
       return pago;
     }).filter((x) => x.monto > 0);
     const suma = pagos.reduce((t, x) => t + x.monto, 0);
@@ -153,70 +151,6 @@ const Cajas = {
     Db.insert('Caja_Tickets', Object.assign({ id: id, cajaId: caja.id, estado: 'abierto', documentos: '' }, datos, Util.sello(user, true)));
     Audit.log(user, 'crear', 'Ticket', id, { tipo: d.tipo, total: d.total });
     return { id: id };
-  },
-
-  /** Ticket de venta abierto de una caja abierta (para los pagos rápidos de TUU). */
-  _ticketAbierto(id) {
-    const t = Db.get('Caja_Tickets', String(id || ''));
-    if (!t) throw new AppError('El ticket no existe.', 'NO_ENCONTRADO');
-    Cajas.requerirAbierta(t.cajaId);
-    if (t.estado !== 'abierto' || t.tipo !== 'venta') throw new AppError('El ticket ' + t.id + ' ya no se puede editar.');
-    return Cajas._leer(t);
-  },
-  _guardarLeido(t, user, accion, detalle) {
-    t.total = t.lineas.reduce((s, l) => s + (l.productoId ? l.precio * l.cantidad : l.monto), 0);
-    Db.update('Caja_Tickets', t.id, Object.assign({ lineas: JSON.stringify(t.lineas), pagos: JSON.stringify(t.pagos), total: t.total }, Util.sello(user)));
-    Audit.log(user, accion, 'Ticket', t.id, Object.assign({ total: t.total }, detalle));
-  },
-
-  /**
-   * "+ TUU": una o varias pasadas de la máquina en un ticket abierto (ej. ventas de singles en un evento).
-   * Cada monto es un pago propio (así cuadra 1 a 1 con el informe de TUU) y suma a una línea por monto del
-   * ticket (p.linea, índice) o a una nueva de la categoría p.categoria. p: { ticketId, medio, cuotas, montos[], linea, categoria }.
-   */
-  pagosTuu(p, user) {
-    const t = Cajas._ticketAbierto(p.ticketId);
-    const medio = Util.opcion(p.medio || 'debito', 'El medio de pago', TUU_MEDIOS);
-    const cuotas = medio === 'credito' && Number(p.cuotas) > 1 ? Util.entero(p.cuotas, 'Las cuotas', { min: 2, max: 48 }) : 1;
-    const montos = (Array.isArray(p.montos) ? p.montos : [p.montos]).map((m) => Util.entero(m, 'El monto', { requerido: true, min: 1 }));
-    if (!montos.length) throw new AppError('Escribe al menos un monto.');
-    if (montos.length > 200) throw new AppError('Son demasiados montos de una vez (máximo 200).');
-    let i = p.linea === '' || p.linea == null ? -1 : Number(p.linea);
-    if (i >= 0) {
-      const l = t.lineas[i];
-      if (!l || l.productoId || (l.cantidad || 1) !== 1) throw new AppError('Esa línea no es por monto: elige otra o una línea nueva.');
-    } else {
-      const categoria = Util.opcion(p.categoria || 'Singles', 'La categoría', CATEGORIAS_VENTA.filter((c) => c !== 'Ajuste'));
-      t.lineas.push({ categoria: categoria, descripcion: '', cantidad: 1, precio: 0, monto: 0 });
-      i = t.lineas.length - 1;
-    }
-    const suma = montos.reduce((s, m) => s + m, 0);
-    const l = t.lineas[i];
-    l.monto += suma;
-    l.precio = l.monto;
-    montos.forEach((m) => { const g = { medio: medio, monto: m, rapido: true, linea: i }; if (cuotas > 1) g.cuotas = cuotas; t.pagos.push(g); });
-    Cajas._guardarLeido(t, user, 'pagos TUU', { medio: medio, montos: montos.length, suma: suma });
-    return { id: t.id, linea: i, agregados: montos.length, suma: suma, total: t.total };
-  },
-
-  /** Quita un pago marcado con "+ TUU" y resta su monto de la línea a la que sumó (si queda en 0, la línea sale). */
-  quitarPagoTuu(p, user) {
-    const t = Cajas._ticketAbierto(p.ticketId);
-    const ip = Number(p.pago);
-    const g = t.pagos[ip];
-    if (!g || !g.rapido) throw new AppError('Ese pago no se marcó con "+ TUU": quítalo editando el ticket.');
-    const l = t.lineas[g.linea];
-    if (!l || l.productoId || l.monto < g.monto) throw new AppError('La línea del pago cambió: quítalo editando el ticket.');
-    t.pagos.splice(ip, 1);
-    l.monto -= g.monto;
-    l.precio = l.monto;
-    if (!l.monto) {
-      if (t.lineas.length === 1) throw new AppError('Es el único pago del ticket: anula el ticket en vez de quitarlo.');
-      t.lineas.splice(g.linea, 1);
-      t.pagos.forEach((x) => { if (x.rapido && x.linea > g.linea) x.linea--; });
-    }
-    Cajas._guardarLeido(t, user, 'quitar pago TUU', { medio: g.medio, monto: g.monto });
-    return { id: t.id, total: t.total };
   },
 
   anularTicket(p, user) {

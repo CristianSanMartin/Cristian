@@ -64,108 +64,10 @@
     return grupos.map((g) => data().catalogos.mediosCaja[g.medio] + ' ' + fmt.money(g.monto) + (g.cuotas > 1 ? ' en ' + g.cuotas + ' cuotas' : '') + (g.n > 1 ? ' (' + g.n + ' pagos)' : '')).join(' + ');
   };
 
-  /* ---------- "+ TUU": marcar pasadas de la máquina en un ticket abierto (eventos) ---------- */
-
-  const tuuR = { abierto: '', medio: 'debito', cuotas: 2, destino: null, pegar: false, cola: [], enviando: false };
-  /** Líneas por monto del ticket (cantidad 1) a las que puede sumar "+ TUU". */
-  const lineasMonto = (t) => t.lineas.map((l, i) => ({ l: l, i: i })).filter((x) => !x.l.productoId && (x.l.cantidad || 1) === 1);
   /** Montos escritos o pegados: "8000 25.000, 12500" → [8000, 25000, 12500]. */
   GS.leerMontos = (txt) => String(txt || '').replace(/\$/g, '').split(/[\s;]+/).filter(Boolean)
     .reduce((a, tok) => a.concat(/,/.test(tok) && !/^\d{1,3}(,\d{3})+$/.test(tok) ? tok.split(',') : [tok]), [])
     .map((tok) => Number(String(tok).replace(/[^\d]/g, ''))).filter((n) => n > 0);
-  function panelTuu(t) {
-    const medios = data().catalogos.mediosCaja;
-    const lm = lineasMonto(t);
-    if (tuuR.destino == null || (tuuR.destino >= 0 && !lm.some((x) => x.i === tuuR.destino))) tuuR.destino = lm.length ? lm[lm.length - 1].i : -1;
-    const pagosT = t.pagos.map((p, i) => ({ p: p, i: i })).filter((x) => TUU.indexOf(x.p.medio) !== -1);
-    const suma = pagosT.reduce((s, x) => s + x.p.monto, 0);
-    const cats = data().catalogos.categoriasVenta.filter((c) => c !== 'Ajuste');
-    return '<tr class="detalle-row"><td colspan="8"><div class="tuu-rapido" data-tuu-ticket="' + esc(t.id) + '">' +
-      '<form class="tuu-barra" data-tuu-form novalidate>' +
-        '<select data-tuu-medio aria-label="Medio">' + ['debito', 'credito'].map((m) => '<option value="' + m + '"' + (tuuR.medio === m ? ' selected' : '') + '>' + esc(medios[m]) + '</option>').join('') + '</select>' +
-        '<input class="qty-input" type="number" min="2" max="48" step="1" data-tuu-cuotas value="' + tuuR.cuotas + '" title="Cuotas (crédito)" aria-label="Cuotas"' + (tuuR.medio === 'credito' ? '' : ' hidden') + '>' +
-        '<select data-tuu-destino aria-label="Suma a" title="Línea del ticket a la que se suma la venta">' +
-          lm.map((x) => '<option value="' + x.i + '"' + (tuuR.destino === x.i ? ' selected' : '') + '>Suma a: ' + esc(lineaTexto(x.l)) + '</option>').join('') +
-          cats.map((c) => '<option value="new:' + esc(c) + '"' + (tuuR.destino === -1 && c === 'Singles' && !lm.length ? ' selected' : '') + '>Nueva línea: ' + esc(c) + '</option>').join('') + '</select>' +
-        '<input class="price-input" type="text" inputmode="numeric" data-tuu-monto placeholder="Monto y Enter" aria-label="Monto de la pasada TUU" autocomplete="off">' +
-        '<button type="submit" class="btn small">' + GS.icon('plus', 2.4) + 'TUU</button>' +
-        '<a href="#" class="tag" data-action="tuuPegar">' + (tuuR.pegar ? 'cerrar pegar' : 'Pegar varios') + '</a>' +
-        (tuuR.cola.length ? '<span class="cell-dim">guardando ' + tuuR.cola.length + '…</span>' : '') + '</form>' +
-      (tuuR.pegar ? '<div class="tuu-pegar"><textarea data-tuu-lista rows="3" placeholder="Pega o escribe los montos separados por espacio, coma o salto de línea: 8000 25000 12500"></textarea>' +
-        '<div class="btn-row"><span class="cell-dim" data-tuu-prev>0 montos</span><button type="button" class="btn small secondary" data-action="tuuAgregarLista">Agregar todos</button></div></div>' : '') +
-      '<div class="tuu-chips"><strong>TUU: ' + pagosT.length + (pagosT.length === 1 ? ' pago' : ' pagos') + ' · ' + fmt.money(suma) + '</strong> ' +
-        pagosT.map((x) => '<span class="chip">' + (x.p.medio === 'credito' ? 'C ' : '') + fmt.money(x.p.monto) + (x.p.cuotas > 1 ? ' ×' + x.p.cuotas : '') +
-          (x.p.rapido ? '<button type="button" data-action="tuuQuitar" data-id="' + esc(t.id) + '|' + x.i + '" title="Quitar este pago" aria-label="Quitar">×</button>' : '') + '</span>').join('') + '</div>' +
-      '<p class="table-note">Cada pasada de la máquina queda como un pago propio (así cuadra con el informe de TUU) y suma su monto a la línea elegida. Las ventas de productos del inventario se agregan editando el ticket, como siempre.</p>' +
-      '</div></td></tr>';
-  }
-  const enfocarTuu = (valor) => {
-    const inp = document.querySelector('[data-tuu-monto]');
-    if (!inp) return;
-    if (valor) inp.value = valor;
-    inp.focus();
-  };
-  /** Manda los montos en cola (uno o varios) en una sola llamada; lo que se escriba mientras tanto espera su turno. */
-  async function enviarTuu() {
-    if (tuuR.enviando || !tuuR.cola.length) return;
-    tuuR.enviando = true;
-    const montos = tuuR.cola.slice();
-    const destino = tuuR.destino;
-    const datos = { ticketId: tuuR.abierto, medio: tuuR.medio, cuotas: tuuR.cuotas, montos: montos };
-    if (typeof destino === 'string') datos.categoria = destino.slice(4); else if (destino >= 0) datos.linea = destino; else datos.categoria = 'Singles';
-    try {
-      const res = await GS.api('pagosTuuTicket', datos);
-      tuuR.cola.splice(0, montos.length);
-      tuuR.destino = res.result.linea;
-      const escrito = (document.querySelector('[data-tuu-monto]') || {}).value || '';
-      GS.setData(res.data);
-      GS.render();
-      enfocarTuu(escrito);
-      GS.toast(montos.length > 1 ? montos.length + ' pagos TUU agregados · ' + fmt.money(res.result.suma) : 'TUU ' + fmt.money(montos[0]) + ' agregado · ticket ' + fmt.money(res.result.total));
-    } catch (e) {
-      tuuR.cola = [];
-      GS.toast(e.message, true);
-      GS.render();
-      enfocarTuu();
-    } finally {
-      tuuR.enviando = false;
-    }
-    if (tuuR.cola.length) enviarTuu();
-  }
-  const encolarTuu = (montos) => { tuuR.cola = tuuR.cola.concat(montos); GS.render(); enfocarTuu(); enviarTuu(); };
-  GS.actions.tuuRapido = (id) => { tuuR.abierto = tuuR.abierto === id ? '' : id; tuuR.destino = null; tuuR.pegar = false; GS.render(); enfocarTuu(); };
-  GS.actions.tuuPegar = () => { tuuR.pegar = !tuuR.pegar; GS.render(); const ta = document.querySelector('[data-tuu-lista]'); if (ta) ta.focus(); };
-  GS.actions.tuuAgregarLista = () => {
-    const montos = GS.leerMontos((document.querySelector('[data-tuu-lista]') || {}).value);
-    if (!montos.length) { GS.toast('Escribe o pega al menos un monto.', true); return; }
-    tuuR.pegar = false;
-    encolarTuu(montos);
-  };
-  GS.actions.tuuQuitar = (ref) => {
-    const [tid, i] = ref.split('|');
-    GS.mutate('quitarPagoTuuTicket', { ticketId: tid, pago: Number(i) }, 'Pago TUU quitado').then(() => enfocarTuu()).catch((e) => GS.toast(e.message, true));
-  };
-  document.addEventListener('submit', (e) => {
-    if (!e.target.matches || !e.target.matches('[data-tuu-form]')) return;
-    e.preventDefault();
-    const inp = e.target.querySelector('[data-tuu-monto]');
-    const montos = GS.leerMontos(inp.value);
-    if (!montos.length) return;
-    inp.value = '';
-    encolarTuu(montos);
-  });
-  document.addEventListener('change', (e) => {
-    if (!e.target.closest || !e.target.closest('.tuu-rapido')) return;
-    if (e.target.matches('[data-tuu-medio]')) { tuuR.medio = e.target.value; GS.render(); enfocarTuu(); }
-    else if (e.target.matches('[data-tuu-cuotas]')) tuuR.cuotas = Math.max(2, Number(e.target.value) || 2);
-    else if (e.target.matches('[data-tuu-destino]')) { const v = e.target.value; tuuR.destino = /^new:/.test(v) ? v : Number(v); enfocarTuu(); }
-  });
-  document.addEventListener('input', (e) => {
-    if (!e.target.matches || !e.target.matches('[data-tuu-lista]')) return;
-    const m = GS.leerMontos(e.target.value);
-    const prev = document.querySelector('[data-tuu-prev]');
-    if (prev) prev.textContent = m.length + (m.length === 1 ? ' monto · ' : ' montos · ') + fmt.money(m.reduce((s, x) => s + x, 0));
-  });
 
   GS.views.caja = {
     title: 'Caja del día',
@@ -227,9 +129,7 @@
           '<td class="cell-dim">' + esc(pagosTexto(t)) + '</td>' +
           '<td class="cell-num right"><strong>' + (t.tipo === 'egreso' ? '−' : '') + fmt.money(t.total) + '</strong></td>' +
           '<td class="cell-dim">' + esc(String(t.creadoPor || '').split('@')[0]) + '</td>' +
-          '<td><div class="row-actions">' + (abierta && op && t.estado === 'abierto' ? (t.tipo === 'venta' ? '<button class="btn small ' + (tuuR.abierto === t.id ? '' : 'ghost') + '" data-action="tuuRapido" data-id="' + esc(t.id) + '" title="Marcar pasadas de la máquina TUU en este ticket (eventos)">+ TUU</button>' : '') +
-            GS.iconBtn('editarTicket', t.id, 'edit', 'Editar') + GS.iconBtn('anularTicket', t.id, 'trash', 'Anular', 'danger') : '') + '</div></td></tr>' +
-          (abierta && op && t.estado === 'abierto' && t.tipo === 'venta' && tuuR.abierto === t.id ? panelTuu(t) : '')).join('')
+          '<td><div class="row-actions">' + (abierta && op && t.estado === 'abierto' ? GS.iconBtn('editarTicket', t.id, 'edit', 'Editar') + GS.iconBtn('anularTicket', t.id, 'trash', 'Anular', 'danger') : '') + '</div></td></tr>').join('')
             : '<tr><td colspan="8" class="muted center" style="padding:14px;">Ningún ticket coincide con los filtros.</td></tr>')
           : '<tr><td colspan="8">' + GS.empty('Sin tickets', abierta ? 'Registra la primera venta con "Venta".' : 'Esta caja no tuvo movimientos.', 'caja') + '</td></tr>') +
         '</tbody></table></div>' +
@@ -299,13 +199,15 @@
       '<td class="cell-num right" data-tk-sub>—</td><td><button type="button" class="btn small ghost" data-tk-quitar title="Quitar">✕</button></td></tr>';
     // Línea por monto: concepto, cantidad (por defecto 1) y precio unitario. Bazar: Bebida o Snack.
     const bazar = d.catalogos.tiposBazar || ['Bebida', 'Snack'];
+    let uidN = 0;
     const filaMonto = (l) => {
+      const uid = 'm' + (++uidN);
       const cat = l ? l.categoria : 'Singles';
       const desc = l ? l.descripcion || '' : '';
       const esBazar = cat === 'Bazar';
       const cant = l ? l.cantidad || 1 : 1;
       const precio = l ? l.precio || (l.monto ? l.monto / cant : '') : '';
-      return '<tr data-tk-monto' + (l && l.tj ? ' data-tj="' + esc(l.tj) + '"' : '') + '><td>' + (l && l.tj
+      return '<tr data-tk-monto data-uid="' + uid + '"' + (l && l.tj ? ' data-tj="' + esc(l.tj) + '"' : '') + '><td>' + (l && l.tj
         ? '<input type="hidden" name="tkCat" value="Torneo"><input type="hidden" name="tkDesc" value="' + esc(desc) + '"><span class="badge st-pedido">Inscripción</span> ' + esc(desc)
         : '<div class="field-row"><select name="tkCat">' + GS.options(cats, cat) + '</select>' +
           '<select name="tkTipo"' + (esBazar ? '' : ' hidden') + '>' + GS.options([{ value: '', label: 'Bebida o snack…' }].concat(bazar.map((x) => ({ value: x, label: x }))), esBazar && bazar.indexOf(desc) !== -1 ? desc : '') + '</select>' +
@@ -314,7 +216,8 @@
         '<td><input class="qty-input price-input" style="width:100px" type="number" min="1" step="1" name="tkMonto" value="' + esc(precio) + '"></td>' +
         '<td class="cell-num right" data-tk-sub>—</td><td><button type="button" class="btn small ghost" data-tk-quitar title="Quitar">✕</button></td></tr>';
     };
-    const filaPago = (p) => '<div class="field-row" data-tk-pago style="margin-bottom:6px;"><select name="tkMedio">' + GS.options(Object.keys(medios).map((k) => ({ value: k, label: medios[k] })), p ? p.medio : 'efectivo') + '</select>' +
+    // Pasada TUU marcada con "+ TUU": fila oculta (se ve como ficha); data-uid = línea por monto a la que sumó.
+    const filaPago = (p, rapido) => '<div class="field-row" data-tk-pago' + (rapido != null ? ' data-rapido data-uid="' + esc(rapido) + '" hidden' : '') + ' style="margin-bottom:6px;"><select name="tkMedio">' + GS.options(Object.keys(medios).map((k) => ({ value: k, label: medios[k] })), p ? p.medio : 'efectivo') + '</select>' +
       '<input class="price-input" type="number" min="0" step="1" name="tkPagoMonto" value="' + esc(p ? p.monto : '') + '" placeholder="Monto">' +
       '<input class="qty-input" style="width:90px" type="number" min="1" max="48" step="1" name="tkCuotas" value="' + esc(p && p.cuotas ? p.cuotas : 1) + '" title="Cuotas (TUU crédito)" placeholder="Cuotas"' + (p && p.medio === 'credito' ? '' : ' hidden') + '>' +
       '<button type="button" class="btn small ghost" data-tk-quitar-pago title="Quitar">✕</button></div>';
@@ -336,8 +239,20 @@
           '<button type="button" class="btn small" data-tk-listo>Listo</button></div>' +
           '<div style="max-height:340px;overflow:auto;"><table class="data-table" style="min-width:0"><thead><tr><th>Producto</th><th>Tipo</th><th class="right">Disponible</th><th class="right">Precio</th><th></th></tr></thead><tbody data-tk-lista></tbody></table></div>' +
           '<p class="table-note" style="margin:6px 0 0;">Toca un producto para agregarlo; si ya está en el ticket, suma una unidad.</p></div></div>' +
-        '<div class="form-field full"><label>Pago</label><div data-tk-pagos>' + (t ? t.pagos.map(filaPago).join('') : filaPago(null)) + '</div>' +
-        '<button type="button" class="btn small ghost" data-tk-add-pago>' + GS.icon('plus', 2.4) + 'Otro medio de pago</button><p class="table-note" data-tk-cuadre></p></div>' +
+        '<div class="form-field full"><label>Pago</label><div data-tk-pagos>' + (t ? t.pagos.map((p) => filaPago(p, TUU.indexOf(p.medio) !== -1 && t.pagos.filter((x) => TUU.indexOf(x.medio) !== -1).length >= 2 ? '' : null)).join('') : filaPago(null)) + '</div>' +
+        '<button type="button" class="btn small ghost" data-tk-add-pago>' + GS.icon('plus', 2.4) + 'Otro medio de pago</button>' +
+        // "+ TUU": cada pasada de la máquina es un pago propio (cuadra 1 a 1 con el informe de TUU) y suma a una línea por monto.
+        '<div class="tuu-rapido" data-tk-tuu><div class="tuu-barra"><strong>Pasadas TUU</strong>' +
+          '<select data-tuu-medio aria-label="Medio TUU"><option value="debito">' + esc(medios.debito) + '</option><option value="credito">' + esc(medios.credito) + '</option></select>' +
+          '<input class="qty-input" type="number" min="2" max="48" step="1" data-tuu-cuotas value="2" title="Cuotas (crédito)" aria-label="Cuotas" hidden>' +
+          '<select data-tuu-destino aria-label="Suma a" title="Línea del ticket a la que se suma la venta"></select>' +
+          '<input class="price-input" type="text" inputmode="numeric" data-tuu-monto placeholder="Monto y Enter" aria-label="Monto de la pasada TUU" autocomplete="off">' +
+          '<button type="button" class="btn small" data-tuu-add>' + GS.icon('plus', 2.4) + 'TUU</button>' +
+          '<a href="#" class="tag" data-tuu-pegar-ver>Pegar varios</a></div>' +
+          '<div class="tuu-pegar" data-tuu-pegar hidden><textarea data-tuu-lista rows="3" placeholder="Montos separados por espacio, coma o salto de línea: 8000 25000 12500"></textarea>' +
+            '<div class="btn-row"><span class="cell-dim" data-tuu-prev>0 montos</span><button type="button" class="btn small secondary" data-tuu-add-lista>Agregar todos</button></div></div>' +
+          '<div class="tuu-chips" data-tuu-chips></div></div>' +
+        '<p class="table-note" data-tk-cuadre></p></div>' +
         '<div class="form-field full"><label>Notas</label><input name="notas" maxlength="300" value="' + esc(t ? t.notas : '') + '"></div></div>' +
         '<p class="hint">Si lo cobras más barato, cambia el precio: queda como descuento. "Pendiente" = el cliente queda debiendo (requiere su nombre). El precio de los sellados parte en el precio de venta.</p>',
       onMount: (form) => {
@@ -374,6 +289,53 @@
         lista.addEventListener('click', (e) => { const tr = e.target.closest('[data-tk-pick]'); if (tr) agregar(tr.dataset.tkPick); });
         buscar.addEventListener('input', pintarLista);
         buscar.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); const f = lista.querySelector('[data-tk-pick]'); if (f) agregar(f.dataset.tkPick); } });
+        /* "+ TUU" dentro del ticket */
+        let tuuDestino = null;   // uid de la línea, 'new' (línea Singles nueva) o '' (solo pago)
+        const lineasUnidad = () => Array.from(cuerpo.querySelectorAll('[data-tk-monto]')).filter((tr) => (Number(tr.querySelector('[name="tkMCant"]').value) || 1) === 1 && !tr.dataset.tj);
+        const textoLinea = (tr) => { const cat = tr.querySelector('[name="tkCat"]').value; const desc = tr.querySelector('[name="tkDesc"]'); return cat + (desc && desc.value && !desc.hidden ? ' · ' + desc.value : ''); };
+        function pintarTuu() {
+          const sel = form.querySelector('[data-tuu-destino]');
+          const ls = lineasUnidad();
+          if (tuuDestino == null || (tuuDestino !== 'new' && tuuDestino !== '' && !ls.some((tr) => tr.dataset.uid === tuuDestino))) tuuDestino = ls.length ? ls[ls.length - 1].dataset.uid : 'new';
+          sel.innerHTML = ls.map((tr) => '<option value="' + tr.dataset.uid + '">Suma a: ' + esc(textoLinea(tr)) + '</option>').join('') +
+            '<option value="new">Nueva línea: Singles</option><option value="">Solo pago (lo vendido ya está en el ticket)</option>';
+          sel.value = tuuDestino;
+          const rs = Array.from(pagos.querySelectorAll('[data-rapido]'));
+          const suma = rs.reduce((s, f) => s + (Number(f.querySelector('[name="tkPagoMonto"]').value) || 0), 0);
+          form.querySelector('[data-tuu-chips]').innerHTML = rs.length ? '<strong>TUU: ' + rs.length + (rs.length === 1 ? ' pago' : ' pagos') + ' · ' + fmt.money(suma) + '</strong> ' +
+            rs.map((f, i) => { const m = f.querySelector('[name="tkMedio"]').value; const cu = Number(f.querySelector('[name="tkCuotas"]').value) || 1;
+              return '<span class="chip">' + (m === 'credito' ? 'C ' : '') + fmt.money(Number(f.querySelector('[name="tkPagoMonto"]').value) || 0) + (m === 'credito' && cu > 1 ? ' ×' + cu : '') +
+                '<button type="button" data-tuu-quitar="' + i + '" title="Quitar esta pasada" aria-label="Quitar">×</button></span>'; }).join('') : '';
+        }
+        function agregarTuu(montos) {
+          if (!montos.length) return;
+          const medio = form.querySelector('[data-tuu-medio]').value;
+          const cuotas = medio === 'credito' ? Math.max(2, Number(form.querySelector('[data-tuu-cuotas]').value) || 2) : 1;
+          const suma = montos.reduce((s, m) => s + m, 0);
+          let uid = tuuDestino;
+          if (uid === 'new') {
+            cuerpo.insertAdjacentHTML('beforeend', filaMonto({ categoria: 'Singles', descripcion: '', cantidad: 1, precio: 0, monto: 0 }));
+            uid = cuerpo.lastElementChild.dataset.uid;
+            tuuDestino = uid;
+          }
+          const tr = uid ? cuerpo.querySelector('[data-uid="' + uid + '"]') : null;
+          if (tr) { const inp = tr.querySelector('[name="tkMonto"]'); inp.value = (Number(inp.value) || 0) + suma; }
+          montos.forEach((m) => pagos.insertAdjacentHTML('beforeend', filaPago({ medio: medio, monto: m, cuotas: cuotas > 1 ? cuotas : 0 }, tr ? uid : '')));
+          upd();
+        }
+        function quitarTuu(i) {
+          const f = pagos.querySelectorAll('[data-rapido]')[i];
+          if (!f) return;
+          const monto = Number(f.querySelector('[name="tkPagoMonto"]').value) || 0;
+          const tr = f.dataset.uid ? cuerpo.querySelector('[data-uid="' + f.dataset.uid + '"]') : null;
+          if (tr) {
+            const inp = tr.querySelector('[name="tkMonto"]');
+            const queda = (Number(inp.value) || 0) - monto;
+            if (queda > 0) inp.value = queda; else tr.remove();
+          }
+          f.remove();
+          upd();
+        }
         const total = () => Array.from(cuerpo.children).reduce((s, tr) => {
           let sub = 0;
           if (tr.hasAttribute('data-tk-prod')) {
@@ -385,7 +347,12 @@
         const upd = () => {
           const tot = total();
           const filas = pagos.querySelectorAll('[data-tk-pago]');
-          if (!pagoTocado && filas.length === 1) filas[0].querySelector('[name="tkPagoMonto"]').value = tot || '';
+          // Sin tocar los pagos, el primero (efectivo) se lleva lo que no cubren las pasadas TUU.
+          if (!pagoTocado && filas.length) {
+            const otros = Array.from(filas).slice(1).reduce((s, f) => s + (Number(f.querySelector('[name="tkPagoMonto"]').value) || 0), 0);
+            filas[0].querySelector('[name="tkPagoMonto"]').value = Math.max(0, tot - otros) || '';
+          }
+          pintarTuu();
           const suma = Array.from(filas).reduce((s, f) => s + (Number(f.querySelector('[name="tkPagoMonto"]').value) || 0), 0);
           form.querySelector('[data-tk-cuadre]').innerHTML = '<strong>Total ' + fmt.money(tot) + '</strong>' +
             (suma === tot ? ' · <span class="text-success">pagos cuadrados</span>' : suma < tot ? ' · <span class="text-gold">faltan ' + fmt.money(tot - suma) + '</span>' : ' · <span class="text-danger">sobran ' + fmt.money(suma - tot) + '</span>');
@@ -405,6 +372,10 @@
         };
         form.addEventListener('click', (e) => {
           if (e.target.closest('[data-tk-add-prod]')) { abrirPicker(); return; }
+          else if (e.target.closest('[data-tuu-add]')) { const inp = form.querySelector('[data-tuu-monto]'); agregarTuu(GS.leerMontos(inp.value)); inp.value = ''; inp.focus(); }
+          else if (e.target.closest('[data-tuu-pegar-ver]')) { e.preventDefault(); const pg = form.querySelector('[data-tuu-pegar]'); pg.hidden = !pg.hidden; if (!pg.hidden) form.querySelector('[data-tuu-lista]').focus(); return; }
+          else if (e.target.closest('[data-tuu-add-lista]')) { const ta = form.querySelector('[data-tuu-lista]'); agregarTuu(GS.leerMontos(ta.value)); ta.value = ''; form.querySelector('[data-tuu-pegar]').hidden = true; form.querySelector('[data-tuu-prev]').textContent = '0 montos'; }
+          else if (e.target.closest('[data-tuu-quitar]')) quitarTuu(Number(e.target.closest('[data-tuu-quitar]').dataset.tuuQuitar));
           else if (e.target.closest('[data-tk-listo]')) { picker.hidden = true; return; }
           else if (e.target.closest('[data-tk-add-monto]')) { cuerpo.insertAdjacentHTML('beforeend', filaMonto(null)); cuerpo.lastElementChild.querySelector('[name="tkMonto"]').focus(); }
           else if (e.target.closest('[data-tk-quitar]')) { e.target.closest('tr').remove(); if (!picker.hidden) pintarLista(); }
@@ -413,12 +384,27 @@
           else return;
           upd();
         });
+        form.querySelector('[data-tuu-monto]').addEventListener('keydown', (e) => {
+          if (e.key !== 'Enter') return;
+          e.preventDefault();
+          agregarTuu(GS.leerMontos(e.target.value));
+          e.target.value = '';
+        });
         form.addEventListener('input', (e) => {
+          if (e.target.matches('[data-tuu-lista]')) {
+            const m = GS.leerMontos(e.target.value);
+            form.querySelector('[data-tuu-prev]').textContent = m.length + (m.length === 1 ? ' monto · ' : ' montos · ') + fmt.money(m.reduce((s, x) => s + x, 0));
+            return;
+          }
+          if (e.target.matches('[data-tuu-monto]')) return;
           if (e.target.name === 'tkPagoMonto') pagoTocado = true;
           if (e.target.name === 'tkCant' && !picker.hidden) pintarLista();
           upd();
         });
         form.addEventListener('change', (e) => {
+          if (e.target.matches('[data-tuu-medio]')) { form.querySelector('[data-tuu-cuotas]').hidden = e.target.value !== 'credito'; return; }
+          if (e.target.matches('[data-tuu-destino]')) { tuuDestino = e.target.value; return; }
+          if (e.target.matches('[data-tuu-cuotas]')) return;
           if (e.target.name === 'tkCat') {
             const tr = e.target.closest('tr');
             const b = e.target.value === 'Bazar';

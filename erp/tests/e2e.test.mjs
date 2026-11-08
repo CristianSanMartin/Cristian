@@ -1017,33 +1017,48 @@ test("orden de compra: desde Preventas queda en tránsito (no vendible) y al con
   }
 });
 
-test("caja: + TUU marca pasadas con Enter, pegar varios, quitar y revisión contra la app al cerrar", { skip }, async () => {
+test("caja: + TUU dentro de la venta (Enter, pegar varios, quitar), cuadra con el informe y revisión al cerrar", { skip }, async () => {
   const browser = await chromium.launch();
   try {
     const { page, errores } = await abrir(browser);
     await page.evaluate(async () => {
       const c = await GS.mutate("abrirCaja", { fecha: "2030-12-20" });
-      await GS.mutate("guardarTicket", { cajaId: c.id, canal: "Evento", evento: "Feria", lineas: [{ categoria: "Singles", monto: 5000 }], pagos: [{ medio: "efectivo", monto: 5000 }] });
       GS.filters("caja", { caja: "", tab: "caja" }).caja = c.id;
       GS.go("caja");
     });
+    await page.click('[data-action="nuevoTicket"]');
+    const m = modal(page);
+    await m.locator("[data-tk-listo]").click();
+    await m.locator('select[name="canal"]').selectOption("Evento");
+    await m.locator('[name="evento"]').fill("Feria");
+    // Sin líneas: la primera pasada crea "Singles" y las siguientes suman ahí. Enter no envía el formulario.
+    const monto = m.locator("[data-tuu-monto]");
+    for (const x of ["8000", "25.000", "12500"]) { await monto.fill(x); await monto.press("Enter"); }
+    assert.match(await m.locator("[data-tuu-chips]").textContent(), /TUU: 3 pagos · \$45\.500/);
+    assert.equal(await m.locator('[data-tk-monto] [name="tkMonto"]').inputValue(), "45500");
+    assert.match(await m.locator("[data-tk-cuadre]").textContent(), /Total \$45\.500 · pagos cuadrados/);
+    // Pegar varios y quitar una pasada mal marcada.
+    await m.locator("[data-tuu-pegar-ver]").click();
+    await m.locator("[data-tuu-lista]").fill("3000\n4.500, 2500");
+    assert.match(await m.locator("[data-tuu-prev]").textContent(), /3 montos · \$10\.000/);
+    await m.locator("[data-tuu-add-lista]").click();
+    await m.locator(".chip", { hasText: "$25.000" }).locator("[data-tuu-quitar]").click();
+    assert.match(await m.locator("[data-tuu-chips]").textContent(), /TUU: 5 pagos · \$30\.500/);
+    assert.equal(await m.locator('[data-tk-monto] [name="tkMonto"]').inputValue(), "30500");
+    // Una venta en efectivo en el mismo ticket: el pago en efectivo se lleva lo que no cubre TUU.
+    await m.locator("[data-tk-add-monto]").click();
+    await m.locator('[data-tk-monto]').last().locator('[name="tkMonto"]').fill("5000");
+    assert.match(await m.locator("[data-tk-cuadre]").textContent(), /Total \$35\.500 · pagos cuadrados/);
+    await m.locator('button[type="submit"]').click();
+    await toast(page, /Ticket TK-\d{8}-\d{2} registrado/);
     const fila = page.locator("#caja-cuerpo tr", { hasText: "Feria" });
-    await fila.locator('[data-action="tuuRapido"]').click();
-    const monto = page.locator("[data-tuu-monto]");
-    // Tres pasadas seguidas con Enter (el campo queda listo para la siguiente).
-    for (const m of ["8000", "25.000", "12500"]) { await monto.fill(m); await monto.press("Enter"); }
-    await page.waitForFunction(() => /TUU: 3 pagos · \$45\.500/.test((document.querySelector(".tuu-chips") || {}).textContent || ""));
-    assert.match(await fila.textContent(), /Singles.*TUU débito \$45\.500 \(3 pagos\).*\$50\.500/s);
-    // Pegar varios montos de una vez.
-    await page.click('[data-action="tuuPegar"]');
-    await page.fill("[data-tuu-lista]", "3000\n4.500, 2500");
-    assert.match(await page.locator("[data-tuu-prev]").textContent(), /3 montos · \$10\.000/);
-    await page.click('[data-action="tuuAgregarLista"]');
-    await page.waitForFunction(() => /TUU: 6 pagos · \$55\.500/.test((document.querySelector(".tuu-chips") || {}).textContent || ""));
-    // Quitar una pasada mal marcada.
-    await page.locator(".tuu-chips .chip", { hasText: "$25.000" }).locator('[data-action="tuuQuitar"]').click();
-    await page.waitForFunction(() => /TUU: 5 pagos · \$30\.500/.test((document.querySelector(".tuu-chips") || {}).textContent || ""));
-    assert.match(await page.locator("#caja-cuerpo tr", { hasText: "Feria" }).textContent(), /\$35\.500/);
+    assert.match(await fila.textContent(), /Efectivo \$5\.000 \+ TUU débito \$30\.500 \(5 pagos\).*\$35\.500/s);
+    // Al editar, las pasadas siguen como fichas.
+    await fila.locator('[data-action="editarTicket"]').click();
+    assert.match(await modal(page).locator("[data-tuu-chips]").textContent(), /TUU: 5 pagos · \$30\.500/);
+    await modal(page).locator(".modal-head h3").click();
+    await page.keyboard.press("Escape");
+    await cerrado(page);
     // Al cerrar: revisión contra el total de la app TUU.
     await page.click('[data-action="cerrarCaja"]');
     await modal(page).locator('[name="tuuApp"]').fill("33.000");
