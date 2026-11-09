@@ -151,9 +151,16 @@
       if (v.abono) res.push(Object.assign({}, base, { id: v.id + '·v', fecha: v.fecha, categoriaLabel: 'Venta', subcategoria: v.cliente + ' · ' + v.medioPagoLabel,
         monto: conCom ? v.abono - v.comision : v.abono, bruto: v.abono, comision: conCom ? v.comision : 0,
         notas: conCom ? 'venta ' + fmt.money(v.abono) + ' − comisión ' + fmt.money(v.comision) : '' }, estadoTuu(v.medioPago)));
-      v.cobros.forEach((c) => res.push(Object.assign({}, base, { id: c.id, fecha: c.fecha, categoriaLabel: 'Abono de venta', subcategoria: v.cliente + ' · ' + (data().catalogos.mediosPago[c.medioPago] || c.medioPago), monto: c.monto,
-        cuentaLabel: CUENTA_MEDIO[c.medioPago] || '' }, /^Ticket /.test(c.notas || '') ? estadoTuu(c.medioPago) : {})));
-      if (v.comision && !conCom) res.push(Object.assign({}, base, { id: v.id + '·c', tipo: 'egreso', fecha: v.fecha, categoriaLabel: 'Comisión ' + v.medioPagoLabel, subcategoria: v.cliente, monto: v.comision }));
+      // Venta en cuotas TUU: la comisión va dentro de cada cuota que llega (abono neto de su parte), no como egreso aparte.
+      const esCuota = (c) => /^Cuota \d+\/\d+ TUU/.test(c.notas || '');
+      const enCuotas = !conCom && v.comision && (v.porCobrarTuu > 0 || v.cobros.some(esCuota));
+      v.cobros.forEach((c) => {
+        const com = enCuotas && esCuota(c) && v.total ? Math.round(v.comision * c.monto / v.total) : 0;
+        res.push(Object.assign({}, base, { id: c.id, fecha: c.fecha, categoriaLabel: esCuota(c) ? 'Cuota TUU' : 'Abono de venta', subcategoria: v.cliente + ' · ' + (data().catalogos.mediosPago[c.medioPago] || c.medioPago),
+          monto: c.monto - com, bruto: c.monto, comision: com, notas: com ? 'cuota ' + fmt.money(c.monto) + ' − comisión ' + fmt.money(com) : '',
+          cuentaLabel: CUENTA_MEDIO[c.medioPago] || '' }, /^Ticket /.test(c.notas || '') ? estadoTuu(c.medioPago) : {}));
+      });
+      if (v.comision && !conCom && !enCuotas) res.push(Object.assign({}, base, { id: v.id + '·c', tipo: 'egreso', fecha: v.fecha, categoriaLabel: 'Comisión ' + v.medioPagoLabel, subcategoria: v.cliente, monto: v.comision }));
     });
     // Pagos de facturas de compra: registrados en Compras o conciliados desde la caja diaria.
     const compra = {};

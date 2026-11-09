@@ -1130,3 +1130,30 @@ test("caja: la ventana de productos de la venta tiene ordenar y filtrar por colu
     await browser.close();
   }
 });
+
+test("finanzas: la comisión de una venta en cuotas TUU va dentro de cada cuota, no como egreso aparte", { skip }, async () => {
+  const browser = await chromium.launch();
+  try {
+    const { page, errores } = await abrir(browser);
+    const venta = await page.evaluate(async () => {
+      const c = await GS.mutate("abrirCaja", { fecha: "2030-12-22" });
+      await GS.mutate("guardarTicket", { cajaId: c.id, cliente: "Cuotas Prueba", lineas: [{ categoria: "Accesorios", monto: 30000 }], pagos: [{ medio: "credito", monto: 30000, cuotas: 3 }] });
+      await GS.mutate("cerrarCaja", { id: c.id });
+      const cuota = GS.state.data.tuu.cuotas.find((q) => q.numero === 1 && q.fechaEsperada >= "2030-12-22");
+      await GS.mutate("recibirCuotaTuu", { id: cuota.id, fecha: cuota.fechaEsperada });
+      return GS.state.data.ventas.find((v) => v.cliente === "Cuotas Prueba");
+    });
+    await page.click('[data-nav="finanzas"]');
+    await page.fill('[data-filter="finanzas.q"]', "Cuotas Prueba");
+    await page.waitForFunction(() => document.querySelectorAll("#mov-tbody tr").length >= 1);
+    const filas = await page.locator("#mov-tbody tr").allTextContents();
+    assert.ok(!filas.some((t) => /Comisión/.test(t) && /Egreso/.test(t)), "sin egreso de comisión aparte");
+    const cuota = filas.find((t) => /Cuota TUU/.test(t));
+    const com = Math.round(venta.comision * 10000 / 30000);
+    assert.match(cuota, new RegExp("\\+\\$" + (10000 - com).toLocaleString("es-CL").replace(/\./g, "\\.")));
+    assert.match(cuota, /cuota \$10\.000 − comisión/);
+    assert.deepEqual(errores, []);
+  } finally {
+    await browser.close();
+  }
+});
