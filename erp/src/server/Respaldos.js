@@ -134,6 +134,32 @@ const MIGRACIONES = [
       ['MIGRACION_CERRADA', 'MIGRACION_IMPORTADA'].forEach((k) => props.deleteProperty(k));
     },
   },
+  {
+    id: '2026-11-09-comision-cuotas-tuu',
+    descripcion: 'Comisión estimada de las cuotas TUU pendientes: la de la venta completa repartida entre sus cuotas (no $65 fijos por cuota)',
+    fn: (user) => {
+      const grupos = {};
+      Db.all('Cuotas_TUU').forEach((c) => { (grupos[c.ticketId + '|' + c.pago] = grupos[c.ticketId + '|' + c.pago] || []).push(c); });
+      const cambios = {};
+      const ventas = {};
+      Object.keys(grupos).forEach((k) => {
+        const g = grupos[k];
+        const total = g.reduce((s, c) => s + c.monto, 0);
+        if (!total) return;
+        const com = Economia.comisionPago('credito', total);
+        g.filter((c) => c.estado === 'pendiente').forEach((c) => {
+          const nueva = Math.round(com * c.monto / total);
+          if (nueva === c.comisionEstimada) return;
+          cambios[c.id] = { comisionEstimada: nueva };
+          let vs = [];
+          try { vs = JSON.parse(c.ventas || '[]'); } catch (e) { vs = []; }
+          vs.forEach((x) => { if (x.ventaId) ventas[x.ventaId] = true; });
+        });
+      });
+      if (Object.keys(cambios).length) Db.actualizarVarios('Cuotas_TUU', cambios);
+      if (Object.keys(ventas).length) Cajas._recalcularComisiones(Object.keys(ventas), user);
+    },
+  },
 ];
 
 const Respaldos = {

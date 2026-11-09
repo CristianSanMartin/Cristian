@@ -1361,6 +1361,17 @@ test("ticket de evento con varias pasadas TUU: cada transacción del informe cua
   assert.deepEqual([imp.nuevas, imp.sinVenta.length], [3, 0]);
 });
 
+test("cuotas TUU: la comisión de la venta completa se reparte entre las cuotas (calza con el informe)", () => {
+  const s = createServer();
+  const caja = s.ok("abrirCaja", { fecha: "2026-08-23" }).result;
+  s.ok("guardarTicket", { cajaId: caja.id, cliente: "Cuotas", lineas: [{ categoria: "Accesorios", monto: 21000 }], pagos: [{ medio: "credito", monto: 21000, cuotas: 3 }] });
+  s.ok("cerrarCaja", { id: caja.id });
+  const d = s.ok("bootstrap").data;
+  // Informe TUU: cuota 1/3 de $7.000 → comisión $90 (no $142 de un pago suelto de $7.000).
+  assert.deepEqual(d.tuu.cuotas.map(c => c.comisionEstimada), [90, 90, 90]);
+  assert.equal(d.ventas.find(v => v.cliente === "Cuotas").comision, 270, "igual que un pago de $21.000 al contado");
+});
+
 test("comisión TUU con IVA: calza con el informe de abonos de TUU", () => {
   const s = createServer();
   const casos = [[55000, 581], [73000, 746], [18000, 243], [10000, 169], [8000, 151]];
@@ -1396,7 +1407,7 @@ test("TUU: abono en 2 días hábiles (con feriado), cuotas por cobrar e informe 
   const a = d.ventas.find(v => v.id === ventaA.id), b = d.ventas.find(v => v.id === ventaB.id);
   assert.equal(a.comision, 600, "la comisión real del informe reemplaza la estimada");
   assert.deepEqual([a.tuuAbono.porAbonar, a.tuuAbono.abonadoEl], [false, "2026-10-13"]);
-  const est = 219 + 42;   // 0,77% de 20.000 + 65 = 219, + IVA 42
+  const est = Math.round((60000 * 0.0077 + 65) * 1.19 / 3);   // la comisión de los $60.000 repartida en 3 cuotas = 209
   assert.deepEqual([b.cobros.length, b.porCobrarTuu, b.comision], [1, 40000, 300 + 2 * est]);
   assert.equal(d.tuu.esperados.filter(e => e.tipo === "ventas").length, 0, "la caja ya llegó en el informe");
   assert.equal(s.ok("importarAbonosTuu", { filas }).result.repetidas, 2, "no se procesa dos veces");

@@ -348,6 +348,9 @@ const Cajas = {
           if (!(g.cuotas > 1)) return;
           const partes = x.docs.map((d) => ({ ventaId: d.ventaId, monto: (d.partes.find((q) => q.pago === ip) || {}).monto || 0 })).filter((q) => q.monto);
           const valor = Math.floor(g.monto / g.cuotas);
+          // TUU cobra la comisión de la venta completa (0,77% + $65 + IVA) repartida entre las cuotas (informe: cuota 1/3 de
+          // $7.000 de una venta de $21.000 → $90), no $65 fijos por cada cuota.
+          const comTotal = Economia.comisionPago('credito', g.monto);
           for (let k = 1; k <= g.cuotas; k++) {
             const monto = k === g.cuotas ? g.monto - valor * (g.cuotas - 1) : valor;
             const reparto = Cajas._repartir(monto, partes.map((q) => q.monto));
@@ -355,7 +358,7 @@ const Cajas = {
               ticketId: t.id, cajaId: caja.id, pago: ip, numero: k, de: g.cuotas, monto: monto,
               ventas: JSON.stringify(partes.map((q, i) => ({ ventaId: q.ventaId, monto: reparto[i] }))),
               fechaEsperada: Cajas.fechaAbono(Util.sumarMeses(caja.fecha, k - 1)), estado: 'pendiente', fechaRecibida: '',
-              comisionEstimada: Economia.comisionPago('credito', monto), comision: 0, comisionReal: false, idTransaccion: '',
+              comisionEstimada: Math.round(comTotal * monto / g.monto), comision: 0, comisionReal: false, idTransaccion: '',
             });
           }
         });
