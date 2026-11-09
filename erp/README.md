@@ -337,6 +337,10 @@ Menú **Caja del día**. Se abre una caja por fecha (`CJ-20261012`) y cada atenc
   comisión de TUU se reparten en proporción al monto de cada documento. Con el depósito de TUU la
   comisión es la real (cobrado − depositado); si aún no llega, se estima y se corrige después con
   "Registrar depósito TUU".
+- **Reabrir caja** (administrador): permite agregar tickets. Los que ya pasaron muestran **Volver a abrir**, que
+  deshace su paso (elimina sus ventas, o anula el movimiento de una compra/gasto) para editarlo o anularlo; al
+  cerrar de nuevo vuelve a pasar. No se puede si ya tiene abonos posteriores, el informe de TUU lo cuadró, llegó
+  una cuota o la caja tiene el depósito de TUU registrado: ahí se corrige en Ventas.
 - Si queda una caja sin cerrar, se avisa al abrir la del día siguiente (sus productos siguen reservados).
 - Requiere "Instalar / actualizar hojas" (hojas nuevas `Cajas` y `Caja_Tickets`).
 

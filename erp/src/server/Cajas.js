@@ -153,6 +153,55 @@ const Cajas = {
     return { id: id };
   },
 
+  /**
+   * Caja reabierta: un ticket que ya pasó (a ventas y Finanzas) vuelve a quedar abierto para editarlo o anularlo.
+   * Deshace lo que creó el cierre: sus ventas (con sus líneas y los abonos del mismo cierre), sus cuotas TUU y el
+   * movimiento de una compra/gasto. No se puede si algo ya avanzó después: abonos posteriores, el informe de TUU
+   * ya lo cuadró, una cuota recibida o el depósito de TUU de la caja registrado.
+   */
+  volverTicket(p, user) {
+    const raw = Db.get('Caja_Tickets', String(p.id || ''));
+    if (!raw) throw new AppError('El ticket no existe.', 'NO_ENCONTRADO');
+    const caja = Cajas.requerirAbierta(raw.cajaId);
+    const t = Cajas._leer(raw);
+    if (t.estado !== 'pasado') throw new AppError('El ticket ' + t.id + ' no está pasado: ya se puede editar.');
+    const etiqueta = 'Ticket ' + t.id;
+    if (t.tipo === 'egreso') {
+      t.documentos.forEach((id) => { const m = Db.get('Finanzas', id); if (m && !m.anulado) Finanzas.anular({ id: id }, user); });
+    } else {
+      const tuu = t.pagos.some((g) => TUU_MEDIOS.indexOf(g.medio) !== -1);
+      if (tuu && caja.depositoTuu) throw new AppError('La caja ya tiene registrado el depósito de TUU: corrige ' + t.id + ' en Ventas.');
+      if (Db.all('Abonos_TUU').some((a) => a.ticketId === t.id)) throw new AppError('El informe de TUU ya cuadró los pagos de ' + t.id + ': corrígelo en Ventas.');
+      const cuotas = Db.all('Cuotas_TUU').filter((c) => c.ticketId === t.id);
+      if (cuotas.some((c) => c.estado !== 'pendiente')) throw new AppError('Ya llegó una cuota TUU de ' + t.id + ': corrígelo en Ventas.');
+      const ventas = t.documentos.map((id) => Db.get('Ventas', id)).filter(Boolean);
+      const cobros = Db.all('Cobros').filter((c) => t.documentos.indexOf(c.ventaId) !== -1);
+      const otros = cobros.filter((c) => !/^Ticket /.test(c.notas || '') || c.notas.indexOf(etiqueta) !== 0);
+      if (otros.length) throw new AppError('Las ventas de ' + t.id + ' ya tienen abonos posteriores: corrígelas en Ventas.');
+      if (ventas.some((v) => v.anulada)) throw new AppError('Una venta de ' + t.id + ' está anulada: corrígelo en Ventas.');
+      const ids = ventas.map((v) => v.id);
+      Db.all('Ventas_Lineas').filter((l) => ids.indexOf(l.ventaId) !== -1).forEach((l) => Db.remove('Ventas_Lineas', l.id));
+      cobros.forEach((c) => Db.remove('Cobros', c.id));
+      ventas.forEach((v) => Db.remove('Ventas', v.id));
+      cuotas.forEach((c) => Db.remove('Cuotas_TUU', c.id));
+      // Si eran los últimos N° del correlativo, el próximo cierre los vuelve a usar.
+      ids.forEach((id) => {
+        const m = /^([A-Z]+)-(\d+)$/.exec(id);
+        const sec = m && Db.get('Secuencias', m[1]);
+        if (!sec) return;
+        const re = new RegExp('^' + m[1] + '-(\\d+)$');
+        Db.update('Secuencias', m[1], { valor: Db.all('Ventas').reduce((x, v) => { const r = re.exec(v.id); return r ? Math.max(x, Number(r[1])) : x; }, 0) });
+      });
+      // Lo cobrado con TUU al contado sale del total de la caja (se vuelve a sumar al cerrarla).
+      const contado = t.pagos.filter((g) => TUU_MEDIOS.indexOf(g.medio) !== -1 && !(g.cuotas > 1)).reduce((s, g) => s + g.monto, 0);
+      const docs = Cajas._docs(caja).filter((d) => d.ticketId !== t.id);
+      Db.update('Cajas', caja.id, Object.assign({ tuuTotal: Math.max(0, (caja.tuuTotal || 0) - contado), tuuDocs: JSON.stringify(docs) }, Util.sello(user)));
+    }
+    Db.update('Caja_Tickets', t.id, Object.assign({ estado: 'abierto', documentos: '' }, Util.sello(user)));
+    Audit.log(user, 'volver a abrir', 'Ticket', t.id, { documentos: t.documentos.join(', ') });
+    return { id: t.id, documentos: t.documentos };
+  },
+
   anularTicket(p, user) {
     const t = Db.get('Caja_Tickets', String(p.id || ''));
     if (!t) throw new AppError('El ticket no existe.', 'NO_ENCONTRADO');

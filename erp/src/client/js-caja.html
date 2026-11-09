@@ -129,7 +129,9 @@
           '<td class="cell-dim">' + esc(pagosTexto(t)) + '</td>' +
           '<td class="cell-num right"><strong>' + (t.tipo === 'egreso' ? '−' : '') + fmt.money(t.total) + '</strong></td>' +
           '<td class="cell-dim">' + esc(String(t.creadoPor || '').split('@')[0]) + '</td>' +
-          '<td><div class="row-actions">' + (abierta && op && t.estado === 'abierto' ? GS.iconBtn('editarTicket', t.id, 'edit', 'Editar') + GS.iconBtn('anularTicket', t.id, 'trash', 'Anular', 'danger') : '') + '</div></td></tr>').join('')
+          '<td><div class="row-actions">' + (abierta && op && t.estado === 'abierto' ? GS.iconBtn('editarTicket', t.id, 'edit', 'Editar') + GS.iconBtn('anularTicket', t.id, 'trash', 'Anular', 'danger') : '') +
+            // Caja reabierta: un ticket ya pasado a Ventas/Finanzas se puede volver a abrir para editarlo o anularlo.
+            (abierta && admin && t.estado === 'pasado' ? '<button class="btn small ghost" data-action="volverTicket" data-id="' + esc(t.id) + '" title="Deshacer su paso a Ventas/Finanzas para editarlo o anularlo">Volver a abrir</button>' : '') + '</div></td></tr>').join('')
             : '<tr><td colspan="8" class="muted center" style="padding:14px;">Ningún ticket coincide con los filtros.</td></tr>')
           : '<tr><td colspan="8">' + GS.empty('Sin tickets', abierta ? 'Registra la primera venta con "Venta".' : 'Esta caja no tuvo movimientos.', 'caja') + '</td></tr>') +
         '</tbody></table></div>' +
@@ -457,6 +459,16 @@
   const ticket = (id) => { for (const c of cajas()) { const t = c.tickets.find((x) => x.id === id); if (t) return t; } return null; };
   GS.actions.nuevoTicket = () => formTicket(null);
   GS.actions.nuevaSalidaCaja = () => formSalida(null);
+  GS.actions.volverTicket = (id) => {
+    const t = ticket(id);
+    GS.confirm({
+      title: 'Volver a abrir ' + id,
+      message: 'Se deshace su paso a ' + (t.tipo === 'egreso' ? 'Finanzas (el movimiento queda anulado)' : 'Ventas: se eliminan ' + (t.documentos.length ? '<strong>' + t.documentos.map(esc).join(', ') + '</strong>' : 'sus ventas') + ' y el stock vuelve a quedar reservado') +
+        '. Después puedes editarlo o anularlo, y al cerrar la caja de nuevo vuelve a pasar. Queda registrado en la auditoría.',
+      confirmLabel: 'Sí, volver a abrir',
+      onConfirm: () => GS.mutate('volverTicket', { id: id }, 'Ticket ' + id + ' abierto de nuevo: ya se puede editar'),
+    });
+  };
   GS.actions.editarTicket = (id) => { const t = ticket(id); if (t.tipo === 'egreso') formSalida(t); else formTicket(t); };
   GS.actions.anularTicket = (id) => {
     const t = ticket(id);

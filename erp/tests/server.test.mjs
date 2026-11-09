@@ -1306,6 +1306,38 @@ test("caja del día: tickets con reserva, pago mixto y pendiente, cierre que rep
   assert.equal(d.ventas.filter(v => /Ticket TK-20261012-01/.test(v.notas)).reduce((t, v) => t + v.comision, 0), 1000);
 });
 
+test("caja reabierta: un ticket ya pasado vuelve a abrirse (se deshacen sus ventas) y se edita", () => {
+  const s = createServer();
+  const { prods } = conInventario(s);
+  const caja = s.ok("abrirCaja", { fecha: "2026-10-14" }).result;
+  const precio = s.ok("bootstrap").data.productos.find(p => p.id === prods.miniTin.id).precio;
+  const t = s.ok("guardarTicket", { cajaId: caja.id, lineas: [{ productoId: prods.miniTin.id, cantidad: 1 }, { categoria: "Singles", monto: 5000 }],
+    pagos: [{ medio: "efectivo", monto: precio }, { medio: "debito", monto: 5000 }] }).result;
+  const g = s.ok("guardarTicket", { cajaId: caja.id, tipo: "egreso", lineas: [{ categoria: Object.keys(s.ok("bootstrap").data.catalogos.egresosCaja)[0], monto: 3000 }] }).result;
+  s.ok("cerrarCaja", { id: caja.id });
+  let d = s.ok("bootstrap").data;
+  const docs = d.cajas[0].tickets.find(x => x.id === t.id).documentos;
+  assert.equal(docs.length, 2, "una OC y una SGL");
+  assert.match(errorDe(s.call("volverTicket", { id: t.id })), /ya está cerrada/);
+  s.ok("reabrirCaja", { id: caja.id });
+  s.ok("volverTicket", { id: t.id });
+  s.ok("volverTicket", { id: g.id });
+  d = s.ok("bootstrap").data;
+  assert.equal(d.ventas.filter(v => docs.indexOf(v.id) !== -1).length, 0, "sus ventas se deshacen");
+  assert.equal(d.movimientos.find(m => m.referencia === g.id).anulado, true, "el gasto queda anulado");
+  assert.deepEqual(d.cajas[0].tickets.map(x => x.estado), ["abierto", "abierto"]);
+  assert.equal(d.cajas[0].tuuTotal, 0);
+  assert.match(errorDe(s.call("volverTicket", { id: t.id })), /no está pasado/);
+  // Se edita (sin los singles) y al cerrar de nuevo vuelve a pasar con el mismo N° de OC.
+  s.ok("guardarTicket", { id: t.id, cajaId: caja.id, lineas: [{ productoId: prods.miniTin.id, cantidad: 1 }], pagos: [{ medio: "efectivo", monto: precio }] });
+  s.ok("cerrarCaja", { id: caja.id });
+  d = s.ok("bootstrap").data;
+  const nuevos = d.cajas[0].tickets.find(x => x.id === t.id).documentos;
+  assert.deepEqual(nuevos, [docs.find(x => /^OC-/.test(x))]);
+  assert.equal(d.ventas.find(v => v.id === nuevos[0]).total, precio);
+  assert.equal(d.movimientos.filter(m => m.referencia === g.id && !m.anulado).length, 1, "el gasto vuelve a pasar una sola vez");
+});
+
 test("caja del día sin depósito de TUU: comisión estimada", () => {
   const s = createServer();
   conInventario(s);
