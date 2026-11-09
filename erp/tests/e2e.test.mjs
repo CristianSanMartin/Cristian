@@ -977,6 +977,7 @@ test("torneos: .tdf con divisiones (Junior y Masters): el lugar es el del standi
       '<pod category="2" type="finished"><player id="8101" place="1"/><player id="8102" place="2"/><player id="8103" place="3"/></pod></standings></tournament>';
     await page.click('[data-nav="torneos"]');
     await page.locator("#tdf-input").setInputFiles({ name: "div.tdf", mimeType: "text/xml", buffer: Buffer.from(tdf) });
+    await modal(page).locator("tbody tr", { hasText: "Juanito" }).waitFor();
     const filas = await modal(page).locator("tbody tr").allTextContents();
     assert.deepEqual(filas.slice(0, 4).map((t) => t.match(/^\d+/)[0] + " " + t.match(/Mara|Nico|Olga|Juanito/)[0]), ["1 Mara", "2 Nico", "3 Olga", "4 Juanito"]);
     assert.deepEqual(errores, []);
