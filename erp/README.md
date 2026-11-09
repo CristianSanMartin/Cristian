@@ -374,6 +374,9 @@ Menú **Torneos**. Al terminar un torneo, TOM (Tournament Operations Manager) ex
 - **Subir torneo (.tdf):** se leen el nombre, la fecha, la ciudad, las rondas y los jugadores con su
   **Player ID** y lugar final. Se elige el formato (ej. "Torneo The Chill") y la inscripción, que se
   sugiere desde el último torneo de ese formato.
+- **Standing general:** si el torneo tiene varias divisiones (Junior, Senior, Masters), TOM numera cada una desde 1;
+  el ERP calcula el lugar de todos juntos con las partidas: puntos (3 por victoria, 1 por empate), % de victorias
+  de los rivales, % de los rivales de los rivales y, al final, el lugar en su división.
 - **Clientes:** cada jugador se enlaza con su cliente por el ID Pokémon (o por nombre la primera vez;
   si no existe, se crea) y el ID queda guardado. Si el cliente sugerido no es la misma persona, se cambia
   en la importación o después con el botón de cliente del jugador (el ID pasa al cliente correcto).

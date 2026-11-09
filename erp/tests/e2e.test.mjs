@@ -962,6 +962,29 @@ test("torneos: .tdf de inicio (solo inscritos) y luego el final: complementa, no
   }
 });
 
+test("torneos: .tdf con divisiones (Junior y Masters): el lugar es el del standing general", { skip }, async () => {
+  const browser = await chromium.launch();
+  try {
+    const { page, errores } = await abrir(browser);
+    const jug = (id, n, a) => '<player userid="' + id + '"><firstname>' + n + '</firstname><lastname>' + a + '</lastname></player>';
+    const match = (o, a, b) => '<match outcome="' + o + '"><player1 userid="' + a + '"/><player2 userid="' + b + '"/></match>';
+    // Cada división trae su standing numerado desde 1: el junior es 1º de su división pero 4º del torneo.
+    const tdf = '<?xml version="1.0"?><tournament type="2"><data><name>Liga Div</name><city>Santiago</city><startdate>11/15/2030</startdate></data>' +
+      '<players>' + jug("8101", "Mara", "Uno") + jug("8102", "Nico", "Dos") + jug("8103", "Olga", "Tres") + jug("8104", "Juanito", "Jr") + '</players>' +
+      '<pods><pod><rounds><round number="1"><matches>' + match(1, "8101", "8104") + match(1, "8102", "8103") + '</matches></round>' +
+      '<round number="2"><matches>' + match(1, "8101", "8102") + match(2, "8104", "8103") + '</matches></round></rounds></pod></pods>' +
+      '<standings><pod category="0" type="finished"><player id="8104" place="1"/></pod>' +
+      '<pod category="2" type="finished"><player id="8101" place="1"/><player id="8102" place="2"/><player id="8103" place="3"/></pod></standings></tournament>';
+    await page.click('[data-nav="torneos"]');
+    await page.locator("#tdf-input").setInputFiles({ name: "div.tdf", mimeType: "text/xml", buffer: Buffer.from(tdf) });
+    const filas = await modal(page).locator("tbody tr").allTextContents();
+    assert.deepEqual(filas.slice(0, 4).map((t) => t.match(/^\d+/)[0] + " " + t.match(/Mara|Nico|Olga|Juanito/)[0]), ["1 Mara", "2 Nico", "3 Olga", "4 Juanito"]);
+    assert.deepEqual(errores, []);
+  } finally {
+    await browser.close();
+  }
+});
+
 test("orden de compra: desde Preventas queda en tránsito (no vendible) y al confirmar la factura se libera", { skip }, async () => {
   const browser = await chromium.launch();
   try {
