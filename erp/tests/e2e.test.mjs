@@ -1094,3 +1094,37 @@ test("caja: + TUU dentro de la venta (Enter, pegar varios, quitar), cuadra con e
     await browser.close();
   }
 });
+
+test("caja: la ventana de productos de la venta tiene ordenar y filtrar por columna", { skip }, async () => {
+  const browser = await chromium.launch();
+  try {
+    const { page, errores } = await abrir(browser);
+    await page.evaluate(async () => {
+      const c = await GS.mutate("abrirCaja", { fecha: "2030-12-21" });
+      GS.filters("caja", { caja: "", tab: "caja" }).caja = c.id;
+      GS.go("caja");
+    });
+    await page.click('[data-action="nuevoTicket"]');
+    const m = modal(page);
+    await m.locator("[data-tk-lista] tr[data-tk-pick]").first().waitFor();
+    assert.equal(await m.locator("[data-tk-thead] .th-menu").count(), 6, "Producto, Edición, Idioma, Tipo, Disponible y Precio");
+    // Filtro por idioma: solo ESP.
+    await m.locator('[data-tk-thead] [data-action="menuColumna"][data-id="tkProductos|idioma"]').click();
+    await page.locator(".col-menu [data-todos]").uncheck();
+    await page.locator('.col-menu .col-menu-lista input[value="ESP"]').check();
+    await page.click(".col-menu [data-aplicar]");
+    const idiomas = await m.locator("[data-tk-lista] tr[data-tk-pick] td:nth-child(3)").allTextContents();
+    assert.ok(idiomas.length > 0 && idiomas.every((t) => /ESP/.test(t)), "solo productos en español");
+    // Orden por precio, de mayor a menor.
+    await m.locator('[data-tk-thead] [data-action="menuColumna"][data-id="tkProductos|precio"]').click();
+    await page.click('.col-menu [data-orden="desc"]');
+    const precios = (await m.locator("[data-tk-lista] tr[data-tk-pick] td:nth-child(6)").allTextContents()).map((t) => Number(t.replace(/\D/g, "")));
+    assert.deepEqual(precios, precios.slice().sort((a, b) => b - a));
+    // Tocar un producto lo sigue agregando al ticket.
+    await m.locator("[data-tk-lista] tr[data-tk-pick]").first().click();
+    assert.equal(await m.locator("[data-tk-prod]").count(), 1);
+    assert.deepEqual(errores, []);
+  } finally {
+    await browser.close();
+  }
+});

@@ -239,7 +239,7 @@
         '<div data-tk-picker hidden class="panel" style="margin-top:10px;padding:12px;border:1px solid var(--gold, #f5b800);">' +
           '<div class="field-row" style="margin-bottom:8px;"><div class="search-box" style="flex:1;">' + GS.icon('search') + '<input type="text" data-tk-buscar placeholder="Buscar producto, edición o idioma…" autocomplete="off"></div>' +
           '<button type="button" class="btn small" data-tk-listo>Listo</button></div>' +
-          '<div style="max-height:340px;overflow:auto;"><table class="data-table" style="min-width:0"><thead><tr><th>Producto</th><th>Tipo</th><th class="right">Disponible</th><th class="right">Precio</th><th></th></tr></thead><tbody data-tk-lista></tbody></table></div>' +
+          '<div style="max-height:340px;overflow:auto;"><table class="data-table" style="min-width:0"><thead><tr data-tk-thead></tr></thead><tbody data-tk-lista></tbody></table></div>' +
           '<p class="table-note" style="margin:6px 0 0;">Toca un producto para agregarlo; si ya está en el ticket, suma una unidad.</p></div></div>' +
         '<div class="form-field full"><label>Pago</label><div data-tk-pagos>' + (t ? t.pagos.map((p) => filaPago(p, TUU.indexOf(p.medio) !== -1 && t.pagos.filter((x) => TUU.indexOf(x.medio) !== -1).length >= 2 ? '' : null)).join('') : filaPago(null)) + '</div>' +
         '<button type="button" class="btn small ghost" data-tk-add-pago>' + GS.icon('plus', 2.4) + 'Otro medio de pago</button>' +
@@ -267,17 +267,33 @@
         const enTicket = (pid) => Array.from(cuerpo.querySelectorAll('[data-tk-prod]')).filter((tr) => tr.dataset.pid === pid).reduce((s, tr) => s + (Number(tr.querySelector('[name="tkCant"]').value) || 0), 0);
         // Sigla para buscar rápido: "Elite Trainer Box" → "etb".
         const sigla = (t) => String(t || '').split(/\s+/).filter((w) => /^[A-Za-zÁÉÍÓÚÑ]/.test(w)).map((w) => w[0]).join('');
-        const pintarLista = () => {
+        // Ordenar y filtrar por columna, con el menú de siempre (el filtro elegido se recuerda entre ventas).
+        const quedaDe = (p) => stock[p.id] - enTicket(p.id);
+        const colsPicker = [
+          { id: 'producto', label: 'Producto', valor: (p) => p.nombre },
+          { id: 'edicion', label: 'Edición', valor: (p) => p.edicion || '' },
+          { id: 'idioma', label: 'Idioma', valor: (p) => p.idioma || '' },
+          { id: 'tipo', label: 'Tipo', valor: (p) => p.tipo || '' },
+          { id: 'disponible', label: 'Disponible', right: true, valor: (p) => quedaDe(p) },
+          { id: 'precio', label: 'Precio', right: true, valor: (p) => p.precio, texto: (p) => fmt.money(p.precio) },
+        ];
+        const buscados = () => {
           const q = GS.norm(buscar.value.trim());
-          const vis = prods.filter((p) => !q || GS.norm(p.nombreCompleto + ' ' + p.tipo + ' ' + p.edicion + ' ' + p.idioma + ' ' + sigla(p.tipo) + ' ' + sigla(p.nombre)).includes(q));
+          return prods.filter((p) => !q || GS.norm(p.nombreCompleto + ' ' + p.tipo + ' ' + p.edicion + ' ' + p.idioma + ' ' + sigla(p.tipo) + ' ' + sigla(p.nombre)).includes(q));
+        };
+        GS.tablaRegistrar('tkProductos', { filas: buscados, columnas: colsPicker, alCambiar: () => pintarLista() });
+        const pintarLista = () => {
+          form.querySelector('[data-tk-thead]').innerHTML = GS.tablaEncabezado('tkProductos', colsPicker) + '<th></th>';
+          const vis = GS.tablaAplicar('tkProductos', buscados(), colsPicker);
           lista.innerHTML = vis.length ? vis.map((p) => {
             const ya = enTicket(p.id);
             const queda = stock[p.id] - ya;
             return '<tr data-tk-pick="' + esc(p.id) + '" style="cursor:' + (queda > 0 ? 'pointer' : 'not-allowed') + ';' + (queda > 0 ? '' : 'opacity:.5;') + '">' +
-              '<td>' + prodCelda(p) + '</td><td class="cell-dim">' + esc(p.tipo || '') + '</td>' +
+              '<td><div class="prod-cell">' + GS.thumb(p.imagen) + '<span class="cell-strong">' + esc(p.nombre) + '</span></div></td>' +
+              '<td class="cell-dim">' + esc(p.edicion || '') + '</td><td>' + GS.langPill(p.idioma) + '</td><td class="cell-dim">' + esc(p.tipo || '') + '</td>' +
               '<td class="cell-num right"><strong>' + queda + '</strong>' + (ya ? '<div class="cell-dim">' + ya + ' en el ticket</div>' : '') + '</td>' +
               '<td class="cell-num right">' + fmt.money(p.precio) + '</td><td>' + (queda > 0 ? '<span class="btn small secondary">' + GS.icon('plus', 2.4) + '</span>' : '') + '</td></tr>';
-          }).join('') : '<tr><td colspan="5" class="muted center">' + (prods.length ? 'Ningún producto coincide.' : 'No hay productos con stock disponible.') + '</td></tr>';
+          }).join('') : '<tr><td colspan="7" class="muted center">' + (prods.length ? 'Ningún producto coincide.' : 'No hay productos con stock disponible.') + '</td></tr>';
         };
         const agregar = (pid) => {
           if (enTicket(pid) >= stock[pid]) return;
