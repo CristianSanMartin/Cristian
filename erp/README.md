@@ -361,7 +361,7 @@ Menú **Caja del día**. Se abre una caja por fecha (`CJ-20261012`) y cada atenc
 
 ## Eventos con la máquina TUU (+ TUU)
 
-- En **Nueva venta** / **Editar ticket** de la Caja del día, la sección Pago tiene **Pasadas TUU**: monto y Enter
+- En **Nueva venta** / **Editar ticket** de la Caja del día con canal **Evento**, la sección Pago tiene **Pasadas TUU**: monto y Enter
   por cada pasada de la máquina (el campo queda listo para la siguiente; Enter no envía el formulario). Cada pasada
   es un pago propio, así cuadra 1 a 1 con el informe de abonos de TUU y la comisión se estima por pasada.
 - "Suma a": la línea por monto del ticket a la que va la venta, una **Nueva línea: Singles**, o **Solo pago** si lo

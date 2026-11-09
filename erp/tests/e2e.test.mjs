@@ -1053,7 +1053,9 @@ test("caja: + TUU dentro de la venta (Enter, pegar varios, quitar), cuadra con e
     await page.click('[data-action="nuevoTicket"]');
     const m = modal(page);
     await m.locator("[data-tk-listo]").click();
+    assert.equal(await m.locator("[data-tk-tuu]").isVisible(), false, "Pasadas TUU solo en ventas de evento");
     await m.locator('select[name="canal"]').selectOption("Evento");
+    assert.equal(await m.locator("[data-tk-tuu]").isVisible(), true);
     await m.locator('[name="evento"]').fill("Feria");
     // Sin líneas: la primera pasada crea "Singles" y las siguientes suman ahí. Enter no envía el formulario.
     const monto = m.locator("[data-tuu-monto]");

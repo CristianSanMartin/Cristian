@@ -241,10 +241,11 @@
           '<button type="button" class="btn small" data-tk-listo>Listo</button></div>' +
           '<div style="max-height:340px;overflow:auto;"><table class="data-table" style="min-width:0"><thead><tr data-tk-thead></tr></thead><tbody data-tk-lista></tbody></table></div>' +
           '<p class="table-note" style="margin:6px 0 0;">Toca un producto para agregarlo; si ya está en el ticket, suma una unidad.</p></div></div>' +
-        '<div class="form-field full"><label>Pago</label><div data-tk-pagos>' + (t ? t.pagos.map((p) => filaPago(p, TUU.indexOf(p.medio) !== -1 && t.pagos.filter((x) => TUU.indexOf(x.medio) !== -1).length >= 2 ? '' : null)).join('') : filaPago(null)) + '</div>' +
+        '<div class="form-field full"><label>Pago</label><div data-tk-pagos>' + (t ? t.pagos.map((p) => filaPago(p, t.canal === 'Evento' && TUU.indexOf(p.medio) !== -1 && t.pagos.filter((x) => TUU.indexOf(x.medio) !== -1).length >= 2 ? '' : null)).join('') : filaPago(null)) + '</div>' +
         '<button type="button" class="btn small ghost" data-tk-add-pago>' + GS.icon('plus', 2.4) + 'Otro medio de pago</button>' +
         // "+ TUU": cada pasada de la máquina es un pago propio (cuadra 1 a 1 con el informe de TUU) y suma a una línea por monto.
-        '<div class="tuu-rapido" data-tk-tuu><div class="tuu-barra"><strong>Pasadas TUU</strong>' +
+        // Solo en ventas de evento (canal Evento).
+        '<div class="tuu-rapido" data-tk-tuu' + ((t ? t.canal : 'Tienda') === 'Evento' ? '' : ' hidden') + '><div class="tuu-barra"><strong>Pasadas TUU</strong>' +
           '<select data-tuu-medio aria-label="Medio TUU"><option value="debito">' + esc(medios.debito) + '</option><option value="credito">' + esc(medios.credito) + '</option></select>' +
           '<input class="qty-input" type="number" min="2" max="48" step="1" data-tuu-cuotas value="2" title="Cuotas (crédito)" aria-label="Cuotas" hidden>' +
           '<select data-tuu-destino aria-label="Suma a" title="Línea del ticket a la que se suma la venta"></select>' +
@@ -420,6 +421,12 @@
           upd();
         });
         form.addEventListener('change', (e) => {
+          if (e.target.name === 'canal') {
+            // "Pasadas TUU" es solo para eventos: fuera de un evento, las pasadas ya marcadas quedan como pagos normales.
+            const ev = e.target.value === 'Evento';
+            form.querySelector('[data-tk-tuu]').hidden = !ev;
+            if (!ev) pagos.querySelectorAll('[data-rapido]').forEach((f) => { f.removeAttribute('data-rapido'); f.removeAttribute('data-uid'); f.hidden = false; });
+          }
           if (e.target.matches('[data-tuu-medio]')) { form.querySelector('[data-tuu-cuotas]').hidden = e.target.value !== 'credito'; return; }
           if (e.target.matches('[data-tuu-destino]')) { tuuDestino = e.target.value; return; }
           if (e.target.matches('[data-tuu-cuotas]')) return;
