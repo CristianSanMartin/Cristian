@@ -129,7 +129,7 @@
     { id: 'fecha', label: 'Fecha', clase: 'nowrap', valor: (m) => m.fecha, texto: (m) => fmt.date(m.fecha), celda: (m) => fmt.date(m.fecha) },
     { id: 'tipo', label: 'Tipo', valor: (m) => tipoLabel[m.tipo], celda: (m) => '<span class="badge ' + (m.tipo === 'ingreso' ? 'st-ok' : 'st-pedido') + '">' + tipoLabel[m.tipo] + '</span>' },
     { id: 'categoria', label: 'Categoría', valor: (m) => m.categoriaLabel, celda: (m) => '<span class="cell-strong">' + esc(m.categoriaLabel) + '</span>' +
-      (m.estadoLabel ? '<div><span class="badge ' + (m.porAbonar ? 'st-parcial' : 'st-ok') + '" title="' + (m.porAbonar ? 'Venta con TUU: aún no llega el abono (no suma al saldo). Se confirma al subir el informe de TUU.' : 'Confirmado con el informe de TUU') + '">' + esc(m.estadoLabel) + '</span></div>' : '') },
+      (m.estadoLabel ? '<div><span class="badge ' + (m.porAbonar && !(m.enCuotas && /recibidas/.test(m.estadoLabel)) ? 'st-parcial' : 'st-ok') + '" title="' + (m.enCuotas ? 'Venta en cuotas TUU: esta fila es informativa (no suma al saldo); la plata entra con cada cuota.' : m.porAbonar ? 'Venta con TUU: aún no llega el abono (no suma al saldo). Se confirma al subir el informe de TUU.' : 'Confirmado con el informe de TUU') + '">' + esc(m.estadoLabel) + '</span></div>' : '') },
     { id: 'detalle', label: 'Detalle', valor: (m) => m.subcategoria || '', celda: (m) => esc(m.subcategoria || '—') + (m.notas ? '<div class="cell-dim">' + esc(m.notas) + '</div>' : '') },
     { id: 'cuenta', label: 'Cuenta', valor: (m) => m.cuentaLabel || 'Sin cuenta', celda: (m) => esc(m.cuentaLabel || '—') },
     { id: 'ref', label: 'Referencia', valor: (m) => m.referencia || '', celda: (m) => '<span class="cell-dim">' + esc(m.referencia || '') + '</span>' },
@@ -154,6 +154,14 @@
       // Venta en cuotas TUU: la comisión va dentro de cada cuota que llega (abono neto de su parte), no como egreso aparte.
       const esCuota = (c) => /^Cuota \d+\/\d+ TUU/.test(c.notas || '');
       const enCuotas = !conCom && v.comision && (v.porCobrarTuu > 0 || v.cobros.some(esCuota));
+      // La venta en cuotas se ve en el libro el día que se vendió (informativa: no suma al saldo); la plata entra con cada cuota.
+      if (!v.abono && (v.porCobrarTuu > 0 || v.cobros.some(esCuota))) {
+        const nC = v.cobros.filter(esCuota).length;
+        res.push(Object.assign({}, base, { id: v.id + '·q', fecha: v.fecha, categoriaLabel: 'Venta en cuotas TUU', subcategoria: v.cliente + ' · ' + v.medioPagoLabel, monto: v.total,
+          porAbonar: true, enCuotas: true, medioLabel: v.medioPagoLabel,   // nunca suma al saldo (las cuotas sí)
+          estadoLabel: v.porCobrarTuu > 0 ? 'Cuotas por llegar · ' + fmt.money(v.porCobrarTuu) : 'Cuotas recibidas',
+          notas: 'Informativa: la plata entra con cada cuota (' + nC + ' recibida' + (nC === 1 ? '' : 's') + ')' }));
+      }
       v.cobros.forEach((c) => {
         const com = enCuotas && esCuota(c) && v.total ? Math.round(v.comision * c.monto / v.total) : 0;
         res.push(Object.assign({}, base, { id: c.id, fecha: c.fecha, categoriaLabel: esCuota(c) ? 'Cuota TUU' : 'Abono de venta', subcategoria: v.cliente + ' · ' + (data().catalogos.mediosPago[c.medioPago] || c.medioPago),
@@ -461,7 +469,7 @@
       saldo += signo;
       return [m.fecha, m.id, m.tipo === 'ingreso' ? 'Ingreso' : 'Egreso', m.categoriaLabel, m.subcategoria || '', m.cuentaLabel || '', m.referencia || '',
         m.venta ? 'Venta' : m.compra ? 'Pago de factura' : 'Movimiento', m.bruto || '', m.comision || '', m.iva || '',
-        m.tipo === 'ingreso' && !m.anulado && !m.porAbonar ? m.monto : '', m.tipo === 'egreso' && !m.anulado ? m.monto : '', saldo, m.anulado ? 'Anulado' : m.porAbonar ? 'Por abonar (TUU)' : m.estadoLabel || 'Vigente', m.notas || ''];
+        m.tipo === 'ingreso' && !m.anulado && !m.porAbonar ? m.monto : '', m.tipo === 'egreso' && !m.anulado ? m.monto : '', saldo, m.anulado ? 'Anulado' : m.enCuotas ? m.estadoLabel + ' (informativa)' : m.porAbonar ? 'Por abonar (TUU)' : m.estadoLabel || 'Vigente', m.notas || ''];
     });
     GS.downloadCsv('movimientos-' + data().hoy + '.csv',
       ['Fecha', 'ID', 'Tipo', 'Categoría', 'Detalle', 'Cuenta', 'Referencia', 'Origen', 'Venta bruta', 'Comisión', 'IVA (factura)', 'Ingreso', 'Egreso', 'Saldo acumulado', 'Estado', 'Notas'], filas);

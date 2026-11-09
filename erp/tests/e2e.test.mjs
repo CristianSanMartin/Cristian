@@ -1148,6 +1148,8 @@ test("finanzas: la comisión de una venta en cuotas TUU va dentro de cada cuota,
     await page.waitForFunction(() => document.querySelectorAll("#mov-tbody tr").length >= 1);
     const filas = await page.locator("#mov-tbody tr").allTextContents();
     assert.ok(!filas.some((t) => /Comisión/.test(t) && /Egreso/.test(t)), "sin egreso de comisión aparte");
+    // La venta se ve el día que se vendió, informativa (no suma al saldo).
+    assert.ok(filas.some((t) => /Venta en cuotas TUU/.test(t) && /\$30\.000/.test(t) && /Cuotas por llegar · \$20\.000/.test(t)), "la venta en cuotas aparece en Finanzas");
     const cuota = filas.find((t) => /Cuota TUU/.test(t));
     const com = Math.round(venta.comision * 10000 / 30000);
     assert.match(cuota, new RegExp("\\+\\$" + (10000 - com).toLocaleString("es-CL").replace(/\./g, "\\.")));
