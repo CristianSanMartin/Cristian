@@ -44,6 +44,18 @@
   const buscadasCompras = () => buscar(data().compras, GS.filters('compras', DEF_C).q, (c) => c.id + ' ' + c.factura + ' ' + c.proveedor + ' ' + c.lineas.map((l) => l.producto + ' ' + l.preventaId).join(' '));
   GS.tablaRegistrar('compras', { filas: buscadasCompras, columnas: colsCompras, alCambiar: () => GS.views.compras.update() });
 
+  // PDF de la factura (o de la OC) en la carpeta "Facturas" de Drive: subir, ver, reemplazar o quitar.
+  GS.actions.pdfCompra = (id) => {
+    const c = data().compras.find((x) => x.id === id);
+    GS.visorPdf({
+      titulo: 'PDF · ' + (c.esOc ? 'OC ' : 'Factura ') + c.factura.replace(/^OC /, ''), nombre: c.factura, tiene: !!c.pdf, vacio: 'Esta factura aún no tiene su PDF.',
+      info: esc(c.proveedor) + ' · ' + fmt.date(c.fecha) + ' · <strong>' + fmt.money(c.total) + '</strong> · se guarda en la carpeta "Facturas" de Drive',
+      ver: () => GS.api('verPdfCompra', { id: id }),
+      guardar: (archivo) => GS.mutate('pdfCompra', { id: id, archivo: archivo }, 'PDF guardado en ' + c.factura),
+      quitar: () => GS.mutate('pdfCompra', { id: id, quitar: true }, 'PDF quitado'),
+    });
+  };
+
   GS.detalleCompra = (c) => detalleCompra(c);   // también se despliega desde Finanzas
   function detalleCompra(c) {
     const admin = GS.puede('admin');
@@ -273,13 +285,15 @@
     update() {
       const rows = GS.tablaAplicar('compras', buscadasCompras(), colsCompras);
       const admin = GS.puede('admin');
+      const op = GS.puede('operador');
       const n = colsCompras.length + 2;
       const fila = (c) => {
         const open = abiertas.has(c.id);
         return '<tr class="fila-compra' + (open ? ' abierta' : '') + '" data-action="verCompra" data-id="' + esc(c.id) + '">' +
           '<td><span class="chev">' + (open ? '▾' : '▸') + '</span></td>' +
           colsCompras.map((col) => '<td class="' + (col.right ? 'cell-num right ' : '') + (col.clase || '') + '">' + col.celda(c) + '</td>').join('') +
-          '<td><div class="row-actions">' + (admin ? GS.iconBtn('editarCompra', c.id, 'edit', 'Editar factura: N°, fecha, precios y despacho') + GS.iconBtn('anularCompra', c.id, 'trash', 'Anular factura', 'danger') : '') + '</div></td></tr>' +
+          '<td><div class="row-actions">' + (op ? '<button class="btn small ghost" data-action="pdfCompra" data-id="' + esc(c.id) + '" title="' + (c.pdf ? 'Ver el PDF de la factura' : 'Subir el PDF de la factura') + '">' + (c.pdf ? 'Ver PDF' : 'Subir PDF') + '</button>' : '') +
+            (admin ? GS.iconBtn('editarCompra', c.id, 'edit', 'Editar factura: N°, fecha, precios y despacho') + GS.iconBtn('anularCompra', c.id, 'trash', 'Anular factura', 'danger') : '') + '</div></td></tr>' +
           (open ? '<tr class="detalle-row"><td colspan="' + n + '">' + detalleCompra(c) + '</td></tr>' : '');
       };
       const enCurso = rows.filter((c) => c.estadoVenta !== 'vendida');

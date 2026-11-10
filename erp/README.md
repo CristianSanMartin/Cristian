@@ -251,6 +251,11 @@ ventas existentes de esos conceptos a su correlativo, con sus abonos y referenci
 
 ## Pagos de facturas y deudas de clientes
 
+- **PDF de la factura:** en Compras, cada factura (o OC) tiene **Subir PDF** / **Ver PDF**, igual que el comprobante del
+  pago al SII: se ve en la misma pantalla y se puede reemplazar o quitar (administrador). Los archivos quedan en la
+  carpeta **Facturas** de Drive, junto a la planilla del ERP (ej. dentro de "GSPrime WEB"), con el nombre
+  "Factura N° · proveedor · fecha". Requiere "Instalar / actualizar hojas" (columna nueva `pdf` en `Compras`).
+
 - **Pagos a proveedores:** en Compras, el detalle de cada factura muestra sus pagos y lo que falta.
   "Registrar pago" (fecha, monto, cuenta) admite pagos parciales; quedan en la hoja `Pagos_Facturas`
   y cuentan como egreso en el flujo de Finanzas (incluidos los que se conciliaron desde la caja diaria

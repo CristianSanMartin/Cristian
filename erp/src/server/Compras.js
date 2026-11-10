@@ -335,6 +335,28 @@ const Compras = {
       .sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
   },
 
+  /**
+   * Sube (o reemplaza) el PDF de la factura a la carpeta "Facturas" de Drive. p: { id, archivo: { base64, mime } }
+   * o { id, quitar: true }. El archivo anterior va a la papelera de Drive.
+   */
+  guardarPdf(p, user) {
+    const c = Compras.requerir(p.id);
+    const prov = Db.get('Proveedores', c.proveedorId);
+    const nombre = 'Factura ' + Compras.documento(c) + ' · ' + (prov ? prov.nombre : '') + ' · ' + c.fecha;
+    const nuevo = p.quitar ? '' : Imagenes.subirPdf(Imagenes.validarPdf(p.archivo), nombre, Imagenes.carpetaFacturas());
+    if (c.pdf) Imagenes.papelera(c.pdf);
+    Db.update('Compras', c.id, Object.assign({ pdf: nuevo }, Util.sello(user)));
+    Audit.log(user, p.quitar ? 'quitar pdf' : 'subir pdf', 'Compra', c.id, {});
+    return { id: c.id, pdf: nuevo };
+  },
+
+  /** El PDF de la factura para verlo en la pantalla: { nombre, base64, url }. */
+  verPdf(p) {
+    const c = Compras.requerir(p.id);
+    if (!c.pdf) throw new AppError('La factura ' + Compras.documento(c) + ' no tiene PDF.');
+    return Imagenes.leer(c.pdf);
+  },
+
   requerir(id) {
     const c = Db.get('Compras', String(id || ''));
     if (!c) throw new AppError('La compra no existe.', 'NO_ENCONTRADO');

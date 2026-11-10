@@ -1066,6 +1066,30 @@ test("comprobante en PDF de un pago al SII: subir, ver, reemplazar y quitar", ()
   assert.equal(s.ok("bootstrap").data.movimientos.find(m => m.id === mv.id).comprobante, "");
 });
 
+test("PDF de la factura de compra: queda en la carpeta Facturas junto a la planilla, se ve, reemplaza y quita", () => {
+  const s = createServer();
+  conInventario(s);
+  const c = s.ok("bootstrap").data.compras[0];
+  assert.match(errorDe(s.call("verPdfCompra", { id: c.id })), /no tiene PDF/);
+  assert.match(errorDe(s.call("pdfCompra", { id: c.id, archivo: { mime: "image/png", base64: "AAAA" } })), /PDF/);
+  const r = s.ok("pdfCompra", { id: c.id, archivo: { mime: "application/pdf", base64: "JVBERi0xLjQK" } });
+  const ref = r.data.compras.find(x => x.id === c.id).pdf;
+  assert.match(ref, /^drive:/);
+  const st = s.fake.state;
+  const archivo = st.files[ref.replace("drive:", "")];
+  const carpeta = st.folders[archivo.folder];
+  assert.equal(carpeta.name, "Facturas");
+  assert.equal(st.folders[carpeta.parent].name, "GSPrime WEB", "dentro de la carpeta de la planilla");
+  const v = s.ok("verPdfCompra", { id: c.id }).data;
+  assert.equal(v.base64, "JVBERi0xLjQK");
+  assert.match(v.nombre, new RegExp("^Factura " + c.factura + " · Asmodee · " + c.fecha + "\\.pdf$"));
+  s.ok("pdfCompra", { id: c.id, archivo: { mime: "application/pdf", base64: "JVBERi0xLjcK" } });
+  assert.equal(s.ok("verPdfCompra", { id: c.id }).data.base64, "JVBERi0xLjcK");
+  assert.equal(archivo.trashed, true, "el anterior va a la papelera");
+  s.ok("pdfCompra", { id: c.id, quitar: true });
+  assert.equal(s.ok("bootstrap").data.compras.find(x => x.id === c.id).pdf, "");
+});
+
 test("salida sin venta (uso interno): rebaja stock al costo del lote, sin OC, y se anula", () => {
   const s = createServer();
   const { prods } = conInventario(s);

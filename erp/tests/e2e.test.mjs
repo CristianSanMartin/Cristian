@@ -834,6 +834,32 @@ test("Finanzas: comprobante en PDF del pago al SII (subir, ver y reabrir)", { sk
   }
 });
 
+test("Compras: PDF de la factura (subir y ver)", { skip }, async () => {
+  const browser = await chromium.launch();
+  try {
+    const { page, errores } = await abrir(browser);
+    const pdfjs = path.join(ERP, "..", "node_modules", "pdfjs-dist", "build");
+    await page.route("https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/*", (r) =>
+      r.fulfill({ path: path.join(pdfjs, r.request().url().split("/").pop()), contentType: "application/javascript" }));
+    await page.click('[data-nav="compras"]');
+    const boton = page.locator('#cp-tbody [data-action="pdfCompra"]').first();
+    assert.equal((await boton.textContent()).trim(), "Subir PDF");
+    await boton.click();
+    await modal(page).locator('input[name="pdf"]').setInputFiles({ name: "factura.pdf", mimeType: "application/pdf", buffer: pdfDePrueba("Factura Asmodee") });
+    await modal(page).locator(".pdf-visor canvas").waitFor();
+    await modal(page).locator('button[type="submit"]').click();
+    await toast(page, /PDF guardado en/);
+    await cerrado(page);
+    const ver = page.locator('#cp-tbody [data-action="pdfCompra"]', { hasText: "Ver PDF" }).first();
+    await ver.click();
+    await modal(page).locator(".pdf-visor canvas").waitFor();
+    assert.match(await modal(page).locator("[data-pdf-nombre]").textContent(), /^Factura .*\.pdf/);
+    assert.deepEqual(errores, []);
+  } finally {
+    await browser.close();
+  }
+});
+
 test("Story IG (Top 5): Pokémon con imagen, vista previa, guardar y descargar el PNG", { skip }, async () => {
   const browser = await chromium.launch();
   try {

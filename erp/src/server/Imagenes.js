@@ -39,6 +39,7 @@ const Imagenes = {
       props.setProperty('CARPETA_IMAGENES', carpeta.getId());
     }
     Db.all('Usuarios').forEach((u) => Imagenes.compartir(u, carpeta));
+    try { Imagenes.carpetaFacturas(); } catch (e) { console.error('No se pudo preparar la carpeta Facturas: ' + e); }
     return creada;
   },
 
@@ -84,11 +85,30 @@ const Imagenes = {
     return base64;
   },
 
-  /** Guarda un PDF en la misma carpeta de Drive (solo lo ven quienes tienen acceso a ella) y devuelve "drive:<id>". */
-  subirPdf(base64, nombre) {
+  /** Guarda un PDF en la carpeta de Drive (la de imágenes, o la que se indique) y devuelve "drive:<id>". */
+  subirPdf(base64, nombre, carpeta) {
     const blob = Utilities.newBlob(Utilities.base64Decode(base64), 'application/pdf',
       String(nombre || 'comprobante').replace(/[\\/:*?"<>|]+/g, ' ').slice(0, 120) + '.pdf');
-    return 'drive:' + Imagenes.carpeta().createFile(blob).getId();
+    return 'drive:' + (carpeta || Imagenes.carpeta()).createFile(blob).getId();
+  },
+
+  NOMBRE_FACTURAS: 'Facturas',
+  /**
+   * Carpeta "Facturas" para los PDF de las facturas de compra: junto a la planilla del ERP (ej. dentro de
+   * "GSPrime WEB"), o en Mi unidad si la planilla no está en una carpeta. Se crea la primera vez (o desde instalar)
+   * y se comparte con quienes operan.
+   */
+  carpetaFacturas() {
+    const props = PropertiesService.getScriptProperties();
+    const id = props.getProperty('CARPETA_FACTURAS');
+    if (id) {
+      try { return DriveApp.getFolderById(id); } catch (e) { /* se recrea abajo */ }
+    }
+    const padres = DriveApp.getFileById(Db.ss().getId()).getParents();
+    const carpeta = padres.hasNext() ? padres.next().createFolder(Imagenes.NOMBRE_FACTURAS) : DriveApp.createFolder(Imagenes.NOMBRE_FACTURAS);
+    props.setProperty('CARPETA_FACTURAS', carpeta.getId());
+    Db.all('Usuarios').forEach((u) => Imagenes.compartir(u, carpeta));
+    return carpeta;
   },
 
   /** Guarda un archivo de texto (ej. el .tdf de un torneo) en la carpeta y devuelve "drive:<id>". */

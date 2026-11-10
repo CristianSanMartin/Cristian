@@ -15,7 +15,7 @@
 
 const APP = {
   nombre: 'GS Prime ERP',
-  version: '2.29.8',
+  version: '2.30.0',
   tz: 'America/Santiago',
   iva: 0.19,
 };
@@ -65,6 +65,8 @@ const SCHEMA = {
       // Orden de compra del proveedor (ej. Asmodee): mientras no se confirma la factura, el stock queda "en tránsito"
       // (no se puede vender). oc = N° de la OC del proveedor; fechaOc = su fecha (la factura toma la suya al confirmarse).
       oc: 's', pendienteFactura: 'b', fechaOc: 'd',
+      // PDF de la factura en Drive (carpeta "Facturas" junto a la planilla): "drive:<id>".
+      pdf: 's',
     }, AUDIT_COLS),
   },
   /** Línea de la factura (CPI-000001) = un lote del inventario. despacho = parte prorrateada del despacho. */

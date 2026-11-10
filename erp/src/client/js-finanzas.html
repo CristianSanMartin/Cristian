@@ -395,25 +395,29 @@
       visor.innerHTML = '<p class="text-danger">' + esc(e.message || 'No se pudo leer el PDF.') + '</p>';
     }
   }
-  GS.actions.comprobanteMovimiento = (id) => {
-    const m = data().movimientos.find((x) => x.id === id);
+  /**
+   * Ventana para subir, ver (dibujado con pdf.js), reemplazar o quitar un PDF guardado en Drive.
+   * o: { titulo, info (HTML), tiene, vacio, ver: () => GS.api(...), guardar: (archivo) => Promise, quitar: () => Promise, nombre }
+   * La usan el comprobante del pago al SII (Finanzas) y la factura de compra (Compras).
+   */
+  GS.visorPdf = (o) => {
     let nuevo = null;
     GS.formModal({
-      title: 'Comprobante ' + id,
+      title: o.titulo,
       size: 'wide',
       submitLabel: 'Guardar PDF',
-      fields: () => '<p class="hint">' + fmt.date(m.fecha) + ' · ' + esc(m.categoriaLabel) + (m.subcategoria ? ' · ' + esc(m.subcategoria) : '') + ' · <strong>' + fmt.money(m.monto) + '</strong></p>' +
-        '<div class="pdf-visor" data-pdf-visor>' + (m.comprobante ? '' : '<p class="hint">Este pago aún no tiene comprobante. Elige el PDF para verlo aquí antes de guardarlo.</p>') + '</div>' +
-        '<div class="pdf-barra"><label class="btn secondary small">' + GS.icon('upload') + (m.comprobante ? 'Reemplazar PDF' : 'Elegir PDF') +
+      fields: () => '<p class="hint">' + o.info + '</p>' +
+        '<div class="pdf-visor" data-pdf-visor>' + (o.tiene ? '' : '<p class="hint">' + o.vacio + ' Elige el PDF para verlo aquí antes de guardarlo.</p>') + '</div>' +
+        '<div class="pdf-barra"><label class="btn secondary small">' + GS.icon('upload') + (o.tiene ? 'Reemplazar PDF' : 'Elegir PDF') +
         '<input type="file" name="pdf" accept="application/pdf" hidden></label>' +
         '<span class="hint" data-pdf-nombre></span>' +
-        (m.comprobante && GS.puede('admin') ? '<button type="button" class="btn small ghost text-danger" data-pdf-quitar>Quitar comprobante</button>' : '') + '</div>',
+        (o.tiene && GS.puede('admin') ? '<button type="button" class="btn small ghost text-danger" data-pdf-quitar>Quitar PDF</button>' : '') + '</div>',
       onMount: (form, modal) => {
         const visor = form.querySelector('[data-pdf-visor]');
         const nombre = form.querySelector('[data-pdf-nombre]');
-        if (m.comprobante) {
+        if (o.tiene) {
           visor.innerHTML = '<p class="hint">Cargando el PDF…</p>';
-          GS.api('verComprobante', { id: id }).then((r) => {
+          o.ver().then((r) => {
             nombre.innerHTML = esc(r.data.nombre) + (/^https:\/\/drive\.google\.com\/file\/d\/[\w-]{20,}\//.test(r.data.url) ? ' · <a href="' + esc(r.data.url) + '" target="_blank" rel="noopener">Abrir en Drive</a>' : '');
             return dibujarPdf(visor, base64ABytes(r.data.base64));
           }).catch((e) => { visor.innerHTML = '<p class="text-danger">' + esc(e.message) + '</p>'; });
@@ -421,7 +425,7 @@
         form.elements.pdf.addEventListener('change', async () => {
           const f = form.elements.pdf.files[0];
           if (!f) return;
-          if (f.type !== 'application/pdf') { GS.toast('El comprobante debe ser un PDF.', true); return; }
+          if (f.type !== 'application/pdf') { GS.toast('El archivo debe ser un PDF.', true); return; }
           if (f.size > 5 * 1024 * 1024) { GS.toast('El PDF es muy pesado (máximo 5 MB).', true); return; }
           const buf = new Uint8Array(await f.arrayBuffer());
           let bin = '';
@@ -432,15 +436,25 @@
         });
         const quitar = form.querySelector('[data-pdf-quitar]');
         if (quitar) quitar.addEventListener('click', () => GS.confirm({
-          title: 'Quitar comprobante', danger: true, confirmLabel: 'Quitar',
-          message: 'El PDF de ' + esc(id) + ' se manda a la papelera de Drive.',
-          onConfirm: async () => { await GS.mutate('comprobanteMovimiento', { id: id, quitar: true }, 'Comprobante quitado'); modal.close(); },
+          title: 'Quitar PDF', danger: true, confirmLabel: 'Quitar',
+          message: 'El PDF de ' + esc(o.nombre) + ' se manda a la papelera de Drive.',
+          onConfirm: async () => { await o.quitar(); modal.close(); },
         }));
       },
       onSubmit: async () => {
-        if (!nuevo) { if (m.comprobante) return; throw new Error('Elige el PDF del comprobante.'); }
-        await GS.mutate('comprobanteMovimiento', { id: id, archivo: nuevo }, 'Comprobante guardado en ' + id);
+        if (!nuevo) { if (o.tiene) return; throw new Error('Elige el PDF.'); }
+        await o.guardar(nuevo);
       },
+    });
+  };
+  GS.actions.comprobanteMovimiento = (id) => {
+    const m = data().movimientos.find((x) => x.id === id);
+    GS.visorPdf({
+      titulo: 'Comprobante ' + id, nombre: id, tiene: !!m.comprobante, vacio: 'Este pago aún no tiene comprobante.',
+      info: fmt.date(m.fecha) + ' · ' + esc(m.categoriaLabel) + (m.subcategoria ? ' · ' + esc(m.subcategoria) : '') + ' · <strong>' + fmt.money(m.monto) + '</strong>',
+      ver: () => GS.api('verComprobante', { id: id }),
+      guardar: (archivo) => GS.mutate('comprobanteMovimiento', { id: id, archivo: archivo }, 'Comprobante guardado en ' + id),
+      quitar: () => GS.mutate('comprobanteMovimiento', { id: id, quitar: true }, 'Comprobante quitado'),
     });
   };
   // Un ingreso que fue el abono de una venta con deuda (ej. transferencia del cliente): pasa a ser abono de esa OC.
