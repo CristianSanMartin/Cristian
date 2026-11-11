@@ -1185,3 +1185,35 @@ test("finanzas: la comisión de una venta en cuotas TUU va dentro de cada cuota,
     await browser.close();
   }
 });
+
+test("Caja → Abonos TUU: el informe se lee con la cuota que llegó (CUOTA PAGADA) y el total (NÚMERO DE CUOTA)", { skip }, async () => {
+  const { createRequire } = await import("node:module");
+  const XLSX = createRequire(import.meta.url)("xlsx");
+  const browser = await chromium.launch();
+  try {
+    const { page, errores } = await abrir(browser);
+    await page.route("https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js", (r) =>
+      r.fulfill({ path: path.join(ERP, "..", "node_modules", "xlsx", "dist", "xlsx.full.min.js"), contentType: "application/javascript" }));
+    await page.evaluate(async () => {
+      const c = await GS.mutate("abrirCaja", { fecha: "2030-12-23" });
+      await GS.mutate("guardarTicket", { cajaId: c.id, cliente: "Informe Cuotas", lineas: [{ categoria: "Accesorios", monto: 34990 }], pagos: [{ medio: "credito", monto: 34990, cuotas: 3 }] });
+      await GS.mutate("cerrarCaja", { id: c.id });
+      GS.filters("caja", { caja: "", tab: "caja" }).tab = "tuu";
+      GS.go("caja");
+    });
+    // Mismo formato que el "Detalle de transacciones abonadas" de TUU.
+    const filas = [[], ["", "", "Total Abonado", "11531"], [], [],
+      ["ORIGEN DE LA TRANSACCIÓN", "ID TRANSACCIÓN", "TIPO VENTA", "FECHA TRANSACCIÓN", "TIPO TRANSACCIÓN", "MONTO TRANSACCIÓN", "NÚMERO DE CUOTA", "CUOTA PAGADA", "MONTO PAREADO", "MONTO COMISIÓN", "FECHA ABONO", "MONTO ABONADO"],
+      ["X1", "600078261261", "Venta", "23-12-2030", "Credito", "34990.0", "3", "1", "11663.0", "132", "26-12-2030", "11531.0"]];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(filas), "Worksheet");
+    const buffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+    await page.locator("[data-tuu-archivo]").setInputFiles({ name: "informe.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buffer });
+    await page.waitForSelector("#modal-root .modal-overlay");
+    const cuotas = await page.evaluate(() => GS.state.data.tuu.cuotas.filter((c) => c.fechaEsperada >= "2030-12-23").map((c) => [c.numero, c.estado, c.comision]));
+    assert.deepEqual(cuotas, [[1, "recibida", 132], [2, "pendiente", 0], [3, "pendiente", 0]]);
+    assert.deepEqual(errores, []);
+  } finally {
+    await browser.close();
+  }
+});

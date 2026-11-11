@@ -160,6 +160,11 @@ const MIGRACIONES = [
       if (Object.keys(ventas).length) Cajas._recalcularComisiones(Object.keys(ventas), user);
     },
   },
+  {
+    id: '2026-11-11-cuotas-tuu-invertidas',
+    descripcion: 'Informes de TUU leídos con las columnas de cuota al revés: la cuota que de verdad llegó queda recibida y la otra vuelve a pendiente',
+    fn: (user) => { Cajas.repararCuotasInvertidas(user); },
+  },
 ];
 
 const Respaldos = {

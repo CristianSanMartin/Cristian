@@ -679,7 +679,9 @@
     const num = (s) => Math.round(Number(String(s).replace(/[^0-9.,-]/g, '').replace(',', '.')) || 0);
     return filas.slice(iTit + 1).filter((r) => r[c.id]).map((r) => ({
       idTransaccion: String(r[c.id]).trim(), fechaVenta: fecha(r[c.fecha]), tipo: r[c.tipo], monto: num(r[c.monto]),
-      cuota: c.num === -1 ? 1 : num(r[c.num]) || 1, de: c.pagada === -1 ? 1 : num(r[c.pagada]) || 1, montoCuota: num(c.pareado === -1 ? r[c.monto] : r[c.pareado]),
+      // En el informe de TUU, "NÚMERO DE CUOTA" es el total de cuotas (ej. 3) y "CUOTA PAGADA" la que llegó (ej. 1).
+      cuota: c.pagada === -1 ? 1 : num(r[c.pagada]) || 1, de: Math.max(c.num === -1 ? 1 : num(r[c.num]) || 1, c.pagada === -1 ? 1 : num(r[c.pagada]) || 1),
+      montoCuota: num(c.pareado === -1 ? r[c.monto] : r[c.pareado]),
       comision: num(r[c.comision]), fechaAbono: fecha(r[c.fechaAbono]), abonado: num(r[c.abonado]),
     }));
   }

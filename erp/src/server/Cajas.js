@@ -537,6 +537,39 @@ const Cajas = {
     return partes.map((q) => q.ventaId);
   },
 
+  /**
+   * Arreglo de los informes de TUU leídos con las columnas de cuota al revés (antes de v2.30.1: "NÚMERO DE CUOTA"
+   * es el total y "CUOTA PAGADA" la que llegó). Una cuota 1/3 quedó registrada como 3/3: la 3/3 vuelve a pendiente
+   * (sin su abono) y se registra la que de verdad llegó, con la comisión real. Devuelve cuántas se corrigieron.
+   */
+  repararCuotasInvertidas(user) {
+    let n = 0;
+    const ventas = {};
+    Db.all('Abonos_TUU').filter((a) => a.cuotaId && a.cuota > a.de).forEach((a) => {
+      const mala = Db.get('Cuotas_TUU', a.cuotaId);
+      const numero = a.de;   // la cuota que llegó
+      const total = a.cuota;
+      if (!mala) return;
+      const buena = Db.all('Cuotas_TUU').find((c) => c.ticketId === mala.ticketId && c.pago === mala.pago && c.numero === numero);
+      if (!buena) return;
+      if (mala.id !== buena.id) {
+        const nota = 'Cuota ' + mala.numero + '/' + mala.de + ' TUU · ' + mala.ticketId;
+        Db.all('Cobros').filter((x) => x.notas === nota).forEach((x) => { ventas[x.ventaId] = true; Db.remove('Cobros', x.id); });
+        Db.update('Cuotas_TUU', mala.id, Object.assign({ estado: 'pendiente', fechaRecibida: '', comision: 0, comisionReal: false, idTransaccion: '' }, Util.sello(user)));
+        if (buena.estado === 'pendiente') {
+          Cajas._recibirCuota(buena, a.fechaAbono, { comision: a.comision, comisionReal: true, idTransaccion: a.idTransaccion }, user).forEach((v) => { ventas[v] = true; });
+        }
+      }
+      Db.remove('Abonos_TUU', a.id);
+      const id = a.idTransaccion + '-' + numero;
+      if (!Db.get('Abonos_TUU', id)) Db.insert('Abonos_TUU', Object.assign({}, a, { id: id, cuota: numero, de: total, cuotaId: buena.id }, Util.sello(user)));
+      Audit.log(user, 'corregir cuota TUU', 'Cuota TUU', buena.id, { antes: mala.numero + '/' + mala.de, ahora: numero + '/' + total, transaccion: a.idTransaccion });
+      n++;
+    });
+    if (Object.keys(ventas).length) Cajas._recalcularComisiones(Object.keys(ventas), user);
+    return n;
+  },
+
   /** Marca a mano una cuota como recibida (sin el informe de TUU). */
   recibirCuota(p, user) {
     const c = Db.get('Cuotas_TUU', String(p.id || ''));

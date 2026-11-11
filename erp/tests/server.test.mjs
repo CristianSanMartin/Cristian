@@ -1396,6 +1396,28 @@ test("cuotas TUU: la comisión de la venta completa se reparte entre las cuotas 
   assert.equal(d.ventas.find(v => v.cliente === "Cuotas").comision, 270, "igual que un pago de $21.000 al contado");
 });
 
+test("informe TUU leído con las cuotas al revés (antes de v2.30.1): la reparación deja recibida la cuota que llegó", () => {
+  const s = createServer();
+  const caja = s.ok("abrirCaja", { fecha: "2026-11-08" }).result;
+  s.ok("guardarTicket", { cajaId: caja.id, cliente: "Cuotas", lineas: [{ categoria: "Accesorios", monto: 34990 }], pagos: [{ medio: "credito", monto: 34990, cuotas: 3 }] });
+  s.ok("cerrarCaja", { id: caja.id });
+  // Así llegaba la fila con la lectura anterior: cuota 3 de 1 (en el informe: NÚMERO DE CUOTA 3, CUOTA PAGADA 1).
+  const fila = { idTransaccion: "600078261261", fechaVenta: "2026-11-08", tipo: "Credito", monto: 34990, montoCuota: 11663, comision: 132, fechaAbono: "2026-11-10", abonado: 11531 };
+  s.ok("importarAbonosTuu", { filas: [Object.assign({ cuota: 3, de: 1 }, fila)] });
+  let d = s.ok("bootstrap").data;
+  assert.deepEqual(d.tuu.cuotas.map(c => c.estado), ["pendiente", "pendiente", "recibida"], "el error: quedó la 3/3");
+  const user = "Db.all('Usuarios')[0]";
+  assert.equal(s.run("Cajas.repararCuotasInvertidas(" + user + ")"), 1);
+  d = s.ok("bootstrap").data;
+  assert.deepEqual(d.tuu.cuotas.map(c => [c.numero, c.estado, c.comision]), [[1, "recibida", 132], [2, "pendiente", 0], [3, "pendiente", 0]]);
+  const v = d.ventas.find(x => x.cliente === "Cuotas");
+  assert.deepEqual(v.cobros.map(c => c.notas.slice(0, 9)), ["Cuota 1/3"]);
+  assert.equal(s.run("Cajas.repararCuotasInvertidas(" + user + ")"), 0, "no se repite");
+  // Volver a subir el informe (ya bien leído) no duplica nada.
+  const r = s.ok("importarAbonosTuu", { filas: [Object.assign({ cuota: 1, de: 3 }, fila)] }).result;
+  assert.deepEqual([r.nuevas, r.repetidas], [0, 1]);
+});
+
 test("comisión TUU con IVA: calza con el informe de abonos de TUU", () => {
   const s = createServer();
   const casos = [[55000, 581], [73000, 746], [18000, 243], [10000, 169], [8000, 151]];
