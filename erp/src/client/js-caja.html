@@ -612,6 +612,7 @@
     const atrasadas = esp.filter((e) => e.fecha < hoy);
     const prox = esp.filter((e) => e.fecha >= hoy);
     const proxFecha = prox.length ? prox[0].fecha : '';
+    const abiertasTuu = cajas().filter((c) => c.estado === 'abierta' && c.fecha < hoy && vivos(c).some((t) => t.pagos.some((p) => TUU.indexOf(p.medio) !== -1)));
     const proxMonto = prox.filter((e) => e.fecha === proxFecha).reduce((s, e) => s + e.neto, 0);
     const abonos = {};
     tuu().abonos.forEach((a) => { const r = abonos[a.fechaAbono] = abonos[a.fechaAbono] || { n: 0, monto: 0, comision: 0, abonado: 0 }; r.n++; r.monto += a.montoCuota; r.comision += a.comision; r.abonado += a.abonado; });
@@ -621,6 +622,9 @@
       kpi('Atrasados', atrasadas.length ? '<span class="text-gold">' + atrasadas.length + '</span>' : '0', atrasadas.length ? 'su fecha ya pasó: sube el informe o márcalos' : 'todo al día') + '</div>' +
       '<div class="btn-row" style="margin:6px 0 14px;">' +
       (admin ? '<label class="btn" for="tuu-archivo">' + GS.icon('download') + 'Subir informe de abono TUU (.xlsx)</label><input id="tuu-archivo" type="file" accept=".xlsx,.xls" class="visually-hidden" data-tuu-archivo>' : '') + '</div>' +
+      // Una caja abierta no se cuadra con el informe: avisa si alguna tiene pagos con TUU cuyo abono ya debió llegar.
+      (abiertasTuu.length ? '<div class="notice warn" style="margin:0 0 12px;">La caja ' + abiertasTuu.map((c) => 'del ' + fmt.date(c.fecha)).join(', ') +
+        (abiertasTuu.length === 1 ? ' está abierta' : ' están abiertas') + ' y tiene pagos con TUU: ciérrala antes de subir el informe, o sus transacciones quedan "sin venta".</div>' : '') +
       '<h3 class="sub-titulo">Próximos abonos</h3>' + GS.tablaProximosAbonos() +
       '<p class="table-note">TUU abona 2 días hábiles después de la venta (jueves → lunes; viernes, sábado y domingo → martes; un feriado lo corre). Cada cuota sigue la misma regla, un mes después de la anterior. ' +
       'Al subir el informe de abono, cada transacción se cuadra con su venta (misma fecha, medio y monto) y la comisión real reemplaza la estimada; las cuotas que llegan se registran como abono de su venta.</p>' +
@@ -695,7 +699,8 @@
       const filas = await leerInformeTuu(file);
       const r = await GS.mutate('importarAbonosTuu', { filas: filas });
       const sin = r.sinVenta.length ? '<p class="text-gold">' + r.sinVenta.length + ' transacción(es) sin venta en la caja:</p><ul>' +
-        r.sinVenta.map((x) => '<li>' + fmt.date(x.fechaVenta) + ' · ' + esc(x.tipo) + ' ' + fmt.money(x.monto) + (x.de > 1 ? ' (cuota ' + x.cuota + ')' : '') + ' · ID ' + esc(x.idTransaccion) + '</li>').join('') +
+        r.sinVenta.map((x) => '<li>' + fmt.date(x.fechaVenta) + ' · ' + esc(x.tipo) + ' ' + fmt.money(x.monto) + (x.de > 1 ? ' (cuota ' + x.cuota + ')' : '') + ' · ID ' + esc(x.idTransaccion) +
+          ' — <span class="' + (x.motivo === 'caja_abierta' ? 'text-gold' : 'cell-dim') + '">' + ({ caja_abierta: 'la caja de ese día está abierta: ciérrala y vuelve a subir el informe', sin_caja: 'no hay caja de ese día', sin_pago: 'ningún pago con TUU de ese monto en la caja' }[x.motivo] || '') + '</span></li>').join('') +
         '</ul><p class="hint">Revisa si esas ventas están registradas en la caja de su fecha (mismo monto y medio de pago) y vuelve a subir el informe: lo ya procesado no se repite.</p>' : '';
       GS.modal({
         title: r.sinVenta.length ? 'Informe TUU: casi todo cuadró' : 'Informe TUU: abono cuadrado',

@@ -1372,8 +1372,12 @@ test("volver a abrir un ticket ya cuadrado con el informe TUU: se deshace el cua
   // Matías pagó $10.000 (torneo + singles) pero el ticket quedó en $8.000: su 8.000 cuadró con la pasada de otra persona.
   let r = s.ok("importarAbonosTuu", { filas: [tx("A", 8000), tx("B", 10000)] }).result;
   assert.deepEqual([r.nuevas, r.sinVenta.length], [1, 1]);
+  assert.equal(r.sinVenta[0].motivo, "sin_pago");
   s.ok("reabrirCaja", { id: caja.id });
   assert.equal(s.ok("volverTicket", { id: t1.id }).result.descuadres, 1);
+  // Con la caja abierta, el informe no la cuadra y lo dice.
+  r = s.ok("importarAbonosTuu", { filas: [tx("A", 8000), tx("B", 10000)] }).result;
+  assert.deepEqual(r.sinVenta.map(x => x.motivo), ["caja_abierta", "caja_abierta"]);
   s.ok("guardarTicket", { id: t1.id, cajaId: caja.id, cliente: "Matías", lineas: [{ categoria: "Torneo", monto: 8000 }, { categoria: "Singles", monto: 2000 }], pagos: [{ medio: "debito", monto: 10000 }] });
   s.ok("cerrarCaja", { id: caja.id });
   r = s.ok("importarAbonosTuu", { filas: [tx("A", 8000), tx("B", 10000)] }).result;

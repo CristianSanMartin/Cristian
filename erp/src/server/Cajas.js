@@ -652,7 +652,13 @@ const Cajas = {
           reg = { ticketId: pago.ticketId, pago: pago.pago, cuotaId: '' };
         }
       }
-      if (!reg) { res.sinVenta.push(Object.assign({ fila: i + 1 }, fila)); return; }
+      if (!reg) {
+        // Por qué no cuadró: la caja de ese día sigue abierta, no hay caja ese día, o ningún pago con ese monto.
+        const cajasDia = Db.all('Cajas').filter((c) => c.fecha === fila.fechaVenta);
+        const motivo = cajasDia.some((c) => c.estado === 'abierta') ? 'caja_abierta' : !cajasDia.length ? 'sin_caja' : 'sin_pago';
+        res.sinVenta.push(Object.assign({ fila: i + 1, motivo: motivo }, fila));
+        return;
+      }
       ya[id] = true;
       registros.push(Object.assign({ id: id }, fila, reg));
       res.nuevas++;
