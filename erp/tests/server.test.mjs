@@ -1362,6 +1362,24 @@ test("caja reabierta: un ticket ya pasado vuelve a abrirse (se deshacen sus vent
   assert.equal(d.movimientos.filter(m => m.referencia === g.id && !m.anulado).length, 1, "el gasto vuelve a pasar una sola vez");
 });
 
+test("volver a abrir un ticket ya cuadrado con el informe TUU: se deshace el cuadre, se corrige y se vuelve a cuadrar", () => {
+  const s = createServer();
+  const caja = s.ok("abrirCaja", { fecha: "2026-11-08" }).result;
+  const t1 = s.ok("guardarTicket", { cajaId: caja.id, cliente: "Matías", lineas: [{ categoria: "Torneo", monto: 8000 }], pagos: [{ medio: "debito", monto: 8000 }] }).result;
+  s.ok("guardarTicket", { cajaId: caja.id, cliente: "Otra", lineas: [{ categoria: "Singles", monto: 8000 }], pagos: [{ medio: "debito", monto: 8000 }] });
+  s.ok("cerrarCaja", { id: caja.id });
+  const tx = (id, m) => ({ idTransaccion: id, fechaVenta: "2026-11-08", tipo: "Debito", monto: m, cuota: 1, de: 1, montoCuota: m, comision: 151, fechaAbono: "2026-11-10", abonado: m - 151 });
+  // Matías pagó $10.000 (torneo + singles) pero el ticket quedó en $8.000: su 8.000 cuadró con la pasada de otra persona.
+  let r = s.ok("importarAbonosTuu", { filas: [tx("A", 8000), tx("B", 10000)] }).result;
+  assert.deepEqual([r.nuevas, r.sinVenta.length], [1, 1]);
+  s.ok("reabrirCaja", { id: caja.id });
+  assert.equal(s.ok("volverTicket", { id: t1.id }).result.descuadres, 1);
+  s.ok("guardarTicket", { id: t1.id, cajaId: caja.id, cliente: "Matías", lineas: [{ categoria: "Torneo", monto: 8000 }, { categoria: "Singles", monto: 2000 }], pagos: [{ medio: "debito", monto: 10000 }] });
+  s.ok("cerrarCaja", { id: caja.id });
+  r = s.ok("importarAbonosTuu", { filas: [tx("A", 8000), tx("B", 10000)] }).result;
+  assert.deepEqual([r.nuevas, r.repetidas, r.sinVenta.length], [2, 0, 0], "ahora cuadran las dos");
+});
+
 test("caja del día sin depósito de TUU: comisión estimada", () => {
   const s = createServer();
   conInventario(s);

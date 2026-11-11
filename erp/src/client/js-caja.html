@@ -487,9 +487,10 @@
     GS.confirm({
       title: 'Volver a abrir ' + id,
       message: 'Se deshace su paso a ' + (t.tipo === 'egreso' ? 'Finanzas (el movimiento queda anulado)' : 'Ventas: se eliminan ' + (t.documentos.length ? '<strong>' + t.documentos.map(esc).join(', ') + '</strong>' : 'sus ventas') + ' y el stock vuelve a quedar reservado') +
-        '. Después puedes editarlo o anularlo, y al cerrar la caja de nuevo vuelve a pasar. Queda registrado en la auditoría.',
+        '. Después puedes editarlo o anularlo, y al cerrar la caja de nuevo vuelve a pasar. Queda registrado en la auditoría.' +
+        (t.pagos.some((p) => TUU.indexOf(p.medio) !== -1) ? '<br><br>Si el informe de TUU ya cuadró sus pagos, ese cuadre se deshace: después de cerrar la caja, vuelve a subir el informe para que se cuadren de nuevo con el monto corregido.' : ''),
       confirmLabel: 'Sí, volver a abrir',
-      onConfirm: () => GS.mutate('volverTicket', { id: id }, 'Ticket ' + id + ' abierto de nuevo: ya se puede editar'),
+      onConfirm: () => GS.mutate('volverTicket', { id: id }, (r) => 'Ticket ' + id + ' abierto de nuevo: ya se puede editar' + (r.descuadres ? ' · se deshizo el cuadre TUU de ' + r.descuadres + ' pago(s): vuelve a subir el informe al cerrar' : '')),
     });
   };
   GS.actions.editarTicket = (id) => { const t = ticket(id); if (t.tipo === 'egreso') formSalida(t); else formTicket(t); };

@@ -344,8 +344,9 @@ Menú **Caja del día**. Se abre una caja por fecha (`CJ-20261012`) y cada atenc
   "Registrar depósito TUU".
 - **Reabrir caja** (administrador): permite agregar tickets. Los que ya pasaron muestran **Volver a abrir**, que
   deshace su paso (elimina sus ventas, o anula el movimiento de una compra/gasto) para editarlo o anularlo; al
-  cerrar de nuevo vuelve a pasar. No se puede si ya tiene abonos posteriores, el informe de TUU lo cuadró, llegó
-  una cuota o la caja tiene el depósito de TUU registrado: ahí se corrige en Ventas.
+  cerrar de nuevo vuelve a pasar. Si el informe de TUU ya había cuadrado sus pagos, ese cuadre se deshace: al cerrar
+  la caja se vuelve a subir el informe y se cuadran con el monto corregido. No se puede si ya tiene abonos
+  posteriores, llegó una cuota o la caja tiene el depósito de TUU registrado: ahí se corrige en Ventas.
 - Si queda una caja sin cerrar, se avisa al abrir la del día siguiente (sus productos siguen reservados).
 - Requiere "Instalar / actualizar hojas" (hojas nuevas `Cajas` y `Caja_Tickets`).
 
