@@ -1,0 +1,469 @@
+# GS Prime ERP
+
+ERP de GS Prime TCG sobre **Google Sheets + Apps Script**. La base de datos es una
+planilla de Google (una hoja por tabla) y la aplicación es una app web de Apps
+Script con login de Google, roles por usuario y registro de auditoría.
+
+El diseño funcional completo (flujo, reglas y decisiones) está en **[DISENO.md](DISENO.md)**.
+
+Se construye por etapas:
+
+| Etapa | Contenido | Estado |
+|---|---|---|
+| 1 | Catálogo de productos y proveedores, preventas por producto con asignación | ✅ |
+| 2 | Compras (facturas desde preventas, despacho prorrateado) e inventario por lote | ✅ base (faltan cuotas y reposición) |
+| 3 | Ventas con OC, clientes y cuentas por cobrar | ✅ base (faltan ventas por monto) |
+| 4 | Finanzas: caja, GAV, aportes, SII, caja de singles, resumen mensual | Pendiente |
+
+## Estructura
+
+```
+erp/
+├── src/                      ← lo que se sube a Apps Script (rootDir de clasp)
+│   ├── appsscript.json       manifiesto: zona horaria, V8, app web
+│   ├── server/               backend (JavaScript de Apps Script)
+│   │   ├── 00_Config.js      esquema de tablas, roles, catálogos, AppError
+│   │   ├── Util.js           fechas, correlativos (hoja Secuencias), validación
+│   │   ├── Db.js             acceso a la planilla (filas ⇄ objetos)
+│   │   ├── Auth.js           usuario actual, permisos y auditoría
+│   │   ├── Economia.js       modelo económico V4 (IVA, pago SII, ganancia) y despacho
+│   │   ├── Proveedores.js    proveedores y regla de despacho
+│   │   ├── Productos.js      catálogo (nombre + edición + idioma)
+│   │   ├── Preventas.js      preventas (un registro por producto solicitado) y asignación
+│   │   ├── Compras.js        facturas desde preventas, despacho prorrateado e inventario por lote
+│   │   ├── Ventas.js         ventas (OC), salida FIFO por lote, comisión POS y abonos
+│   │   ├── Clientes.js       fichas de clientes
+│   │   ├── Usuarios.js       usuarios y roles
+│   │   └── Api.js            doGet, api(), instalar(), foto de datos
+│   └── client/               frontend (plantillas HtmlService)
+│       ├── index.html        estructura de la página
+│       ├── styles.html       estilos (identidad negro/dorado)
+│       ├── logo.html         logo embebido
+│       └── js-*.html         núcleo, dashboard, preventas, catálogo, admin
+├── dev/                      herramientas locales (no se suben a Google)
+│   ├── gas-fake.js           simulador de SpreadsheetApp, Session, etc.
+│   ├── sources.mjs           lectura de fuentes y resolución de includes
+│   └── build-preview.mjs     genera dist/preview.html
+└── tests/                    pruebas del servidor y end-to-end
+```
+
+## Cómo está construido
+
+- **Un solo punto de entrada.** El navegador llama únicamente a `api(accion, datos)`.
+  Cada acción declara el rol mínimo y si escribe. En Apps Script cualquier función
+  global sin `_` final es invocable desde el navegador, por eso toda la lógica vive
+  dentro de objetos (`Db`, `Preventas`, ...) y no queda expuesta.
+- **Escrituras seguras.** Toda escritura se hace con `LockService`, así dos personas
+  guardando a la vez no se pisan, y devuelve los datos actualizados para refrescar
+  la pantalla sin otra llamada.
+- **Nada se guarda dos veces.** Se guardan los datos de origen (cantidades, costos
+  netos, precios) y los resultados (IVA, totales, ganancia, despacho) se calculan.
+- **Correlativos estables** (`PVI-000001`, `GS-0001`, `PRV-001`) desde la
+  hoja `Secuencias`: un número nunca se reutiliza.
+- **Validación en el servidor.** Montos en CLP (costos del proveedor con hasta 2
+  decimales), fechas reales, productos únicos por nombre + edición + idioma, y
+  líneas que ya pasaron a una compra no se pueden modificar.
+- **Auditoría.** Cada cambio queda en la hoja `Auditoria`, con quién lo hizo, cuándo
+  y qué cambió.
+
+### Tablas (hojas)
+
+| Hoja | Contenido |
+|---|---|
+| `Usuarios` | correo, nombre, rol (`admin` / `operador` / `lectura`), activo |
+| `Secuencias` | último número usado de cada correlativo |
+| `Proveedores` | nombre, RUT, contacto, costo de despacho y monto para despacho gratis |
+| `Productos` | SKU `GS-0001`, nombre, edición, idioma, tipo, factor (Booster Box = 36), PVP, precio de venta propio |
+| `Preventas` | `PVI-000001`: proveedor, producto, lanzamiento, solicitado, asignado, estado, costo neto |
+| `Compras` | `CP-0001`: factura del proveedor (N°, fecha, despacho neto) |
+| `Clientes` | `CLI-0001`: nombre, ID Pokémon, teléfono, Instagram |
+| `Ventas` | `OC-0001`: fecha, cliente, canal, evento, medio de pago, boleta, abono, comisión |
+| `Ventas_Lineas` | `VL-000001`: unidades que salen de un lote, con precio y costo al vender |
+| `Cobros` | `COB-000001`: abonos a ventas por cobrar |
+| `Compras_Lineas` | `CPI-000001`: producto de la factura = lote del inventario (cantidad, costo neto, despacho prorrateado) |
+| `Auditoria` | historial de cambios |
+
+Las columnas se leen por nombre: puedes reordenarlas o agregar columnas propias en
+la planilla sin romper nada. **No cambies los nombres de los encabezados.**
+
+### Roles
+
+| Rol | Puede |
+|---|---|
+| Solo lectura | ver todo (menos usuarios y auditoría) |
+| Operador | crear y editar productos, proveedores y preventas, registrar asignaciones, eliminar preventas que no pasaron a compra |
+| Administrador | todo lo anterior, más eliminar productos, gestionar usuarios y ver la auditoría |
+
+## Probar en local (sin Google)
+
+```bash
+npm install
+npm run erp:preview      # genera erp/dist/preview.html → ábrelo en el navegador
+npm run test:erp         # pruebas del servidor + end-to-end con Playwright
+```
+
+La vista previa ejecuta **el mismo código del servidor** sobre un simulador de
+Apps Script, con datos de ejemplo guardados en el navegador. Abajo tiene un
+selector para ver la app como Administrador, Operador o Solo lectura.
+
+## Instalar en Google
+
+### 1. Crear la planilla y el proyecto
+
+1. Crea una planilla nueva en Google Drive, por ejemplo **"GS Prime ERP · Base de datos"**.
+2. En la planilla: **Extensiones → Apps Script**. Se abre un proyecto vinculado.
+3. En Apps Script: **Configuración del proyecto** (engranaje) → copia el **ID de secuencia de comandos** (Script ID).
+
+### 2. Subir el código con clasp (recomendado)
+
+```bash
+npm install -g @google/clasp
+clasp login                                  # autoriza con tu cuenta de Google
+# Activa "Google Apps Script API" en https://script.google.com/home/usersettings
+cp erp/.clasp.json.example erp/.clasp.json   # pega el Script ID dentro
+cd erp && clasp push
+```
+
+`clasp push` reemplaza todos los archivos del proyecto con los de `erp/src/`.
+Repite `clasp push` cada vez que actualices el código.
+
+> **Sin clasp:** en el editor de Apps Script crea un archivo por cada archivo de
+> `erp/src/` con el mismo nombre y ruta: *Secuencia de comandos* `server/Api`,
+> *HTML* `client/index`, etc. Luego pega el contenido y copia `appsscript.json`
+> (actívalo en Configuración → "Mostrar el archivo de manifiesto").
+
+### 3. Instalar las hojas
+
+En el editor, selecciona la función **`instalar`** y presiona **Ejecutar**. Acepta
+los permisos. Se crean las hojas y **tu correo queda registrado como administrador**.
+También puedes hacerlo desde la planilla: menú **GS Prime ERP → Instalar / reparar hojas**.
+`instalar` se puede volver a ejecutar sin riesgo: solo agrega lo que falte.
+
+### Imágenes de productos
+
+`instalar` crea en tu Google Drive la carpeta **"GS Prime ERP · Imágenes"** y la comparte
+como editor con los usuarios Operador y Administrador (también se comparte sola al agregar
+usuarios nuevos). Las fotos que se suben desde Preventas o Productos se reducen a 800 px
+en el navegador, se guardan en esa carpeta y quedan visibles con el enlace. Al actualizar a
+la versión con imágenes, Google pide **autorizar el acceso a Drive** la primera vez.
+
+### 4. Publicar la app web
+
+**Implementar → Nueva implementación → Aplicación web**:
+
+- *Ejecutar como:* **Usuario que accede a la aplicación web**
+- *Quién tiene acceso:* **Cualquier usuario con una cuenta de Google**
+
+Copia la URL `.../exec`: esa es la dirección del ERP. Cuando subas cambios, usa
+**Implementar → Administrar implementaciones → Editar → Nueva versión** para
+mantener la misma URL.
+
+### 5. Dar acceso a socios o empleados
+
+Cada persona necesita **las dos cosas**:
+
+1. **Acceso de edición a la planilla** (botón Compartir de Google Sheets).
+2. **Estar en Administración → Usuarios**, activa y con su rol.
+
+Si falta lo primero, Google le pedirá permiso. Si falta lo segundo, verá
+"Acceso restringido".
+
+> **Por qué "usuario que accede".** Con cuentas @gmail.com, Apps Script solo informa
+> el correo de quien usa la app si esta se ejecuta como ese usuario. Así cada cambio
+> queda firmado con el correo correcto en la auditoría. La contracara es que quien
+> tiene acceso de edición a la planilla también podría editarla a mano: comparte la
+> planilla solo con personas de confianza. Los roles se aplican en la app.
+
+### 6. Actualizar a una versión nueva
+
+**En Windows, con doble clic:** abre la carpeta `erp` (la que tiene tu `.clasp.json`) y ejecuta
+**`actualizar.cmd`**. Descarga la última versión desde GitHub, reemplaza el código (conserva
+`.clasp.json`), hace `clasp push -f` y actualiza la implementación de la aplicación web a la
+versión nueva, así que el link no cambia. La primera vez te pregunta cuál implementación usar
+y la recuerda en `erp/.implementacion`. Después solo queda el paso 2 cuando corresponda.
+
+**A mano:**
+
+1. Descarga la versión nueva (conserva tu `erp/.clasp.json`) y ejecuta `clasp push` dentro de `erp`.
+2. **Obligatorio cuando cambia la estructura de datos:** en el editor de Apps Script ejecuta **`instalar`** (o en la planilla, menú
+   **GS Prime ERP → Instalar / actualizar hojas**). Crea las hojas nuevas, agrega columnas
+   faltantes y deja las hojas vacías con el encabezado de la versión. Nunca borra datos.
+   Si se te olvida, el ERP no guarda nada y muestra "ERP sin instalar" indicando qué columnas faltan.
+3. **Implementar → Administrar implementaciones → ✏️ → Nueva versión → Implementar.**
+
+## Orden de compra del proveedor (stock en tránsito)
+
+Cuando el proveedor (ej. Asmodee) envía la **orden de compra** antes de la factura: en Preventas se seleccionan las
+preventas asignadas como siempre y en **Documento** se elige **Orden de compra (OC)** con el N° de OC del proveedor.
+
+- La compra queda en Compras igual que una factura (productos, despacho, totales y pagos), mostrada como "OC …" con
+  el aviso **Pendiente de factura**.
+- Sus productos entran al Inventario con su costo y precio, pero **en tránsito**: no se pueden vender, sacar como
+  premio ni marcar en la toma de inventario. En Inventario se ven como "+N en tránsito".
+- La OC se puede pagar como cualquier factura.
+- **Confirmar factura** (en el detalle de la compra): N° y fecha de la factura. La compra pasa a ser una factura
+  normal (con esa fecha para el IVA crédito y los informes; la OC queda anotada) y el stock se libera.
+- Requiere "Instalar / actualizar hojas" (columnas nuevas `oc`, `pendienteFactura` y `fechaOc` en `Compras`).
+
+## Inventario: productos y toma de inventario
+
+- **Inventario → Productos:** todos los productos con foto, idioma, precio y stock. Filtro rápido
+  (sin imagen, sin idioma, con stock —por defecto, incluye en tránsito—, en tránsito, sin stock), lápiz para editar (incluida la
+  foto) y **Unir** (administrador) para juntar duplicados: stock, preventas, ventas, premios y conteos
+  pasan al producto que se conserva y el otro se elimina.
+- **Inventario → Toma de inventario:** al iniciar se guarda lo que debería haber, lote por lote. Se
+  marca cada unidad encontrada y se suman las "unidades de más"; el avance se guarda solo. Hay hoja
+  para imprimir. Al cerrar (administrador): faltantes → salida "Pérdida" de su lote; unidades de más →
+  lote de ajuste ("Ajuste TOM-0001") al último costo conocido. Hojas `Tomas` y `Tomas_Lineas`.
+- **Editar factura** (administrador, lápiz junto a la factura en Compras): corrige N° de factura,
+  fecha, despacho (neto), cantidad y precio neto de cada línea (la cantidad no puede quedar bajo lo ya
+  vendido o entregado; las unidades de más quedan disponibles). La casilla "Descontar el despacho de los
+  precios" sirve para facturas migradas cuyos precios ya traían el envío prorrateado: baja los
+  precios manteniendo el total. Se re-prorratea el despacho y se corrige el costo de las unidades
+  ya vendidas o entregadas.
+
+## Finanzas y ventas por monto
+
+- **Ventas por monto:** en Inventario, "Venta por monto" (o "Línea por monto" dentro de la venta en
+  curso) agrega Singles, Torneo, Sobres sueltos, Bazar, Accesorios u Otro sin descontar inventario. Una
+  venta puede mezclar productos y líneas por monto.
+- **Finanzas:** resumen mensual por año (ventas por categoría, otros ingresos, compras con factura,
+  compras por monto, GAV, GOPM, SII, comisiones, flujo del mes y acumulado, resultado de singles e IVA
+  estimado) y libro de movimientos (hoja `Finanzas`). Singles: las compras se registran como "Compra
+  por monto" con detalle "Singles…" y se comparan con las ventas de singles.
+- **Editar venta** (administrador): fecha, boleta y notas desde la lista de Ventas.
+
+**OC solo para sellados:** una venta que lleva productos del inventario es una OC (OC-0001…). Las
+ventas por monto de singles, torneos, sobres sueltos, bazar y accesorios llevan su propio
+correlativo (SGL-, TOR-, SOB-, BAZ-, ACC-) y se ven en Ventas → "Singles, torneos y otros"; "Otro"
+y "Ajuste" siguen como OC. La migración `2026-10-05-ventas-sin-oc` (al ejecutar instalar) pasa las
+ventas existentes de esos conceptos a su correlativo, con sus abonos y referencias.
+
+## Préstamos sin interés (familiares, socios)
+
+- Finanzas → **Nuevo movimiento** → Ingreso · **Préstamo recibido**, con quién prestó en el detalle. Al devolver:
+  Egreso · **Pago de préstamo** (o el botón **Devolver** en Finanzas → Préstamos por pagar), que no puede pasar de
+  lo que se le debe a esa persona.
+- No son venta ni gasto: entran y salen de la caja sin cambiar la ganancia. Los gastos que se pagan con esa plata
+  se registran como siempre (GAV, GOPM…). Los aportes de capital siguen en "Patrimonio · aporte de capital".
+- Finanzas → **Préstamos por pagar**: prestado, devuelto y saldo por persona. En el Dashboard aparece la casilla
+  "Préstamos por pagar" (desplegable) cuando hay alguno registrado.
+
+## Pagos de facturas y deudas de clientes
+
+- **PDF de la factura:** en Compras, cada factura (o OC) tiene **Subir PDF** / **Ver PDF**, igual que el comprobante del
+  pago al SII: se ve en la misma pantalla y se puede reemplazar o quitar (administrador). Los archivos quedan en la
+  carpeta **Facturas** de Drive, junto a la planilla del ERP (ej. dentro de "GSPrime WEB"), con el nombre
+  "Factura N° · proveedor · fecha". Requiere "Instalar / actualizar hojas" (columna nueva `pdf` en `Compras`).
+
+- **Pagos a proveedores:** en Compras, el detalle de cada factura muestra sus pagos y lo que falta.
+  "Registrar pago" (fecha, monto, cuenta) admite pagos parciales; quedan en la hoja `Pagos_Facturas`
+  y cuentan como egreso en el flujo de Finanzas (incluidos los que se conciliaron desde la caja diaria
+  durante la migración: al retirarla pasaron a esta hoja con la nota "Desde la caja diaria"). Un egreso de Finanzas que fue el pago de una factura (ej. migrado como "Compra por monto")
+  se pasa con "→ Factura": queda como pago de esa factura y el movimiento se anula.
+  El administrador puede anular un pago o, si quedó enlazado a la factura equivocada,
+  "cambiar factura" (en el detalle de la compra o con el lápiz de la fila en Finanzas → Movimientos).
+- **Salidas sin venta:** en Inventario, el botón "Salida" de cada producto saca unidades del stock sin
+  crear OC (uso interno de la tienda, premio, caja abierta o pérdida), del lote más antiguo y a su costo.
+  Se listan en "Salidas sin venta" y el administrador puede anularlas. El uso interno se suma a GOPM en el
+  resumen de Finanzas al costo con IVA y se resta de las compras con factura (el flujo de caja no cambia).
+- **Cambiar productos de una venta:** en Editar venta, "Quitar" saca una línea (sus unidades vuelven al
+  inventario) y "Agregar producto del inventario" suma unidades del lote más antiguo. Sirve para cambiar un
+  concepto migrado (ej. "Diferencia con la caja diaria") o un producto equivocado por el correcto.
+- **Reutilizar el N° de una venta anulada:** al anular, "Liberar el N°" renombra la anulada a
+  `OC-0012-ANU` (con sus líneas, abonos y referencias). Si era el último N°, la próxima venta lo toma;
+  si no, se asigna a otra venta con Editar (N°). Las ya anuladas tienen el botón "Liberar N°" y el basurero
+  "Eliminar definitivamente" (para duplicados o errores de migración; borra líneas y abonos, la auditoría guarda copia).
+- **Nueva compra (Compras):** pregunta qué se compró. Sellados de preventa → Preventas; sellados sin
+  preventa → compra directa (productos, cantidad, neto y despacho; entran al inventario con su lote);
+  singles, bazar/accesorios y gastos (aseo, insumos) → un egreso de Finanzas con la categoría puesta.
+  Estos últimos se listan en "Otras compras y gastos". Un egreso puede marcarse "Con factura": su IVA
+  (columna `iva` de la hoja Finanzas) se resta del IVA estimado. Requiere "Instalar / actualizar hojas".
+- **Deudas de clientes:** en Editar venta, "Pagado al vender" fija lo que se pagó al comprar; el
+  resto queda como deuda (requiere cliente) y se salda con abonos en Clientes.
+
+## Demo con los datos reales
+
+La vista previa (demo) corre el mismo código que la web, pero con sus propios datos guardados en el
+navegador. Para que refleje la web actual:
+
+1. En la web: **Administración → Respaldos → Exportar datos para la demo → Descargar**. Se genera un
+   archivo `.json` con todas las hojas en la carpeta de respaldos; se conserva solo el más reciente.
+2. En la demo: botón **Cargar datos reales** (barra inferior) y elige ese archivo. Los usuarios se
+   reemplazan por los de la demo (Administrador, Operador, Solo lectura) y lo que hagas ahí no toca la web.
+   **Reiniciar demo** vuelve al punto de partida.
+
+También se puede generar la demo ya cargada: `DEMO_DATOS=archivo.json node erp/dev/build-preview.mjs`.
+El archivo tiene datos de clientes: **nunca lo subas al repositorio** (está en `.gitignore`).
+
+## Respaldos y cambios con datos reales
+
+- **Respaldo nocturno automático:** `instalar` programa un activador que todas las noches (3 a. m.)
+  copia la planilla completa en la carpeta **"GS Prime ERP · Respaldos"**, junto a la planilla. Se
+  guardan los de los **últimos 7 días** (de cualquier tipo; los más antiguos van a la papelera de Drive y
+  siempre queda al menos uno). En **Administración → Respaldos** se ven todos y se puede crear uno a mano.
+- **Auditoría:** registra solo los cambios de los demás usuarios; los del creador del sistema (el primer
+  administrador, el que ejecutó `instalar`) no se guardan.
+- **Respaldo antes de cada actualización:** si la planilla ya tiene datos, `instalar` crea una copia
+  ("antes de instalar v2.x") antes de tocar nada.
+- **Migraciones:** cuando un cambio necesita transformar datos existentes (crear una llave nueva,
+  separar un campo, recalcular algo), se escribe como una migración en `server/Respaldos.js`
+  (`MIGRACIONES`). `instalar` las ejecuta una sola vez, después de un respaldo, y las registra en la
+  hoja `Migraciones`. Nunca se edita ni se quita una migración ya publicada.
+- **Migración del sistema anterior (retirada en la v2.25.0):** la migración `2026-11-01-retirar-migracion`
+  traspasa los pagos de facturas que se habían conciliado desde la caja diaria a `Pagos_Facturas` (nota
+  "Desde la caja diaria (fila N)") y borra las hojas `Migracion`, `Migracion_Mapeos` y `Migracion_Caja`,
+  siempre después del respaldo automático.
+- **Reglas que no se rompen:** las columnas se leen por nombre, `instalar` solo agrega (nunca borra
+  ni renombra) y los registros se enlazan por ID (`GS-`, `PVI-`, `CP-`, `CPI-`, `OC-`, `CLI-`), no por
+  nombre. Renombrar un producto o cliente no rompe nada.
+- **Volver atrás:** en Apps Script, *Implementar → Administrar implementaciones* permite volver a la
+  versión anterior del código; los datos se recuperan desde el respaldo.
+
+## Límites conocidos
+
+- Cada operación tarda de 1 a 3 segundos (es la velocidad normal de Apps Script).
+- El sistema lee todas las tablas en cada carga. Eso anda bien hasta unos miles de
+  filas por hoja; si el volumen crece mucho, conviene archivar años anteriores o
+  migrar a una base de datos.
+
+## Caja del día
+
+Menú **Caja del día**. Se abre una caja por fecha (`CJ-20261012`) y cada atención es un ticket
+(`TK-20261012-01`):
+
+- **Venta:** productos sellados del inventario (quedan **reservados**: no se pueden vender en otro
+  lado hasta cerrar la caja o anular el ticket) y líneas por monto (singles, torneo, sobres, bazar,
+  accesorios). Descuento = precio cambiado. Pago con uno o varios medios: efectivo, transferencia,
+  TUU débito/crédito o **pendiente** (deuda del cliente; requiere su nombre).
+- **Compra / gasto:** compra de singles, GAV, GOPM u otro egreso, pagado desde caja o banco.
+- **Cerrar caja** (administrador): cada ticket pasa a su lugar. Los sellados a una OC (se rebaja el
+  stock), cada tipo por monto a su venta (SGL, TOR…), las compras/gastos a Finanzas. El pago y la
+  comisión de TUU se reparten en proporción al monto de cada documento. Con el depósito de TUU la
+  comisión es la real (cobrado − depositado); si aún no llega, se estima y se corrige después con
+  "Registrar depósito TUU".
+- **Reabrir caja** (administrador): permite agregar tickets. Los que ya pasaron muestran **Volver a abrir**, que
+  deshace su paso (elimina sus ventas, o anula el movimiento de una compra/gasto) para editarlo o anularlo; al
+  cerrar de nuevo vuelve a pasar. Si el informe de TUU ya había cuadrado sus pagos, ese cuadre se deshace: al cerrar
+  la caja se vuelve a subir el informe y se cuadran con el monto corregido. No se puede si ya tiene abonos
+  posteriores, llegó una cuota o la caja tiene el depósito de TUU registrado: ahí se corrige en Ventas.
+- Si queda una caja sin cerrar, se avisa al abrir la del día siguiente (sus productos siguen reservados).
+- Requiere "Instalar / actualizar hojas" (hojas nuevas `Cajas` y `Caja_Tickets`).
+
+### Abonos TUU y cuotas
+
+- **Fecha de abono:** TUU abona 2 días hábiles después de la venta (jueves → lunes; viernes, sábado y
+  domingo → martes). Los feriados (hoja `Feriados`, precargados 2026–2027) corren la fecha; se editan en
+  Caja del día → Abonos TUU.
+- **Cuotas:** en el ticket, TUU crédito acepta cuotas. Al cerrar la caja la venta queda "Cuotas TUU"
+  (lo debe TUU, no el cliente) y se crea el calendario en `Cuotas_TUU`: la cuota k llega en el abono de
+  (fecha de venta + k−1 meses).
+- **Informe de abono:** en Abonos TUU se sube el Excel "Detalle de transacciones abonadas" de TUU. Cada
+  transacción se cuadra con su pago en la caja de su fecha (mismo medio y monto) y su comisión real
+  reemplaza la estimada; las cuotas que llegan quedan como abono de su venta. Lo ya procesado no se repite
+  (`Abonos_TUU`) y lo que no calza se lista para revisarlo.
+- Comisión TUU: 0,77% + $65 + IVA sobre la comisión (calza con el informe). Las ventas desde el
+  01-10-2026 con la fórmula anterior se corrigen al ejecutar "Instalar / actualizar hojas".
+
+## Eventos con la máquina TUU (+ TUU)
+
+- En **Nueva venta** / **Editar ticket** de la Caja del día con canal **Evento**, la sección Pago tiene **Pasadas TUU**: monto y Enter
+  por cada pasada de la máquina (el campo queda listo para la siguiente; Enter no envía el formulario). Cada pasada
+  es un pago propio, así cuadra 1 a 1 con el informe de abonos de TUU y la comisión se estima por pasada.
+- "Suma a": la línea por monto del ticket a la que va la venta, una **Nueva línea: Singles**, o **Solo pago** si lo
+  vendido (ej. productos del inventario) ya está en el ticket. Débito o crédito (con cuotas).
+- **Pegar varios**: montos separados por espacio, coma o salto de línea (acepta $ y puntos de miles), con vista
+  previa. Las pasadas se ven como fichas con × para quitar una (resta su monto de la línea).
+- Sin tocar los pagos, el pago en efectivo se lleva lo que no cubren las pasadas TUU.
+- Al cerrar la caja: casilla opcional **Total TUU según la app** que muestra si cuadra o cuánto falta marcar.
+
+## Torneos
+
+Menú **Torneos**. Al terminar un torneo, TOM (Tournament Operations Manager) exporta un archivo `.tdf`:
+
+- **Subir torneo (.tdf):** se leen el nombre, la fecha, la ciudad, las rondas y los jugadores con su
+  **Player ID** y lugar final. Se elige el formato (ej. "Torneo The Chill") y la inscripción, que se
+  sugiere desde el último torneo de ese formato.
+- **Standing general:** si el torneo tiene varias divisiones (Junior, Senior, Masters), TOM numera cada una desde 1;
+  el ERP calcula el lugar de todos juntos con las partidas: puntos (3 por victoria, 1 por empate), % de victorias
+  de los rivales, % de los rivales de los rivales y, al final, el lugar en su división.
+- **Clientes:** cada jugador se enlaza con su cliente por el ID Pokémon (o por nombre la primera vez;
+  si no existe, se crea) y el ID queda guardado. Si el cliente sugerido no es la misma persona, se cambia
+  en la importación o después con el botón de cliente del jugador (el ID pasa al cliente correcto).
+- **Cobro:** cada jugador queda como un ticket **pendiente** en la Caja del día del torneo (se abre si
+  no lo está). Al cobrar se edita el ticket y se cambia el medio de pago; se pueden agregar productos al
+  mismo ticket. **Cobrar juntos:** se marcan varios tickets en la caja (el primero marcado es quien paga)
+  y quedan en uno solo, con todas sus líneas. Lo que no se pague queda como deuda del cliente al cerrar
+  la caja. "Sin costo" quita la inscripción de un jugador (invitado, juez que juega).
+- **Premios:** todo sin IVA. El torneo paga los premios del inventario a su **precio de venta neto** (PVP / 1,19,
+  el PVP se puede cambiar): lo mismo que la tienda recibiría vendiéndolos, así la factura del producto gana igual
+  que en una venta (PVP neto − costo) y no hay débito fiscal (no es una venta). Salen del inventario como salida
+  ligada al torneo. Los **sobres sueltos** de booster boxes abiertas (sin control de stock, $6.000 c/u por defecto)
+  también van a precio neto.
+- **Sobres de participación:** uno por jugador, a su precio tal cual ($1.500 por defecto): se compran sin boleta,
+  no hay IVA que recuperar. La compra va como gasto en la caja o Finanzas.
+- **Juez:** pago variable en efectivo; queda como egreso de la caja del torneo (Finanzas → "Torneos
+  (juez y gastos)").
+- **Resultado:** inscripciones − IVA − comisiones TUU − premios (precio neto) − juez = margen, por jugador y
+  punto de equilibrio (jugadores necesarios para cubrir premios y juez). Más la ganancia de los premios en sus
+  facturas = **resultado para la tienda** (lo que el evento deja en total).
+- Requiere "Instalar / actualizar hojas" (hojas nuevas `Torneos` y `Torneo_Jugadores`, columnas nuevas en
+  `Salidas`).
+- Al subir el `.tdf` también se calcula el **récord** de cada jugador (victorias, derrotas, empates; el bye
+  cuenta como victoria), se eligen **categoría** (Interno, League Challenge, Cup) y **temporada**, y el archivo
+  se guarda en la carpeta de Drive del ERP para poder recalcular después.
+- **Dos archivos por torneo:** se puede subir el `.tdf` al inicio (solo inscritos: crea el torneo y las inscripciones
+  por cobrar, sin lugar ni récord) y el `.tdf` final al terminar. El final se reconoce por la fecha y los Player ID:
+  no crea otro torneo ni otras inscripciones, solo completa lugar, récord y nombre (y guarda el archivo nuevo). Si
+  trae jugadores que no estaban inscritos, avisa y no los agrega.
+
+## Story IG (Top 5)
+
+Torneos → pestaña **Story IG**: arma la imagen del Top 5 de un torneo (1080 × 1920, para la Story de Instagram) con el
+diseño de GS Prime.
+
+- Se elige el torneo: nombre, apellido y récord salen del `.tdf` subido en la pestaña Torneos. Un torneo subido
+  antes de esta versión no tiene récord: se vuelve a subir su `.tdf` en Torneos (se reconoce por fecha y Player
+  ID y solo actualiza récord, nombre y lugar) o se escribe en la tabla.
+- Datos del evento: tipo de evento (arriba a la izquierda), nombre del torneo en la imagen, temporada (abajo),
+  categoría y cómo se muestra el nombre (solo nombre, nombre + inicial o completo).
+- **Instagram:** el @ de cada jugador va arriba de su nombre en la imagen (para buscarlo y etiquetarlo justo
+  ahí al subir la historia). Sale de la ficha del cliente ligado al jugador; si se escribe o corrige en la
+  tabla, al **Guardar** queda en esa ficha y aparece solo en los torneos siguientes.
+- A cada jugador del Top 5 se le elige su **Pokémon principal** y, si se quiere, uno **secundario** (65/35 con
+  corte inclinado). Se ven como silueta del color de la fila o con la imagen original; sin imagen, el nombre.
+- **Biblioteca de Pokémon** (hoja `Pokemon`): cualquier operador agrega Pokémon; el botón **Editar** de cada uno
+  permite subir o cambiar la imagen, eliminarla, editar el nombre (los torneos guardados pasan al nombre nuevo) y
+  eliminarlo. PNG con fondo transparente sale como silueta; una imagen con fondo (ej. la ilustración de una carta)
+  sale como foto fundida con la fila. Se reduce a 700 × 520. Se guardan en Drive para todo el equipo; la
+  pantalla trae solo las imágenes de los 5 jugadores para dibujar.
+- **Descargar PNG** (o clic derecho en la vista previa → Guardar imagen como…). **Guardar** deja el Pokémon y
+  el récord en el torneo, para los rankings de temporada.
+- Requiere "Instalar / actualizar hojas" (hoja nueva `Pokemon` con 14 Pokémon de partida, columnas nuevas en
+  `Torneos` y `Torneo_Jugadores`).
+
+## Cuentas por cobrar
+
+Finanzas → **Cuentas por cobrar**: una fila por cliente con el total que debe y desde cuándo (menos de 7 días
+normal, 7 a 30 en dorado, más de 30 en rojo). Al desplegarla se ven sus ventas (y los tickets pendientes de la
+caja abierta, como inscripciones de torneo). Botón de **WhatsApp** con el mensaje listo y **Abonar**: registra el
+abono ahí mismo, a una venta elegida o repartido desde la más antigua (lo que sobra pasa a la siguiente). En el Dashboard, la casilla "Por cobrar a clientes" se abre al hacerle clic.
+
+## Rendimiento al guardar
+
+- Cada escritura actualiza la caché de la llamada en el momento (no vuelve a leer la hoja), y agregar
+  filas a una hoja que no se ha leído —como `Auditoria`, que crece siempre— solo lee su encabezado.
+  Antes cada registro de auditoría leía la hoja entera, por eso guardar se hacía más lento con el tiempo.
+- Cada llamada deja una línea `[tiempos]` en Apps Script → **Ejecuciones** → registros: espera del candado,
+  la acción, el guardado (flush), la foto de datos que vuelve a la pantalla y qué hojas se leyeron
+  (veces, filas, ms). Las que pasan de 3 segundos salen como advertencia.
+- La foto de datos va compacta (`Snapshot.compactar`): sin las líneas de compra repetidas (el navegador
+  las arma desde los lotes en `GS.setData`), sin campos de auditoría donde no se muestran y con los
+  decimales a 2 (salvo tasas y catálogos). Pesa ~⅓ menos, así cada guardado vuelve más rápido.
+
+## Dónde vive cada tema
+
+- **Por abonar (TUU):** se calcula en un solo lugar (`GS.porAbonarTuu` / `GS.tablaProximosAbonos` en
+  Caja → Abonos TUU). El panel del Dashboard muestra esa misma tabla; Finanzas ya no repite la casilla.
+- **Tablas:** más compactas; lo que se consulta poco va en el detalle de la fila. Compras: neto, IVA,
+  N° de productos y ventas acumuladas. Ventas: canal, evento y comisión.
