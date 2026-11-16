@@ -15,7 +15,7 @@
 
 const APP = {
   nombre: 'GS Prime ERP',
-  version: '2.30.7',
+  version: '2.31.0',
   tz: 'America/Santiago',
   iva: 0.19,
 };
@@ -207,6 +207,8 @@ const SCHEMA = {
       // Story del Top 5 y rankings: categoría (Interno, League Challenge, Cup), temporada y tipo de evento que
       // escribe el usuario, y el .tdf original guardado en Drive ("drive:<id>") para poder recalcular.
       categoria: 's', temporada: 's', tipoEvento: 's', tdf: 's',
+      // Fondo de la Story IG (FON-0001, vacío = diseño GS Prime) y cuánto se oscurece (0–80 %).
+      fondo: 's', oscurecer: 'n',
     }, AUDIT_COLS),
   },
   /** Jugador de un torneo (TJ-000001): Player ID de Play! Pokémon, cliente, lugar final y si juega sin costo. */
@@ -220,6 +222,11 @@ const SCHEMA = {
   },
   /** Biblioteca de Pokémon para la Story del Top 5 (POK-0001): nombre e imagen en Drive ("drive:<id>"). */
   Pokemon: {
+    key: 'id',
+    cols: Object.assign({ id: 's', nombre: 's', imagen: 's' }, AUDIT_COLS),
+  },
+  /** Fondos para la Story IG (FON-0001): imagen 1080 × 1920 en Drive ("drive:<id>"). */
+  Story_Fondos: {
     key: 'id',
     cols: Object.assign({ id: 's', nombre: 's', imagen: 's' }, AUDIT_COLS),
   },

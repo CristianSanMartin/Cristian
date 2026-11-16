@@ -1469,6 +1469,25 @@ test("premios del torneo agregados de a poco: precio y quitar por fila (todas o 
   assert.equal(fila().length, 0);
 });
 
+test("Story IG: biblioteca de fondos, fondo y oscurecer guardados en el torneo", () => {
+  const s = createServer();
+  const t = s.ok("crearTorneo", { nombre: "Chill", fecha: "2026-10-28", formato: "Torneo The Chill", inscripcion: 5000, jugadores: [{ popId: "1", nombre: "A B", lugar: 1 }] }).result;
+  assert.match(errorDe(s.call("agregarFondo", { nombre: "Navidad" })), /Elige la imagen/);
+  const f = s.ok("agregarFondo", { nombre: "Navidad", archivo: { mime: "image/jpeg", base64: "/9j/4AAQ" } }).result;
+  let d = s.ok("bootstrap").data;
+  assert.deepEqual(d.fondos.map(x => x.nombre), ["Navidad"]);
+  assert.match(d.fondos[0].imagen, /^drive:/);
+  assert.equal(s.ok("imagenFondo", { id: f.id }).data, "data:image/jpeg;base64,/9j/4AAQ");
+  assert.match(errorDe(s.call("storyTorneo", { id: t.id, fondo: "FON-9999" })), /ya no está/);
+  s.ok("storyTorneo", { id: t.id, tipoEvento: "Liga Pokémon", temporada: "Temporada 2026", categoria: "Interno", fondo: f.id, oscurecer: 40, jugadores: [] });
+  let tr = s.ok("bootstrap").data.torneos[0];
+  assert.deepEqual([tr.fondo, tr.oscurecer], [f.id, 40]);
+  s.ok("eliminarFondo", { id: f.id });
+  d = s.ok("bootstrap").data;
+  assert.equal(d.fondos.length, 0);
+  assert.equal(d.torneos[0].fondo, "", "vuelve al diseño GS Prime");
+});
+
 test("comisión TUU con IVA: calza con el informe de abonos de TUU", () => {
   const s = createServer();
   const casos = [[55000, 581], [73000, 746], [18000, 243], [10000, 169], [8000, 151]];

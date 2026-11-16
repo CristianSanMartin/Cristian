@@ -89,3 +89,50 @@ const Pokemon = {
       .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
   },
 };
+
+/**
+ * Fondos para la Story IG: imágenes verticales (1080 × 1920, el navegador las ajusta antes de subirlas) en la
+ * carpeta de imágenes de Drive. El torneo guarda cuál usa; sin fondo, la Story usa el diseño GS Prime.
+ */
+const Fondos = {
+  requerir(id) {
+    const x = Db.get('Story_Fondos', String(id || ''));
+    if (!x) throw new AppError('Ese fondo ya no está en la biblioteca.', 'NO_ENCONTRADO');
+    return x;
+  },
+
+  /** p: { nombre, archivo: { base64, mime } } */
+  agregar(p, user) {
+    const nombre = Util.texto(p.nombre, 'El nombre del fondo', { requerido: true, max: 60 });
+    const img = Imagenes.validar(p.archivo);
+    if (!img) throw new AppError('Elige la imagen del fondo.');
+    const x = Object.assign({ id: Util.siguienteId('FON', 4), nombre: nombre, imagen: Imagenes.subir(img, 'Fondo Story · ' + nombre) }, Util.sello(user, true));
+    Db.insert('Story_Fondos', x);
+    Audit.log(user, 'crear', 'Fondo Story', x.id, { nombre: nombre });
+    return { id: x.id, nombre: nombre };
+  },
+
+  /** Elimina el fondo (la imagen va a la papelera); los torneos que lo usaban vuelven al diseño GS Prime. */
+  eliminar(p, user) {
+    const x = Fondos.requerir(p.id);
+    Db.remove('Story_Fondos', x.id);
+    if (x.imagen) Imagenes.papelera(x.imagen);
+    const cambios = {};
+    Db.all('Torneos').forEach((t) => { if (t.fondo === x.id) cambios[t.id] = Object.assign({ fondo: '' }, Util.sello(user)); });
+    if (Object.keys(cambios).length) Db.actualizarVarios('Torneos', cambios);
+    Audit.log(user, 'eliminar', 'Fondo Story', x.id, { nombre: x.nombre, torneos: Object.keys(cambios).length });
+    return { id: x.id };
+  },
+
+  /** La imagen como data URL, para dibujarla en el canvas (y poder exportar el PNG). */
+  verImagen(p) {
+    const x = Fondos.requerir(p.id);
+    const a = Imagenes.leer(x.imagen);
+    return 'data:' + (a.mime || 'image/jpeg') + ';base64,' + a.base64;
+  },
+
+  vista() {
+    return Db.all('Story_Fondos').map((x) => ({ id: x.id, nombre: x.nombre, imagen: x.imagen || '', version: String(x.actualizadoEn || x.creadoEn || '') }))
+      .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+  },
+};

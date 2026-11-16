@@ -71,6 +71,9 @@ function rutas_() {
     eliminarPokemon: { rol: 'operador', write: true, fn: Pokemon.eliminar },
     renombrarPokemon: { rol: 'operador', write: true, fn: Pokemon.renombrar },
     imagenesPokemon: { rol: 'operador', fn: Pokemon.verImagenes },
+    agregarFondo: { rol: 'operador', write: true, fn: Fondos.agregar },
+    eliminarFondo: { rol: 'operador', write: true, fn: Fondos.eliminar },
+    imagenFondo: { rol: 'operador', fn: Fondos.verImagen },
     eliminarTorneo: { rol: 'admin', write: true, fn: Torneos.eliminar },
     vincularJugador: { rol: 'operador', write: true, fn: Torneos.vincularJugador },
     cobroJugador: { rol: 'operador', write: true, fn: Torneos.cambiarCobro },
@@ -313,6 +316,7 @@ const Snapshot = {
       salidas: Salidas.vista(),
       torneos: Torneos.vista(ventas.ventas, clis),
       pokemon: Pokemon.vista(),
+      fondos: Fondos.vista(),
       cajas: Cajas.vista(),
       tuu: {
         esperados: Cajas.abonosEsperados(),

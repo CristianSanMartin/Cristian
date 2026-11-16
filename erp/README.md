@@ -437,6 +437,11 @@ diseño de GS Prime.
   tabla, al **Guardar** queda en esa ficha y aparece solo en los torneos siguientes.
 - A cada jugador del Top 5 se le elige su **Pokémon principal** y, si se quiere, uno **secundario** (65/35 con
   corte inclinado). Se ven como silueta del color de la fila o con la imagen original; sin imagen, el nombre.
+- **Fondos** (hoja `Story_Fondos`): se suben imágenes verticales (se ajustan a 1080 × 1920 en JPG, recortadas al
+  centro) y se elige el fondo con miniaturas; "Diseño GS Prime" es el de siempre. Un fondo propio reemplaza todo el
+  diseño, incluido el logo: encima se dibujan solo los datos (tipo de evento, TOP 5, nombre del torneo, las 5 filas
+  y la temporada). Se puede **oscurecer** (0–80 %) para que se lea bien. El fondo y el oscurecido quedan guardados en
+  el torneo. Requiere "Instalar / actualizar hojas".
 - **Biblioteca de Pokémon** (hoja `Pokemon`): cualquier operador agrega Pokémon; el botón **Editar** de cada uno
   permite subir o cambiar la imagen, eliminarla, editar el nombre (los torneos guardados pasan al nombre nuevo) y
   eliminarlo. PNG con fondo transparente sale como silueta; una imagen con fondo (ej. la ilustración de una carta)

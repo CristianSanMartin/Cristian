@@ -352,6 +352,8 @@ const Torneos = {
       categoria: p.categoria ? Util.opcion(p.categoria, 'La categoría', CATEGORIAS_TORNEO) : '',
       temporada: Util.texto(p.temporada, 'La temporada', { max: 60 }),
       tipoEvento: Util.texto(p.tipoEvento, 'El tipo de evento', { max: 40 }),
+      fondo: p.fondo ? Fondos.requerir(p.fondo).id : '',
+      oscurecer: p.oscurecer === '' || p.oscurecer == null ? 0 : Util.entero(p.oscurecer, 'Oscurecer el fondo', { min: 0, max: 80 }),
     };
   },
 

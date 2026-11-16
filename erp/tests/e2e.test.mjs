@@ -1217,3 +1217,33 @@ test("Caja → Abonos TUU: el informe se lee con la cuota que llegó (CUOTA PAGA
     await browser.close();
   }
 });
+
+test("Story IG: subir un fondo, elegirlo, oscurecerlo y guardarlo", { skip }, async () => {
+  const browser = await chromium.launch();
+  try {
+    const { page, errores } = await abrir(browser);
+    await page.click('[data-nav="torneos"]');
+    await page.click('[data-action="tab"][data-id="torneos.story"]');
+    await page.waitForSelector("#story-out[src^='data:image/png']");
+    const antes = await page.getAttribute("#story-out", "src");
+    // PNG de 2 × 2 (rojo) como fondo de prueba.
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP8z8DAwMDAxMDAwMDAAAANHQEDasKb6QAAAABJRU5ErkJggg==", "base64");
+    await page.fill("[data-story-fondo-nombre]", "Rojo");
+    await page.locator("#story-fondo-file").setInputFiles({ name: "rojo.png", mimeType: "image/png", buffer: png });
+    await toast(page, /Fondo "Rojo" agregado/);
+    await page.waitForSelector('.story-fondo.activo:has-text("Rojo")');
+    await page.waitForFunction((a) => document.getElementById("story-out").src !== a, antes);
+    await page.locator('[data-story-ev="oscurecer"]').fill("40");
+    assert.match(await page.locator("[data-story-osc]").textContent(), /40%/);
+    await page.click('[data-action="storyGuardar"]');
+    await toast(page, /Story guardada en el torneo/);
+    const t = await page.evaluate(() => GS.state.data.torneos.find((x) => x.fondo));
+    assert.equal(t.oscurecer, 40);
+    // Volver al diseño GS Prime.
+    await page.click('.story-fondo:has-text("Diseño GS Prime")');
+    await page.waitForSelector('.story-fondo.activo:has-text("Diseño GS Prime")');
+    assert.deepEqual(errores, []);
+  } finally {
+    await browser.close();
+  }
+});
