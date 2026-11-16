@@ -269,17 +269,32 @@ const Torneos = {
     if (!x || !x.torneoId || x.anulada) throw new AppError('El premio no existe.', 'NO_ENCONTRADO');
     return x;
   },
-  precioPremio(p, user) {
-    const x = Torneos._premio(p.id);
-    const precio = Util.entero(p.precio, 'El precio del premio', { requerido: true, min: 0 });
-    Db.update('Salidas', x.id, Object.assign({ precio: precio }, Util.sello(user)));
-    Audit.log(user, 'precio premio', 'Torneo', x.torneoId, { salida: x.id, antes: x.precio, precio: precio });
-    return { id: x.id };
+  /** Premios de una fila de la pantalla (mismo producto y precio): p.ids, o p.id para uno solo. */
+  _premios(p) {
+    const ids = Array.isArray(p.ids) ? p.ids : [p.id];
+    return ids.map((id) => Torneos._premio(id));
   },
+  precioPremio(p, user) {
+    const xs = Torneos._premios(p);
+    const precio = Util.entero(p.precio, 'El precio del premio', { requerido: true, min: 0 });
+    xs.forEach((x) => Db.update('Salidas', x.id, Object.assign({ precio: precio }, Util.sello(user))));
+    Audit.log(user, 'precio premio', 'Torneo', xs[0].torneoId, { salidas: xs.map((x) => x.id).join(', '), antes: xs[0].precio, precio: precio });
+    return { ids: xs.map((x) => x.id) };
+  },
+  /** Quita premios (vuelven al inventario): p.unidades de la fila, o todas si no se indica. Primero las últimas agregadas. */
   quitarPremio(p, user) {
-    const x = Torneos._premio(p.id);
-    Salidas.anular({ id: x.id }, user);
-    return { id: x.id };
+    const xs = Torneos._premios(p).sort((a, b) => String(b.id).localeCompare(String(a.id)));
+    const total = xs.reduce((t, x) => t + x.cantidad, 0);
+    let falta = p.unidades == null || p.unidades === '' ? total : Util.entero(p.unidades, 'Las unidades', { min: 1, max: total });
+    const quitado = falta;
+    xs.forEach((x) => {
+      if (!falta) return;
+      if (x.cantidad <= falta) { Salidas.anular({ id: x.id }, user); falta -= x.cantidad; return; }
+      Db.update('Salidas', x.id, Object.assign({ cantidad: x.cantidad - falta }, Util.sello(user)));
+      Audit.log(user, 'quitar premio', 'Torneo', x.torneoId, { salida: x.id, antes: x.cantidad, cantidad: x.cantidad - falta });
+      falta = 0;
+    });
+    return { unidades: quitado };
   },
 
   /** Elimina un torneo mal importado: solo si sus inscripciones no han pasado a Ventas. Anula sus tickets y premios. */

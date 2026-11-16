@@ -1440,6 +1440,25 @@ test("informe TUU leído con las cuotas al revés (antes de v2.30.1): la reparac
   assert.deepEqual([r.nuevas, r.repetidas], [0, 1]);
 });
 
+test("premios del torneo agregados de a poco: precio y quitar por fila (todas o de a una unidad)", () => {
+  const s = createServer();
+  const { prods } = conInventario(s);
+  const t = s.ok("crearTorneo", { nombre: "Chill", fecha: "2026-10-28", formato: "Torneo The Chill", inscripcion: 5000, jugadores: [{ popId: "1", nombre: "A B", lugar: 1 }] }).result;
+  s.ok("premiosTorneo", { id: t.id, premios: [{ productoId: prods.miniTin.id, cantidad: 2 }] });
+  s.ok("premiosTorneo", { id: t.id, premios: [{ productoId: prods.miniTin.id, cantidad: 1 }] });
+  let pr = s.ok("bootstrap").data.torneos[0].premios;
+  const ids = pr.map(p => p.id);
+  assert.equal(pr.reduce((n, p) => n + p.cantidad, 0), 3);
+  s.ok("precioPremio", { ids, precio: 15000 });
+  assert.ok(s.ok("bootstrap").data.torneos[0].premios.every(p => p.precio === 15000), "el precio cambia en toda la fila");
+  s.ok("quitarPremio", { ids, unidades: 1 });
+  pr = s.ok("bootstrap").data.torneos[0].premios;
+  assert.equal(pr.reduce((n, p) => n + p.cantidad, 0), 2, "una unidad menos");
+  s.ok("quitarPremio", { ids: pr.map(p => p.id) });
+  assert.equal(s.ok("bootstrap").data.torneos[0].premios.length, 0);
+  assert.equal(s.ok("bootstrap").data.lotes.filter(l => l.productoId === prods.miniTin.id).reduce((n, l) => n + l.disponible, 0), 10, "todo vuelve al inventario");
+});
+
 test("comisión TUU con IVA: calza con el informe de abonos de TUU", () => {
   const s = createServer();
   const casos = [[55000, 581], [73000, 746], [18000, 243], [10000, 169], [8000, 151]];
