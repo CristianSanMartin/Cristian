@@ -1067,7 +1067,7 @@ test("orden de compra: desde Preventas queda en tránsito (no vendible) y al con
   }
 });
 
-test("caja: + TUU dentro de la venta (Enter, pegar varios, quitar), cuadra con el informe y revisión al cerrar", { skip }, async () => {
+test("caja: + TUU dentro de la venta (Enter, pegar varios, quitar) y cerrar la caja directo", { skip }, async () => {
   const browser = await chromium.launch();
   try {
     const { page, errores } = await abrir(browser);
@@ -1111,12 +1111,10 @@ test("caja: + TUU dentro de la venta (Enter, pegar varios, quitar), cuadra con e
     await modal(page).locator(".modal-head h3").click();
     await page.keyboard.press("Escape");
     await cerrado(page);
-    // Al cerrar: revisión contra el total de la app TUU.
+    // Cerrar caja: directo, sin ventana de resumen.
     await page.click('[data-action="cerrarCaja"]');
-    await modal(page).locator('[name="tuuApp"]').fill("33.000");
-    assert.match(await modal(page).locator("[data-cc-app]").textContent(), /5 pagos TUU · \$30\.500.*Falta marcar \$2\.500/s);
-    await modal(page).locator('[name="tuuApp"]').fill("30500");
-    assert.match(await modal(page).locator("[data-cc-app]").textContent(), /Cuadra con la app/);
+    await toast(page, /Caja cerrada: \d+ ventas/);
+    assert.equal(await page.locator("#modal-root .modal-overlay").count(), 0);
     assert.deepEqual(errores, []);
   } finally {
     await browser.close();

@@ -33,7 +33,6 @@
     return r;
   };
   /** Comisión TUU estimada de la caja: por cada pago con la máquina (0,77% + $65 + IVA). */
-  const nTuu = (c) => vivos(c).reduce((s, t) => s + (t.tipo === 'egreso' ? 0 : t.pagos.filter((p) => TUU.indexOf(p.medio) !== -1).length), 0);
   const comisionEstimada = (c) => vivos(c).reduce((s, t) => s + t.pagos.reduce((a, p) => a + (TUU.indexOf(p.medio) !== -1 ? GS.comisionPago(data().catalogos.comisiones[p.medio], p.monto) : 0), 0), 0);
   /* Tabla de tickets con los filtros y el orden de siempre en cada columna. */
   const clienteTk = (t) => t.cliente || (t.tipo === 'egreso' ? '—' : 'Cliente general');
@@ -507,48 +506,10 @@
 
   /* ---------- cierre ---------- */
 
-  GS.actions.cerrarCaja = (id) => {
-    const c = cajas().find((x) => x.id === id);
-    const r = resumenCaja(c);
-    const medios = data().catalogos.mediosCaja;
-    const docs = vivos(c).reduce((s, t) => {
-      if (t.tipo === 'egreso') return s;
-      const k = new Set(t.lineas.map((l) => (l.productoId ? 'OC' : l.categoria)));
-      return s + k.size;
-    }, 0);
-    GS.formModal({
-      title: 'Cerrar caja del ' + fmt.date(c.fecha),
-      submitLabel: 'Cerrar y pasar',
-      fields: () => '<p class="hint" style="margin-top:0;"><strong>' + r.nVentas + '</strong> tickets de venta (' + fmt.money(r.ventas) + ') → ~' + docs + ' ventas en Ventas · <strong>' + r.nSalidas + '</strong> compras/gastos (' + fmt.money(r.salidas) + ') → Finanzas.</p>' +
-        '<div class="table-wrap"><table class="data-table" style="min-width:0"><tbody>' +
-        Object.keys(medios).filter((m) => r.medios[m]).map((m) => '<tr><td>' + esc(medios[m]) + '</td><td class="cell-num right">' + fmt.money(r.medios[m]) + '</td></tr>').join('') +
-        '</tbody></table></div>' +
-        (r.tuu ? '<div class="form-grid" style="margin-top:12px;">' +
-          // Revisión contra la app de TUU (no se guarda): detecta una pasada que no se marcó antes de cerrar.
-          '<div class="form-field"><label>Total TUU según la app (revisar)</label><input type="text" inputmode="numeric" name="tuuApp" placeholder="Opcional"></div>' +
-          '<div class="form-field" data-cc-app><p class="table-note" style="margin-top:26px;">En la caja: <strong>' + nTuu(c) + (nTuu(c) === 1 ? ' pago' : ' pagos') + ' TUU · ' + fmt.money(r.tuu) + '</strong></p></div>' +
-          '<div class="form-field"><label>Depósito de TUU (si ya llegó)</label><input type="number" name="depositoTuu" min="0" max="' + r.tuu + '" step="1" placeholder="Opcional"></div>' +
-          '<div class="form-field full" data-cc-com></div></div>' : '') +
-        '<p class="hint">Se crean las OC (el stock reservado se rebaja), las ventas SGL/TOR/… y los movimientos de Finanzas. ' +
-        (r.tuu ? 'TUU deposita en 2 días hábiles: si aún no llega, déjalo vacío (la comisión se estima) y regístralo después con "Registrar depósito TUU". ' : '') + 'La caja cerrada ya no se edita: las correcciones se hacen en cada venta.</p>',
-      onMount: (form) => {
-        const inp = form.elements.depositoTuu;
-        if (!inp) return;
-        form.elements.tuuApp.addEventListener('input', () => {
-          const app = GS.leerMontos(form.elements.tuuApp.value)[0] || 0;
-          const dif = app - r.tuu;
-          form.querySelector('[data-cc-app]').innerHTML = '<p class="table-note" style="margin-top:26px;">En la caja: <strong>' + nTuu(c) + ' pagos TUU · ' + fmt.money(r.tuu) + '</strong>' +
-            (app ? '<br>' + (dif === 0 ? '<span class="text-success">✓ Cuadra con la app</span>' : '<span class="text-danger">' + (dif > 0 ? 'Falta marcar ' + fmt.money(dif) : 'Sobran ' + fmt.money(-dif)) + ' respecto de la app</span>') : '') + '</p>';
-        });
-        const upd = () => {
-          const dep = Number(inp.value);
-          form.querySelector('[data-cc-com]').innerHTML = inp.value ? '<p class="table-note">Comisión real: <strong>' + fmt.money(r.tuu - dep) + '</strong> (' + (r.tuu ? ((r.tuu - dep) / r.tuu * 100).toFixed(2) : 0) + '% de ' + fmt.money(r.tuu) + ')</p>' : '';
-        };
-        inp.addEventListener('input', upd);
-      },
-      onSubmit: (v) => GS.mutate('cerrarCaja', { id: id, depositoTuu: v.depositoTuu || '' }, (res) => 'Caja cerrada: ' + res.ventas + ' ventas y ' + res.movimientos + ' movimientos creados'),
-    });
-  };
+  // Cerrar caja: directo, sin resumen previo. El depósito de TUU se registra después con "Registrar depósito TUU"
+  // (o se confirma solo al subir el informe de abonos).
+  GS.actions.cerrarCaja = (id) => GS.mutate('cerrarCaja', { id: id, depositoTuu: '' }, (res) => 'Caja cerrada: ' + res.ventas + ' ventas y ' + res.movimientos + ' movimientos creados')
+    .catch((e) => GS.toast(e.message, true));
 
   GS.actions.reabrirCaja = (id) => {
     const c = cajas().find((x) => x.id === id);

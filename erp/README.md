@@ -375,7 +375,7 @@ Menú **Caja del día**. Se abre una caja por fecha (`CJ-20261012`) y cada atenc
 - **Pegar varios**: montos separados por espacio, coma o salto de línea (acepta $ y puntos de miles), con vista
   previa. Las pasadas se ven como fichas con × para quitar una (resta su monto de la línea).
 - Sin tocar los pagos, el pago en efectivo se lleva lo que no cubren las pasadas TUU.
-- Al cerrar la caja: casilla opcional **Total TUU según la app** que muestra si cuadra o cuánto falta marcar.
+- **Cerrar caja** cierra directo, sin ventana de resumen; el depósito de TUU se registra después con "Registrar depósito TUU" o se confirma con el informe de abonos.
 
 ## Torneos
 
