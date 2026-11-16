@@ -80,6 +80,7 @@ function rutas_() {
     participacionTorneo: { rol: 'operador', write: true, fn: Torneos.guardarParticipacion },
     precioPremio: { rol: 'operador', write: true, fn: Torneos.precioPremio },
     quitarPremio: { rol: 'operador', write: true, fn: Torneos.quitarPremio },
+    editarPremio: { rol: 'operador', write: true, fn: Torneos.editarPremio },
     unirTickets: { rol: 'operador', write: true, fn: Cajas.unirTickets },
     anularSalida: { rol: 'admin', write: true, fn: Salidas.anular },
     editarVenta: { rol: 'admin', write: true, fn: Ventas.editar },

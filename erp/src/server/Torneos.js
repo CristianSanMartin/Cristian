@@ -281,6 +281,27 @@ const Torneos = {
     Audit.log(user, 'precio premio', 'Torneo', xs[0].torneoId, { salidas: xs.map((x) => x.id).join(', '), antes: xs[0].precio, precio: precio });
     return { ids: xs.map((x) => x.id) };
   },
+  /**
+   * Edita una fila de premios (mismo producto y precio): p: { ids, cantidad, precio }. Más unidades salen del
+   * inventario; menos vuelven a él (primero las últimas); 0 = quitar la fila. El precio aplica a todas.
+   */
+  editarPremio(p, user) {
+    const xs = Torneos._premios(p);
+    const t = Torneos.requerir(xs[0].torneoId);
+    const total = xs.reduce((s, x) => s + x.cantidad, 0);
+    const cantidad = Util.entero(p.cantidad, 'La cantidad', { requerido: true, min: 0 });
+    const precio = p.precio === '' || p.precio == null ? xs[0].precio : Util.entero(p.precio, 'El precio del premio', { min: 0 });
+    if (cantidad < total) Torneos.quitarPremio({ ids: xs.map((x) => x.id), unidades: total - cantidad }, user);
+    if (cantidad > 0 && precio !== xs[0].precio) {
+      xs.filter((x) => { const y = Db.get('Salidas', x.id); return y && !y.anulada; }).forEach((x) => Db.update('Salidas', x.id, Object.assign({ precio: precio }, Util.sello(user))));
+    }
+    if (cantidad > total) {
+      Salidas.registrar({ productoId: xs[0].productoId, cantidad: cantidad - total, motivo: PREMIO_TORNEO, fecha: t.fecha, notas: t.nombre, torneoId: t.id, precio: precio }, user);
+    }
+    Audit.log(user, 'editar premio', 'Torneo', t.id, { producto: xs[0].productoId, antes: total + ' × $' + xs[0].precio, ahora: cantidad + ' × $' + precio });
+    return { cantidad: cantidad, precio: precio };
+  },
+
   /** Quita premios (vuelven al inventario): p.unidades de la fila, o todas si no se indica. Primero las últimas agregadas. */
   quitarPremio(p, user) {
     const xs = Torneos._premios(p).sort((a, b) => String(b.id).localeCompare(String(a.id)));

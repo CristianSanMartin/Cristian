@@ -1457,6 +1457,16 @@ test("premios del torneo agregados de a poco: precio y quitar por fila (todas o 
   s.ok("quitarPremio", { ids: pr.map(p => p.id) });
   assert.equal(s.ok("bootstrap").data.torneos[0].premios.length, 0);
   assert.equal(s.ok("bootstrap").data.lotes.filter(l => l.productoId === prods.miniTin.id).reduce((n, l) => n + l.disponible, 0), 10, "todo vuelve al inventario");
+  // "Editar premio": subir o bajar la cantidad y cambiar el precio en un paso; 0 = quitar.
+  s.ok("premiosTorneo", { id: t.id, premios: [{ productoId: prods.miniTin.id, cantidad: 1 }] });
+  const fila = () => s.ok("bootstrap").data.torneos[0].premios;
+  s.ok("editarPremio", { ids: fila().map(p => p.id), cantidad: 4, precio: 12000 });
+  assert.deepEqual([fila().reduce((n, p) => n + p.cantidad, 0), new Set(fila().map(p => p.precio)).size, fila()[0].precio], [4, 1, 12000]);
+  s.ok("editarPremio", { ids: fila().map(p => p.id), cantidad: 2, precio: 12000 });
+  assert.equal(fila().reduce((n, p) => n + p.cantidad, 0), 2);
+  assert.match(errorDe(s.call("editarPremio", { ids: fila().map(p => p.id), cantidad: 99 })), /Stock insuficiente/);
+  s.ok("editarPremio", { ids: fila().map(p => p.id), cantidad: 0 });
+  assert.equal(fila().length, 0);
 });
 
 test("comisión TUU con IVA: calza con el informe de abonos de TUU", () => {
