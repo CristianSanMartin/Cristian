@@ -400,7 +400,7 @@ Menú **Torneos**. Al terminar un torneo, TOM (Tournament Operations Manager) ex
   que en una venta (PVP neto − costo) y no hay débito fiscal (no es una venta). Salen del inventario como salida
   ligada al torneo. Los **sobres sueltos** de booster boxes abiertas (sin control de stock, $6.000 c/u por defecto)
   también van a precio neto.
-- **Editar un premio:** cada fila (mismo producto y precio) tiene un solo botón **Editar**: cantidad con − / + (hasta
+- **Editar un premio:** en la columna Cant. de cada fila, **− y +** sacan o devuelven una unidad del inventario al tiro. El botón **Editar** abre: cantidad con − / + (hasta
   lo disponible en inventario), precio torneo por unidad (con botón para volver al PVP), el margen del torneo con el
   cambio antes de guardar y **Quitar del torneo** (las unidades vuelven al inventario). Igual para sobres sueltos y
   de participación.
