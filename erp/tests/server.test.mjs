@@ -1585,6 +1585,9 @@ test("torneos: jugadores del .tdf → tickets pendientes en la caja, cobrar junt
   // Todo sin IVA: el premio va a su precio de venta neto ($15.000 / 1,19).
   assert.equal(res.premiosNeto, Math.round(15000 / 1.19));
   assert.equal(Math.round(res.margen), Math.round(24000 / 1.19 - res.comisiones - Math.round(15000 / 1.19) - 15000));
+  // Vista en bruto (la de la pantalla): inscripciones − premios a su precio − juez, sin IVA ni comisiones.
+  assert.equal(res.bruto.margen, 24000 - 15000 - 15000);
+  assert.equal(res.bruto.resultadoTienda, res.bruto.margen + Math.round(15000 - res.premiosCosto * 1.19));
   // Resultado para la tienda = margen + lo que el premio deja en su factura (precio neto − costo).
   assert.equal(Math.round(res.resultadoTienda - res.margen), Math.round(res.gananciaPremios));
   assert.equal(Math.round(res.gananciaPremios), Math.round(Math.round(15000 / 1.19) - res.premiosCosto));

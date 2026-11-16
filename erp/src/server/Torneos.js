@@ -501,6 +501,14 @@ const Torneos = {
           jugadores: jugadores.length, pagan: pagan, inscripciones: inscripciones, iva: inscripciones - insNeto, comisiones: comisiones,
           premiosBruto: premiosBruto, premiosNeto: premiosNeto, premiosCosto: premiosCosto, juez: t.juez || 0, margen: margen,
           gananciaPremios: gananciaPremios, resultadoTienda: margen + gananciaPremios,
+          // Vista en bruto (la que muestra la pantalla): inscripciones − premios a su precio (con IVA) − juez, sin IVA ni
+          // comisiones TUU. La ganancia de los premios en sus facturas, también en bruto (precio − costo con IVA).
+          bruto: (() => {
+            const m = inscripciones - premiosBruto - (t.juez || 0);
+            const g = Math.round(pr.reduce((s, x) => s + x.precio * x.cantidad, 0) - premiosCosto * (1 + APP.iva));
+            return { margen: m, pct: inscripciones ? m / inscripciones : 0, porJugador: jugadores.length ? m / jugadores.length : 0,
+              equilibrio: t.inscripcion > 0 ? Math.ceil((premiosBruto + (t.juez || 0)) / t.inscripcion) : 0, gananciaPremios: g, resultadoTienda: m + g };
+          })(),
           margenPct: insNeto ? margen / insNeto : 0, porJugador: jugadores.length ? margen / jugadores.length : 0,
           equilibrio: porJugador > 0 ? Math.ceil((premiosNeto + (t.juez || 0)) / porJugador) : 0,
           porCobrar: vivos.filter((j) => j.estado === 'por_cobrar' || j.estado === 'parcial' || j.estado === 'debe').reduce((s, j) => s + j.debe, 0),

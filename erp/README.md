@@ -404,9 +404,10 @@ Menú **Torneos**. Al terminar un torneo, TOM (Tournament Operations Manager) ex
   no hay IVA que recuperar. La compra va como gasto en la caja o Finanzas.
 - **Juez:** pago variable en efectivo; queda como egreso de la caja del torneo (Finanzas → "Torneos
   (juez y gastos)").
-- **Resultado:** inscripciones − IVA − comisiones TUU − premios (precio neto) − juez = margen, por jugador y
-  punto de equilibrio (jugadores necesarios para cubrir premios y juez). Más la ganancia de los premios en sus
-  facturas = **resultado para la tienda** (lo que el evento deja en total).
+- **Resultado (en la pantalla, en bruto):** inscripciones − premios a su precio torneo − juez = margen, sin IVA ni
+  comisiones TUU; por jugador y punto de equilibrio (jugadores necesarios para cubrir premios y juez). Más la
+  ganancia de los premios en sus facturas (precio − costo con IVA) = **resultado para la tienda**. El cálculo sin
+  IVA (premios a PVP / 1,19) sigue disponible en los datos (`resultado.margen`) y es el que usan las facturas.
 - Requiere "Instalar / actualizar hojas" (hojas nuevas `Torneos` y `Torneo_Jugadores`, columnas nuevas en
   `Salidas`).
 - Al subir el `.tdf` también se calcula el **récord** de cada jugador (victorias, derrotas, empates; el bye

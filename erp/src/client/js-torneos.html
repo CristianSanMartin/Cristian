@@ -217,7 +217,7 @@
             '<td class="cell-num right">' + r.jugadores + (r.pagan !== r.jugadores ? '<div class="cell-dim">' + r.pagan + ' pagan</div>' : '') + '</td>' +
             '<td class="cell-num right">' + fmt.money(r.inscripciones) + '</td><td class="cell-num right">' + (r.premiosBruto ? fmt.money(r.premiosBruto) : '—') + '</td>' +
             '<td class="cell-num right">' + (r.juez ? fmt.money(r.juez) : '—') + '</td>' +
-            '<td class="cell-num right"><strong class="' + signo(r.margen) + '">' + fmt.money(r.margen) + '</strong><div class="cell-dim">' + Math.round(r.margenPct * 100) + '%</div></td>' +
+            '<td class="cell-num right"><strong class="' + signo(r.bruto.margen) + '">' + fmt.money(r.bruto.margen) + '</strong><div class="cell-dim">' + Math.round(r.bruto.pct * 100) + '%</div></td>' +
             '<td class="cell-num right">' + (r.porCobrar ? '<span class="text-gold">' + fmt.money(r.porCobrar) + '</span>' : '—') + '</td></tr>' +
             (open ? '<tr class="detalle-row"><td colspan="9">' + detalle(t) + '</td></tr>' : '');
         }).join('') : '<tr><td colspan="9">' + GS.empty('Sin torneos', 'Sube el archivo .tdf que exporta TOM al terminar el torneo.', 'torneos') + '</td></tr>') +
@@ -249,18 +249,16 @@
       // Resultado
       '<div class="panel"><div class="panel-head"><h3>Resultado</h3><span class="tag">' + esc(t.ciudad || '') + (t.rondas ? ' · ' + t.rondas + ' rondas' : '') + '</span></div><div class="panel-body"><table class="mini-table"><tbody>' +
         filaRes('Inscripciones (' + r.pagan + ' × ' + fmt.money(t.inscripcion) + ')', fmt.money(r.inscripciones)) +
-        filaRes('− IVA', '−' + fmt.money(r.iva)) +
-        filaRes('− Comisiones TUU', '−' + fmt.money(r.comisiones)) +
-        filaRes('− Premios (precio de venta neto)', '−' + fmt.money(r.premiosNeto)) +
+        filaRes('− Premios (bruto)', '−' + fmt.money(r.premiosBruto)) +
         filaRes('− Juez', '−' + fmt.money(r.juez)) +
-        '<tr><td class="cell-strong">Margen</td><td class="cell-num right"><strong class="' + signo(r.margen) + '">' + fmt.money(r.margen) + '</strong> <span class="cell-dim">' + Math.round(r.margenPct * 100) + '%</span></td></tr>' +
-        filaRes('Por jugador', fmt.money(r.porJugador), 'cell-dim') +
-        (r.gananciaPremios ? filaRes('+ Ganancia de los premios en sus facturas', fmt.money(r.gananciaPremios), 'cell-dim') +
-          '<tr><td class="cell-strong">Resultado para la tienda</td><td class="cell-num right"><strong class="' + signo(r.resultadoTienda) + '">' + fmt.money(r.resultadoTienda) + '</strong></td></tr>' : '') +
+        '<tr><td class="cell-strong">Margen</td><td class="cell-num right"><strong class="' + signo(r.bruto.margen) + '">' + fmt.money(r.bruto.margen) + '</strong> <span class="cell-dim">' + Math.round(r.bruto.pct * 100) + '%</span></td></tr>' +
+        filaRes('Por jugador', fmt.money(r.bruto.porJugador), 'cell-dim') +
+        (r.bruto.gananciaPremios ? filaRes('+ Ganancia de los premios en sus facturas', fmt.money(r.bruto.gananciaPremios), 'cell-dim') +
+          '<tr><td class="cell-strong">Resultado para la tienda</td><td class="cell-num right"><strong class="' + signo(r.bruto.resultadoTienda) + '">' + fmt.money(r.bruto.resultadoTienda) + '</strong></td></tr>' : '') +
         '</tbody></table>' +
-        '<p class="table-note">' + (r.equilibrio ? 'Punto de equilibrio: <strong>' + r.equilibrio + ' jugadores</strong> pagando ' + fmt.money(t.inscripcion) + ' cubren premios y juez. ' : '') +
-        'Todo sin IVA: el torneo paga los premios del inventario y los sobres sueltos a su precio de venta neto (PVP / 1,19), lo mismo que recibiría la tienda vendiéndolos; los sobres de participación (sin boleta) van a su precio. ' +
-        (r.premiosCosto ? 'Los premios del inventario costaron ' + fmt.money(r.premiosCosto) + ' neto: la diferencia es la ganancia de sus facturas, y con el margen da el resultado del evento para la tienda.' : '') + '</p></div></div>' +
+        '<p class="table-note">' + (r.bruto.equilibrio ? 'Punto de equilibrio: <strong>' + r.bruto.equilibrio + ' jugadores</strong> pagando ' + fmt.money(t.inscripcion) + ' cubren premios y juez. ' : '') +
+        'Montos brutos (con IVA), sin IVA ni comisiones TUU: inscripciones − premios a su precio torneo − juez. ' +
+        (r.premiosCosto ? 'Los premios del inventario costaron ' + fmt.money(Math.round(r.premiosCosto * (1 + data().app.iva))) + ' con IVA: la diferencia con su precio es la ganancia de sus facturas, y con el margen da el resultado del evento para la tienda.' : '') + '</p></div></div>' +
       // Juez y premios
       '<div class="panel"><div class="panel-head"><h3>Juez y premios</h3></div><div class="panel-body">' +
         '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0 12px;"><span class="cell-strong nowrap">Pago al juez</span>' +
