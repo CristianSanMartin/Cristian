@@ -79,7 +79,12 @@
     movsVivos().forEach((m) => { const i = mes(m.fecha); if (i >= 0 && m.tipo === 'egreso' && m.iva) credito[i] += m.iva; });
     const egresos = [facturas].concat(Object.keys(cats.egreso).map((c) => porMov['egreso|' + c]).filter(Boolean));
     const comisionesTuu = fila('Comisiones TUU (ventas)');
-    data().ventas.filter((v) => !v.anulada).forEach((v) => { const i = mes(v.fecha); if (i >= 0) comisionesTuu.valores[i] += v.comision || 0; });
+    // Cada comisión en el mes en que se descuenta: la del contado con la venta, la de cada cuota TUU cuando llega.
+    data().ventas.filter((v) => !v.anulada).forEach((v) => {
+      const i = mes(v.fecha);
+      if (i >= 0) comisionesTuu.valores[i] += comisionContado(v);
+      v.cobros.filter(esCuota).forEach((c) => { const k = mes(c.fecha); if (k >= 0) comisionesTuu.valores[k] += c.comision || 0; });
+    });
     if (comisionesTuu.valores.some(Boolean)) egresos.push(comisionesTuu);
     const totalEgresos = fila('Total egresos', 'subtotal');
     egresos.forEach((f) => f.valores.forEach((x, i) => { totalEgresos.valores[i] += x; }));
@@ -138,22 +143,25 @@
   ];
   /** Ingresos de ventas como filas del libro (solo lectura): lo pagado al vender (neto de la comisión del medio de pago) y los abonos. */
   const CUENTA_MEDIO = { efectivo: 'Caja (efectivo)', transferencia: 'Banco', debito: 'TUU', credito: 'TUU' };
+  const esCuota = (c) => /^Cuota \d+\/\d+ TUU/.test(c.notas || '');
+  /** Comisión de la venta sin la de sus cuotas TUU ya llegadas (esas se descuentan en la fecha de cada cuota). */
+  const comisionContado = (v) => Math.max(0, (v.comision || 0) - v.cobros.filter(esCuota).reduce((t, c) => t + (c.comision || 0), 0));
   function movsVentas() {
     const res = [];
     data().ventas.filter((v) => !v.anulada).forEach((v) => {
       const base = { tipo: 'ingreso', referencia: v.id, venta: v.id, cuentaLabel: CUENTA_MEDIO[v.medioPago] || '', notas: '' };
+      // Comisión de las cuotas TUU ya llegadas (cada una se descuenta en su cuota); el resto es la del pago al contado.
+      const comVenta = comisionContado(v);
       // La comisión del medio de pago va dentro de la venta: el monto es lo que entra a la cuenta (neto).
-      const conCom = v.abono && v.comision && v.comision < v.abono;
+      const conCom = v.abono && comVenta && comVenta < v.abono;
       // Venta con TUU de la caja del día: "por abonar" hasta que el informe de TUU la confirma (no suma al saldo).
       const tuu = v.tuuAbono;
       const estadoTuu = (medio) => (tuu && ['debito', 'credito'].indexOf(medio) !== -1
         ? (tuu.porAbonar ? { porAbonar: true, fechaAbono: tuu.fechaAbono, medioLabel: data().catalogos.mediosPago[medio] || medio, estadoLabel: 'Por abonar · ' + fmt.date(tuu.fechaAbono) } : { estadoLabel: 'Abonado · ' + fmt.date(tuu.abonadoEl) }) : {});
       if (v.abono) res.push(Object.assign({}, base, { id: v.id + '·v', fecha: v.fecha, categoriaLabel: 'Venta', subcategoria: v.cliente + ' · ' + v.medioPagoLabel,
-        monto: conCom ? v.abono - v.comision : v.abono, bruto: v.abono, comision: conCom ? v.comision : 0,
-        notas: conCom ? 'venta ' + fmt.money(v.abono) + ' − comisión ' + fmt.money(v.comision) : '' }, estadoTuu(v.medioPago)));
+        monto: conCom ? v.abono - comVenta : v.abono, bruto: v.abono, comision: conCom ? comVenta : 0,
+        notas: conCom ? 'venta ' + fmt.money(v.abono) + ' − comisión ' + fmt.money(comVenta) : '' }, estadoTuu(v.medioPago)));
       // Venta en cuotas TUU: la comisión va dentro de cada cuota que llega (abono neto de su parte), no como egreso aparte.
-      const esCuota = (c) => /^Cuota \d+\/\d+ TUU/.test(c.notas || '');
-      const enCuotas = !conCom && v.comision && (v.porCobrarTuu > 0 || v.cobros.some(esCuota));
       // La venta en cuotas se ve en el libro el día que se vendió (informativa: no suma al saldo); la plata entra con cada cuota.
       if (!v.abono && (v.porCobrarTuu > 0 || v.cobros.some(esCuota))) {
         const nC = v.cobros.filter(esCuota).length;
@@ -163,12 +171,12 @@
           notas: 'Informativa: la plata entra con cada cuota (' + nC + ' recibida' + (nC === 1 ? '' : 's') + ')' }));
       }
       v.cobros.forEach((c) => {
-        const com = enCuotas && esCuota(c) && v.total ? Math.round(v.comision * c.monto / v.total) : 0;
+        const com = esCuota(c) ? c.comision || 0 : 0;
         res.push(Object.assign({}, base, { id: c.id, fecha: c.fecha, categoriaLabel: esCuota(c) ? 'Cuota TUU' : 'Abono de venta', subcategoria: v.cliente + ' · ' + (data().catalogos.mediosPago[c.medioPago] || c.medioPago),
           monto: c.monto - com, bruto: c.monto, comision: com, notas: com ? 'cuota ' + fmt.money(c.monto) + ' − comisión ' + fmt.money(com) : '',
           cuentaLabel: CUENTA_MEDIO[c.medioPago] || '' }, /^Ticket /.test(c.notas || '') ? estadoTuu(c.medioPago) : {}));
       });
-      if (v.comision && !conCom && !enCuotas) res.push(Object.assign({}, base, { id: v.id + '·c', tipo: 'egreso', fecha: v.fecha, categoriaLabel: 'Comisión ' + v.medioPagoLabel, subcategoria: v.cliente, monto: v.comision }));
+      if (comVenta && !conCom) res.push(Object.assign({}, base, { id: v.id + '·c', tipo: 'egreso', fecha: v.fecha, categoriaLabel: 'Comisión ' + v.medioPagoLabel, subcategoria: v.cliente, monto: comVenta }));
     });
     // Pagos de facturas de compra: registrados en Compras o conciliados desde la caja diaria.
     const compra = {};

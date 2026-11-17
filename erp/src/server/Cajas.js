@@ -439,7 +439,10 @@ const Cajas = {
         Cajas._repartir(total, partes.map((d) => d.monto)).forEach((v, i) => { com[partes[i].ventaId] = (com[partes[i].ventaId] || 0) + v; });
       });
     });
+    // Cuotas: su comisión se descuenta cuando TUU la cobra (al llegar la cuota), no antes: así la ganancia y los
+    // resúmenes cuadran con el dinero en la cuenta. Las pendientes no suman todavía.
     Db.all('Cuotas_TUU').forEach((c) => {
+      if (c.estado !== 'recibida') return;
       let partes = [];
       try { partes = JSON.parse(c.ventas || '[]'); } catch (e) { partes = []; }
       if (!partes.some((q) => quiero[q.ventaId])) return;
@@ -457,6 +460,19 @@ const Cajas = {
     });
     if (Object.keys(cambios).length) Db.actualizarVarios('Ventas', cambios);
     return suma;
+  },
+
+  /** Recalcula la comisión de las ventas indicadas y el total de comisión TUU de sus cajas. */
+  _actualizarComisiones(ventaIds, user) {
+    if (!ventaIds.length) return;
+    Cajas._recalcularComisiones(ventaIds, user);
+    const quiero = {};
+    ventaIds.forEach((v) => { quiero[v] = true; });
+    Db.all('Cajas').filter((c) => Cajas._ventasDe(c).some((v) => quiero[v])).forEach((c) => {
+      const vs = {};
+      Cajas._ventasDe(c).forEach((v) => { vs[v] = true; });
+      Db.update('Cajas', c.id, { comisionTuu: Db.all('Ventas').filter((v) => vs[v.id]).reduce((t, v) => t + v.comision, 0) });
+    });
   },
 
   /** Ventas que salieron de una caja (las que tienen pagos con TUU). */
@@ -581,6 +597,7 @@ const Cajas = {
     if (c.estado !== 'pendiente') throw new AppError('La cuota ' + c.numero + '/' + c.de + ' ya está recibida.');
     const fecha = Util.fecha(p.fecha || Util.hoy(), 'La fecha del abono', { requerido: true });
     const ventas = Cajas._recibirCuota(c, fecha, null, user);
+    Cajas._actualizarComisiones(ventas, user);   // la comisión de la cuota se descuenta ahora
     Audit.log(user, 'cuota recibida', 'Cuota TUU', c.id, { cuota: c.numero + '/' + c.de, monto: c.monto, fecha: fecha });
     return { ventas: ventas };
   },

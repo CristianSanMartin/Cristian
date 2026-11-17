@@ -33,6 +33,11 @@
     return r;
   };
   /** Comisión TUU estimada de la caja: por cada pago con la máquina (0,77% + $65 + IVA). */
+  /** Comisión de las cuotas TUU de la caja que aún no llegan: se descuenta cuando TUU abona cada cuota. */
+  const cuotasPorLlegar = (c) => {
+    const pend = ((data().tuu || {}).cuotas || []).filter((q) => q.cajaId === c.id && q.estado === 'pendiente');
+    return pend.length ? ' · + ' + fmt.money(pend.reduce((t, q) => t + (q.comisionEstimada || 0), 0)) + ' de ' + pend.length + (pend.length === 1 ? ' cuota' : ' cuotas') + ' por llegar' : '';
+  };
   const comisionEstimada = (c) => vivos(c).reduce((s, t) => s + t.pagos.reduce((a, p) => a + (TUU.indexOf(p.medio) !== -1 ? GS.comisionPago(data().catalogos.comisiones[p.medio], p.monto) : 0), 0), 0);
   /* Tabla de tickets con los filtros y el orden de siempre en cada columna. */
   const clienteTk = (t) => t.cliente || (t.tipo === 'egreso' ? '—' : 'Cliente general');
@@ -107,7 +112,7 @@
         kpi('Por medio de pago', Object.keys(medios).filter((m) => r.medios[m]).map((m) => '<div style="font-size:13px;">' + esc(medios[m]) + ' <strong>' + fmt.money(r.medios[m]) + '</strong></div>').join('') || '—', '') +
         kpi('Compras y gastos', fmt.money(r.salidas), r.nSalidas + (r.nSalidas === 1 ? ' salida' : ' salidas')) +
         kpi(abierta ? 'Cobrado con TUU' : 'TUU: comisión', abierta ? fmt.money(r.tuu) : fmt.money(c.comisionTuu),
-          abierta ? (r.tuu ? 'comisión estimada ' + fmt.money(comisionEstimada(c)) + ' · ' : '') + 'el depósito llega en 2 días hábiles' : (c.depositoTuu ? 'depósito ' + fmt.money(c.depositoTuu) + ' de ' + fmt.money(c.tuuTotal) : c.tuuTotal ? 'estimada (falta el depósito)' : 'sin pagos con TUU')) + '</div>' +
+          abierta ? (r.tuu ? 'comisión estimada ' + fmt.money(comisionEstimada(c)) + ' · ' : '') + 'el depósito llega en 2 días hábiles' : (c.depositoTuu ? 'depósito ' + fmt.money(c.depositoTuu) + ' de ' + fmt.money(c.tuuTotal) : c.tuuTotal ? 'cobrada o estimada al contado' : 'sin pagos con TUU') + cuotasPorLlegar(c)) + '</div>' +
         '<div class="btn-row" style="margin:6px 0 14px;">' +
         (abierta && op ? '<button class="btn" data-action="nuevoTicket">' + GS.icon('plus', 2.4) + 'Venta</button>' +
           '<button class="btn secondary" data-action="nuevaSalidaCaja">' + GS.icon('plus', 2.4) + 'Compra / gasto</button>' : '') +

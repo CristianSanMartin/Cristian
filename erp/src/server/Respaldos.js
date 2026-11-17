@@ -165,6 +165,19 @@ const MIGRACIONES = [
     descripcion: 'Informes de TUU leídos con las columnas de cuota al revés: la cuota que de verdad llegó queda recibida y la otra vuelve a pendiente',
     fn: (user) => { Cajas.repararCuotasInvertidas(user); },
   },
+  {
+    id: '2026-11-17-comision-cuotas-al-cobrar',
+    descripcion: 'La comisión de las cuotas TUU se descuenta cuando llega cada cuota: se recalculan las ventas en cuotas y sus cajas',
+    fn: (user) => {
+      const ventas = {};
+      Db.all('Cuotas_TUU').forEach((c) => {
+        let vs = [];
+        try { vs = JSON.parse(c.ventas || '[]'); } catch (e) { vs = []; }
+        vs.forEach((x) => { if (x.ventaId) ventas[x.ventaId] = true; });
+      });
+      Cajas._actualizarComisiones(Object.keys(ventas), user);
+    },
+  },
 ];
 
 const Respaldos = {

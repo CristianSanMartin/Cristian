@@ -1175,7 +1175,7 @@ test("finanzas: la comisión de una venta en cuotas TUU va dentro de cada cuota,
     // La venta se ve el día que se vendió, informativa (no suma al saldo).
     assert.ok(filas.some((t) => /Venta en cuotas TUU/.test(t) && /\$30\.000/.test(t) && /Cuotas por llegar · \$20\.000/.test(t)), "la venta en cuotas aparece en Finanzas");
     const cuota = filas.find((t) => /Cuota TUU/.test(t));
-    const com = Math.round(venta.comision * 10000 / 30000);
+    const com = venta.comision;   // solo la de la cuota que llegó (la comisión se descuenta con cada cuota)
     assert.match(cuota, new RegExp("\\+\\$" + (10000 - com).toLocaleString("es-CL").replace(/\./g, "\\.")));
     assert.match(cuota, /cuota \$10\.000 − comisión/);
     assert.deepEqual(errores, []);

@@ -1412,10 +1412,18 @@ test("cuotas TUU: la comisión de la venta completa se reparte entre las cuotas 
   const caja = s.ok("abrirCaja", { fecha: "2026-08-23" }).result;
   s.ok("guardarTicket", { cajaId: caja.id, cliente: "Cuotas", lineas: [{ categoria: "Accesorios", monto: 21000 }], pagos: [{ medio: "credito", monto: 21000, cuotas: 3 }] });
   s.ok("cerrarCaja", { id: caja.id });
-  const d = s.ok("bootstrap").data;
+  let d = s.ok("bootstrap").data;
   // Informe TUU: cuota 1/3 de $7.000 → comisión $90 (no $142 de un pago suelto de $7.000).
   assert.deepEqual(d.tuu.cuotas.map(c => c.comisionEstimada), [90, 90, 90]);
-  assert.equal(d.ventas.find(v => v.cliente === "Cuotas").comision, 270, "igual que un pago de $21.000 al contado");
+  // La comisión se descuenta cuando llega cada cuota: antes de la primera, la venta no tiene comisión.
+  assert.equal(d.ventas.find(v => v.cliente === "Cuotas").comision, 0);
+  s.ok("recibirCuotaTuu", { id: d.tuu.cuotas[0].id, fecha: "2026-08-25" });
+  d = s.ok("bootstrap").data;
+  const v = d.ventas.find(x => x.cliente === "Cuotas");
+  assert.equal(v.comision, 90, "solo la cuota que llegó");
+  assert.deepEqual(v.cobros.map(c => [c.monto, c.comision]), [[7000, 90]]);
+  assert.match(d.cajas[0].id, /^CJ-/);
+  assert.equal(d.cajas[0].comisionTuu, 90, "la caja muestra lo cobrado");
 });
 
 test("informe TUU leído con las cuotas al revés (antes de v2.30.1): la reparación deja recibida la cuota que llegó", () => {
@@ -1524,7 +1532,7 @@ test("TUU: abono en 2 días hábiles (con feriado), cuotas por cobrar e informe 
   assert.equal(a.comision, 600, "la comisión real del informe reemplaza la estimada");
   assert.deepEqual([a.tuuAbono.porAbonar, a.tuuAbono.abonadoEl], [false, "2026-10-13"]);
   const est = Math.round((60000 * 0.0077 + 65) * 1.19 / 3);   // la comisión de los $60.000 repartida en 3 cuotas = 209
-  assert.deepEqual([b.cobros.length, b.porCobrarTuu, b.comision], [1, 40000, 300 + 2 * est]);
+  assert.deepEqual([b.cobros.length, b.porCobrarTuu, b.comision], [1, 40000, 300]);
   assert.equal(d.tuu.esperados.filter(e => e.tipo === "ventas").length, 0, "la caja ya llegó en el informe");
   assert.equal(s.ok("importarAbonosTuu", { filas }).result.repetidas, 2, "no se procesa dos veces");
   // Cuota 2 recibida a mano

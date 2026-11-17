@@ -362,7 +362,10 @@ Menú **Caja del día**. Se abre una caja por fecha (`CJ-20261012`) y cada atenc
   transacción se cuadra con su pago en la caja de su fecha (mismo medio y monto) y su comisión real
   reemplaza la estimada; las cuotas que llegan quedan como abono de su venta. Lo ya procesado no se repite
   (`Abonos_TUU`) y lo que no calza se lista para revisarlo.
-- Comisión TUU: 0,77% + $65 + IVA sobre la comisión (calza con el informe). Las ventas desde el
+- Comisión TUU: 0,77% + $65 + IVA sobre la comisión (calza con el informe). En **cuotas**, la comisión de la venta
+  completa se reparte entre las cuotas y cada parte se descuenta **cuando TUU abona esa cuota** (en la venta, el
+  libro de Finanzas, el resumen mensual y la caja), así lo que muestra el ERP cuadra con el dinero en la cuenta.
+  La caja indica aparte la comisión de las cuotas que aún no llegan. Las ventas desde el
   01-10-2026 con la fórmula anterior se corrigen al ejecutar "Instalar / actualizar hojas".
 
 ## Eventos con la máquina TUU (+ TUU)

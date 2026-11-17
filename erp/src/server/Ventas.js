@@ -486,7 +486,14 @@ const Ventas = {
     const cliPorId = {};
     clientes.forEach((x) => { cliPorId[x.id] = x; });
     const cobrosPorVenta = {};
-    Db.all('Cobros').forEach((c) => { (cobrosPorVenta[c.ventaId] = cobrosPorVenta[c.ventaId] || []).push(c); });
+    // Cobro de una cuota TUU: su parte de la comisión de esa cuota (se descuenta cuando llega).
+    const cuotaPorNota = {};
+    Db.all('Cuotas_TUU').forEach((q) => { cuotaPorNota['Cuota ' + q.numero + '/' + q.de + ' TUU · ' + q.ticketId] = q; });
+    Db.all('Cobros').forEach((c) => {
+      const q = cuotaPorNota[c.notas];
+      if (q && q.monto) c = Object.assign({}, c, { comision: Math.round((q.comisionReal ? q.comision : q.comisionEstimada) * c.monto / q.monto) });
+      (cobrosPorVenta[c.ventaId] = cobrosPorVenta[c.ventaId] || []).push(c);
+    });
     const ventaPorId = {};
     const ventas = Db.all('Ventas').map((v) => {
       const cli = cliPorId[v.clienteId];
