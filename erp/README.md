@@ -239,6 +239,19 @@ correlativo (SGL-, TOR-, SOB-, BAZ-, ACC-) y se ven en Ventas → "Singles, torn
 y "Ajuste" siguen como OC. La migración `2026-10-05-ventas-sin-oc` (al ejecutar instalar) pasa las
 ventas existentes de esos conceptos a su correlativo, con sus abonos y referencias.
 
+## Créditos bancarios
+
+- Finanzas → **Créditos** → **Registrar crédito** (administrador): banco, N° de operación, fecha del depósito, monto
+  líquido, gastos iniciales (impuesto, notario), tasa mensual, N° de cuotas, valor de la cuota y primer vencimiento.
+  Antes de guardar se ve el calendario propuesto (capital por amortización francesa a la tasa; el resto de cada
+  cuota es interés, seguro y comisiones) y el costo total del crédito.
+- Al registrarlo: Ingreso "Crédito bancario recibido" por la deuda (líquido + gastos) y Egreso "Gastos financieros"
+  por los gastos iniciales, así la cuenta sube exactamente lo depositado.
+- Cada cuota: **Pagar** registra "Pago de crédito (capital)" (baja la deuda) y "Gastos financieros" por el resto. El
+  lápiz corrige la cuota con el calendario de vencimiento del banco; **Deshacer** anula un pago.
+- El Dashboard muestra la **próxima cuota** (en rojo si está atrasada). Requiere "Instalar / actualizar hojas"
+  (hojas nuevas `Creditos` y `Credito_Cuotas`).
+
 ## Préstamos sin interés (familiares, socios)
 
 - Finanzas → **Nuevo movimiento** → Ingreso · **Préstamo recibido**, con quién prestó en el detalle. Al devolver:

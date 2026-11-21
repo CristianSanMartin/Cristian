@@ -14,6 +14,7 @@
     const r = GS.resumenDinero();
     const t = GS.porAbonarTuu();
     const prest = GS.prestamos();
+    const proxCuota = GS.proximaCuotaCredito();
     const debePrest = prest.reduce((s, x) => s + x.saldo, 0);
     const nPrest = prest.filter((x) => x.saldo > 0).length;
     const a = r.abierta;
@@ -26,6 +27,9 @@
         ? r.nPorPagar + (r.nPorPagar === 1 ? ' factura de compra' : ' facturas de compra') + ' · la más antigua del ' + fmt.date(r.pagarDesde)
         : 'Todas pagadas') + ' · ' + (verPagar ? 'ocultar ▴' : 'ver ▾')) + '</div>' +
       '<div class="kpi-clic" data-action="verPorCobrar" title="Ver quién debe">' + kpi('Por cobrar a clientes', fmt.money(r.porCobrar), (r.nPorCobrar ? r.nPorCobrar + (r.nPorCobrar === 1 ? ' venta con deuda' : ' ventas con deuda') : 'Nadie debe') + ' · ' + (verCobrar ? 'ocultar ▴' : 'ver ▾')) + '</div>' +
+      // Crédito bancario: la próxima cuota (en rojo si está atrasada).
+      (proxCuota ? '<div class="kpi-clic" data-action="irCreditos" title="Ver los créditos">' + kpi('Próxima cuota crédito', '<span class="' + (proxCuota.fecha < GS.state.data.hoy ? 'text-danger' : '') + '">' + fmt.money(proxCuota.total) + '</span>',
+        fmt.date(proxCuota.fecha) + (proxCuota.fecha < GS.state.data.hoy ? ' · atrasada' : '') + ' · ' + esc(proxCuota.credito.banco) + ' · cuota ' + proxCuota.numero + ' de ' + proxCuota.credito.cuotas.length + ' · ver →') + '</div>' : '') +
       // Préstamos sin interés: solo aparece cuando hay alguno registrado.
       (prest.length ? '<div class="kpi-clic" data-action="verPrestamos" title="Ver a quién se le debe">' + kpi('Préstamos por pagar', '<span class="' + (debePrest ? 'text-danger' : '') + '">' + fmt.money(debePrest) + '</span>',
         (nPrest ? nPrest + (nPrest === 1 ? ' persona' : ' personas') + ' · sin interés' : 'Todo devuelto') + ' · ' + (verPrestamos ? 'ocultar ▴' : 'ver ▾')) + '</div>' : '') +
@@ -63,6 +67,7 @@
   GS.actions.verPorPagar = () => { verPagar = !verPagar; GS.render(); };
   let verPrestamos = false;
   GS.actions.verPrestamos = () => { verPrestamos = !verPrestamos; GS.render(); };
+  GS.actions.irCreditos = () => { GS.filters('finanzas', { tab: 'movimientos', anio: '', q: '' }).tab = 'creditos'; GS.go('finanzas'); };
   GS.actions.irPrestamos = () => { GS.filters('finanzas', { tab: 'movimientos', anio: '', q: '' }).tab = 'prestamos'; GS.go('finanzas'); };
   let verCobrar = false;
   GS.actions.verPorCobrar = () => { verCobrar = !verCobrar; GS.render(); };

@@ -507,6 +507,136 @@
     return c && GS.detalleCompra ? GS.detalleCompra(c) : '';
   };
 
+  /* ---------- créditos bancarios ---------- */
+
+  const creditosVigentes = () => (data().creditos || []).filter((c) => c.estado === 'vigente');
+  /** Próxima cuota de todos los créditos vigentes (la más cercana), para el Dashboard. */
+  GS.proximaCuotaCredito = () => {
+    const prox = creditosVigentes().filter((c) => c.proxima).map((c) => Object.assign({ credito: c }, c.proxima)).sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
+    return prox[0] || null;
+  };
+  function vistaCreditos() {
+    const lista = data().creditos || [];
+    const admin = GS.puede('admin');
+    const op = GS.puede('operador');
+    const hoy = data().hoy;
+    return '<div class="btn-row" style="margin:0 0 12px;">' + (admin ? '<button class="btn" data-action="nuevoCredito">' + GS.icon('plus', 2.4) + 'Registrar crédito</button>' : '') + '</div>' +
+      (lista.length ? lista.map((c) => '<div class="panel" style="margin-bottom:16px;"><div class="panel-head"><h3>' + esc(c.banco) + (c.operacion ? ' · Op. ' + esc(c.operacion) : '') + '</h3>' +
+        '<span class="tag">' + (c.estado === 'pagado' ? 'Pagado' : 'Vigente') + ' · ' + esc(c.id) + '</span></div><div class="panel-body">' +
+        '<div class="kpi-grid">' +
+          kpi('Depositado', fmt.money(c.montoLiquido), fmt.date(c.fecha) + (c.gastosIniciales ? ' · gastos iniciales ' + fmt.money(c.gastosIniciales) : '')) +
+          kpi('Deuda de capital', '<span class="' + (c.saldoCapital ? 'text-danger' : 'text-success') + '">' + fmt.money(c.saldoCapital) + '</span>', 'de ' + fmt.money(c.montoCredito) + ' · tasa ' + String(c.tasaMensual).replace('.', ',') + '% mensual') +
+          kpi('Próxima cuota', c.proxima ? fmt.money(c.proxima.total) : '—', c.proxima ? '<span class="' + (c.proxima.fecha < hoy ? 'text-danger' : '') + '">' + fmt.date(c.proxima.fecha) + (c.proxima.fecha < hoy ? ' · atrasada' : '') + '</span> · cuota ' + c.proxima.numero + ' de ' + c.cuotas.length : 'todas pagadas') +
+          kpi('Costo del crédito', fmt.money(c.costoTotal), 'intereses, seguro, comisiones y gastos · pagado ' + fmt.money(c.interesesPagados)) +
+        '</div>' +
+        '<div class="table-wrap"><table class="data-table" style="min-width:0"><thead><tr><th class="right">N°</th><th>Vencimiento</th><th class="right">Cuota</th><th class="right">Capital</th><th class="right">Intereses y otros</th><th>Estado</th><th></th></tr></thead><tbody>' +
+          c.cuotas.map((q) => '<tr class="' + (q.estado === 'pagada' ? 'row-muted' : '') + '"><td class="cell-num right">' + q.numero + '</td><td class="nowrap">' + fmt.date(q.fecha) + '</td>' +
+            '<td class="cell-num right"><strong>' + fmt.money(q.total) + '</strong></td><td class="cell-num right">' + fmt.money(q.capital) + '</td><td class="cell-num right">' + fmt.money(q.interes) + '</td>' +
+            '<td>' + (q.estado === 'pagada' ? '<span class="badge st-ok">Pagada ' + fmt.date(q.fechaPago) + '</span>' : q.fecha < hoy ? '<span class="badge st-cancelada">Atrasada</span>' : '<span class="badge st-pedido">Pendiente</span>') + '</td>' +
+            '<td><div class="row-actions">' + (q.estado === 'pagada'
+              ? (admin ? '<button class="btn small ghost" data-action="deshacerPagoCredito" data-id="' + esc(q.id) + '" title="Deshacer el pago (sus movimientos quedan anulados)">Deshacer</button>' : '')
+              : (op ? '<button class="btn small secondary" data-action="pagarCuotaCredito" data-id="' + esc(q.id) + '">Pagar</button>' : '') + (admin ? GS.iconBtn('editarCuotaCredito', q.id, 'edit', 'Corregir con el calendario del banco') : '')) + '</div></td></tr>').join('') +
+        '</tbody></table></div>' +
+        '<p class="table-note">Pagar una cuota registra en Finanzas el capital ("Pago de crédito") y el resto como "Gastos financieros" (intereses, seguro, comisiones). El reparto de cada cuota se propone a la tasa mensual: corrígelo con el lápiz cuando tengas el calendario de vencimiento del banco.' +
+          (admin && !c.cuotas.some((q) => q.estado === 'pagada') ? ' <a href="#" class="text-danger" data-action="anularCredito" data-id="' + esc(c.id) + '">Anular crédito</a>' : '') + '</p>' +
+        '</div></div>').join('')
+        : GS.empty('Sin créditos', 'Registra un crédito bancario con su calendario de cuotas: el depósito, los gastos iniciales y cada cuota quedan en Finanzas.', 'finanzas'));
+  }
+  // Calendario propuesto (igual que el servidor): amortización francesa a la tasa mensual; el resto de la cuota es interés y otros.
+  function calendarioCredito(monto, tasa, n, valor, primer) {
+    const r = tasa / 100;
+    const fr = r ? monto * r / (1 - Math.pow(1 + r, -n)) : monto / n;
+    let saldo = monto;
+    const res = [];
+    for (let k = 1; k <= n; k++) {
+      const int = saldo * r;
+      const cap = Math.min(k === n ? saldo : Math.round(fr - int), saldo);
+      const d = new Date(primer + 'T12:00:00Z');
+      const dia = d.getUTCDate();
+      d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() + k - 1);
+      const ultimo = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
+      d.setUTCDate(Math.min(dia, ultimo));
+      res.push({ numero: k, fecha: d.toISOString().slice(0, 10), total: valor || Math.round(fr), capital: Math.round(cap) });
+      saldo -= Math.round(cap);
+    }
+    return res;
+  }
+  GS.actions.nuevoCredito = () => {
+    const c = data().catalogos;
+    GS.formModal({
+      title: 'Registrar crédito bancario',
+      size: 'wide',
+      submitLabel: 'Registrar crédito',
+      fields: () => '<div class="form-grid">' +
+        '<div class="form-field"><label>Banco *</label><input name="banco" maxlength="60" placeholder="Nombre del banco"></div>' +
+        '<div class="form-field"><label>N° de operación</label><input name="operacion" maxlength="40"></div>' +
+        '<div class="form-field"><label>Fecha del depósito *</label><input type="date" name="fecha" value="' + esc(data().hoy) + '"></div>' +
+        '<div class="form-field"><label>Cuenta</label><select name="cuenta">' + GS.options(Object.keys(c.cuentas).map((k) => ({ value: k, label: c.cuentas[k] })), 'banco') + '</select></div>' +
+        '<div class="form-field"><label>Monto líquido (depositado) *</label><input type="number" name="montoLiquido" min="1" step="1"></div>' +
+        '<div class="form-field"><label>Gastos iniciales (impuesto + notario)</label><input type="number" name="gastosIniciales" min="0" step="1" placeholder="0"></div>' +
+        '<div class="form-field"><label>Tasa de interés mensual (%)</label><input type="number" name="tasaMensual" min="0" step="0.01" placeholder="Ej: 1.25"></div>' +
+        '<div class="form-field"><label>N° de cuotas *</label><input type="number" name="cuotas" min="1" max="120" step="1"></div>' +
+        '<div class="form-field"><label>Valor de la cuota *</label><input type="number" name="valorCuota" min="1" step="1"></div>' +
+        '<div class="form-field"><label>Primer vencimiento *</label><input type="date" name="primerVencimiento"></div>' +
+        '<div class="form-field full"><label>Notas</label><input name="notas" maxlength="300" placeholder="Ej: garantía, CAE, seguro"></div></div>' +
+        '<div data-cr-prev></div>',
+      onMount: (form) => {
+        const upd = () => {
+          const v = (k) => form.elements[k].value;
+          const monto = (Number(v('montoLiquido')) || 0) + (Number(v('gastosIniciales')) || 0);
+          const n = Number(v('cuotas')) || 0;
+          const prev = form.querySelector('[data-cr-prev]');
+          if (!monto || !n || !v('primerVencimiento')) { prev.innerHTML = '<p class="hint">Completa monto, cuotas, valor de la cuota y primer vencimiento para ver el calendario.</p>'; return; }
+          const cal = calendarioCredito(monto, Number(String(v('tasaMensual')).replace(',', '.')) || 0, n, Number(v('valorCuota')) || 0, v('primerVencimiento'));
+          const total = cal.reduce((t, q) => t + q.total, 0);
+          prev.innerHTML = '<p class="hint"><strong>Deuda de capital ' + fmt.money(monto) + '</strong> · ' + n + ' cuotas por ' + fmt.money(total) + ' · <strong>costo del crédito ' + fmt.money(total - (Number(v('montoLiquido')) || 0)) + '</strong> (intereses, seguro, comisiones y gastos iniciales).</p>' +
+            '<div class="table-wrap"><table class="data-table" style="min-width:0"><thead><tr><th class="right">N°</th><th>Vencimiento</th><th class="right">Cuota</th><th class="right">Capital</th><th class="right">Intereses y otros</th></tr></thead><tbody>' +
+            cal.map((q) => '<tr><td class="cell-num right">' + q.numero + '</td><td>' + fmt.date(q.fecha) + '</td><td class="cell-num right">' + fmt.money(q.total) + '</td><td class="cell-num right">' + fmt.money(q.capital) + '</td><td class="cell-num right">' + fmt.money(q.total - q.capital) + '</td></tr>').join('') +
+            '</tbody></table></div><p class="table-note">Reparto propuesto a la tasa mensual. Después puedes corregir cada cuota con el calendario de vencimiento del banco.</p>';
+        };
+        form.addEventListener('input', upd);
+        upd();
+      },
+      onSubmit: (v) => GS.mutate('crearCredito', v, (r) => 'Crédito ' + r.id + ' registrado: ' + r.cuotas + ' cuotas'),
+    });
+  };
+  const cuotaCredito = (id) => { for (const c of data().creditos || []) { const q = c.cuotas.find((x) => x.id === id); if (q) return { c: c, q: q }; } return null; };
+  GS.actions.pagarCuotaCredito = (id) => {
+    const x = cuotaCredito(id);
+    if (!x) return;
+    const cat = data().catalogos;
+    GS.formModal({
+      title: 'Pagar cuota ' + x.q.numero + ' de ' + x.c.cuotas.length,
+      submitLabel: 'Registrar pago',
+      fields: () => '<p class="hint" style="margin-top:0;">' + esc(x.c.banco) + ' · vence el ' + fmt.date(x.q.fecha) + '</p>' +
+        '<div class="form-grid"><div class="form-field"><label>Fecha del pago *</label><input type="date" name="fecha" value="' + esc(x.q.fecha < data().hoy ? data().hoy : x.q.fecha) + '"></div>' +
+        '<div class="form-field"><label>Cuenta</label><select name="cuenta">' + GS.options(Object.keys(cat.cuentas).map((k) => ({ value: k, label: cat.cuentas[k] })), x.c.cuenta || 'banco') + '</select></div></div>' +
+        '<p class="hint">Cuota <strong>' + fmt.money(x.q.total) + '</strong> = capital ' + fmt.money(x.q.capital) + ' (baja la deuda) + ' + fmt.money(x.q.interes) + ' de intereses y otros (gasto financiero).</p>',
+      onSubmit: (v) => GS.mutate('pagarCuotaCredito', { id: id, fecha: v.fecha, cuenta: v.cuenta }, 'Cuota ' + x.q.numero + ' pagada'),
+    });
+  };
+  GS.actions.editarCuotaCredito = (id) => {
+    const x = cuotaCredito(id);
+    if (!x) return;
+    GS.formModal({
+      title: 'Cuota ' + x.q.numero + ' · según el calendario del banco',
+      submitLabel: 'Guardar',
+      fields: () => '<div class="form-grid"><div class="form-field"><label>Vencimiento *</label><input type="date" name="fecha" value="' + esc(x.q.fecha) + '"></div>' +
+        '<div class="form-field"><label>Valor de la cuota *</label><input type="number" name="total" min="1" step="1" value="' + x.q.total + '"></div>' +
+        '<div class="form-field"><label>Capital (amortización) *</label><input type="number" name="capital" min="0" step="1" value="' + x.q.capital + '"></div></div>' +
+        '<p class="hint">Lo que no es capital (intereses, seguro, comisión FOGAPE) se registra como gasto financiero al pagar. Si cambias el capital de una cuota, ajusta las otras para que sumen la deuda.</p>',
+      onSubmit: (v) => GS.mutate('editarCuotaCredito', Object.assign({ id: id }, v), 'Cuota ' + x.q.numero + ' actualizada'),
+    });
+  };
+  GS.actions.deshacerPagoCredito = (id) => GS.confirm({
+    title: 'Deshacer pago', message: 'Los movimientos de ese pago quedan anulados y la cuota vuelve a pendiente.', confirmLabel: 'Deshacer', danger: true,
+    onConfirm: () => GS.mutate('deshacerPagoCredito', { id: id }, 'Pago deshecho'),
+  });
+  GS.actions.anularCredito = (id) => GS.confirm({
+    title: 'Anular crédito', message: 'El crédito y sus movimientos (depósito y gastos iniciales) quedan anulados. Úsalo solo si se registró mal.', confirmLabel: 'Anular', danger: true,
+    onConfirm: () => GS.mutate('anularCredito', { id: id }, 'Crédito anulado'),
+  });
+
   const prestamosPorPagar = () => GS.prestamos().reduce((t, x) => t + x.saldo, 0);
 
   GS.views.finanzas = {
@@ -519,7 +649,7 @@
         '<div class="page-head"><div><h1>Finanzas</h1><p>Resumen mensual del negocio y libro de movimientos: aportes, gastos, pagos al SII y compras por monto.</p></div>' +
         '<div class="btn-row"><div class="select-input"><select data-filter="finanzas.anio" aria-label="Año">' + GS.options(anios(), f.anio) + '</select></div>' +
         (GS.puede('operador') ? '<button class="btn" data-action="nuevoMovimiento">' + GS.icon('plus', 2.4) + 'Nuevo movimiento</button>' : '') + '</div></div>' +
-        '<div class="tabs">' + tab('movimientos', 'Movimientos') + tab('cobrar', 'Cuentas por cobrar' + (GS.cuentasPorCobrar().length ? ' <span class="pill soon">' + fmt.money(GS.cuentasPorCobrar().reduce((t, x) => t + x.total, 0)) + '</span>' : '')) + tab('prestamos', 'Préstamos por pagar' + (prestamosPorPagar() ? ' <span class="pill soon">' + fmt.money(prestamosPorPagar()) + '</span>' : '')) + tab('resumen', 'Resumen mensual') + '</div>' +
+        '<div class="tabs">' + tab('movimientos', 'Movimientos') + tab('cobrar', 'Cuentas por cobrar' + (GS.cuentasPorCobrar().length ? ' <span class="pill soon">' + fmt.money(GS.cuentasPorCobrar().reduce((t, x) => t + x.total, 0)) + '</span>' : '')) + tab('creditos', 'Créditos' + (creditosVigentes().length ? ' <span class="pill soon">' + fmt.money(creditosVigentes().reduce((t, x) => t + x.saldoCapital, 0)) + '</span>' : '')) + tab('prestamos', 'Préstamos por pagar' + (prestamosPorPagar() ? ' <span class="pill soon">' + fmt.money(prestamosPorPagar()) + '</span>' : '')) + tab('resumen', 'Resumen mensual') + '</div>' +
         '<div id="fin-cuerpo"></div>';
       this.update();
     },
@@ -572,6 +702,7 @@
       }
       if (f.tab === 'cobrar') { cuerpo.innerHTML = GS.tablaPorCobrar(); return; }
       if (f.tab === 'prestamos') { cuerpo.innerHTML = GS.tablaPrestamos(); return; }
+      if (f.tab === 'creditos') { cuerpo.innerHTML = vistaCreditos(); return; }
       const r = resumen(anio);
       const total = (fila) => fila.valores.reduce((t, x) => t + x, 0);
       // Capital: aportes menos retiros de capital (devolución de aportes). La compra de acciones /
@@ -653,7 +784,8 @@
   function formMovimiento(m, pre) {
     const c = data().catalogos;
     const x = m || { fecha: data().hoy, tipo: (pre && pre.tipo) || 'egreso', categoria: (pre && pre.categoria) || 'gav', subcategoria: (pre && pre.subcategoria) || '', monto: (pre && pre.monto) || '', cuenta: '', referencia: '', notas: '', iva: 0 };
-    const opcionesCat = (tipo, sel) => GS.options(Object.keys(c.categoriasMovimiento[tipo]).map((k) => ({ value: k, label: c.categoriasMovimiento[tipo][k] })), sel);
+    // El crédito bancario y el pago de su capital se registran desde Finanzas → Créditos (quedan ligados a sus cuotas).
+    const opcionesCat = (tipo, sel) => GS.options(Object.keys(c.categoriasMovimiento[tipo]).filter((k) => (k !== 'credito' && k !== 'pago_credito') || k === sel).map((k) => ({ value: k, label: c.categoriasMovimiento[tipo][k] })), sel);
     const tasa = data().app.iva;
     GS.formModal({
       title: m ? 'Editar movimiento ' + m.id : (pre && pre.titulo) || 'Nuevo movimiento',

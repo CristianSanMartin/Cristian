@@ -1496,6 +1496,40 @@ test("Story IG: biblioteca de fondos, fondo y oscurecer guardados en el torneo",
   assert.equal(d.torneos[0].fondo, "", "vuelve al diseño GS Prime");
 });
 
+test("crédito bancario: depósito, gastos iniciales, calendario de cuotas, pagar y deshacer", () => {
+  const s = createServer();
+  // Datos inventados (no son de un crédito real).
+  const r = s.ok("crearCredito", { banco: "Banco Ejemplo", operacion: "000777", fecha: "2026-11-02", montoLiquido: 3000000, gastosIniciales: 15000,
+    tasaMensual: "1.5", cuotas: 4, valorCuota: 790000, primerVencimiento: "2027-01-10" }).result;
+  assert.equal(r.montoCredito, 3015000);
+  let d = s.ok("bootstrap").data;
+  const c = d.creditos[0];
+  assert.deepEqual(c.cuotas.map(q => q.fecha), ["2027-01-10", "2027-02-10", "2027-03-10", "2027-04-10"]);
+  assert.ok(c.cuotas.every(q => q.total === 790000 && q.capital > 0 && q.capital < q.total));
+  assert.equal(c.cuotas.reduce((t, q) => t + q.capital, 0), 3015000, "el capital suma la deuda");
+  assert.equal(c.costoTotal, 4 * 790000 - 3000000, "costo total = cuotas − líquido");
+  // En Finanzas: ingreso por la deuda y gasto financiero por los gastos iniciales → entra el líquido.
+  const movs = d.movimientos.filter(m => m.referencia === c.id);
+  assert.deepEqual(movs.map(m => [m.categoria, m.monto]).sort(), [["credito", 3015000], ["gasto_financiero", 15000]]);
+  // Corregir una cuota con el calendario del banco y pagarla.
+  const q1 = c.cuotas[0];
+  assert.match(errorDe(s.call("editarCuotaCredito", { id: q1.id, fecha: "2027-01-10", total: 790000, capital: 900000 })), /no puede ser mayor/);
+  s.ok("editarCuotaCredito", { id: q1.id, fecha: "2027-01-10", total: 790000, capital: q1.capital });
+  const pago = s.ok("pagarCuotaCredito", { id: q1.id, fecha: "2027-01-10" }).result;
+  assert.equal(pago.capital + pago.intereses, 790000);
+  d = s.ok("bootstrap").data;
+  assert.equal(d.creditos[0].saldoCapital, 3015000 - q1.capital);
+  assert.equal(d.creditos[0].proxima.numero, 2);
+  assert.deepEqual(d.movimientos.filter(m => m.referencia === q1.id && !m.anulado).map(m => m.categoria).sort(), ["gasto_financiero", "pago_credito"]);
+  assert.match(errorDe(s.call("anularCredito", { id: c.id })), /cuotas pagadas/);
+  s.ok("deshacerPagoCredito", { id: q1.id });
+  assert.equal(s.ok("bootstrap").data.creditos[0].saldoCapital, 3015000);
+  s.ok("anularCredito", { id: c.id });
+  d = s.ok("bootstrap").data;
+  assert.equal(d.creditos.length, 0);
+  assert.ok(d.movimientos.filter(m => m.referencia === c.id).every(m => m.anulado));
+});
+
 test("comisión TUU con IVA: calza con el informe de abonos de TUU", () => {
   const s = createServer();
   const casos = [[55000, 581], [73000, 746], [18000, 243], [10000, 169], [8000, 151]];

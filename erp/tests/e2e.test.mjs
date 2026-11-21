@@ -1245,3 +1245,39 @@ test("Story IG: subir un fondo, elegirlo, oscurecerlo y guardarlo", { skip }, as
     await browser.close();
   }
 });
+
+test("Finanzas → Créditos: registrar el crédito con su calendario, pagar una cuota y verla en el Dashboard", { skip }, async () => {
+  const browser = await chromium.launch();
+  try {
+    const { page, errores } = await abrir(browser);
+    await page.click('[data-nav="finanzas"]');
+    await page.click('[data-action="tab"][data-id="finanzas.creditos"]');
+    await page.click('[data-action="nuevoCredito"]');
+    const m = modal(page);
+    await m.locator('[name="banco"]').fill("Banco Ejemplo");
+    await m.locator('[name="operacion"]').fill("000777");
+    await m.locator('[name="montoLiquido"]').fill("3000000");
+    await m.locator('[name="gastosIniciales"]').fill("15000");
+    await m.locator('[name="tasaMensual"]').fill("1.5");
+    await m.locator('[name="cuotas"]').fill("4");
+    await m.locator('[name="valorCuota"]').fill("790000");
+    await m.locator('[name="primerVencimiento"]').fill("2031-01-05");
+    assert.match(await m.locator("[data-cr-prev]").textContent(), /Deuda de capital \$3\.015\.000.*4 cuotas por \$3\.160\.000.*costo del crédito \$160\.000/s);
+    assert.equal(await m.locator("[data-cr-prev] tbody tr").count(), 4);
+    await m.locator('button[type="submit"]').click();
+    await toast(page, /Crédito CRE-\d{4} registrado: 4 cuotas/);
+    await cerrado(page);
+    assert.match(await page.locator("#fin-cuerpo").textContent(), /Banco Ejemplo · Op\. 000777.*Depositado\$3\.000\.000.*Deuda de capital\$3\.015\.000/s);
+    // Pagar la primera cuota.
+    await page.locator('#fin-cuerpo [data-action="pagarCuotaCredito"]').first().click();
+    await modal(page).locator('button[type="submit"]').click();
+    await toast(page, /Cuota 1 pagada/);
+    assert.match(await page.locator("#fin-cuerpo tbody tr").first().textContent(), /Pagada/);
+    // Dashboard: próxima cuota (la 2).
+    await page.click('[data-nav="dashboard"]');
+    assert.match(await page.locator('[data-action="irCreditos"]').textContent(), /Próxima cuota crédito\$790\.000.*05-02-2031.*cuota 2 de 4/s);
+    assert.deepEqual(errores, []);
+  } finally {
+    await browser.close();
+  }
+});

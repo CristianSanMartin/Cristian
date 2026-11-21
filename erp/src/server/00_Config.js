@@ -15,7 +15,7 @@
 
 const APP = {
   nombre: 'GS Prime ERP',
-  version: '2.32.0',
+  version: '2.33.0',
   tz: 'America/Santiago',
   iva: 0.19,
 };
@@ -225,6 +225,24 @@ const SCHEMA = {
     key: 'id',
     cols: Object.assign({ id: 's', nombre: 's', imagen: 's' }, AUDIT_COLS),
   },
+  /**
+   * Créditos bancarios (CRE-0001): lo depositado (monto líquido), los gastos iniciales (impuesto, notario) y la deuda
+   * de capital (monto del crédito = líquido + gastos). Sus movimientos de Finanzas se crean desde aquí.
+   */
+  Creditos: {
+    key: 'id',
+    cols: Object.assign({
+      id: 's', banco: 's', operacion: 's', fecha: 'd', montoLiquido: 'n', gastosIniciales: 'n', montoCredito: 'n', tasaMensual: 'n',
+      valorCuota: 'n', cuenta: 's', notas: 's', estado: 's', movIngreso: 's', movGasto: 's',
+    }, AUDIT_COLS),
+  },
+  /** Cuotas de un crédito: capital (baja la deuda) + intereses y otros cargos (gasto financiero). */
+  Credito_Cuotas: {
+    key: 'id',
+    cols: Object.assign({
+      id: 's', creditoId: 's', numero: 'n', fecha: 'd', total: 'n', capital: 'n', estado: 's', fechaPago: 'd', movCapital: 's', movInteres: 's',
+    }, AUDIT_COLS),
+  },
   /** Fondos para la Story IG (FON-0001): imagen 1080 × 1920 en Drive ("drive:<id>"). */
   Story_Fondos: {
     key: 'id',
@@ -284,9 +302,9 @@ const PREFIJOS_VENTA = { 'Singles': 'SGL', 'Torneo': 'TOR', 'Sobres sueltos': 'S
  * es lo que la tienda le debe. No son venta ni gasto: no cambian la ganancia, solo la caja.
  */
 const CATEGORIAS_MOVIMIENTO = {
-  ingreso: { aporte: 'Patrimonio · aporte de capital', prestamo: 'Préstamo recibido', devolucion_sii: 'Devolución SII', otro_ingreso: 'Otro ingreso' },
+  ingreso: { aporte: 'Patrimonio · aporte de capital', prestamo: 'Préstamo recibido', credito: 'Crédito bancario recibido', devolucion_sii: 'Devolución SII', otro_ingreso: 'Otro ingreso' },
   egreso: {
-    compra: 'Compra por monto', gav: 'GAV', gopm: 'GOPM (puesta en marcha)', sii: 'Pago SII', comision: 'Comisión', torneo: 'Torneos (juez y gastos)', retiro: 'Patrimonio · retiro de capital', pago_prestamo: 'Pago de préstamo', otro_egreso: 'Otro egreso',
+    compra: 'Compra por monto', gav: 'GAV', gopm: 'GOPM (puesta en marcha)', sii: 'Pago SII', comision: 'Comisión', torneo: 'Torneos (juez y gastos)', retiro: 'Patrimonio · retiro de capital', pago_prestamo: 'Pago de préstamo', pago_credito: 'Pago de crédito (capital)', gasto_financiero: 'Gastos financieros (intereses, comisiones)', otro_egreso: 'Otro egreso',
   },
 };
 const CUENTAS = { caja: 'Caja (efectivo)', banco: 'Banco', tuu: 'TUU' };
