@@ -511,7 +511,7 @@
         return '<span title="' + esc(desglose) + '"><strong>' + fmt.money(r.costo + ivaU) + '</strong><div class="cell-dim nowrap">' + fmt.money(r.costo) + ' + ' + fmt.money(ivaU) + ' IVA' +
           (r.unCosto ? '' : ' · prom.') + '</div></span>';
       } },
-    { id: 'precio', label: 'Precio venta', right: true, valor: (r) => r.precioVenta, texto: (r) => fmt.money(r.precioVenta), celda: (r) => (r.precioVenta ? fmt.money(r.precioVenta) : '—') },
+    { id: 'precio', label: 'Precio venta', right: true, valor: (r) => r.precioVenta, texto: (r) => fmt.money(r.precioVenta), celda: (r) => (r.precioVenta ? '<strong class="text-gold">' + fmt.money(r.precioVenta) + '</strong>' : '—') },
     // Sin unidades disponibles no hay ganancia por proyectar: se muestra la ya obtenida.
     // Ganancia proyectada de lo que queda (incluye lo en tránsito: ya tiene costo y precio); si no queda nada, la obtenida.
     { id: 'ganT', label: 'Ganancia', right: true, valor: (r) => (r.disponible || r.transito ? r.gananciaProyectada + r.gananciaTransito : r.gananciaAcumulada),
