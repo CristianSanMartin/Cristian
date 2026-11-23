@@ -189,6 +189,7 @@
       const mes = data().hoy.slice(0, 7);
       const delMes = ts.filter((t) => t.fecha.slice(0, 7) === mes);
       const suma = (arr, k) => arr.reduce((s, t) => s + t.resultado[k], 0);
+      const sumaB = (arr, k) => arr.reduce((s, t) => s + t.resultado.bruto[k], 0);
       const f = GS.filters('torneos', { tab: 'lista' });
       const story = op && f.tab === 'story';
       const tab = (id, label) => '<button class="tab' + ((id === 'story') === story ? ' active' : '') + '" data-action="tab" data-id="torneos.' + id + '">' + label + '</button>';
@@ -206,9 +207,9 @@
         '<div class="kpi-grid">' +
         kpi('Torneos del mes', delMes.length, fmt.num(suma(delMes, 'jugadores')) + ' jugadores') +
         kpi('Inscripciones del mes', fmt.money(suma(delMes, 'inscripciones')), 'con IVA') +
-        kpi('Margen del mes', '<span class="' + signo(suma(delMes, 'margen')) + '">' + fmt.money(suma(delMes, 'margen')) + '</span>', 'inscripciones − comisiones − premios − juez') +
+        kpi('Margen del mes', '<span class="' + signo(sumaB(delMes, 'margen')) + '">' + fmt.money(sumaB(delMes, 'margen')) + '</span>', 'torneos · + ' + fmt.money(sumaB(delMes, 'gananciaPremios')) + ' de los premios en sus facturas') +
         kpi('Por cobrar', fmt.money(suma(ts, 'porCobrar')), 'inscripciones pendientes o adeudadas') + '</div>' +
-        '<div class="table-wrap"><table class="data-table"><thead><tr><th></th><th>Fecha</th><th>Torneo</th><th class="right">Jugadores</th><th class="right">Inscripciones</th><th class="right">Premios</th><th class="right">Juez</th><th class="right">Margen</th><th class="right">Por cobrar</th></tr></thead><tbody>' +
+        '<div class="table-wrap"><table class="data-table"><thead><tr><th></th><th>Fecha</th><th>Torneo</th><th class="right">Jugadores</th><th class="right">Inscripciones</th><th class="right">Premios</th><th class="right">Juez</th><th class="right">Margen</th><th class="right" title="Ganancia de los productos entregados como premio: precio torneo − costo con IVA (queda en sus facturas)">Margen premios</th><th class="right">Por cobrar</th></tr></thead><tbody>' +
         (ts.length ? ts.map((t) => {
           const r = t.resultado;
           const open = abiertos.has(t.id);
@@ -218,9 +219,12 @@
             '<td class="cell-num right">' + fmt.money(r.inscripciones) + '</td><td class="cell-num right">' + (r.premiosBruto ? fmt.money(r.premiosBruto) : '—') + '</td>' +
             '<td class="cell-num right">' + (r.juez ? fmt.money(r.juez) : '—') + '</td>' +
             '<td class="cell-num right"><strong class="' + signo(r.bruto.margen) + '">' + fmt.money(r.bruto.margen) + '</strong><div class="cell-dim">' + Math.round(r.bruto.pct * 100) + '%</div></td>' +
+            // Margen de los productos sellados entregados como premio (lo que gana su factura), aparte del margen del torneo.
+            '<td class="cell-num right">' + (r.bruto.gananciaPremios ? '<span class="' + signo(r.bruto.gananciaPremios) + '">' + fmt.money(r.bruto.gananciaPremios) + '</span>' +
+              '<div class="cell-dim">' + Math.round(r.bruto.pctPremios * 100) + '%</div>' : '—') + '</td>' +
             '<td class="cell-num right">' + (r.porCobrar ? '<span class="text-gold">' + fmt.money(r.porCobrar) + '</span>' : '—') + '</td></tr>' +
-            (open ? '<tr class="detalle-row"><td colspan="9">' + detalle(t) + '</td></tr>' : '');
-        }).join('') : '<tr><td colspan="9">' + GS.empty('Sin torneos', 'Sube el archivo .tdf que exporta TOM al terminar el torneo.', 'torneos') + '</td></tr>') +
+            (open ? '<tr class="detalle-row"><td colspan="10">' + detalle(t) + '</td></tr>' : '');
+        }).join('') : '<tr><td colspan="10">' + GS.empty('Sin torneos', 'Sube el archivo .tdf que exporta TOM al terminar el torneo.', 'torneos') + '</td></tr>') +
         '</tbody></table></div>';
       const input = document.getElementById('tdf-input');
       if (input) input.addEventListener('change', async () => {

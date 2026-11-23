@@ -528,9 +528,10 @@ const Torneos = {
           // comisiones TUU. La ganancia de los premios en sus facturas, también en bruto (precio − costo con IVA).
           bruto: (() => {
             const m = inscripciones - premiosBruto - (t.juez || 0);
-            const g = Math.round(pr.reduce((s, x) => s + x.precio * x.cantidad, 0) - premiosCosto * (1 + APP.iva));
+            const v = pr.reduce((s, x) => s + x.precio * x.cantidad, 0);
+            const g = Math.round(v - premiosCosto * (1 + APP.iva));
             return { margen: m, pct: inscripciones ? m / inscripciones : 0, porJugador: jugadores.length ? m / jugadores.length : 0,
-              equilibrio: t.inscripcion > 0 ? Math.ceil((premiosBruto + (t.juez || 0)) / t.inscripcion) : 0, gananciaPremios: g, resultadoTienda: m + g };
+              equilibrio: t.inscripcion > 0 ? Math.ceil((premiosBruto + (t.juez || 0)) / t.inscripcion) : 0, gananciaPremios: g, pctPremios: v ? g / v : 0, resultadoTienda: m + g };
           })(),
           margenPct: insNeto ? margen / insNeto : 0, porJugador: jugadores.length ? margen / jugadores.length : 0,
           equilibrio: porJugador > 0 ? Math.ceil((premiosNeto + (t.juez || 0)) / porJugador) : 0,
