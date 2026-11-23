@@ -496,8 +496,10 @@
     '<div class="cell-dim">' + esc(l.edicion || '') + '</div></div></div>';
   const colsInv = [
     { id: 'producto', label: 'Producto', clase: 'col-prod', valor: (r) => r.ref.productoNombre, texto: (r) => r.ref.productoNombre + ' ' + r.ref.idioma, celda: (r) => producto(r.ref) },
-    { id: 'cantidad', label: 'Comprado', right: true, valor: (r) => r.cantidad, celda: (r) => fmt.num(r.cantidad) },
-    { id: 'vendidas', label: 'Vendidas', right: true, valor: (r) => r.vendidas, celda: (r) => (r.vendidas ? fmt.num(r.vendidas) : '—') + (r.salidas ? '<div class="cell-dim">+' + fmt.num(r.salidas) + ' salidas</div>' : '') },
+    // Unidades compradas / unidades que ya salieron (vendidas + salidas por premio, uso o merma).
+    { id: 'unidades', label: 'Compradas / salidas', right: true, valor: (r) => r.vendidas + (r.salidas || 0), texto: (r) => r.cantidad + ' / ' + (r.vendidas + (r.salidas || 0)),
+      celda: (r) => '<span class="nowrap" title="Compradas / vendidas o salidas">' + fmt.num(r.cantidad) + ' <span class="muted">/</span> ' + fmt.num(r.vendidas + (r.salidas || 0)) + '</span>' +
+        (r.salidas ? '<div class="cell-dim">' + fmt.num(r.vendidas) + ' vend. + ' + fmt.num(r.salidas) + ' salidas</div>' : '') },
     { id: 'disponible', label: 'Disponible', right: true, valor: (r) => r.disponible, celda: (r) => '<strong class="stock-num">' + fmt.num(r.disponible) + '</strong>' + (r.reservado ? '<div class="cell-dim" title="Reservadas en tickets de la caja del día">+' + r.reservado + ' reserv.</div>' : '') +
       (r.transito ? '<div><span class="badge st-parcial" title="De una orden de compra sin factura: se libera al confirmar la factura en Compras">+' + fmt.num(r.transito) + ' en tránsito</span></div>' : '') },
     // Costo con IVA (comparable con el precio de venta) y su desglose: neto + despacho + IVA.
