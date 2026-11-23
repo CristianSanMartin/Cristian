@@ -525,7 +525,8 @@
         '<span class="tag">' + (c.estado === 'pagado' ? 'Pagado' : 'Vigente') + ' · ' + esc(c.id) + '</span></div><div class="panel-body">' +
         '<div class="kpi-grid">' +
           kpi('Depositado', fmt.money(c.montoLiquido), fmt.date(c.fecha) + (c.gastosIniciales ? ' · gastos iniciales ' + fmt.money(c.gastosIniciales) : '')) +
-          kpi('Deuda de capital', '<span class="' + (c.saldoCapital ? 'text-danger' : 'text-success') + '">' + fmt.money(c.saldoCapital) + '</span>', 'de ' + fmt.money(c.montoCredito) + ' · tasa ' + String(c.tasaMensual).replace('.', ',') + '% mensual') +
+          // Lo que falta pagar con el costo del crédito incluido (las cuotas pendientes); abajo, cuánto es capital y cuánto costo.
+          kpi('Deuda total', '<span class="' + (c.porPagar ? 'text-danger' : 'text-success') + '">' + fmt.money(c.porPagar) + '</span>', 'capital ' + fmt.money(c.saldoCapital) + ' + costo del crédito ' + fmt.money(c.porPagar - c.saldoCapital) + ' · tasa ' + String(c.tasaMensual).replace('.', ',') + '% mensual') +
           kpi('Próxima cuota', c.proxima ? fmt.money(c.proxima.total) : '—', c.proxima ? '<span class="' + (c.proxima.fecha < hoy ? 'text-danger' : '') + '">' + fmt.date(c.proxima.fecha) + (c.proxima.fecha < hoy ? ' · atrasada' : '') + '</span> · cuota ' + c.proxima.numero + ' de ' + c.cuotas.length : 'todas pagadas') +
           kpi('Costo del crédito', fmt.money(c.costoTotal), 'intereses, seguro, comisiones y gastos · pagado ' + fmt.money(c.interesesPagados)) +
         '</div>' +
@@ -589,7 +590,7 @@
           if (!monto || !n || !v('primerVencimiento')) { prev.innerHTML = '<p class="hint">Completa monto, cuotas, valor de la cuota y primer vencimiento para ver el calendario.</p>'; return; }
           const cal = calendarioCredito(monto, Number(String(v('tasaMensual')).replace(',', '.')) || 0, n, Number(v('valorCuota')) || 0, v('primerVencimiento'));
           const total = cal.reduce((t, q) => t + q.total, 0);
-          prev.innerHTML = '<p class="hint"><strong>Deuda de capital ' + fmt.money(monto) + '</strong> · ' + n + ' cuotas por ' + fmt.money(total) + ' · <strong>costo del crédito ' + fmt.money(total - (Number(v('montoLiquido')) || 0)) + '</strong> (intereses, seguro, comisiones y gastos iniciales).</p>' +
+          prev.innerHTML = '<p class="hint"><strong>Deuda total ' + fmt.money(total) + '</strong> en ' + n + ' cuotas (capital ' + fmt.money(monto) + ' + costo ' + fmt.money(total - monto) + ') · <strong>costo del crédito ' + fmt.money(total - (Number(v('montoLiquido')) || 0)) + '</strong> (intereses, seguro, comisiones y gastos iniciales).</p>' +
             '<div class="table-wrap"><table class="data-table" style="min-width:0"><thead><tr><th class="right">N°</th><th>Vencimiento</th><th class="right">Cuota</th><th class="right">Capital</th><th class="right">Intereses y otros</th></tr></thead><tbody>' +
             cal.map((q) => '<tr><td class="cell-num right">' + q.numero + '</td><td>' + fmt.date(q.fecha) + '</td><td class="cell-num right">' + fmt.money(q.total) + '</td><td class="cell-num right">' + fmt.money(q.capital) + '</td><td class="cell-num right">' + fmt.money(q.total - q.capital) + '</td></tr>').join('') +
             '</tbody></table></div><p class="table-note">Reparto propuesto a la tasa mensual. Después puedes corregir cada cuota con el calendario de vencimiento del banco.</p>';
@@ -649,7 +650,7 @@
         '<div class="page-head"><div><h1>Finanzas</h1><p>Resumen mensual del negocio y libro de movimientos: aportes, gastos, pagos al SII y compras por monto.</p></div>' +
         '<div class="btn-row"><div class="select-input"><select data-filter="finanzas.anio" aria-label="Año">' + GS.options(anios(), f.anio) + '</select></div>' +
         (GS.puede('operador') ? '<button class="btn" data-action="nuevoMovimiento">' + GS.icon('plus', 2.4) + 'Nuevo movimiento</button>' : '') + '</div></div>' +
-        '<div class="tabs">' + tab('movimientos', 'Movimientos') + tab('cobrar', 'Cuentas por cobrar' + (GS.cuentasPorCobrar().length ? ' <span class="pill soon">' + fmt.money(GS.cuentasPorCobrar().reduce((t, x) => t + x.total, 0)) + '</span>' : '')) + tab('creditos', 'Créditos' + (creditosVigentes().length ? ' <span class="pill soon">' + fmt.money(creditosVigentes().reduce((t, x) => t + x.saldoCapital, 0)) + '</span>' : '')) + tab('prestamos', 'Préstamos por pagar' + (prestamosPorPagar() ? ' <span class="pill soon">' + fmt.money(prestamosPorPagar()) + '</span>' : '')) + tab('resumen', 'Resumen mensual') + '</div>' +
+        '<div class="tabs">' + tab('movimientos', 'Movimientos') + tab('cobrar', 'Cuentas por cobrar' + (GS.cuentasPorCobrar().length ? ' <span class="pill soon">' + fmt.money(GS.cuentasPorCobrar().reduce((t, x) => t + x.total, 0)) + '</span>' : '')) + tab('creditos', 'Créditos' + (creditosVigentes().length ? ' <span class="pill soon">' + fmt.money(creditosVigentes().reduce((t, x) => t + x.porPagar, 0)) + '</span>' : '')) + tab('prestamos', 'Préstamos por pagar' + (prestamosPorPagar() ? ' <span class="pill soon">' + fmt.money(prestamosPorPagar()) + '</span>' : '')) + tab('resumen', 'Resumen mensual') + '</div>' +
         '<div id="fin-cuerpo"></div>';
       this.update();
     },

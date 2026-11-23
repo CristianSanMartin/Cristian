@@ -1269,12 +1269,12 @@ test("Finanzas → Créditos: registrar el crédito con su calendario, pagar una
     await m.locator('[name="cuotas"]').fill("4");
     await m.locator('[name="valorCuota"]').fill("790000");
     await m.locator('[name="primerVencimiento"]').fill("2031-01-05");
-    assert.match(await m.locator("[data-cr-prev]").textContent(), /Deuda de capital \$3\.015\.000.*4 cuotas por \$3\.160\.000.*costo del crédito \$160\.000/s);
+    assert.match(await m.locator("[data-cr-prev]").textContent(), /Deuda total \$3\.160\.000 en 4 cuotas \(capital \$3\.015\.000 \+ costo \$145\.000\).*costo del crédito \$160\.000/s);
     assert.equal(await m.locator("[data-cr-prev] tbody tr").count(), 4);
     await m.locator('button[type="submit"]').click();
     await toast(page, /Crédito CRE-\d{4} registrado: 4 cuotas/);
     await cerrado(page);
-    assert.match(await page.locator("#fin-cuerpo").textContent(), /Banco Ejemplo · Op\. 000777.*Depositado\$3\.000\.000.*Deuda de capital\$3\.015\.000/s);
+    assert.match(await page.locator("#fin-cuerpo").textContent(), /Banco Ejemplo · Op\. 000777.*Depositado\$3\.000\.000.*Deuda total\$3\.160\.000capital \$3\.015\.000 \+ costo del crédito \$145\.000/s);
     // Pagar la primera cuota.
     await page.locator('#fin-cuerpo [data-action="pagarCuotaCredito"]').first().click();
     await modal(page).locator('button[type="submit"]').click();
