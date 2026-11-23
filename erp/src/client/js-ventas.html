@@ -404,8 +404,16 @@
       '</div>';
   }
 
-  GS.actions.verOc = () => { const f = GS.filters('ventas', { q: '', mes: '' }); f.verOc = !f.verOc; GS.render(); };
-  GS.actions.verMonto = () => { const f = GS.filters('ventas', { q: '', mes: '' }); f.verMonto = !f.verMonto; GS.render(); };
+  // Al desplegar, la lista queda a la vista desde su comienzo (el encabezado arriba), no desde el final.
+  const desplegar = (k) => {
+    const f = GS.filters('ventas', { q: '', mes: '' });
+    f[k] = !f[k];
+    GS.render();
+    const head = f[k] && document.querySelector('.desplegable[data-action="' + k + '"]');
+    if (head) head.closest('.panel').scrollIntoView({ block: 'start' });
+  };
+  GS.actions.verOc = () => desplegar('verOc');
+  GS.actions.verMonto = () => desplegar('verMonto');
 
   GS.views.ventas = {
     title: 'Ventas',
