@@ -486,8 +486,10 @@
       r.gananciaUnidad = base ? tot((l) => l.gananciaUnidad) / base : 0;
       r.precioVenta = r.ref.precioVenta;
       r.unCosto = new Set(r.lotes.map((l) => Math.round(l.costo))).size === 1;
+      // Id de la última línea de compra (correlativo): marca cuándo se agregó por última vez.
+      r.ultimo = r.lotes.reduce((m, l) => (String(l.id) > m ? String(l.id) : m), '');
       return r;
-    });
+    }).sort((a, b) => b.ultimo.localeCompare(a.ultimo));   // lo último agregado, arriba
   }
 
   const producto = (l) => '<div class="prod-cell">' + GS.thumb(l.imagen) + '<div><span class="cell-strong">' + esc(l.productoNombre) + '</span> ' + GS.langPill(l.idioma) +

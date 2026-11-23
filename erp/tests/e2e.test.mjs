@@ -361,6 +361,13 @@ test("inventario: se marcan unidades de un producto y se venden desde su lote", 
     const deckEng = page.locator('#inv-tbody tr[data-producto]', { hasText: "Battle Deck" }).filter({ has: page.locator(".lang-ENG") });
     assert.match(await deckEng.textContent(), /12.*3.*9.*\$26\.990/s);
     assert.equal(await deckEng.locator("input[type=checkbox]").count(), 0);
+    // Orden predeterminado: el producto con la línea de compra más reciente va primero.
+    const primero = await page.locator("#inv-tbody tr[data-producto]").first().getAttribute("data-producto");
+    const masNuevo = await page.evaluate(() => {
+      const vivos = new Set([...document.querySelectorAll("#inv-tbody tr[data-producto]")].map((tr) => tr.dataset.producto));
+      return GS.state.data.lotes.filter((l) => vivos.has(l.productoId)).sort((a, b) => String(b.id).localeCompare(String(a.id)))[0].productoId;
+    });
+    assert.equal(primero, masNuevo);
     // Lo vendido en su totalidad va en su propia tabla, abajo, con la ganancia obtenida.
     assert.equal(await page.locator("#inv-tbody tr[data-producto]", { hasText: "Stellar Crown" }).filter({ hasText: "Booster Bundle" }).count(), 0);
     const agotado = page.locator("#inv-tbody-ago tr[data-producto]", { hasText: "Stellar Crown" }).filter({ hasText: "Booster Bundle" });
