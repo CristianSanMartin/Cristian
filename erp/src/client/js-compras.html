@@ -617,13 +617,12 @@
         return '<tr class="fila-compra' + (open ? ' abierta' : '') + (r.disponible ? '' : ' row-muted') + '" data-action="verInventario" data-id="' + esc(r.productoId) + '" data-producto="' + esc(r.productoId) + '">' +
           '<td><span class="chev">' + (open ? '▾' : '▸') + '</span></td>' +
           colsInv.map((c) => '<td class="' + (c.right ? 'cell-num right ' : '') + (c.clase || '') + '">' + c.celda(r) + '</td>').join('') +
-          // Acciones en dos líneas fijas: vender arriba (cantidad + Venta) y lo demás abajo (→ OC, Salida, editar).
+          // Acciones en dos líneas fijas: vender arriba (cantidad + Venta) y lo demás abajo (Salida, editar).
           '<td><div class="inv-acciones">' + (vendible
             ? '<div class="row-actions"><input class="qty-input cant-venta" type="number" min="1" max="' + r.disponible + '" step="1" placeholder="Cant." data-cant-prod="' + esc(r.productoId) + '" aria-label="Cantidad a vender">' +
               '<button class="btn small secondary" data-action="agregarProductoVenta" data-id="' + esc(r.productoId) + '">' + GS.icon('plus', 2.4) + 'Venta</button></div>' : '') +
           '<div class="row-actions">' + (vendible
-            ? (GS.puede('admin') ? '<button class="btn small ghost" data-action="agregarAVentaExistente" data-id="' + esc(r.productoId) + '" title="Agregar unidades a una venta ya creada (OC)">→ OC</button>' : '') +
-              '<button class="btn small ghost" data-action="registrarSalida" data-id="' + esc(r.productoId) + '" title="Sacar del stock sin venta: uso interno de la tienda, premio, caja abierta o pérdida">Salida</button>'
+            ? '<button class="btn small ghost" data-action="registrarSalida" data-id="' + esc(r.productoId) + '" title="Sacar del stock sin venta: uso interno de la tienda, premio, caja abierta o pérdida">Salida</button>'
             : '') +
           (op ? GS.iconBtn('editarProducto', r.productoId, 'edit', 'Editar nombre, foto o precio') : '') + '</div></div></td></tr>' +
           (open ? '<tr class="detalle-row"><td colspan="' + n + '">' + detalleProducto(r) + '</td></tr>' : '');
@@ -656,47 +655,6 @@
   };
 
   const findProdInv = (id) => { const pr = data().productos.find((x) => x.id === id); return pr ? pr.nombreCompleto : id; };
-
-  // Agregar unidades a una venta ya creada: sale del lote más antiguo y la OC suma la línea (como en Editar venta).
-  GS.actions.agregarAVentaExistente = (id) => {
-    const r = buscadasInv().find((x) => x.productoId === id);
-    const prod = data().productos.find((x) => x.id === id);
-    const ventas = data().ventas.filter((v) => !v.anulada).sort((a, b) => (b.fecha + b.id).localeCompare(a.fecha + a.id));
-    // N° escrito: "OC-0286", "oc286" o "286" (las OC); también acepta SGL-0012, etc.
-    const buscarOc = (q) => {
-      const t = String(q || '').trim().toUpperCase().replace(/\s+/g, '');
-      if (!t) return null;
-      const m = /^([A-Z]+)?-?0*(\d+)(-\d+)?$/.exec(t);
-      const idN = m ? (m[1] || 'OC') + '-' + m[2].padStart(4, '0') + (m[3] || '') : t;
-      return ventas.find((v) => v.id === idN || v.id === t) || null;
-    };
-    GS.formModal({
-      title: 'Agregar a una venta',
-      submitLabel: 'Agregar a la venta',
-      fields: () => '<p class="hint"><strong>' + esc(findProdInv(id)) + '</strong> · ' + r.disponible + (r.disponible === 1 ? ' unidad disponible' : ' unidades disponibles') + '</p>' +
-        '<div class="form-grid">' +
-        '<div class="form-field full"><label>N° de venta *</label><input name="oc" list="oc-lista" autocomplete="off" placeholder="Ej.: 286 u OC-0286">' +
-        '<datalist id="oc-lista">' + ventas.slice(0, 500).map((v) => '<option value="' + esc(v.id) + '">' + esc(fmt.date(v.fecha) + ' · ' + v.cliente + ' · ' + fmt.money(v.total)) + '</option>').join('') + '</datalist>' +
-        '<div class="hint" data-oc-info></div></div>' +
-        '<div class="form-field"><label>Cantidad *</label><input type="number" name="cantidad" min="1" max="' + r.disponible + '" step="1" value="1"></div>' +
-        '<div class="form-field"><label>Precio unidad</label><input type="number" name="precio" min="0" step="1" value="' + esc(prod ? prod.precio : '') + '"></div></div>' +
-        '<p class="hint">La OC suma esta línea y su total sube. Si la venta estaba pagada, sigue pagada; si quieres que quede como deuda o cambiar el total, ajústalo en Ventas → Editar.</p>',
-      onMount: (form) => {
-        const info = form.querySelector('[data-oc-info]');
-        form.elements.oc.addEventListener('input', () => {
-          const v = buscarOc(form.elements.oc.value);
-          info.innerHTML = !form.elements.oc.value.trim() ? '' : v ? '→ ' + esc(v.id) + ' · ' + fmt.date(v.fecha) + ' · ' + esc(v.cliente) + ' · ' + fmt.money(v.total) : '<span class="text-danger">No hay una venta con ese N°.</span>';
-        });
-        form.elements.oc.focus();
-      },
-      onSubmit: (v) => {
-        const venta = buscarOc(v.oc);
-        if (!venta) throw new Error(v.oc ? 'No hay una venta con el N° ' + v.oc + '.' : 'Escribe el N° de la venta.');
-        return GS.mutate('editarVenta', { id: venta.id, fecha: venta.fecha, boleta: venta.boleta, notas: venta.notas, agregar: [{ productoId: id, cantidad: v.cantidad, precio: v.precio }] },
-          v.cantidad + (Number(v.cantidad) === 1 ? ' unidad agregada a ' : ' unidades agregadas a ') + venta.id);
-      },
-    });
-  };
 
   // Salida sin venta (uso interno, premio, caja abierta, pérdida): sale del lote más antiguo, sin OC.
   GS.actions.registrarSalida = (id) => {
