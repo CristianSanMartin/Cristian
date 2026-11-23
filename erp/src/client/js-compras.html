@@ -492,10 +492,10 @@
     }).sort((a, b) => b.ultimo.localeCompare(a.ultimo));   // lo último agregado, arriba
   }
 
-  const producto = (l) => '<div class="prod-cell">' + GS.thumb(l.imagen) + '<div><span class="cell-strong">' + esc(l.productoNombre) + '</span> ' + GS.langPill(l.idioma) +
-    '<div class="cell-dim">' + esc(l.edicion || '') + '</div></div></div>';
+  const producto = (l) => '<div class="prod-cell">' + GS.thumb(l.imagen) + '<div><span class="cell-strong">' + esc(l.productoNombre) + '</span> ' + GS.langPill(l.idioma) + '</div></div>';
   const colsInv = [
     { id: 'producto', label: 'Producto', clase: 'col-prod', valor: (r) => r.ref.productoNombre, texto: (r) => r.ref.productoNombre + ' ' + r.ref.idioma, celda: (r) => producto(r.ref) },
+    { id: 'edicion', label: 'Edición', valor: (r) => r.ref.edicion || '', texto: (r) => r.ref.edicion || '—', celda: (r) => (r.ref.edicion ? esc(r.ref.edicion) : '<span class="muted">—</span>') },
     // Unidades compradas / unidades que ya salieron (vendidas + salidas por premio, uso o merma).
     { id: 'unidades', label: 'Compradas / salidas', right: true, valor: (r) => r.vendidas + (r.salidas || 0), texto: (r) => r.cantidad + ' / ' + (r.vendidas + (r.salidas || 0)),
       celda: (r) => '<span class="nowrap" title="Compradas / vendidas o salidas">' + fmt.num(r.cantidad) + ' <span class="muted">/</span> ' + fmt.num(r.vendidas + (r.salidas || 0)) + '</span>' +
