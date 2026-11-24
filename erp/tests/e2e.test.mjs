@@ -1282,11 +1282,26 @@ test("caja: el efectivo queda en espera hasta cerrar y la comisión TUU no sale 
       let res = await GS.api("guardarTicket", { cajaId: caja.id, cliente: "Prueba", lineas: [{ categoria: "Singles", monto: 60000 }], pagos: [{ medio: "efectivo", monto: 50000 }, { medio: "debito", monto: 10000 }] });
       GS.setData(res.data);
       const abierta = R();
-      res = await GS.api("cerrarCaja", { id: caja.id });
+      res = await GS.api("cerrarCaja", { id: caja.id, saldoCierre: Math.round(GS.resumenDinero().saldo + 50000) });
       GS.setData(res.data);
       const v = GS.state.data.ventas.find((x) => x.cliente === "Prueba");
-      return { antes, abierta, cerrada: R(), comision: v.comision };
+      return { antes, abierta, cerrada: R(), comision: v.comision, saldoCierre: GS.state.data.cajas.find((x) => x.id === caja.id).saldoCierre };
     });
+    assert.equal(Number(out.saldoCierre), out.cerrada.saldo, "el respaldo guarda el saldo que quedó al cerrar");
+    // Pestaña Cierres: validar con lo real y ver la diferencia.
+    await page.evaluate(() => GS.render());
+    await page.click('[data-nav="caja"]');
+    await page.click('[data-action="tab"][data-id="caja.cierres"]');
+    const fila = page.locator("#caja-cuerpo tbody tr", { hasText: "CJ-20261120" });
+    assert.match(await fila.textContent(), /\$50\.000/);
+    await fila.locator('[data-action="validarCierre"]').click();
+    await page.locator('.modal input[name="efectivoReal"]').fill("49500");
+    await page.locator('.modal input[name="saldoReal"]').fill(String(out.cerrada.saldo));
+    await page.locator('.modal input[name="notas"]').fill("faltan 500");
+    await page.locator('.modal button[type="submit"]').click();
+    await toast(page, /Cierre validado/);
+    assert.match(await fila.textContent(), /\$49\.500.*−\$500.*Cuadra.*faltan 500/s);
+    await page.waitForSelector("text=1 cierre con diferencia");
     assert.deepEqual(out.abierta, out.antes, "la caja abierta no suma al saldo");
     assert.equal(out.cerrada.caja - out.antes.caja, 50000, "al cerrar entra el efectivo completo");
     assert.equal(out.cerrada.banco, out.antes.banco, "el débito queda por abonar");

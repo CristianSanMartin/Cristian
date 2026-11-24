@@ -61,6 +61,7 @@ function rutas_() {
     volverTicket: { rol: 'admin', write: true, fn: Cajas.volverTicket },
     cerrarCaja: { rol: 'admin', write: true, fn: Cajas.cerrar },
     reabrirCaja: { rol: 'admin', write: true, fn: Cajas.reabrir },
+    validarCierre: { rol: 'admin', write: true, fn: Cajas.validarCierre },
     conciliarTuuCaja: { rol: 'admin', write: true, fn: Cajas.conciliarTuu },
     importarAbonosTuu: { rol: 'admin', write: true, fn: Cajas.importarAbonos },
     recibirCuotaTuu: { rol: 'admin', write: true, fn: Cajas.recibirCuota },

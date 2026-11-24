@@ -89,7 +89,7 @@
         (atrasadas.length ? '<div class="notice warn">Hay ' + (atrasadas.length === 1 ? 'una caja sin cerrar' : atrasadas.length + ' cajas sin cerrar') + ': ' +
           atrasadas.map((x) => '<a href="#" data-action="verCaja" data-id="' + esc(x.id) + '">' + fmt.date(x.fecha) + ' (' + vivos(x).length + ' tickets)</a>').join(', ') +
           '. Sus productos siguen reservados hasta que se cierre.</div>' : '') +
-        '<div class="tabs">' + ['caja', 'tuu'].map((k) => '<button class="tab' + (GS.filters('caja', DEF).tab === k ? ' active' : '') + '" data-action="tab" data-id="caja.' + k + '">' + (k === 'caja' ? 'Caja' : 'Abonos TUU' + (porCobrarTuu() ? ' <span class="pill soon">' + fmt.money(porCobrarTuu()) + '</span>' : '')) + '</button>').join('') + '</div>' +
+        '<div class="tabs">' + ['caja', 'tuu', 'cierres'].map((k) => '<button class="tab' + (GS.filters('caja', DEF).tab === k ? ' active' : '') + '" data-action="tab" data-id="caja.' + k + '">' + (k === 'caja' ? 'Caja' : k === 'cierres' ? 'Cierres' : 'Abonos TUU' + (porCobrarTuu() ? ' <span class="pill soon">' + fmt.money(porCobrarTuu()) + '</span>' : '')) + '</button>').join('') + '</div>' +
         '<div id="caja-cuerpo"></div>';
       this.update();
     },
@@ -97,6 +97,7 @@
       const el = document.getElementById('caja-cuerpo');
       if (!el) return;
       if (GS.filters('caja', DEF).tab === 'tuu') return vistaTuu(el);
+      if (GS.filters('caja', DEF).tab === 'cierres') return vistaCierres(el);
       const c = actual();
       const op = GS.puede('operador');
       const admin = GS.puede('admin');
@@ -513,7 +514,9 @@
 
   // Cerrar caja: directo, sin resumen previo. El depósito de TUU se registra después con "Registrar depósito TUU"
   // (o se confirma solo al subir el informe de abonos).
-  GS.actions.cerrarCaja = (id) => GS.mutate('cerrarCaja', { id: id, depositoTuu: '' }, (res) => 'Caja cerrada: ' + res.ventas + ' ventas y ' + res.movimientos + ' movimientos creados')
+  // Al cerrar se guarda el saldo disponible que queda (el de ahora + el efectivo y las transferencias de esta caja,
+  // que estaban en espera): el respaldo del cierre para compararlo con lo real (pestaña Cierres).
+  GS.actions.cerrarCaja = (id) => GS.mutate('cerrarCaja', { id: id, depositoTuu: '', saldoCierre: Math.round(GS.resumenDinero().saldo + enEspera(cajas().find((x) => x.id === id))) }, (res) => 'Caja cerrada: ' + res.ventas + ' ventas y ' + res.movimientos + ' movimientos creados')
     .catch((e) => GS.toast(e.message, true));
 
   GS.actions.reabrirCaja = (id) => {
@@ -568,6 +571,74 @@
         '<td>' + (admin && e.tipo === 'cuota' ? '<button class="btn small ghost" data-action="recibirCuotaTuu" data-id="' + esc(e.cuotaId) + '" title="Marcar como recibida (sin el informe)">Recibida</button>' : '') + '</td></tr>').join('')).join('')
         : '<tr><td colspan="5">' + GS.empty('Nada por recibir', 'Las ventas con TUU de cada caja y las cuotas pendientes aparecen aquí con su fecha de abono.', 'caja') + '</td></tr>') +
       '</tbody></table></div>';
+  };
+
+  /* ---------- Cierres: respaldo diario de lo registrado vs lo real ---------- */
+
+  /** Efectivo y transferencias de los tickets abiertos de una caja (lo que aún no suma al saldo). */
+  const enEspera = (c) => (c ? c.tickets.filter((t) => t.estado === 'abierto').reduce((s, t) => s + (t.tipo === 'egreso'
+    ? -t.total : t.pagos.reduce((a, p) => a + (p.medio === 'efectivo' || p.medio === 'transferencia' ? p.monto : 0), 0)), 0) : 0);
+  /** Número guardado como texto: vacío = sin dato. */
+  const num = (v) => (v === '' || v == null ? null : Number(v));
+  /**
+   * Efectivo del día según lo registrado: cobros en efectivo de los tickets − compras/gastos pagados con la caja
+   * − movimientos manuales en efectivo de esa fecha (ej. aseo en el súper) + abonos de clientes en efectivo ese día.
+   */
+  function efectivoDia(c) {
+    let e = 0;
+    vivos(c).forEach((t) => {
+      if (t.tipo === 'egreso') { if (t.cuenta !== 'banco') e -= t.total; return; }
+      t.pagos.forEach((p) => { if (p.medio === 'efectivo') e += p.monto; });
+    });
+    (data().movimientos || []).forEach((m) => {
+      if (m.anulado || m.fecha !== c.fecha || m.cuenta !== 'caja' || /^TK-/.test(m.referencia || '')) return;
+      e += m.tipo === 'ingreso' ? m.monto : -m.monto;
+    });
+    data().ventas.forEach((v) => {
+      if (v.anulada) return;
+      v.cobros.forEach((x) => { if (x.fecha === c.fecha && x.medioPago === 'efectivo' && !/^Ticket /.test(x.notas || '')) e += x.monto; });
+    });
+    return e;
+  }
+  const difHtml = (real, reg) => {
+    if (real == null || reg == null) return '<span class="muted">—</span>';
+    const d = real - reg;
+    return d === 0 ? '<span class="badge st-ok">Cuadra</span>' : '<strong class="' + (d < 0 ? 'text-danger' : 'text-gold') + '">' + (d > 0 ? '+' : '−') + fmt.money(Math.abs(d)) + '</strong>';
+  };
+  function vistaCierres(el) {
+    const admin = GS.puede('admin');
+    const lista = cajas().filter((c) => c.estado === 'cerrada').slice().sort((a, b) => b.fecha.localeCompare(a.fecha));
+    const conDif = lista.filter((c) => { const e = num(c.efectivoReal), sr = num(c.saldoReal), sc = num(c.saldoCierre); return (e != null && e !== efectivoDia(c)) || (sr != null && sc != null && sr !== sc); });
+    el.innerHTML = '<p class="table-note" style="margin:0 0 12px;">Cada cierre guarda el <strong>saldo disponible</strong> que quedó en el ERP. Con <strong>Validar</strong> anotas lo real (el efectivo contado del día y el saldo de banco + efectivo) y se ve la diferencia. Así cada descuadre queda en el día en que pasó.</p>' +
+      (conDif.length ? '<div class="notice warn">' + conDif.length + (conDif.length === 1 ? ' cierre con diferencia' : ' cierres con diferencia') + ': ' + conDif.map((c) => fmt.date(c.fecha)).join(', ') + '.</div>' : '') +
+      '<div class="table-wrap"><table class="data-table"><thead><tr><th>Fecha</th><th class="right">Efectivo del día</th><th class="right">Efectivo contado</th><th class="right">Dif.</th>' +
+      '<th class="right">Saldo ERP al cierre</th><th class="right">Saldo real</th><th class="right">Dif.</th><th>Notas</th><th></th></tr></thead><tbody>' +
+      (lista.length ? lista.map((c) => {
+        const ed = efectivoDia(c), er = num(c.efectivoReal), sc = num(c.saldoCierre), sr = num(c.saldoReal);
+        return '<tr><td class="nowrap cell-strong">' + fmt.date(c.fecha) + '<div class="cell-dim">' + esc(c.id) + '</div></td>' +
+          '<td class="cell-num right">' + fmt.money(ed) + '</td>' +
+          '<td class="cell-num right">' + (er == null ? '<span class="muted">—</span>' : fmt.money(er)) + '</td>' +
+          '<td class="cell-num right">' + difHtml(er, ed) + '</td>' +
+          '<td class="cell-num right">' + (sc == null ? '<span class="muted" title="Cerrada antes de que existiera este respaldo">—</span>' : fmt.money(sc)) + '<div class="cell-dim">' + esc(String(c.cerradaEn || '').slice(0, 16)) + '</div></td>' +
+          '<td class="cell-num right">' + (sr == null ? '<span class="muted">—</span>' : fmt.money(sr)) + '</td>' +
+          '<td class="cell-num right">' + difHtml(sr, sc) + '</td>' +
+          '<td class="cell-dim">' + esc(c.notasCierre || '') + (c.validadoEn ? '<div>validado ' + esc(String(c.validadoEn).slice(0, 16)) + '</div>' : '') + '</td>' +
+          '<td>' + (admin ? '<button class="btn small ' + (c.validadoEn ? 'ghost' : 'secondary') + '" data-action="validarCierre" data-id="' + esc(c.id) + '">' + (c.validadoEn ? 'Corregir' : 'Validar') + '</button>' : '') + '</td></tr>';
+      }).join('') : '<tr><td colspan="9">' + GS.empty('Sin cierres', 'Cuando cierres una caja, su respaldo aparece aquí.', 'caja') + '</td></tr>') +
+      '</tbody></table></div>';
+  }
+  GS.actions.validarCierre = (id) => {
+    const c = cajas().find((x) => x.id === id);
+    const ed = efectivoDia(c), sc = num(c.saldoCierre);
+    GS.formModal({
+      title: 'Validar cierre del ' + fmt.date(c.fecha),
+      submitLabel: 'Guardar',
+      fields: () => '<div class="form-grid">' +
+        '<div class="form-field"><label>Efectivo contado del día</label><input type="number" name="efectivoReal" step="1" value="' + esc(c.efectivoReal || '') + '" placeholder="' + ed + '"><div class="hint">Registrado: ' + fmt.money(ed) + ' (lo que debería quedar en efectivo de ese día)</div></div>' +
+        '<div class="form-field"><label>Saldo real (banco + efectivo)</label><input type="number" name="saldoReal" step="1" value="' + esc(c.saldoReal || '') + '" placeholder="' + (sc == null ? '' : sc) + '"><div class="hint">' + (sc == null ? 'Esta caja se cerró sin respaldo del saldo.' : 'ERP al cierre: ' + fmt.money(sc) + ' (sin lo que TUU aún no abona)') + '</div></div>' +
+        '</div><div class="form-field"><label>Notas</label><input name="notas" maxlength="300" value="' + esc(c.notasCierre || '') + '" placeholder="Ej. depositados $11.000 en efectivo"></div>',
+      onSubmit: (v) => GS.mutate('validarCierre', { id: id, efectivoReal: v.efectivoReal, saldoReal: v.saldoReal, notas: v.notas }, 'Cierre validado'),
+    });
   };
 
   function vistaTuu(el) {

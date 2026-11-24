@@ -1338,8 +1338,15 @@ test("caja reabierta: un ticket ya pasado vuelve a abrirse (se deshacen sus vent
   const t = s.ok("guardarTicket", { cajaId: caja.id, lineas: [{ productoId: prods.miniTin.id, cantidad: 1 }, { categoria: "Singles", monto: 5000 }],
     pagos: [{ medio: "efectivo", monto: precio }, { medio: "debito", monto: 5000 }] }).result;
   const g = s.ok("guardarTicket", { cajaId: caja.id, tipo: "egreso", lineas: [{ categoria: Object.keys(s.ok("bootstrap").data.catalogos.egresosCaja)[0], monto: 3000 }] }).result;
-  s.ok("cerrarCaja", { id: caja.id });
+  s.ok("cerrarCaja", { id: caja.id, saldoCierre: -1500 });
   let d = s.ok("bootstrap").data;
+  // Respaldo del cierre: saldo guardado y validación con lo real (vacío = sin dato; un 0 es un monto).
+  assert.equal(d.cajas[0].saldoCierre, "-1500");
+  assert.match(errorDe(s.call("validarCierre", { id: caja.id })), /efectivo contado o el saldo real/);
+  s.ok("validarCierre", { id: caja.id, efectivoReal: 0, notas: "  sin efectivo " });
+  d = s.ok("bootstrap").data;
+  assert.deepEqual([d.cajas[0].efectivoReal, d.cajas[0].saldoReal, d.cajas[0].notasCierre], ["0", "", "sin efectivo"]);
+  assert.ok(d.cajas[0].validadoEn);
   const docs = d.cajas[0].tickets.find(x => x.id === t.id).documentos;
   assert.equal(docs.length, 2, "una OC y una SGL");
   assert.match(errorDe(s.call("volverTicket", { id: t.id })), /ya está cerrada/);

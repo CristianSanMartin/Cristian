@@ -15,7 +15,7 @@
 
 const APP = {
   nombre: 'GS Prime ERP',
-  version: '2.36.0',
+  version: '2.37.0',
   tz: 'America/Santiago',
   iva: 0.19,
 };
@@ -162,6 +162,9 @@ const SCHEMA = {
     key: 'id',
     cols: Object.assign({
       id: 's', fecha: 'd', estado: 's', tuuTotal: 'n', depositoTuu: 'n', comisionTuu: 'n', tuuDocs: 's', cerradaEn: 't', cerradaPor: 's', notas: 's',
+      // Respaldo del cierre: saldo disponible del ERP justo al cerrar, y lo real contado después (efectivo del día y saldo total).
+      // Como texto: vacío = sin dato (un 0 es un monto).
+      saldoCierre: 's', efectivoReal: 's', saldoReal: 's', validadoEn: 't', validadoPor: 's', notasCierre: 's',
     }, AUDIT_COLS),
   },
   /** Tickets de la caja (TK-20261012-01): una atención. Líneas y pagos en JSON; documentos = lo que generó al cerrar. */

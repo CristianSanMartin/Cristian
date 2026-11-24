@@ -385,7 +385,7 @@ const Cajas = {
       Db.update('Cajas', caja.id, Object.assign({
         estado: 'cerrada', tuuTotal: tuuTotal, depositoTuu: deposito != null ? deposito : (caja.depositoTuu || 0), tuuDocs: JSON.stringify(previos.concat(tuuDocs)),
         cerradaEn: Util.ahora(), cerradaPor: user.email,
-      }, Util.sello(user)));
+      }, p.saldoCierre === '' || p.saldoCierre == null ? {} : { saldoCierre: String(Util.entero(p.saldoCierre, 'El saldo al cierre', { min: -1e12, max: 1e12 })) }, Util.sello(user)));
       const comisionTuu = Cajas._recalcularComisiones(Array.from(new Set(previos.map((d) => d.ventaId).concat(ventaIds))), user);
       Db.update('Cajas', caja.id, { comisionTuu: comisionTuu });
       Audit.log(user, 'cerrar', 'Caja', caja.id, { tickets: tickets.length, ventas: ventaIds.length, movimientos: nMovs, tuu: tuuContado, deposito: deposito, comision: comisionTuu, cuotas: cuotas.length });
@@ -490,6 +490,26 @@ const Cajas = {
     if (caja.estado !== 'cerrada') throw new AppError('La caja ' + caja.id + ' ya está abierta.');
     Db.update('Cajas', caja.id, Object.assign({ estado: 'abierta' }, Util.sello(user)));
     Audit.log(user, 'reabrir', 'Caja', caja.id, { fecha: caja.fecha });
+    return { id: caja.id };
+  },
+
+  /**
+   * Validar el cierre: lo real contado después de cerrar (efectivo del día y saldo total de banco + efectivo),
+   * para compararlo con lo registrado. Se puede corregir cuantas veces haga falta. p: { id, efectivoReal, saldoReal, notas }
+   */
+  validarCierre(p, user) {
+    const caja = Db.get('Cajas', String(p.id || ''));
+    if (!caja || caja.estado !== 'cerrada') throw new AppError('La caja no existe o aún no está cerrada.');
+    const vacio = (v) => v === '' || v == null;
+    if (vacio(p.efectivoReal) && vacio(p.saldoReal)) throw new AppError('Ingresa el efectivo contado o el saldo real.');
+    const cambios = {
+      efectivoReal: vacio(p.efectivoReal) ? '' : String(Util.entero(p.efectivoReal, 'El efectivo contado', { min: -1e12, max: 1e12 })),
+      saldoReal: vacio(p.saldoReal) ? '' : String(Util.entero(p.saldoReal, 'El saldo real', { min: -1e12, max: 1e12 })),
+      notasCierre: Util.texto(p.notas || '', 'Las notas', { max: 300 }),
+      validadoEn: Util.ahora(), validadoPor: user.email,
+    };
+    Db.update('Cajas', caja.id, Object.assign(cambios, Util.sello(user)));
+    Audit.log(user, 'validar cierre', 'Caja', caja.id, { efectivoReal: cambios.efectivoReal, saldoReal: cambios.saldoReal });
     return { id: caja.id };
   },
 
