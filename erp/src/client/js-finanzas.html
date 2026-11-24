@@ -152,8 +152,18 @@
       const base = { tipo: 'ingreso', referencia: v.id, venta: v.id, cuentaLabel: CUENTA_MEDIO[v.medioPago] || '', notas: '' };
       // Comisión de las cuotas TUU ya llegadas (cada una se descuenta en su cuota); el resto es la del pago al contado.
       const comVenta = comisionContado(v);
+      // Ticket pagado con varios medios (ej. efectivo + débito): la comisión es de la parte TUU, así que se descuenta de
+      // esos abonos (por abonar, cuenta TUU) y no del efectivo. Antes salía del efectivo y la caja quedaba descuadrada.
+      const esTuu = (m) => m === 'debito' || m === 'credito';
+      const cobrosTuu = esTuu(v.medioPago) ? [] : v.cobros.filter((c) => !esCuota(c) && esTuu(c.medioPago) && /^Ticket /.test(c.notas || ''));
+      const comCobro = {};
+      if (comVenta && cobrosTuu.length) {
+        const tot = cobrosTuu.reduce((t, c) => t + c.monto, 0);
+        let resto = comVenta;
+        cobrosTuu.forEach((c, i) => { const x = i === cobrosTuu.length - 1 ? resto : Math.round(comVenta * c.monto / (tot || 1)); comCobro[c.id] = x; resto -= x; });
+      }
       // La comisión del medio de pago va dentro de la venta: el monto es lo que entra a la cuenta (neto).
-      const conCom = v.abono && comVenta && comVenta < v.abono;
+      const conCom = !cobrosTuu.length && v.abono && comVenta && comVenta < v.abono;
       // Venta con TUU de la caja del día: "por abonar" hasta que el informe de TUU la confirma (no suma al saldo).
       const tuu = v.tuuAbono;
       const estadoTuu = (medio) => (tuu && ['debito', 'credito'].indexOf(medio) !== -1
@@ -171,12 +181,12 @@
           notas: 'Informativa: la plata entra con cada cuota (' + nC + ' recibida' + (nC === 1 ? '' : 's') + ')' }));
       }
       v.cobros.forEach((c) => {
-        const com = esCuota(c) ? c.comision || 0 : 0;
+        const com = esCuota(c) ? c.comision || 0 : comCobro[c.id] || 0;
         res.push(Object.assign({}, base, { id: c.id, fecha: c.fecha, categoriaLabel: esCuota(c) ? 'Cuota TUU' : 'Abono de venta', subcategoria: v.cliente + ' · ' + (data().catalogos.mediosPago[c.medioPago] || c.medioPago),
-          monto: c.monto - com, bruto: c.monto, comision: com, notas: com ? 'cuota ' + fmt.money(c.monto) + ' − comisión ' + fmt.money(com) : '',
+          monto: c.monto - com, bruto: c.monto, comision: com, notas: com ? (esCuota(c) ? 'cuota ' : 'pago ') + fmt.money(c.monto) + ' − comisión ' + fmt.money(com) : '',
           cuentaLabel: CUENTA_MEDIO[c.medioPago] || '' }, /^Ticket /.test(c.notas || '') ? estadoTuu(c.medioPago) : {}));
       });
-      if (comVenta && !conCom) res.push(Object.assign({}, base, { id: v.id + '·c', tipo: 'egreso', fecha: v.fecha, categoriaLabel: 'Comisión ' + v.medioPagoLabel, subcategoria: v.cliente, monto: comVenta }));
+      if (comVenta && !conCom && !cobrosTuu.length) res.push(Object.assign({}, base, { id: v.id + '·c', tipo: 'egreso', fecha: v.fecha, categoriaLabel: 'Comisión ' + v.medioPagoLabel, subcategoria: v.cliente, monto: comVenta }));
     });
     // Pagos de facturas de compra: registrados en Compras o conciliados desde la caja diaria.
     const compra = {};
@@ -196,7 +206,7 @@
       .sort((a, b) => (b.fecha + b.id).localeCompare(a.fecha + a.id));
   };
   // Resumen del dinero para el Dashboard: todo lo registrado en Finanzas (con ventas y pagos de facturas)
-  // más los tickets de la caja abierta, que pasan a Finanzas recién al cerrarla.
+  // Los tickets de la caja abierta quedan en espera: no suman al saldo hasta cerrar la caja (se muestran aparte).
   GS.resumenDinero = function () {
     // Lo que TUU aún no abona no suma al saldo: vive en Caja → Abonos TUU (GS.porAbonarTuu).
     const r = { saldo: 0, caja: 0, banco: 0, porCobrar: 0, nPorCobrar: 0, abierta: null };
@@ -217,13 +227,12 @@
       (c.tickets || []).filter((t) => t.estado === 'abierto').forEach((t) => {
         a.tickets++;
         if (t.tipo === 'egreso') {
-          sumar(t.cuenta === 'banco' ? 'banco' : 'caja', -t.total);
           a[t.cuenta === 'banco' ? 'banco' : 'efectivo'] -= t.total;
           return;
         }
         t.pagos.forEach((p) => {
-          if (p.medio === 'efectivo') { sumar('caja', p.monto); a.efectivo += p.monto; }
-          else if (p.medio === 'transferencia') { sumar('banco', p.monto); a.banco += p.monto; }
+          if (p.medio === 'efectivo') a.efectivo += p.monto;
+          else if (p.medio === 'transferencia') a.banco += p.monto;
           else if (p.medio === 'pendiente') { r.porCobrar += p.monto; r.nPorCobrar++; }
           else {
             const com = GS.comisionPago(data().catalogos.comisiones[p.medio], p.monto);

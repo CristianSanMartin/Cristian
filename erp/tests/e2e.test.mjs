@@ -1270,3 +1270,27 @@ test("Finanzas → Créditos: registrar el crédito con su calendario, pagar una
     await browser.close();
   }
 });
+
+test("caja: el efectivo queda en espera hasta cerrar y la comisión TUU no sale del efectivo", { skip }, async () => {
+  const browser = await chromium.launch();
+  try {
+    const { page, errores } = await abrir(browser);
+    const out = await page.evaluate(async () => {
+      const R = () => { const r = GS.resumenDinero(); return { saldo: r.saldo, caja: r.caja, banco: r.banco }; };
+      const antes = R();
+      const caja = (await GS.api("abrirCaja", { fecha: "2026-11-20" })).result;
+      let res = await GS.api("guardarTicket", { cajaId: caja.id, cliente: "Prueba", lineas: [{ categoria: "Singles", monto: 60000 }], pagos: [{ medio: "efectivo", monto: 50000 }, { medio: "debito", monto: 10000 }] });
+      GS.setData(res.data);
+      const abierta = R();
+      res = await GS.api("cerrarCaja", { id: caja.id });
+      GS.setData(res.data);
+      const v = GS.state.data.ventas.find((x) => x.cliente === "Prueba");
+      return { antes, abierta, cerrada: R(), comision: v.comision };
+    });
+    assert.deepEqual(out.abierta, out.antes, "la caja abierta no suma al saldo");
+    assert.equal(out.cerrada.caja - out.antes.caja, 50000, "al cerrar entra el efectivo completo");
+    assert.equal(out.cerrada.banco, out.antes.banco, "el débito queda por abonar");
+    assert.ok(out.comision > 0);
+    assert.deepEqual(errores, []);
+  } finally { await browser.close(); }
+});
