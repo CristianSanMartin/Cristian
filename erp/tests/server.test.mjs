@@ -1330,6 +1330,26 @@ test("caja del día: tickets con reserva, pago mixto y pendiente, cierre que rep
   assert.equal(d.ventas.filter(v => /Ticket TK-20261012-01/.test(v.notas)).reduce((t, v) => t + v.comision, 0), 1000);
 });
 
+test("singles: se separan por juego (Pokémon por defecto, MyL) desde la caja hasta la venta", () => {
+  const s = createServer();
+  s.run("instalar()");
+  const caja = s.ok("abrirCaja", { fecha: "2026-11-26" }).result;
+  assert.match(errorDe(s.call("guardarTicket", { cajaId: caja.id, lineas: [{ categoria: "Singles", juego: "Yugioh", monto: 1000 }], pagos: [{ medio: "efectivo", monto: 1000 }] })), /juego/);
+  s.ok("guardarTicket", { cajaId: caja.id, lineas: [{ categoria: "Singles", monto: 3000 }, { categoria: "Singles", juego: "MyL", descripcion: "Carta de prueba", monto: 2000 }, { categoria: "Bazar", descripcion: "Bebida", monto: 1500, juego: "MyL" }],
+    pagos: [{ medio: "efectivo", monto: 6500 }] });
+  let t = s.ok("bootstrap").data.cajas[0].tickets[0];
+  assert.deepEqual(t.lineas.map(l => l.juego || ""), ["Pokémon", "MyL", ""]);
+  s.ok("cerrarCaja", { id: caja.id });
+  const d = s.ok("bootstrap").data;
+  const sgl = d.ventas.find(v => v.id.startsWith("SGL"));
+  assert.deepEqual(sgl.lineas.map(l => [l.juego, l.producto]), [["Pokémon", "Singles"], ["MyL", "Singles MyL · Carta de prueba"]]);
+  assert.equal(d.ventas.find(v => v.id.startsWith("BAZ")).lineas[0].juego, "");
+  // Venta directa (Ventas) sin elegir juego: Pokémon.
+  const r = s.ok("crearVenta", { fecha: "2026-11-26", cliente: "", medioPago: "efectivo", lineas: [{ categoria: "Singles", monto: 500 }] }).result;
+  assert.equal(s.ok("bootstrap").data.ventas.find(v => v.id === r.id).lineas[0].juego, "Pokémon");
+  assert.deepEqual(s.ok("bootstrap").data.catalogos.juegosSingles, ["Pokémon", "MyL"]);
+});
+
 test("caja reabierta: un ticket ya pasado vuelve a abrirse (se deshacen sus ventas) y se edita", () => {
   const s = createServer();
   const { prods } = conInventario(s);

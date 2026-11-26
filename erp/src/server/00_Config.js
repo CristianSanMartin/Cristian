@@ -15,7 +15,7 @@
 
 const APP = {
   nombre: 'GS Prime ERP',
-  version: '2.37.0',
+  version: '2.38.0',
   tz: 'America/Santiago',
   iva: 0.19,
 };
@@ -97,6 +97,8 @@ const SCHEMA = {
       id: 's', ventaId: 's', loteId: 's', productoId: 's', cantidad: 'n', precioLista: 'n', precio: 'n', costo: 'n',
       // Líneas por monto (sin producto del inventario): singles, torneo, bazar, ajuste…
       categoria: 's', descripcion: 's',
+      // Singles: de qué juego (Pokémon o MyL). Vacío = Pokémon (todo lo anterior a separarlos).
+      juego: 's',
     }, AUDIT_COLS),
   },
   /** Abonos a ventas que quedaron pendientes de pago (cuentas por cobrar). */
@@ -291,6 +293,8 @@ const PRECIO_SOBRE_PARTICIPACION = 1500;
 
 /** Ventas por monto (sin unidades del inventario). Torneo = ingreso por servicio. */
 const CATEGORIAS_VENTA = ['Singles', 'Torneo', 'Sobres sueltos', 'Bazar', 'Accesorios', 'Ajuste', 'Otro'];
+/** Singles: de qué juego. El primero es el predeterminado (y el de los registros sin juego). */
+const JUEGOS_SINGLES = ['Pokémon', 'MyL'];
 /** Bazar: qué se vendió. */
 const TIPOS_BAZAR = ['Bebida', 'Snack'];
 /**

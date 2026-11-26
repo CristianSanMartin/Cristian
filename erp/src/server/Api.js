@@ -309,7 +309,7 @@ const Snapshot = {
       user: { email: user.email, nombre: user.nombre, rol: user.rol },
       catalogos: {
         idiomas: IDIOMAS, tipos: TIPOS_PRODUCTO, canales: CANALES, mediosPago: MEDIOS_PAGO, comisiones: COMISIONES_PAGO,
-        categoriasVenta: CATEGORIAS_VENTA, motivosSalida: MOTIVOS_SALIDA, mediosCaja: MEDIOS_CAJA, egresosCaja: EGRESOS_CAJA, categoriasMovimiento: CATEGORIAS_MOVIMIENTO, cuentas: CUENTAS, formatosTorneo: FORMATOS_TORNEO, categoriasTorneo: CATEGORIAS_TORNEO, tiposBazar: TIPOS_BAZAR, precioSobre: PRECIO_SOBRE_SUELTO, precioParticipacion: PRECIO_SOBRE_PARTICIPACION,
+        categoriasVenta: CATEGORIAS_VENTA, motivosSalida: MOTIVOS_SALIDA, mediosCaja: MEDIOS_CAJA, egresosCaja: EGRESOS_CAJA, categoriasMovimiento: CATEGORIAS_MOVIMIENTO, cuentas: CUENTAS, formatosTorneo: FORMATOS_TORNEO, categoriasTorneo: CATEGORIAS_TORNEO, tiposBazar: TIPOS_BAZAR, juegosSingles: JUEGOS_SINGLES, precioSobre: PRECIO_SOBRE_SUELTO, precioParticipacion: PRECIO_SOBRE_PARTICIPACION,
       },
       proveedores: proveedores,
       productos: prods,

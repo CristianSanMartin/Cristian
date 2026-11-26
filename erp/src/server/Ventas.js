@@ -35,7 +35,8 @@ const Ventas = {
         // Cantidad (ej. 3 bebidas): monto = total de la línea; si no se divide exacto, queda como 1 × monto.
         const n = x.cantidad ? Util.entero(x.cantidad, 'La cantidad de ' + categoria, { min: 1 }) : 1;
         const cant = n > 1 && monto % n === 0 ? n : 1;
-        lineas.push({ loteId: '', productoId: '', cantidad: cant, precioLista: monto / cant, precio: monto / cant, costo: 0, categoria: categoria, descripcion: Util.texto(x.descripcion, 'La descripción', { max: 120 }) });
+        lineas.push({ loteId: '', productoId: '', cantidad: cant, precioLista: monto / cant, precio: monto / cant, costo: 0, categoria: categoria, descripcion: Util.texto(x.descripcion, 'La descripción', { max: 120 }),
+          juego: categoria === 'Singles' ? Util.opcion(x.juego || JUEGOS_SINGLES[0], 'El juego', JUEGOS_SINGLES) : '' });
         return;
       }
       const prod = Productos.requerir(x.productoId);
@@ -513,8 +514,10 @@ const Ventas = {
       const prod = porMonto ? { nombre: l.descripcion || l.categoria, edicion: l.categoria, idioma: '', imagen: '' }
         : prodPorId[l.productoId] || { nombre: '(producto eliminado)', edicion: '', idioma: '', imagen: '' };
       const e = Economia.unidad(l.costo, l.precio);
+      const juego = l.categoria === 'Singles' ? l.juego || JUEGOS_SINGLES[0] : '';
       const linea = Object.assign(l, {
-        producto: porMonto ? [l.categoria, l.descripcion].filter(Boolean).join(' · ') : Productos.nombreCompleto(prod),
+        juego: juego,
+        producto: porMonto ? [l.categoria + (juego && juego !== JUEGOS_SINGLES[0] ? ' ' + juego : ''), l.descripcion].filter(Boolean).join(' · ') : Productos.nombreCompleto(prod),
         productoNombre: prod.nombre, edicion: prod.edicion, idioma: prod.idioma, imagen: prod.imagen || '', porMonto: porMonto,
         subtotal: l.precio * l.cantidad,
         descuento: (l.precioLista - l.precio) * l.cantidad,
