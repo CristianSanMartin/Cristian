@@ -1278,7 +1278,7 @@ test("caja: el efectivo queda en espera hasta cerrar y la comisión TUU no sale 
     const out = await page.evaluate(async () => {
       const R = () => { const r = GS.resumenDinero(); return { saldo: r.saldo, caja: r.caja, banco: r.banco }; };
       const antes = R();
-      const caja = (await GS.api("abrirCaja", { fecha: "2026-11-20" })).result;
+      const caja = (await GS.api("abrirCaja", { fecha: "2025-06-10" })).result;
       let res = await GS.api("guardarTicket", { cajaId: caja.id, cliente: "Prueba", lineas: [{ categoria: "Singles", monto: 60000 }], pagos: [{ medio: "efectivo", monto: 50000 }, { medio: "debito", monto: 10000 }] });
       GS.setData(res.data);
       const abierta = R();
@@ -1292,7 +1292,7 @@ test("caja: el efectivo queda en espera hasta cerrar y la comisión TUU no sale 
     await page.evaluate(() => GS.render());
     await page.click('[data-nav="caja"]');
     await page.click('[data-action="tab"][data-id="caja.cierres"]');
-    const fila = page.locator("#caja-cuerpo tbody tr", { hasText: "CJ-20261120" });
+    const fila = page.locator("#caja-cuerpo tbody tr", { hasText: "CJ-20250610" });
     assert.match(await fila.textContent(), /\$50\.000/);
     await fila.locator('[data-action="validarCierre"]').click();
     await page.locator('.modal input[name="efectivoReal"]').fill("49500");
