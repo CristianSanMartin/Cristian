@@ -221,7 +221,8 @@
           // Singles: de qué juego (Pokémon por defecto).
           '<select name="tkJuego" aria-label="Juego"' + (cat === 'Singles' ? '' : ' hidden') + '>' + GS.options(juegos, (l && l.juego) || juegos[0]) + '</select>' +
           '<select name="tkTipo"' + (esBazar ? '' : ' hidden') + '>' + GS.options([{ value: '', label: 'Bebida o snack…' }].concat(bazar.map((x) => ({ value: x, label: x }))), esBazar && bazar.indexOf(desc) !== -1 ? desc : '') + '</select>' +
-          '<input name="tkDesc" placeholder="Detalle (opcional)" value="' + esc(esBazar ? '' : desc) + '"' + (esBazar ? ' hidden' : '') + '></div>') + '</td>' +
+          // Singles: solo el juego, sin detalle.
+          '<input name="tkDesc" placeholder="Detalle (opcional)" value="' + esc(esBazar ? '' : desc) + '"' + (esBazar || cat === 'Singles' ? ' hidden' : '') + '></div>') + '</td>' +
         '<td><input class="qty-input" style="width:64px" type="number" min="1" step="1" name="tkMCant" value="' + esc(cant) + '"' + (l && l.tj ? ' readonly' : '') + '></td>' +
         '<td><input class="qty-input price-input" style="width:100px" type="number" min="1" step="1" name="tkMonto" value="' + esc(precio) + '"></td>' +
         '<td class="cell-num right" data-tk-sub>—</td><td><button type="button" class="btn small ghost" data-tk-quitar title="Quitar">✕</button></td></tr>';
@@ -443,7 +444,7 @@
             const b = e.target.value === 'Bazar';
             tr.querySelector('[name="tkJuego"]').hidden = e.target.value !== 'Singles';
             tr.querySelector('[name="tkTipo"]').hidden = !b;
-            tr.querySelector('[name="tkDesc"]').hidden = b;
+            tr.querySelector('[name="tkDesc"]').hidden = b || e.target.value === 'Singles';
           }
           upd();
         });
@@ -457,7 +458,7 @@
           const cat = tr.querySelector('[name="tkCat"]').value;
           const tipo = tr.querySelector('[name="tkTipo"]');
           if (precio && cat === 'Bazar' && !tipo.value) throw new Error('En Bazar elige si es Bebida o Snack.');
-          return precio ? { categoria: cat, descripcion: cat === 'Bazar' ? tipo.value : tr.querySelector('[name="tkDesc"]').value, cantidad: tr.querySelector('[name="tkMCant"]').value || 1, precio: precio, tj: tr.dataset.tj || '',
+          return precio ? { categoria: cat, descripcion: cat === 'Bazar' ? tipo.value : cat === 'Singles' ? '' : tr.querySelector('[name="tkDesc"]').value, cantidad: tr.querySelector('[name="tkMCant"]').value || 1, precio: precio, tj: tr.dataset.tj || '',
             juego: cat === 'Singles' && tr.querySelector('[name="tkJuego"]') ? tr.querySelector('[name="tkJuego"]').value : '' } : null;
         }).filter(Boolean);
         const pagos = Array.from(form.querySelectorAll('[data-tk-pago]')).map((f) => ({ medio: f.querySelector('[name="tkMedio"]').value, monto: f.querySelector('[name="tkPagoMonto"]').value,
