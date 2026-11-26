@@ -223,7 +223,8 @@
           '<select name="tkTipo"' + (esBazar ? '' : ' hidden') + '>' + GS.options([{ value: '', label: 'Bebida o snack…' }].concat(bazar.map((x) => ({ value: x, label: x }))), esBazar && bazar.indexOf(desc) !== -1 ? desc : '') + '</select>' +
           // Singles: solo el juego, sin detalle.
           '<input name="tkDesc" placeholder="Detalle (opcional)" value="' + esc(esBazar ? '' : desc) + '"' + (esBazar || cat === 'Singles' ? ' hidden' : '') + '></div>') + '</td>' +
-        '<td><input class="qty-input" style="width:64px" type="number" min="1" step="1" name="tkMCant" value="' + esc(cant) + '"' + (l && l.tj ? ' readonly' : '') + '></td>' +
+        // Singles: sin cantidad (una línea = un monto); el campo queda en 1 y oculto.
+        '<td><input class="qty-input" style="width:64px" type="number" min="1" step="1" name="tkMCant" value="' + esc(cat === 'Singles' && !(l && l.tj) ? 1 : cant) + '"' + (l && l.tj ? ' readonly' : '') + (cat === 'Singles' && !(l && l.tj) ? ' hidden' : '') + '></td>' +
         '<td><input class="qty-input price-input" style="width:100px" type="number" min="1" step="1" name="tkMonto" value="' + esc(precio) + '"></td>' +
         '<td class="cell-num right" data-tk-sub>—</td><td><button type="button" class="btn small ghost" data-tk-quitar title="Quitar">✕</button></td></tr>';
     };
@@ -445,6 +446,9 @@
             tr.querySelector('[name="tkJuego"]').hidden = e.target.value !== 'Singles';
             tr.querySelector('[name="tkTipo"]').hidden = !b;
             tr.querySelector('[name="tkDesc"]').hidden = b || e.target.value === 'Singles';
+            const q = tr.querySelector('[name="tkMCant"]');
+            q.hidden = e.target.value === 'Singles';
+            if (q.hidden) q.value = 1;
           }
           upd();
         });
