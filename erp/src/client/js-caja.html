@@ -217,7 +217,7 @@
       const precio = l ? l.precio || (l.monto ? l.monto / cant : '') : '';
       return '<tr data-tk-monto data-uid="' + uid + '"' + (l && l.tj ? ' data-tj="' + esc(l.tj) + '"' : '') + '><td>' + (l && l.tj
         ? '<input type="hidden" name="tkCat" value="Torneo"><input type="hidden" name="tkDesc" value="' + esc(desc) + '"><span class="badge st-pedido">Inscripción</span> ' + esc(desc)
-        : '<div class="field-row"><select name="tkCat">' + GS.options(cats, cat) + '</select>' +
+        : '<div class="tk-concepto"><select name="tkCat">' + GS.options(cats, cat) + '</select>' +
           // Singles: de qué juego (Pokémon por defecto).
           '<select name="tkJuego" aria-label="Juego"' + (cat === 'Singles' ? '' : ' hidden') + '>' + GS.options(juegos, (l && l.juego) || juegos[0]) + '</select>' +
           '<select name="tkTipo"' + (esBazar ? '' : ' hidden') + '>' + GS.options([{ value: '', label: 'Bebida o snack…' }].concat(bazar.map((x) => ({ value: x, label: x }))), esBazar && bazar.indexOf(desc) !== -1 ? desc : '') + '</select>' +
