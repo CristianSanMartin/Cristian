@@ -220,7 +220,7 @@
         : '<div class="tk-concepto"><select name="tkCat">' + GS.options(cats, cat) + '</select>' +
           // Singles: de qué juego (Pokémon por defecto).
           '<select name="tkJuego" aria-label="Juego"' + (cat === 'Singles' ? '' : ' hidden') + '>' + GS.options(juegos, (l && l.juego) || juegos[0]) + '</select>' +
-          '<select name="tkTipo"' + (esBazar ? '' : ' hidden') + '>' + GS.options([{ value: '', label: 'Bebida o snack…' }].concat(bazar.map((x) => ({ value: x, label: x }))), esBazar && bazar.indexOf(desc) !== -1 ? desc : '') + '</select>' +
+          '<select name="tkTipo"' + (esBazar ? '' : ' hidden') + '>' + GS.options(bazar.map((x) => ({ value: x, label: x })), esBazar && bazar.indexOf(desc) !== -1 ? desc : bazar[0]) + '</select>' +
           // Singles: solo el juego, sin detalle.
           '<input name="tkDesc" placeholder="Detalle (opcional)" value="' + esc(esBazar ? '' : desc) + '"' + (esBazar || cat === 'Singles' ? ' hidden' : '') + '></div>') + '</td>' +
         // Singles: sin cantidad (una línea = un monto); el campo queda en 1 y oculto.
